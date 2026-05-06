@@ -942,8 +942,8 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <div class="modal-body">
       <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12px;line-height:1.7;color:rgba(245,166,35,.9)">
         <b>Excel/CSV файл форматаа бэлдэх:</b><br>
-        Эхний мөрд багануудын нэр байх ёстой. <b>email</b> болон <b>password</b> гэсэн баганыг заавал оруулна уу.<br>
-        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | password | name</code>
+        Эхний мөрд багануудын нэр байх ёстой. <b>email</b> болон <b>password</b> заавал байна уу (нууц үг 6+ тэмдэгт).<br>
+        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | password | lastname | firstname | position | department</code>
       </div>
 
       <div id="bulkStep1">
@@ -1884,59 +1884,57 @@ function handleBulkFile(file){
 
 document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
   if(bulkRows.length===0) return;
-  // ── ШИНЭ АРГА: Firestore-д хадгалах (Auth бүртгэл хийхгүй)
-  // Хэрэглэгч анх нэвтрэх үед index.html автоматаар Auth бүртгэл үүсгэнэ.
-  // Ингэснээр Firebase rate limit огт тохиолдохгүй.
   const confirmBtn=document.getElementById('bulkUserConfirm');
-  confirmBtn.disabled=true; confirmBtn.innerHTML='<span class="spinner-sm"></span>Хадгалж байна...';
+  confirmBtn.disabled=true; confirmBtn.innerHTML='<span class="spinner-sm"></span>Бүртгэж байна...';
   const statusEl=document.getElementById('bulkStatus');
   let success=0, fail=0, skip=0;
   const validRows=bulkRows.filter(r=>(r.email||'').trim()&&String(r.password||'').trim().length>=6);
   const total=validRows.length;
+  statusEl.innerHTML=`<div style="color:var(--muted)">Firebase Auth + Firestore-д бүртгэж байна (${total} хэрэглэгч)...</div>`;
 
-  statusEl.innerHTML=`<div style="color:var(--muted)">Firestore-д хадгалж байна (${total} хэрэглэгч)...</div>`;
-
-  // Firestore batch write — 500 мөр хүртэл нэг batch-д
-  const CHUNK=400;
-  for(let i=0;i<validRows.length;i+=CHUNK){
-    const batch=db.batch();
-    const chunk=validRows.slice(i,i+CHUNK);
-    for(const row of chunk){
-      const email=(row.email||'').trim().toLowerCase();
-      const password=String(row.password||'').trim();
-      // email-г ID болгон ашиглана (@ болон . тэмдгийг орлуулна)
-      const docId=email.replace(/[.@]/g,'_');
-      const existing=await db.collection('pending_users').doc(docId).get().catch(()=>null);
-      if(existing&&existing.exists){ skip++; continue; }
-      batch.set(db.collection('pending_users').doc(docId),{
-        email,
-        initPwd: password,
-        created_at: firebase.firestore.FieldValue.serverTimestamp(),
-        activated: false
-      });
-      success++;
-    }
+  for(let i=0;i<validRows.length;i++){
+    const row=validRows[i];
+    const email=(row.email||'').trim().toLowerCase();
+    const password=String(row.password||'').trim();
+    const lastName=(row.lastname||row['овог']||'').trim();
+    const firstName=(row.firstname||row['нэр']||row.name||'').trim();
+    const position=(row.position||row['тушаал']||row['албан тушаал']||'').trim();
+    const department=(row.department||row['хэлтэс']||'').trim();
     try{
-      await batch.commit();
+      const existing=await db.collection('users').where('email','==',email).get();
+      if(!existing.empty){ skip++; }
+      else{
+        const cred=await secondaryAuth.createUserWithEmailAndPassword(email,password);
+        await secondaryAuth.signOut();
+        await db.collection('users').doc(cred.user.uid).set({
+          email, uid:cred.user.uid,
+          lastName, firstName, position, department,
+          role:'employee', isActive:true,
+          createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+          totalSiteTime:0
+        });
+        success++;
+      }
     } catch(e){
-      fail+=chunk.length-success;
+      if(e.code==='auth/email-already-in-use') skip++;
+      else fail++;
     }
-    const pct=Math.round(Math.min(i+CHUNK,total)/total*100);
+    const pct=Math.round((i+1)/total*100);
     statusEl.innerHTML=
       `<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px">
         <div style="height:100%;border-radius:6px;background:var(--green);width:${pct}%;transition:width .3s"></div>
       </div>`+
-      `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${Math.min(i+CHUNK,total)}/${total} · ${pct}%</div>`+
-      `<div style="color:var(--green)">✓ ${success} хадгалагдлаа`+
+      `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${i+1}/${total} · ${pct}%</div>`+
+      `<div style="color:var(--green)">✓ ${success} бүртгэгдлаа`+
       (skip?` · <span style="color:var(--muted)">${skip} аль байсан</span>`:'')+
       (fail?` · <span style="color:#FF6B6B">${fail} алдаа</span>`:'')+`</div>`;
+    if(i<validRows.length-1) await new Promise(r=>setTimeout(r,300));
   }
 
   statusEl.innerHTML=
-    `<div style="font-weight:700;color:var(--green);margin-bottom:6px">✅ Дууслаа: ${success} хэрэглэгч хадгалагдлаа`+
+    `<div style="font-weight:700;color:var(--green);margin-bottom:6px">✅ Дууслаа: ${success} ажилтан бүртгэгдлаа`+
     (skip?` · ${skip} аль байсан (алгасав)`:'')+
-    (fail?` · <span style="color:#FF6B6B">${fail} алдаа</span>`:'')+`</div>`+
-    `<div style="font-size:12px;color:var(--muted);line-height:1.6">Хэрэглэгчид анх нэвтрэх үед автоматаар бүртгэгдэнэ.</div>`;
+    (fail?` · <span style="color:#FF6B6B">${fail} алдаа</span>`:'')+`</div>`;
   confirmBtn.textContent='Дууслаа';
   loadUsers();
 });
