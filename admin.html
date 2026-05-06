@@ -1902,24 +1902,34 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     const position=(row['албан тушаал']||row['тушаал']||row.position||'').trim();
     const department=(row['хэлтэс']||row.department||'').trim();
     try{
-      const existing=await db.collection('users').where('email','==',email).get();
-      if(!existing.empty){ skip++; }
+      const existingDoc=await db.collection('users').where('email','==',email).get();
+      if(!existingDoc.empty){ skip++; }
       else{
-        const cred=await secondaryAuth.createUserWithEmailAndPassword(email,password);
-        await secondaryAuth.signOut();
-        await db.collection('users').doc(cred.user.uid).set({
-          email, uid:cred.user.uid,
-          lastName, firstName, position, department,
-          role:'employee', isActive:true,
-          createdAt:firebase.firestore.FieldValue.serverTimestamp(),
-          totalSiteTime:0
-        });
-        success++;
+        let uid=null;
+        try{
+          const cred=await secondaryAuth.createUserWithEmailAndPassword(email,password);
+          uid=cred.user.uid;
+          await secondaryAuth.signOut();
+        } catch(authErr){
+          if(authErr.code==='auth/email-already-in-use'){
+            try{
+              const signIn=await secondaryAuth.signInWithEmailAndPassword(email,password);
+              uid=signIn.user.uid;
+              await secondaryAuth.signOut();
+            } catch(e2){ uid=null; }
+          }
+        }
+        if(uid){
+          await db.collection('users').doc(uid).set({
+            email, uid, lastName, firstName, position, department,
+            role:'employee', isActive:true,
+            createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+            totalSiteTime:0
+          },{merge:true});
+          success++;
+        } else{ fail++; }
       }
-    } catch(e){
-      if(e.code==='auth/email-already-in-use') skip++;
-      else fail++;
-    }
+    } catch(e){ fail++; }
     const pct=Math.round((i+1)/total*100);
     statusEl.innerHTML=
       `<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px">
