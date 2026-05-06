@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Сургалт — МОНОС ХҮНС ХК</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<style>
+@property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
+:root{
+  --red:#E30613;--red2:#FF2040;
+  --red-dark:#B00510;--red-soft:rgba(227,6,19,.08);
+  --gold:#F59E0B;--gold2:#FCD34D;
+  --blue:#3B82F6;--blue2:#2563EB;--blue-soft:rgba(59,130,246,.10);
+  --green:#10B981;--green2:#059669;--green-soft:rgba(16,185,129,.10);
+  --orange:#F97316;--orange-soft:rgba(249,115,22,.10);
+  --ink:#0F1117;--ink2:#374151;--muted:#6B7280;
+  --bg:#F4F6FB;--surface:#FFFFFF;
+  --border:rgba(0,0,0,.07);--border2:rgba(0,0,0,.11);
+  --sh1:0 1px 3px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.07);
+  --sh2:0 4px 8px rgba(0,0,0,.05),0 12px 32px rgba(0,0,0,.09);
+  --sh3:0 8px 16px rgba(0,0,0,.05),0 24px 60px rgba(0,0,0,.11);
+  --nav-h:60px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden}
+
+/* ── Loading ── */
+#loadingScreen{
+  position:fixed;inset:0;z-index:999;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  transition:opacity .4s ease;
+}
+#loadingScreen.fade-out{opacity:0;pointer-events:none}
+.loading-logo{
+  width:56px;height:56px;border-radius:16px;
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  display:grid;place-items:center;
+  animation:lPulse 1.4s ease-in-out infinite;
+}
+@keyframes lPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(227,6,19,.3);transform:scale(1)}
+  50%{box-shadow:0 0 0 14px rgba(227,6,19,0);transform:scale(1.06)}
+}
+.loading-logo svg{width:28px;height:28px;fill:none;stroke:#fff;stroke-width:2}
+
+/* ── Nav ── */
+.nav{
+  position:fixed;top:0;left:0;right:0;height:var(--nav-h);z-index:100;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);box-shadow:var(--sh1);
+  display:flex;align-items:center;padding:0 20px;gap:10px;
+}
+.nav-back{
+  display:flex;align-items:center;gap:7px;
+  padding:7px 13px;border-radius:9px;
+  font-size:13px;font-weight:600;color:var(--muted);
+  text-decoration:none;border:1px solid var(--border2);background:#fff;
+  transition:all .18s;cursor:pointer;
+}
+.nav-back:hover{color:var(--ink);border-color:var(--border2);background:rgba(0,0,0,.03)}
+.nav-back svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.5}
+.nav-title{font-size:14px;font-weight:700;color:var(--ink);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-status-badge{
+  display:flex;align-items:center;gap:5px;
+  padding:5px 12px;border-radius:20px;
+  font-size:12px;font-weight:700;flex-shrink:0;
+}
+.nav-status-badge.passed{background:var(--green-soft);color:var(--green2)}
+.nav-status-badge.failed{background:var(--orange-soft);color:var(--orange)}
+.nav-status-badge.in-progress{background:var(--blue-soft);color:var(--blue2)}
+
+/* ── Main layout ── */
+.main{
+  position:relative;z-index:10;
+  padding-top:calc(var(--nav-h)+24px);
+  padding-bottom:60px;
+  max-width:900px;margin:0 auto;
+  padding-left:20px;padding-right:20px;
+}
+
+/* ── Training header card ── */
+.training-hdr{
+  background:var(--surface);border-radius:18px;
+  border:1px solid var(--border);box-shadow:var(--sh2);
+  padding:24px 28px;margin-bottom:20px;
+  animation:fadeUp .45s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.training-breadcrumb{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;color:var(--muted);margin-bottom:12px;
+  flex-wrap:wrap;
+}
+.training-breadcrumb a{color:var(--muted);text-decoration:none;transition:color .15s}
+.training-breadcrumb a:hover{color:var(--ink)}
+.training-breadcrumb svg{width:12px;height:12px;stroke:currentColor;fill:none;flex-shrink:0;opacity:.5}
+.training-title{font-size:20px;font-weight:800;color:var(--ink);margin-bottom:8px;line-height:1.3}
+.training-desc{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px}
+.training-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.meta-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border-radius:20px;
+  font-size:12px;font-weight:600;
+  background:rgba(0,0,0,.05);color:var(--ink2);
+}
+.meta-pill svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+.meta-pill.pass{background:var(--green-soft);color:var(--green2)}
+
+/* ── Video section ── */
+.video-section{
+  background:var(--surface);border-radius:18px;
+  border:1px solid var(--border);box-shadow:var(--sh2);
+  overflow:hidden;margin-bottom:20px;
+  animation:fadeUp .45s .08s cubic-bezier(.2,.8,.2,1) both;
+}
+.video-header{
+  padding:16px 22px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.video-header-title{font-size:14px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px}
+.video-header-title svg{width:16px;height:16px;stroke:var(--red);fill:none;stroke-width:2}
+.video-progress-wrap{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.video-pct{font-size:12px;font-weight:700;color:var(--muted)}
+.video-bar{width:100px;height:5px;background:rgba(0,0,0,.08);border-radius:3px;overflow:hidden}
+.video-bar-fill{height:100%;background:var(--red);border-radius:3px;transition:width .5s ease;width:0%}
+
+.video-player-wrap{
+  position:relative;width:100%;
+  background:#000;
+}
+.video-player-wrap iframe,
+.video-player-wrap video{
+  display:block;width:100%;
+  aspect-ratio:16/9;border:none;
+}
+.video-no-url{
+  aspect-ratio:16/9;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:12px;
+  background:#f8f9fc;color:var(--muted);
+}
+.video-no-url svg{width:40px;height:40px;stroke:var(--border2);fill:none;stroke-width:1.5}
+.video-no-url p{font-size:13px;font-weight:500}
+
+/* ── Exam unlock notice ── */
+.exam-unlock-bar{
+  padding:14px 22px;border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:rgba(0,0,0,.015);
+}
+.unlock-text{font-size:13px;color:var(--muted)}
+.unlock-text strong{color:var(--ink)}
+.btn-start-exam{
+  display:flex;align-items:center;gap:7px;
+  padding:10px 20px;border-radius:10px;
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  color:#fff;font-family:inherit;font-size:13px;font-weight:700;
+  border:none;cursor:pointer;transition:all .2s;
+  box-shadow:0 4px 14px rgba(227,6,19,.3);
+  white-space:nowrap;flex-shrink:0;
+}
+.btn-start-exam:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(227,6,19,.4)}
+.btn-start-exam:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-start-exam svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* ── Already passed banner ── */
+.passed-banner{
+  background:var(--green-soft);border-radius:14px;
+  border:1px solid rgba(16,185,129,.2);
+  padding:16px 20px;margin-bottom:20px;
+  display:flex;align-items:center;gap:12px;
+  animation:fadeUp .45s .04s cubic-bezier(.2,.8,.2,1) both;
+}
+.passed-banner-icon{
+  width:40px;height:40px;border-radius:50%;flex-shrink:0;
+  background:var(--green-soft);display:grid;place-items:center;
+  border:2px solid rgba(16,185,129,.3);
+}
+.passed-banner-icon svg{width:20px;height:20px;stroke:var(--green2);fill:none;stroke-width:2.5}
+.passed-banner-text{flex:1}
+.passed-banner-title{font-size:14px;font-weight:700;color:var(--green2)}
+.passed-banner-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.btn-retake{
+  padding:8px 16px;border-radius:9px;
+  border:1px solid rgba(16,185,129,.3);background:#fff;
+  font-family:inherit;font-size:12px;font-weight:700;color:var(--green2);
+  cursor:pointer;transition:all .18s;white-space:nowrap;
+}
+.btn-retake:hover{background:var(--green-soft);border-color:rgba(16,185,129,.4)}
+
+/* ── Exam section ── */
+#examSection{
+  background:var(--surface);border-radius:18px;
+  border:1px solid var(--border);box-shadow:var(--sh2);
+  overflow:hidden;margin-bottom:20px;
+  animation:fadeUp .4s cubic-bezier(.2,.8,.2,1) both;
+  display:none;
+}
+#examSection.visible{display:block}
+.exam-header{
+  padding:18px 24px;border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.015);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.exam-title{font-size:15px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px}
+.exam-title svg{width:17px;height:17px;stroke:var(--red);fill:none;stroke-width:2.2}
+.exam-meta{font-size:12px;color:var(--muted)}
+.exam-body{padding:24px}
+.question-block{margin-bottom:28px}
+.question-block:last-of-type{margin-bottom:0}
+.question-num{
+  font-size:11px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;
+}
+.question-text{font-size:14px;font-weight:600;color:var(--ink);line-height:1.6;margin-bottom:12px}
+.option-list{display:flex;flex-direction:column;gap:7px}
+.option-label{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:11px 14px;border-radius:10px;
+  border:1px solid var(--border2);background:#fff;
+  cursor:pointer;transition:all .15s;
+  font-size:13px;color:var(--ink2);line-height:1.5;
+}
+.option-label:hover{border-color:var(--red);background:var(--red-soft)}
+.option-label input[type=radio],.option-label input[type=checkbox]{
+  width:16px;height:16px;flex-shrink:0;margin-top:1px;
+  accent-color:var(--red);cursor:pointer;
+}
+.option-label.selected{border-color:var(--red);background:var(--red-soft)}
+.option-label.correct{border-color:var(--green2)!important;background:var(--green-soft)!important}
+.option-label.wrong{border-color:var(--orange)!important;background:var(--orange-soft)!important}
+
+.exam-footer{
+  padding:18px 24px;border-top:1px solid var(--border);
+  background:rgba(0,0,0,.015);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.exam-answer-count{font-size:13px;color:var(--muted)}
+.exam-answer-count strong{color:var(--ink)}
+.btn-submit{
+  display:flex;align-items:center;gap:7px;
+  padding:11px 24px;border-radius:10px;
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  color:#fff;font-family:inherit;font-size:13px;font-weight:700;
+  border:none;cursor:pointer;transition:all .2s;
+  box-shadow:0 4px 14px rgba(227,6,19,.3);
+}
+.btn-submit:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(227,6,19,.4)}
+.btn-submit:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-submit svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* ── Result overlay ── */
+.result-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(0,0,0,.5);backdrop-filter:blur(10px);
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.result-overlay.show{display:flex}
+.result-card{
+  background:var(--surface);border-radius:24px;
+  border:1px solid var(--border);box-shadow:var(--sh4);
+  padding:36px 32px;max-width:440px;width:100%;text-align:center;
+  animation:resultIn .4s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes resultIn{from{opacity:0;transform:scale(.9) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.result-icon{
+  width:72px;height:72px;border-radius:50%;margin:0 auto 20px;
+  display:grid;place-items:center;
+  border:3px solid;
+}
+.result-icon.pass{background:var(--green-soft);border-color:rgba(16,185,129,.3)}
+.result-icon.fail{background:var(--orange-soft);border-color:rgba(249,115,22,.3)}
+.result-icon svg{width:32px;height:32px;fill:none;stroke-width:2.5}
+.result-icon.pass svg{stroke:var(--green2)}
+.result-icon.fail svg{stroke:var(--orange)}
+.result-title{font-size:22px;font-weight:800;color:var(--ink);margin-bottom:6px}
+.result-title.pass{color:var(--green2)}
+.result-title.fail{color:var(--orange)}
+.result-score{
+  font-size:48px;font-weight:800;line-height:1;margin:12px 0;
+}
+.result-score.pass{color:var(--green2)}
+.result-score.fail{color:var(--orange)}
+.result-info{font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6}
+.result-btns{display:flex;gap:10px;justify-content:center}
+.btn-result-home{
+  padding:11px 20px;border-radius:10px;
+  border:1px solid var(--border2);background:#fff;
+  font-family:inherit;font-size:13px;font-weight:700;color:var(--ink2);
+  cursor:pointer;transition:all .18s;
+}
+.btn-result-home:hover{border-color:var(--border2);background:rgba(0,0,0,.03)}
+.btn-retry{
+  padding:11px 20px;border-radius:10px;
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  color:#fff;font-family:inherit;font-size:13px;font-weight:700;
+  border:none;cursor:pointer;transition:all .18s;
+  box-shadow:0 4px 12px rgba(227,6,19,.25);
+}
+.btn-retry:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(227,6,19,.35)}
+
+/* ── Toast ── */
+.toast{
+  position:fixed;bottom:24px;left:50%;
+  transform:translateX(-50%) translateY(12px);
+  background:#1a1a1a;color:#fff;
+  padding:10px 20px;border-radius:10px;
+  font-size:13px;font-weight:600;z-index:9999;
+  opacity:0;transition:all .28s;pointer-events:none;
+  box-shadow:var(--sh3);white-space:nowrap;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  .main{padding-left:12px;padding-right:12px}
+  .training-hdr{padding:18px 16px}
+  .exam-body{padding:16px}
+  .result-card{padding:28px 20px}
+  .result-score{font-size:36px}
+}
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loadingScreen">
+  <div class="loading-logo">
+    <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+  </div>
+</div>
+
+<!-- Nav -->
+<nav class="nav">
+  <a href="employee.html" class="nav-back">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    Буцах
+  </a>
+  <div class="nav-title" id="navTitle">Сургалт ачаалж байна…</div>
+  <div class="nav-status-badge" id="navBadge" style="display:none"></div>
+</nav>
+
+<!-- Main -->
+<main class="main">
+
+  <!-- Training header -->
+  <div class="training-hdr" id="trainingHdr">
+    <div class="training-breadcrumb" id="breadcrumb"></div>
+    <div class="training-title" id="trainingTitle">Ачаалж байна…</div>
+    <div class="training-desc" id="trainingDesc"></div>
+    <div class="training-meta" id="trainingMeta"></div>
+  </div>
+
+  <!-- Passed banner (shown when already passed) -->
+  <div class="passed-banner" id="passedBanner" style="display:none">
+    <div class="passed-banner-icon">
+      <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="passed-banner-text">
+      <div class="passed-banner-title" id="passedBannerTitle">Та энэ сургалтыг амжилттай дүүргэсэн!</div>
+      <div class="passed-banner-sub" id="passedBannerSub"></div>
+    </div>
+    <button class="btn-retake" onclick="allowRetake()">Дахин авах</button>
+  </div>
+
+  <!-- Video section -->
+  <div class="video-section" id="videoSection">
+    <div class="video-header">
+      <div class="video-header-title">
+        <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Сургалтын видео
+      </div>
+      <div class="video-progress-wrap">
+        <span class="video-pct" id="videoPct">0%</span>
+        <div class="video-bar"><div class="video-bar-fill" id="videoBarFill"></div></div>
+      </div>
+    </div>
+    <div class="video-player-wrap" id="videoPlayerWrap">
+      <!-- Filled by JS -->
+    </div>
+    <div class="exam-unlock-bar">
+      <div class="unlock-text" id="unlockText">
+        <strong>Шалгалт</strong>: видеог <strong id="unlockPct">80%</strong> үзсэний дараа нээгдэнэ
+      </div>
+      <button class="btn-start-exam" id="btnStartExam" onclick="showExam()" disabled>
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Шалгалт өгөх
+      </button>
+    </div>
+  </div>
+
+  <!-- Exam section -->
+  <div id="examSection">
+    <div class="exam-header">
+      <div class="exam-title">
+        <svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Шалгалтын асуулт
+      </div>
+      <div class="exam-meta" id="examMeta"></div>
+    </div>
+    <div class="exam-body" id="examBody"></div>
+    <div class="exam-footer">
+      <div class="exam-answer-count" id="answerCount">0 / 0 хариулсан</div>
+      <button class="btn-submit" id="btnSubmit" onclick="submitExam()">
+        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Илгээх
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<!-- Result overlay -->
+<div class="result-overlay" id="resultOverlay">
+  <div class="result-card">
+    <div class="result-icon" id="resultIcon">
+      <svg viewBox="0 0 24 24" id="resultIconSvg"></svg>
+    </div>
+    <div class="result-title" id="resultTitle"></div>
+    <div class="result-score" id="resultScore"></div>
+    <div class="result-info" id="resultInfo"></div>
+    <div class="result-btns">
+      <button class="btn-result-home" onclick="goHome()">Самбарт буцах</button>
+      <button class="btn-retry" id="btnRetry" onclick="retryExam()">Дахин оролдох</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── Firebase ── */
+firebase.initializeApp({
+  apiKey:"AIzaSyCXodBPWqm3TTZuJieHkkcu2lLtH5l7IJ0",
+  authDomain:"monos-hk-alba-1b774.firebaseapp.com",
+  projectId:"monos-hk-alba-1b774",
+  storageBucket:"monos-hk-alba-1b774.firebasestorage.app",
+  messagingSenderId:"562718693736",
+  appId:"1:562718693736:web:0fd550284fb40973d41edd"
+});
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ── State ── */
+let currentUser   = null;
+let trainingId    = null;
+let trainingData  = null;
+let progressData  = null;
+let questionsData = [];
+let videoUnlocked = false;   // exam unlock flag
+let examShown     = false;
+let submitted     = false;
+
+/* ── Video watch tracking ── */
+const VideoTracker = {
+  startMs: null,
+  watchedSecs: 0,
+  durationSecs: 0,
+  saveTimer: null,
+  THRESHOLD: 0.80,  // unlock exam after watching 80%
+
+  init(durationMin, savedProgress) {
+    this.durationSecs = (durationMin||0) * 60;
+    // Restore previously saved progress
+    if(savedProgress) {
+      this.watchedSecs = Math.floor(this.durationSecs * savedProgress);
+    }
+    this.updateUI();
+    // If no duration set or already beyond threshold, auto-unlock
+    if(this.durationSecs===0 || this.getPct()>=this.THRESHOLD) {
+      this.unlock();
+    }
+  },
+
+  start() {
+    if(this.startMs!==null) return;
+    this.startMs = Date.now();
+    this.saveTimer = setInterval(()=>this.tick(), 5000);
+    window.addEventListener('pagehide', ()=>this.stop());
+  },
+
+  stop() {
+    if(this.startMs===null) return;
+    this.watchedSecs += (Date.now()-this.startMs)/1000;
+    this.startMs = null;
+    clearInterval(this.saveTimer);
+    this.updateUI();
+    this.saveProgress();
+  },
+
+  tick() {
+    if(this.startMs===null) return;
+    const elapsed = (Date.now()-this.startMs)/1000;
+    const current = this.watchedSecs + elapsed;
+    this.updateUIWith(current);
+    // Save every 15 seconds
+    this.watchedSecs += elapsed;
+    this.startMs = Date.now();
+    this.saveProgress();
+  },
+
+  getPct() {
+    if(this.durationSecs===0) return 1;
+    return Math.min(this.watchedSecs/this.durationSecs, 1);
+  },
+
+  updateUI() { this.updateUIWith(this.watchedSecs); },
+
+  updateUIWith(secs) {
+    const pct = this.durationSecs===0 ? 1 : Math.min(secs/this.durationSecs, 1);
+    const pctInt = Math.round(pct*100);
+    document.getElementById('videoPct').textContent = pctInt+'%';
+    document.getElementById('videoBarFill').style.width = pctInt+'%';
+    if(pct >= this.THRESHOLD && !videoUnlocked) this.unlock();
+  },
+
+  complete() {
+    // Video ended — mark as fully watched regardless of wall-clock time
+    if(this.startMs!==null){ this.watchedSecs+=(Date.now()-this.startMs)/1000; this.startMs=null; clearInterval(this.saveTimer); }
+    this.watchedSecs = this.durationSecs>0 ? this.durationSecs : this.watchedSecs;
+    this.updateUI();
+    this.saveProgress();
+    this.unlock();
+  },
+
+  unlock() {
+    videoUnlocked = true;
+    const btn = document.getElementById('btnStartExam');
+    if(btn) {
+      btn.disabled = false;
+      document.getElementById('unlockText').innerHTML =
+        '<strong style="color:var(--green2)">✓ Шалгалт нээгдлээ!</strong> Доорх товчийг дарж эхлүүлнэ үү';
+    }
+  },
+
+  async saveProgress() {
+    if(!currentUser||!trainingId) return;
+    const pct = this.getPct();
+    const docId = `${currentUser.uid}_${trainingId}`;
+    const data = {
+      userId: currentUser.uid,
+      trainingId,
+      watchProgress: pct,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    // Only set status to in_progress if it's not already passed/failed
+    if(!progressData || progressData.status==='not_viewed' || progressData.status==null) {
+      data.status = 'in_progress';
+    }
+    try {
+      await db.collection('training_progress').doc(docId).set(data, {merge:true});
+      if(progressData) progressData.watchProgress = pct;
+    } catch(e) {}
+  }
+};
+
+/* ── Session time tracker ── */
+const Tracker = {
+  startMs:null, pending:0, timer:null,
+  init(){
+    this.startMs=document.hidden?null:Date.now();
+    document.addEventListener('visibilitychange',()=>{
+      if(document.hidden){
+        if(this.startMs!==null){this.pending+=Date.now()-this.startMs;this.startMs=null;}
+      } else { this.startMs=Date.now(); }
+    });
+    window.addEventListener('pagehide',()=>this.flush());
+    window.addEventListener('beforeunload',()=>this.flush());
+    this.timer=setInterval(()=>this.flush(),120000);
+  },
+  elapsedSecs(){let ms=this.pending;if(this.startMs!==null)ms+=Date.now()-this.startMs;return Math.floor(ms/1000);},
+  async flush(){
+    const secs=this.elapsedSecs();
+    if(!currentUser||secs<3) return;
+    this.pending=0;this.startMs=document.hidden?null:Date.now();
+    try{
+      await Promise.all([
+        db.collection('users').doc(currentUser.uid).update({totalSiteTime:firebase.firestore.FieldValue.increment(secs)}),
+        db.collection('activity_logs').add({userId:currentUser.uid,page:'training-view',trainingId,duration:secs,date:new Date().toISOString().slice(0,10),ts:firebase.firestore.FieldValue.serverTimestamp()})
+      ]);
+    }catch(e){this.pending+=secs*1000;}
+  }
+};
+
+/* ── Auth guard ── */
+auth.onAuthStateChanged(async user=>{
+  if(!user){ location.replace('index.html'); return; }
+  currentUser=user;
+  Tracker.init();
+
+  const params = new URLSearchParams(location.search);
+  trainingId = params.get('id');
+  if(!trainingId){ showToast('Сургалтын ID олдсонгүй'); hideLoading(); return; }
+
+  await loadTraining();
+});
+
+/* ── Load training data ── */
+async function loadTraining(){
+  try{
+    /* Load training doc */
+    const tSnap = await db.collection('trainings').doc(trainingId).get();
+    if(!tSnap.exists){ showToast('Сургалт олдсонгүй'); hideLoading(); return; }
+    trainingData = tSnap.data();
+
+    /* Load progress */
+    const pSnap = await db.collection('training_progress')
+      .doc(`${currentUser.uid}_${trainingId}`).get();
+    progressData = pSnap.exists ? pSnap.data() : null;
+
+    /* Load questions */
+    const qSnap = await db.collection('questions')
+      .where('trainingId','==',trainingId)
+      .where('isActive','==',true).get();
+    questionsData = qSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+
+    /* Load breadcrumb data (topic + chapter) */
+    let topicTitle='', chapterTitle='';
+    if(trainingData.topicId){
+      const tpSnap = await db.collection('topics').doc(trainingData.topicId).get();
+      if(tpSnap.exists) topicTitle=tpSnap.data().title||'';
+      if(tpSnap.exists && tpSnap.data().chapterId){
+        const chSnap = await db.collection('chapters').doc(tpSnap.data().chapterId).get();
+        if(chSnap.exists) chapterTitle=chSnap.data().title||'';
+      }
+    }
+
+    renderTraining(chapterTitle, topicTitle);
+    hideLoading();
+  } catch(err){
+    console.error(err);
+    showToast('Ачаалахад алдаа гарлаа: '+err.message);
+    hideLoading();
+  }
+}
+
+/* ── Render training UI ── */
+function renderTraining(chTitle, tpTitle){
+  const t = trainingData;
+  const p = progressData;
+
+  /* Nav */
+  document.title = esc(t.title||'Сургалт') + ' — МОНОС ХҮНС ХК';
+  document.getElementById('navTitle').textContent = t.title||'';
+
+  /* Status badge in nav */
+  const badge = document.getElementById('navBadge');
+  if(p?.status){
+    badge.style.display='flex';
+    if(p.status==='passed'){badge.className='nav-status-badge passed';badge.textContent='✓ Тэнцсэн';}
+    else if(p.status==='failed'){badge.className='nav-status-badge failed';badge.textContent='Тэнцсэнгүй';}
+    else if(p.status==='in_progress'){badge.className='nav-status-badge in-progress';badge.textContent='Явагдаж байна';}
+  }
+
+  /* Breadcrumb */
+  const bc = document.getElementById('breadcrumb');
+  let bcHtml = `<a href="employee.html">Самбар</a>`;
+  if(chTitle) bcHtml+=`<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg><span>${esc(chTitle)}</span>`;
+  if(tpTitle) bcHtml+=`<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg><span>${esc(tpTitle)}</span>`;
+  bc.innerHTML=bcHtml;
+
+  /* Title + desc */
+  document.getElementById('trainingTitle').textContent = t.title||'';
+  document.getElementById('trainingDesc').textContent  = t.description||'';
+  document.getElementById('trainingDesc').style.display = t.description?'':'none';
+
+  /* Meta pills */
+  const metaEl=document.getElementById('trainingMeta');
+  let metaHtml='';
+  if(t.duration) metaHtml+=`<span class="meta-pill"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>${t.duration} минут</span>`;
+  if(t.passingScore) metaHtml+=`<span class="meta-pill pass"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Тэнцэх оноо: ${t.passingScore}%</span>`;
+  if(questionsData.length) metaHtml+=`<span class="meta-pill"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>${questionsData.length} асуулт</span>`;
+  metaEl.innerHTML=metaHtml;
+
+  /* Passed banner */
+  if(p?.status==='passed'){
+    const banner=document.getElementById('passedBanner');
+    banner.style.display='flex';
+    document.getElementById('passedBannerTitle').textContent='Та энэ сургалтыг амжилттай дүүргэсэн!';
+    document.getElementById('passedBannerSub').textContent=
+      `Оноо: ${p.score!=null?p.score+'%':'—'} · ${p.completedAt?fmtDate(p.completedAt.toDate()):''}`;
+  }
+
+  /* Unlock text */
+  document.getElementById('unlockPct').textContent=(t.watchThreshold||80)+'%';
+
+  /* Initialize video tracker BEFORE rendering the player so initManualTimer
+     reads the correct durationSecs and savedProgress values */
+  VideoTracker.THRESHOLD = (t.watchThreshold||80)/100;
+  VideoTracker.init(t.duration||0, p?.watchProgress||0);
+
+  /* Video player */
+  renderVideoPlayer(t.videoUrl||'', t.duration||0, p?.watchProgress||0);
+
+  /* If already passed, still allow re-watching and retake */
+  if(p?.status==='passed'){
+    document.getElementById('btnStartExam').disabled=false;
+    document.getElementById('unlockText').innerHTML=
+      '<strong style="color:var(--green2)">✓ Тэнцсэн</strong> — шалгалт дахин авах боломжтой';
+  }
+}
+
+/* ── Video player renderer ── */
+function renderVideoPlayer(url, durationMin, savedProgress){
+  const wrap=document.getElementById('videoPlayerWrap');
+  if(!url){
+    wrap.innerHTML=`<div class="video-no-url">
+      <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="2" y1="17" x2="7" y2="17"/></svg>
+      <p>Видео холбоос олдсонгүй</p>
+    </div>`;
+    VideoTracker.unlock();
+    return;
+  }
+
+  const ytId = getYtId(url);
+  const gdId = getGDriveId(url);
+
+  if(ytId){
+    /* YouTube IFrame with postMessage tracking */
+    wrap.innerHTML=`<iframe id="ytPlayer"
+      src="https://www.youtube.com/embed/${ytId}?enablejsapi=1&rel=0&modestbranding=1"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen></iframe>`;
+    initYTTracking(durationMin);
+  } else if(gdId){
+    wrap.innerHTML=`<iframe src="https://drive.google.com/file/d/${gdId}/preview"
+      allow="autoplay" allowfullscreen></iframe>`;
+    /* For GDrive: start manual timer when iframe is visible */
+    initManualTimer(durationMin);
+  } else if(url.match(/\.(mp4|webm|ogg)(\?|$)/i)){
+    wrap.innerHTML=`<video id="htmlVideo" controls preload="metadata" controlslist="nodownload">
+      <source src="${esc(url)}" type="video/mp4">
+    </video>`;
+    initHTML5Tracking();
+  } else {
+    /* Fallback: embed as iframe + manual timer */
+    wrap.innerHTML=`<iframe src="${esc(url)}" allowfullscreen></iframe>`;
+    initManualTimer(durationMin);
+  }
+}
+
+/* ── YouTube tracking via postMessage ── */
+function initYTTracking(durationMin){
+  VideoTracker.durationSecs = (durationMin||0)*60;
+  let ytReady=false, ytPlaying=false, ytTimer=null;
+
+  window.addEventListener('message', e=>{
+    if(!e.data||typeof e.data!=='string') return;
+    try{
+      const d=JSON.parse(e.data);
+      if(d.event==='onStateChange'){
+        if(d.info===1){ // playing
+          if(!ytPlaying){ ytPlaying=true; VideoTracker.start(); }
+        } else if(d.info===2){ // paused
+          if(ytPlaying){ ytPlaying=false; VideoTracker.stop(); }
+        } else if(d.info===0){ // ended — mark 100%
+          if(ytPlaying) ytPlaying=false;
+          VideoTracker.complete();
+        }
+      }
+      if(d.event==='onReady') ytReady=true;
+    } catch(e2){}
+  });
+
+  // Fallback: if YouTube API doesn't respond (blocked), start manual timer
+  setTimeout(()=>{
+    if(!ytReady){
+      initManualTimer(durationMin);
+    }
+  }, 3000);
+}
+
+/* ── HTML5 video tracking ── */
+function initHTML5Tracking(){
+  const video=document.getElementById('htmlVideo');
+  if(!video) return;
+  video.addEventListener('loadedmetadata', ()=>{
+    VideoTracker.durationSecs = video.duration;
+  });
+  video.addEventListener('play', ()=>VideoTracker.start());
+  video.addEventListener('pause', ()=>VideoTracker.stop());
+  video.addEventListener('ended', ()=>{ VideoTracker.complete(); });
+}
+
+/* ── Manual timer (for GDrive / unknown embeds) ── */
+function initManualTimer(durationMin){
+  if(VideoTracker.getPct()>=VideoTracker.THRESHOLD){ VideoTracker.unlock(); return; }
+  /* Start counting as soon as the section is visible */
+  VideoTracker.start();
+}
+
+/* ── YouTube video ID parser ── */
+function getYtId(url){
+  if(!url) return null;
+  const patterns=[
+    /youtube\.com\/watch[?&]v=([^&?\s#]+)/,
+    /youtu\.be\/([^&?\s#]+)/,
+    /youtube\.com\/embed\/([^&?\s#]+)/,
+    /youtube\.com\/shorts\/([^&?\s#]+)/,
+  ];
+  for(const p of patterns){const m=url.match(p);if(m)return m[1];}
+  return null;
+}
+
+/* ── Google Drive ID parser ── */
+function getGDriveId(url){
+  if(!url) return null;
+  const m=url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  return m?m[1]:null;
+}
+
+/* ── Show exam ── */
+function showExam(){
+  if(!videoUnlocked){ showToast('Эхлээд видеог үзнэ үү'); return; }
+  if(!questionsData.length){
+    showToast('Энэ сургалтад асуулт байхгүй байна');
+    return;
+  }
+  examShown=true;
+  submitted=false;
+  renderExam();
+  const sec=document.getElementById('examSection');
+  sec.classList.add('visible');
+  setTimeout(()=>sec.scrollIntoView({behavior:'smooth',block:'start'}),100);
+}
+
+/* ── Render exam ── */
+function renderExam(){
+  const body=document.getElementById('examBody');
+  const meta=document.getElementById('examMeta');
+  meta.textContent=`${questionsData.length} асуулт · Тэнцэх оноо: ${trainingData.passingScore||70}%`;
+
+  body.innerHTML = questionsData.map((q,qi)=>{
+    const isMulti = q.type==='multiple' || (q.correctAnswers?.length>1);
+    const inputType = isMulti ? 'checkbox' : 'radio';
+    const opts = (q.options||[]).map((opt,oi)=>`
+      <label class="option-label" id="lbl_${qi}_${oi}">
+        <input type="${inputType}" name="q${qi}" value="${oi}" onchange="onAnswerChange(${qi})">
+        ${esc(opt)}
+      </label>`).join('');
+    return `<div class="question-block" id="qblock_${qi}">
+      <div class="question-num">Асуулт ${qi+1} / ${questionsData.length}</div>
+      <div class="question-text">${esc(q.question||q.text||'')}</div>
+      <div class="option-list" id="opts_${qi}">${opts}</div>
+    </div>`;
+  }).join('');
+
+  updateAnswerCount();
+}
+
+function onAnswerChange(qi){
+  /* Highlight selected options */
+  const q=questionsData[qi];
+  const isMulti=q.type==='multiple'||(q.correctAnswers?.length>1);
+  const optList=document.getElementById(`opts_${qi}`);
+  optList.querySelectorAll('.option-label').forEach(lbl=>{
+    const inp=lbl.querySelector('input');
+    lbl.classList.toggle('selected', inp.checked);
+  });
+  updateAnswerCount();
+}
+
+function updateAnswerCount(){
+  let answered=0;
+  questionsData.forEach((_,qi)=>{
+    const inputs=document.querySelectorAll(`[name="q${qi}"]:checked`);
+    if(inputs.length>0) answered++;
+  });
+  document.getElementById('answerCount').innerHTML=`<strong>${answered}</strong> / ${questionsData.length} хариулсан`;
+  document.getElementById('btnSubmit').disabled = answered<questionsData.length;
+}
+
+/* ── Submit exam ── */
+async function submitExam(){
+  if(submitted) return;
+  const btn=document.getElementById('btnSubmit');
+  btn.disabled=true;
+  btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Боловсруулж байна…';
+
+  let correct=0;
+  const answers=[];
+
+  questionsData.forEach((q,qi)=>{
+    const checkedInputs=[...document.querySelectorAll(`[name="q${qi}"]:checked`)].map(i=>+i.value);
+    answers.push(checkedInputs);
+
+    /* Determine correct answers */
+    let correctIdxs=[];
+    if(q.correctAnswers&&q.correctAnswers.length){
+      correctIdxs=q.correctAnswers.map(Number);
+    } else if(q.correctAnswer!=null){
+      correctIdxs=[Number(q.correctAnswer)];
+    }
+
+    const isCorrect = correctIdxs.length===checkedInputs.length &&
+      correctIdxs.every(ci=>checkedInputs.includes(ci));
+    if(isCorrect) correct++;
+
+    /* Show correct/wrong highlight */
+    if(!submitted){
+      const optList=document.getElementById(`opts_${qi}`);
+      optList.querySelectorAll('.option-label').forEach(lbl=>{
+        const inp=lbl.querySelector('input');
+        const idx=+inp.value;
+        inp.disabled=true;
+        if(correctIdxs.includes(idx)) lbl.classList.add('correct');
+        else if(inp.checked) lbl.classList.add('wrong');
+      });
+    }
+  });
+
+  submitted=true;
+  const score = Math.round(correct/questionsData.length*100);
+  const passing = trainingData.passingScore||70;
+  const passed = score>=passing;
+
+  /* Save result to Firestore */
+  const docId=`${currentUser.uid}_${trainingId}`;
+  const now=firebase.firestore.FieldValue.serverTimestamp();
+  try{
+    await Promise.all([
+      db.collection('training_progress').doc(docId).set({
+        userId: currentUser.uid,
+        trainingId,
+        status: passed?'passed':'failed',
+        score,
+        watchProgress: VideoTracker.getPct(),
+        attempts: firebase.firestore.FieldValue.increment(1),
+        completedAt: now,
+        updatedAt: now
+      },{merge:true}),
+      db.collection('exam_results').add({
+        userId: currentUser.uid,
+        trainingId,
+        score,
+        passed,
+        answers,
+        total: questionsData.length,
+        correct,
+        timestamp: now
+      })
+    ]);
+    progressData = {...(progressData||{}), status:passed?'passed':'failed', score};
+  } catch(e){ console.error(e); }
+
+  showResult(passed, score, passing);
+}
+
+/* ── Show result overlay ── */
+function showResult(passed, score, passing){
+  const overlay=document.getElementById('resultOverlay');
+  const icon=document.getElementById('resultIcon');
+  const iconSvg=document.getElementById('resultIconSvg');
+  const title=document.getElementById('resultTitle');
+  const scoreEl=document.getElementById('resultScore');
+  const info=document.getElementById('resultInfo');
+  const btnRetry=document.getElementById('btnRetry');
+
+  if(passed){
+    icon.className='result-icon pass';
+    iconSvg.innerHTML='<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+    title.className='result-title pass';title.textContent='Амжилттай тэнцлээ!';
+    scoreEl.className='result-score pass';scoreEl.textContent=score+'%';
+    info.textContent=`Та шалгалтыг ${score}% оноотой давлаа. Тэнцэх оноо: ${passing}%`;
+    btnRetry.style.display='none';
+  } else {
+    icon.className='result-icon fail';
+    iconSvg.innerHTML='<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>';
+    title.className='result-title fail';title.textContent='Тэнцсэнгүй';
+    scoreEl.className='result-score fail';scoreEl.textContent=score+'%';
+    info.textContent=`Таны оноо ${score}%. Тэнцэх оноо: ${passing}%. Видеог дахин үзээд оролдоно уу.`;
+    btnRetry.style.display='inline-flex';
+  }
+
+  overlay.classList.add('show');
+}
+
+/* ── Actions ── */
+function goHome(){ location.href='employee.html'; }
+
+function retryExam(){
+  document.getElementById('resultOverlay').classList.remove('show');
+  submitted=false;
+  // Reset submit button text (it was changed to "loading" during last submit)
+  const btn=document.getElementById('btnSubmit');
+  btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Илгээх';
+  renderExam();
+  document.getElementById('examSection').scrollIntoView({behavior:'smooth'});
+}
+
+function allowRetake(){
+  document.getElementById('passedBanner').style.display='none';
+  showExam();
+}
+
+/* ── Date formatter ── */
+function fmtDate(d){
+  if(!d) return '';
+  return `${d.getFullYear()}/${zp(d.getMonth()+1)}/${zp(d.getDate())}`;
+}
+function zp(n){return String(n).padStart(2,'0')}
+
+/* ── Loading ── */
+function hideLoading(){
+  const ls=document.getElementById('loadingScreen');
+  ls.classList.add('fade-out');
+  setTimeout(()=>ls.remove(),450);
+}
+
+/* ── Toast ── */
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+/* ── HTML escape ── */
+function esc(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

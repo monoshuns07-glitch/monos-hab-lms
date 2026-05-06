@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // User profiles — any authenticated user can read (admin needs full list),
+    // but only the owner can update their own doc.
+    match /users/{uid} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    // LMS content — read by all authenticated users, write by any authenticated
+    // user (admin-level access is enforced at the app layer, not here).
+    match /chapters/{docId}  { allow read, write: if isAuth(); }
+    match /topics/{docId}    { allow read, write: if isAuth(); }
+    match /trainings/{docId} { allow read, write: if isAuth(); }
+    match /questions/{docId} { allow read, write: if isAuth(); }
+
+    // Training progress — any authenticated user can read (admin reports),
+    // but writes must carry the caller's own userId.
+    match /training_progress/{docId} {
+      allow read:   if isAuth();
+      allow write:  if isAuth() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Exam results — immutable after creation; any authenticated user can read.
+    match /exam_results/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Activity logs — append-only; any authenticated user can read (for admin).
+    match /activity_logs/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Knowledge base — public read (shown to anonymous visitors on nohon-tulbur),
+    // authenticated write only.
+    match /knowledge_base/{docId} {
+      allow read:  if true;
+      allow write: if isAuth();
+    }
+
+    // Deny everything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
