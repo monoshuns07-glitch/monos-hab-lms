@@ -942,8 +942,8 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <div class="modal-body">
       <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12px;line-height:1.7;color:rgba(245,166,35,.9)">
         <b>Excel/CSV файл форматаа бэлдэх:</b><br>
-        Эхний мөрд багануудын нэр байх ёстой. <b>email</b> болон <b>password</b> заавал байна уу (нууц үг 6+ тэмдэгт).<br>
-        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | password | lastname | firstname | position | department</code>
+        Эхний мөрд багануудын нэр байх ёстой. <b>email</b> болон <b>нууц үг</b> заавал байна уу (нууц үг 6+ тэмдэгт).<br>
+        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | нууц үг | овог | нэр | албан тушаал | хэлтэс</code>
       </div>
 
       <div id="bulkStep1">
@@ -1863,7 +1863,7 @@ function handleBulkFile(file){
       rows=XLSX.utils.sheet_to_json(ws,{defval:''});
       rows=rows.map(r=>{ const o={}; Object.keys(r).forEach(k=>o[k.toLowerCase().trim()]=String(r[k]||'').trim()); return o; });
     }
-    bulkRows=rows.filter(r=>r.email&&r.password);
+    bulkRows=rows.filter(r=>r.email&&(r['нууц үг']||r.password));
     const total=rows.length;
     const valid=bulkRows.length;
     document.getElementById('bulkFileInfo').textContent=`${file.name} — Нийт ${total} мөр, ${valid} хүчинтэй`;
@@ -1873,10 +1873,11 @@ function handleBulkFile(file){
       <thead><tr>${cols.map(c=>`<th style="padding:7px 10px;background:rgba(255,255,255,.05);text-align:left;font-size:11px;color:var(--muted)">${escapeHtml(c)}</th>`).join('')}</tr></thead>
       <tbody>${rows.slice(0,5).map(r=>`<tr>${cols.map(c=>`<td style="padding:6px 10px;border-top:1px solid var(--line)">${escapeHtml(String(r[c]||''))}</td>`).join('')}</tr>`).join('')}</tbody>
     </table>`;
-    document.getElementById('bulkColInfo').innerHTML=`<b style="color:${cols.includes('email')?'var(--green)':'#FF6B6B'}">email ${cols.includes('email')?'✓':'✗ (олдсонгүй)'}</b> &nbsp; <b style="color:${cols.includes('password')?'var(--green)':'#FF6B6B'}">password ${cols.includes('password')?'✓':'✗ (олдсонгүй)'}</b>`;
+    const hasPwd=cols.includes('нууц үг')||cols.includes('password');
+    document.getElementById('bulkColInfo').innerHTML=`<b style="color:${cols.includes('email')?'var(--green)':'#FF6B6B'}">email ${cols.includes('email')?'✓':'✗ (олдсонгүй)'}</b> &nbsp; <b style="color:${hasPwd?'var(--green)':'#FF6B6B'}">${cols.includes('нууц үг')?'нууц үг':'password'} ${hasPwd?'✓':'✗ (олдсонгүй)'}</b>`;
     document.getElementById('bulkStep1').style.display='none';
     document.getElementById('bulkStep2').style.display='';
-    document.getElementById('bulkUserConfirm').disabled=valid===0||!cols.includes('email')||!cols.includes('password');
+    document.getElementById('bulkUserConfirm').disabled=valid===0||!cols.includes('email')||!hasPwd;
   };
   if(file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file,'utf-8');
   else reader.readAsArrayBuffer(file);
@@ -1895,11 +1896,11 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
   for(let i=0;i<validRows.length;i++){
     const row=validRows[i];
     const email=(row.email||'').trim().toLowerCase();
-    const password=String(row.password||'').trim();
-    const lastName=(row.lastname||row['овог']||'').trim();
-    const firstName=(row.firstname||row['нэр']||row.name||'').trim();
-    const position=(row.position||row['тушаал']||row['албан тушаал']||'').trim();
-    const department=(row.department||row['хэлтэс']||'').trim();
+    const password=String(row['нууц үг']||row.password||'').trim();
+    const lastName=(row['овог']||row.lastname||'').trim();
+    const firstName=(row['нэр']||row.firstname||row.name||'').trim();
+    const position=(row['албан тушаал']||row['тушаал']||row.position||'').trim();
+    const department=(row['хэлтэс']||row.department||'').trim();
     try{
       const existing=await db.collection('users').where('email','==',email).get();
       if(!existing.empty){ skip++; }
