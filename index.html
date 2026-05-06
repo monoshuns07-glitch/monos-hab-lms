@@ -904,8 +904,18 @@ function showErr(msg){ loginErr.textContent=msg; loginErr.classList.add('show');
 async function showMain(user){
   try{
     const snap=await db.collection('users').doc(user.uid).get();
-    const role=snap.exists?(snap.data().role||'employee'):'employee';
-    location.replace(role==='admin'?'admin.html':'employee.html');
+    if(!snap.exists){
+      await db.collection('users').doc(user.uid).set({
+        email:user.email, uid:user.uid,
+        role:'employee', isActive:true,
+        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+        totalSiteTime:0
+      });
+      location.replace('employee.html');
+    } else {
+      const role=snap.data().role||'employee';
+      location.replace(role==='admin'?'admin.html':'employee.html');
+    }
   } catch(e){
     location.replace('employee.html');
   }
