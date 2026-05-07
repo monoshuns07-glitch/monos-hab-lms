@@ -2790,7 +2790,8 @@ function _setupInviteListeners(){
     }
     document.getElementById('inviteSendEmail').disabled=true;
     document.getElementById('inviteSendEmail').textContent='Илгээж байна...';
-    let sent=0,failed=0;
+    emailjs.init({ publicKey: pubKey });
+    let sent=0,failed=0,lastErr='';
     const fmt=ts=>{ try{ const d=ts?.toDate?.()||new Date(ts); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }catch{ return '—'; }};
     for(const emp of invitedEmps){
       try{
@@ -2802,14 +2803,14 @@ function _setupInviteListeners(){
           duration:tr.duration||'—',
           description:(tr.description||'').substring(0,200),
           system_url:window.location.origin
-        },pubKey);
+        });
         sent++;
-      } catch(e){ failed++; }
+      } catch(e){ failed++; lastErr=e.text||e.message||String(e); }
     }
     await db.collection('trainings').doc(currentInviteTrainingId).update({
       lastEmailSentAt:firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа`:''}`,sent>0?'success':'error');
+    toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`  ,sent>0?'success':'error');
     document.getElementById('inviteSendEmail').disabled=false;
     document.getElementById('inviteSendEmail').textContent='📧 Email илгээх';
   });
