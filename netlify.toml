@@ -5,6 +5,9 @@
 [functions]
   node_bundler = "esbuild"
 
+[functions."delete-all-users"]
+  external_node_modules = ["firebase-admin"]
+
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
 
