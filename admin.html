@@ -2731,6 +2731,27 @@ function _setupInviteListeners(){
   document.getElementById('inviteClose').addEventListener('click',()=>document.getElementById('inviteModal').classList.remove('show'));
   document.getElementById('inviteCancel').addEventListener('click',()=>document.getElementById('inviteModal').classList.remove('show'));
 
+  // EmailJS settings modal
+  document.getElementById('openEmailjsSettings').addEventListener('click',()=>{
+    document.getElementById('ejsServiceId').value=localStorage.getItem('emailjs_service')||'';
+    document.getElementById('ejsTemplateId').value=localStorage.getItem('emailjs_template')||'';
+    document.getElementById('ejsPublicKey').value=localStorage.getItem('emailjs_key')||'';
+    document.getElementById('emailjsModal').classList.add('show');
+  });
+  document.getElementById('emailjsModalClose').addEventListener('click',()=>document.getElementById('emailjsModal').classList.remove('show'));
+  document.getElementById('emailjsModalCancel').addEventListener('click',()=>document.getElementById('emailjsModal').classList.remove('show'));
+  document.getElementById('emailjsModalSave').addEventListener('click',()=>{
+    const svc=document.getElementById('ejsServiceId').value.trim();
+    const tpl=document.getElementById('ejsTemplateId').value.trim();
+    const key=document.getElementById('ejsPublicKey').value.trim();
+    if(!svc||!tpl||!key){ toast('Бүх талбарыг бөглөнө үү','error'); return; }
+    localStorage.setItem('emailjs_service',svc);
+    localStorage.setItem('emailjs_template',tpl);
+    localStorage.setItem('emailjs_key',key);
+    document.getElementById('emailjsModal').classList.remove('show');
+    toast('EmailJS тохиргоо хадгалагдлаа','success');
+  });
+
   document.getElementById('inviteSave').addEventListener('click',async()=>{
     const tr=lmsTrainings.find(t=>t.id===currentInviteTrainingId);
     const alreadyInvited=new Set(tr?.invitedEmployees||[]);
@@ -2912,11 +2933,51 @@ window.deleteQuestion=async function(id, trainingId){
       </div>
     </div>
     <div class="modal-footer" style="flex-shrink:0;justify-content:space-between">
-      <button class="btn btn-secondary" id="inviteSendEmail">📧 Email илгээх</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" id="inviteSendEmail">📧 Email илгээх</button>
+        <button class="btn btn-secondary" id="openEmailjsSettings" title="EmailJS тохиргоо" style="padding:0 12px">⚙️</button>
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" id="inviteCancel">Болих</button>
         <button class="btn btn-primary" id="inviteSave">✓ Урих</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== EMAILJS SETTINGS MODAL ===== -->
+<div class="modal-overlay" id="emailjsModal">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <h2>⚙️ EmailJS тохиргоо</h2>
+      <button class="modal-close" id="emailjsModalClose">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+        <b style="color:var(--cyan)">emailjs.com</b> бүртгэлтэй байх ёстой.<br>
+        1. emailjs.com → Email Services → нэмэх (Gmail/Outlook)<br>
+        2. Email Templates → шинэ template → дараах өөрчлөлтийг ашиглана:<br>
+        <code style="font-size:11px;color:var(--gold)">To: {{to_email}} · Subject: Сургалтын урилга</code><br>
+        3. Account → Public Key
+      </div>
+      <div class="form-group">
+        <label class="form-label">Service ID <span>*</span></label>
+        <input type="text" class="form-input" id="ejsServiceId" placeholder="service_xxxxxxx" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Template ID <span>*</span></label>
+        <input type="text" class="form-input" id="ejsTemplateId" placeholder="template_xxxxxxx" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Public Key <span>*</span></label>
+        <input type="text" class="form-input" id="ejsPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="emailjsModalCancel">Болих</button>
+      <button class="btn btn-primary" id="emailjsModalSave">Хадгалах</button>
     </div>
   </div>
 </div>
