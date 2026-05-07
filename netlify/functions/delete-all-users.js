@@ -1,5 +1,4 @@
-const { initializeApp, getApps, deleteApp, cert } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
+const admin = require('firebase-admin');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -7,53 +6,49 @@ exports.handler = async (event) => {
   }
 
   const debug = [];
-  let app = null;
+  let app;
 
   try {
-    // Check env var
     const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
     if (!b64) throw new Error('FIREBASE_SERVICE_ACCOUNT_B64 env var missing');
-    debug.push(`env_len=${b64.length}`);
+    debug.push('b64_len=' + b64.length);
 
-    // Parse service account
-    let serviceAccount;
+    let sa;
     try {
-      const json = Buffer.from(b64.trim(), 'base64').toString('utf8');
-      serviceAccount = JSON.parse(json);
+      sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
     } catch (e) {
-      throw new Error('JSON parse failed: ' + e.message);
+      throw new Error('base64/JSON parse failed: ' + e.message);
     }
 
-    const hasFields = !!(serviceAccount.project_id && serviceAccount.private_key && serviceAccount.client_email);
-    debug.push(`sa_ok=${hasFields},project=${serviceAccount.project_id || 'MISSING'}`);
-    if (!hasFields) throw new Error('Service account missing required fields');
-
-    // Always use fresh app to avoid warm Lambda issues
-    const existingApps = getApps();
-    if (existingApps.length > 0) {
-      await Promise.all(existingApps.map(a => deleteApp(a)));
-      debug.push('deleted_existing_apps');
+    if (!sa.project_id || !sa.private_key || !sa.client_email) {
+      throw new Error('SA invalid — proj:' + !!sa.project_id + ' key:' + !!sa.private_key + ' email:' + !!sa.client_email);
     }
+    debug.push('sa_ok project=' + sa.project_id);
 
-    app = initializeApp({ credential: cert(serviceAccount) }, 'deleteJob');
-    debug.push('app_initialized');
+    // Delete any stale apps to avoid warm-Lambda conflicts
+    await Promise.all(admin.apps.slice().map(a => a.delete().catch(() => {})));
+    debug.push('stale_cleared');
 
-    const auth = getAuth(app);
-    debug.push('auth_ok');
+    // Use timestamp-named app so it's always fresh
+    app = admin.initializeApp(
+      { credential: admin.credential.cert(sa) },
+      'job_' + Date.now()
+    );
+    debug.push('app_init_ok');
 
     let deleted = 0;
     let pageToken;
     do {
-      const result = await auth.listUsers(1000, pageToken);
+      const result = await admin.auth(app).listUsers(1000, pageToken);
       const uids = result.users.map(u => u.uid);
       if (uids.length > 0) {
-        await auth.deleteUsers(uids);
+        await admin.auth(app).deleteUsers(uids);
         deleted += uids.length;
       }
       pageToken = result.pageToken;
     } while (pageToken);
 
-    debug.push(`deleted=${deleted}`);
+    debug.push('deleted=' + deleted);
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -66,8 +61,6 @@ exports.handler = async (event) => {
       body: JSON.stringify({ success: false, error: e.message, debug })
     };
   } finally {
-    if (app) {
-      try { await deleteApp(app); } catch (_) {}
-    }
+    if (app) try { await app.delete(); } catch (_) {}
   }
 };
