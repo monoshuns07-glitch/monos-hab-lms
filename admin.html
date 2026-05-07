@@ -1922,7 +1922,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
   confirmBtn.disabled=true; confirmBtn.innerHTML='<span class="spinner-sm"></span>Бүртгэж байна...';
   const statusEl=document.getElementById('bulkStatus');
   let success=0, fail=0, skip=0;
-  const validRows=bulkRows.filter(r=>(r.email||'').trim()&&String(r.password||'').trim().length>=6);
+  const validRows=bulkRows.filter(r=>(r.email||'').trim()&&String(r['нууц үг']||r.password||'').trim().length>=6);
   const total=validRows.length;
   statusEl.innerHTML=`<div style="color:var(--muted)">Firebase Auth + Firestore-д бүртгэж байна (${total} хэрэглэгч)...</div>`;
 
@@ -1979,7 +1979,9 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     `<div style="font-weight:700;color:var(--green);margin-bottom:6px">✅ Дууслаа: ${success} ажилтан бүртгэгдлаа`+
     (skip?` · ${skip} аль байсан (алгасав)`:'')+
     (fail?` · <span style="color:#FF6B6B">${fail} алдаа</span>`:'')+`</div>`;
-  confirmBtn.textContent='Дууслаа';
+  confirmBtn.disabled=false;
+  confirmBtn.textContent='Хаах';
+  confirmBtn.onclick=()=>{ bulkUserModal.classList.remove('show'); confirmBtn.onclick=null; };
   loadUsers();
 });
 
