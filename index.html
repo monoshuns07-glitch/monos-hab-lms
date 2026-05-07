@@ -792,22 +792,9 @@ const loginBtn    = document.getElementById('loginBtn');
 
 auth.onAuthStateChanged(async fbUser=>{
   if(fbUser){
-    try{
-      const snap = await db.collection('allowed_users')
-        .where('email','==', fbUser.email.toLowerCase()).limit(1).get();
-      if(snap.empty){
-        await auth.signOut();
-        localStorage.removeItem('monos_user');
-        return;
-      }
-      const user = {email: fbUser.email, uid: fbUser.uid};
-      localStorage.setItem('monos_user', JSON.stringify(user));
-      showMain(user);
-    } catch(e){
-      // network error - fall back to cached session
-      const saved = localStorage.getItem('monos_user');
-      if(saved){ try{ showMain(JSON.parse(saved)); }catch(ex){ localStorage.removeItem('monos_user'); } }
-    }
+    const user = {email: fbUser.email, uid: fbUser.uid};
+    localStorage.setItem('monos_user', JSON.stringify(user));
+    showMain(user);
   } else {
     localStorage.removeItem('monos_user');
     mainScreen.classList.remove('show');
@@ -828,71 +815,20 @@ async function doLogin(){
   loginBtn.disabled = true;
   loginBtn.innerHTML = '<span class="spinner"></span>Нэвтэрч байна...';
   try{
-    const emailLower = email.toLowerCase();
-    const docId = emailLower.replace(/[.@]/g,'_');
-
-    // 1. Эхлээд pending_users-д бүртгэлтэй эсэхийг шалгана
-    const pendingDoc = await db.collection('pending_users').doc(docId).get();
-    const allowedSnap = await db.collection('allowed_users')
-      .where('email','==', emailLower).limit(1).get();
-
-    const isKnown = pendingDoc.exists || !allowedSnap.empty;
-    if(!isKnown){
-      showErr('Энэ Gmail хаяг системд бүртгэлгүй байна. Админтай холбоо барина уу.');
-      return;
-    }
-
-    // 2. allowed_users-д байгаа (Auth бүртгэлтэй) — шууд нэвтрэнэ
-    if(!allowedSnap.empty){
-      try{
-        const cred = await auth.signInWithEmailAndPassword(emailLower, password);
-        const user = {email: cred.user.email, uid: cred.user.uid};
-        localStorage.setItem('monos_user', JSON.stringify(user));
-        showMain(user);
-        return;
-      } catch(signInErr){
-        if(signInErr.code==='auth/wrong-password'||signInErr.code==='auth/invalid-credential'){
-          showErr('Нууц үг буруу байна.');
-        } else if(signInErr.code==='auth/too-many-requests'){
-          showErr('Firebase түр блоклолт. Утасны mobile data ашиглан эсвэл 30 минут хүлээгээд дахин оролдоно уу.');
-        } else {
-          showErr('Нэвтрэх алдаа: '+signInErr.message);
-        }
-        return;
-      }
-    }
-
-    // 3. pending_users-д байгаа, анх нэвтрэж байна
-    if(pendingDoc.exists && !pendingDoc.data().activated){
-      const pd = pendingDoc.data();
-      if(!pd.initPwd || pd.initPwd !== password){
-        showErr('Нууц үг буруу байна.');
-        return;
-      }
-      try{
-        const cred = await auth.createUserWithEmailAndPassword(emailLower, password);
-        const userData = {email: emailLower, uid: cred.user.uid, created_at: firebase.firestore.FieldValue.serverTimestamp()};
-        await Promise.all([
-          db.collection('users').doc(cred.user.uid).set(userData),
-          db.collection('allowed_users').doc(cred.user.uid).set(userData),
-          db.collection('pending_users').doc(docId).update({activated: true, initPwd: firebase.firestore.FieldValue.delete()})
-        ]);
-        const user = {email: emailLower, uid: cred.user.uid};
-        localStorage.setItem('monos_user', JSON.stringify(user));
-        showMain(user);
-      } catch(createErr){
-        if(createErr.code==='auth/too-many-requests'){
-          showErr('Firebase түр блоклолт. Утасны mobile data ашиглан эсвэл 30 минут хүлээгээд дахин оролдоно уу.');
-        } else {
-          showErr('Нэвтрэх алдаа: '+createErr.message);
-        }
-      }
-      return;
-    }
-
+    const cred = await auth.signInWithEmailAndPassword(email.toLowerCase(), password);
+    const user = {email: cred.user.email, uid: cred.user.uid};
+    localStorage.setItem('monos_user', JSON.stringify(user));
+    showMain(user);
   } catch(e){
-    showErr('Холболтын алдаа гарлаа. Дахин оролдоно уу.');
-    console.error(e);
+    if(e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'){
+      showErr('Нууц үг буруу байна.');
+    } else if(e.code==='auth/user-not-found'||e.code==='auth/invalid-email'){
+      showErr('Энэ Gmail хаяг системд бүртгэлгүй байна. Админтай холбоо барина уу.');
+    } else if(e.code==='auth/too-many-requests'){
+      showErr('Firebase түр блоклолт. 30 минут хүлээгээд дахин оролдоно уу.');
+    } else {
+      showErr('Нэвтрэх алдаа: '+e.message);
+    }
   } finally {
     loginBtn.disabled = false;
     loginBtn.textContent = 'Нэвтрэх';
