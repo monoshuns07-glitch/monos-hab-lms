@@ -737,7 +737,8 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     </div>
     <button class="btn btn-secondary" id="bulkUserBtn">📥 Excel-ээс оруулах</button>
     <button class="btn btn-primary" id="addUserBtn">➕ Ажилтан нэмэх</button>
-    <button class="btn" id="deleteAllUsersBtn" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Бүгдийг устгах</button>
+    <button class="btn" id="deleteAllUsersBtn" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Firestore устгах</button>
+    <button class="btn" id="deleteAllAuthBtn" style="background:rgba(227,6,19,.2);color:#FF4060;border:1px solid rgba(227,6,19,.4)">🔥 Auth+Firestore бүгд устгах</button>
   </div>
 
   <div class="user-table-wrap">
@@ -1756,6 +1757,31 @@ document.getElementById('deleteAllUsersBtn').addEventListener('click',async()=>{
     toast(`${allUsers.length} хэрэглэгч устгагдлаа`,'success');
     loadUsers();
   } catch(e){ toast('Алдаа: '+e.message,'error'); }
+});
+
+document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
+  if(!confirm('Firebase Auth болон Firestore users collection-оос БҮГДИЙГ устгахдаа итгэлтэй байна уу?\n\nЭнэ үйлдлийг буцаах боломжгүй!')) return;
+  const btn=document.getElementById('deleteAllAuthBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-sm"></span>Устгаж байна...';
+  try{
+    // 1. Firebase Auth устгах (Netlify function-оор)
+    const res=await fetch('/.netlify/functions/delete-all-users',{method:'POST'});
+    const data=await res.json();
+    if(!data.success) throw new Error(data.error||'Auth устгахад алдаа');
+    // 2. Firestore users устгах
+    const snap=await db.collection('users').get();
+    if(!snap.empty){
+      const batch=db.batch();
+      snap.docs.forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+    toast(`✅ Auth: ${data.deleted} хэрэглэгч устгагдлаа`,'success');
+    loadUsers();
+  } catch(e){
+    toast('Алдаа: '+e.message,'error');
+  } finally{
+    btn.disabled=false; btn.innerHTML='🔥 Auth+Firestore бүгд устгах';
+  }
 });
 
 /* ===== ADD SINGLE USER ===== */
