@@ -402,6 +402,22 @@ body{
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ── Bottom nav (mobile) ── */
+.bottom-nav{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:200;
+  background:rgba(255,255,255,.97);backdrop-filter:blur(20px);
+  border-top:1px solid var(--border);
+  padding:8px 0 max(8px, env(safe-area-inset-bottom));
+  display:none;grid-template-columns:repeat(3,1fr);
+}
+.bottom-nav-item{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 4px;text-decoration:none;
+  font-size:10px;font-weight:600;color:var(--muted);border:none;background:none;cursor:pointer;
+}
+.bottom-nav-item svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2}
+.bottom-nav-item.active{color:var(--red)}
+
 /* ── Responsive ── */
 @media(max-width:800px){
   .stats-grid{grid-template-columns:1fr 1fr}
@@ -409,8 +425,9 @@ body{
   .hero-ring-wrap{display:none}
   .nav-links{display:none}
   .nav-user-info{display:none}
-  .main{padding-left:16px;padding-right:16px}
+  .main{padding-left:16px;padding-right:16px;padding-bottom:90px}
   .chapter-right .ch-pill.done,.chapter-right .ch-pill.prog{display:none}
+  .bottom-nav{display:grid}
 }
 @media(max-width:480px){
   .stats-grid{grid-template-columns:1fr}
@@ -467,6 +484,22 @@ body{
       Гарах
     </button>
   </div>
+</nav>
+
+<!-- Mobile bottom nav -->
+<nav class="bottom-nav">
+  <a href="employee.html" class="bottom-nav-item active">
+    <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    Сургалт
+  </a>
+  <a href="nohon-tulbur.html" class="bottom-nav-item">
+    <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    Даатгал
+  </a>
+  <a href="my-results.html" class="bottom-nav-item">
+    <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Миний дүн
+  </a>
 </nav>
 
 <!-- Main content -->
