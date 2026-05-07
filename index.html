@@ -819,15 +819,18 @@ async function doLogin(){
     // onAuthStateChanged fires automatically and calls showMain
   } catch(e){
     const code = e.code||'';
+    let msg;
     if(code==='auth/wrong-password'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials'){
-      showErr('Нууц үг буруу байна.');
-    } else if(code==='auth/user-not-found'||code==='auth/invalid-email'){
-      showErr('Энэ Gmail хаяг системд бүртгэлгүй байна. Админтай холбоо барина уу.');
+      msg='Нууц үг буруу байна.';
+    } else if(code==='auth/user-not-found'){
+      msg='Энэ Gmail хаяг системд бүртгэлгүй байна.';
     } else if(code==='auth/too-many-requests'){
-      showErr('Firebase түр блоклолт. 30 минут хүлээгээд дахин оролдоно уу.');
+      msg='Firebase түр блоклолт. 30 минут хүлээж дахин оролдоно уу.';
     } else {
-      showErr('Алдаа ['+code+']: '+e.message);
+      msg='Алдаа ['+code+']: '+e.message;
     }
+    alert(msg);
+    showErr(msg);
   } finally {
     loginBtn.disabled = false;
     loginBtn.textContent = 'Нэвтрэх';
