@@ -36,13 +36,16 @@ exports.handler = async (event) => {
     );
     debug.push('app_init_ok');
 
+    const authSvc = app.auth();
+    debug.push('auth_svc_ok');
+
     let deleted = 0;
     let pageToken;
     do {
-      const result = await admin.auth(app).listUsers(1000, pageToken);
+      const result = await authSvc.listUsers(1000, pageToken);
       const uids = result.users.map(u => u.uid);
       if (uids.length > 0) {
-        await admin.auth(app).deleteUsers(uids);
+        await authSvc.deleteUsers(uids);
         deleted += uids.length;
       }
       pageToken = result.pageToken;
