@@ -1,18 +1,19 @@
 const admin = require('firebase-admin');
 
-if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(
-    Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8')
-  );
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
+    // Initialize if not already done
+    if (!admin.apps.length) {
+      const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+      if (!b64) throw new Error('FIREBASE_SERVICE_ACCOUNT_B64 env var missing');
+      const serviceAccount = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    }
+
     let deleted = 0;
     let pageToken;
 
@@ -35,7 +36,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ success: false, error: e.message })
+      body: JSON.stringify({ success: false, error: e.message, stack: e.stack })
     };
   }
 };
