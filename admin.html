@@ -737,6 +737,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     </div>
     <button class="btn btn-secondary" id="bulkUserBtn">📥 Excel-ээс оруулах</button>
     <button class="btn btn-primary" id="addUserBtn">➕ Ажилтан нэмэх</button>
+    <button class="btn" id="sendCredsBtn" style="background:rgba(0,229,255,.12);color:var(--cyan);border:1px solid rgba(0,229,255,.25)">📧 Login илгээх</button>
     <button class="btn" id="deleteAllUsersBtn" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Firestore устгах</button>
     <button class="btn" id="deleteAllAuthBtn" style="background:rgba(227,6,19,.2);color:#FF4060;border:1px solid rgba(227,6,19,.4)">🔥 Auth+Firestore бүгд устгах</button>
   </div>
@@ -1795,6 +1796,38 @@ document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
   } finally{
     btn.disabled=false; btn.innerHTML='🔥 Auth+Firestore бүгд устгах';
   }
+});
+
+/* ===== SEND LOGIN CREDENTIALS EMAIL ===== */
+document.getElementById('sendCredsBtn').addEventListener('click',async()=>{
+  const targets=allUsers.filter(u=>u.email&&u.password);
+  if(targets.length===0){ toast('Email/нууц үгтэй ажилтан байхгүй','error'); return; }
+  if(!confirm(`${targets.length} ажилтанд нэвтрэх мэдээлэл (email + password) илгээх үү?`)) return;
+  const svcId=localStorage.getItem('emailjs_service')||'';
+  const tplId=localStorage.getItem('emailjs_template_creds')||localStorage.getItem('emailjs_template')||'';
+  const pubKey=localStorage.getItem('emailjs_key')||'';
+  if(!svcId||!tplId||!pubKey){ toast('EmailJS тохиргоо хийгдээгүй. ⚙️ дарж тохируулна уу.','error'); return; }
+  const btn=document.getElementById('sendCredsBtn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-sm"></span>Илгээж байна...';
+  emailjs.init({ publicKey: pubKey });
+  let sent=0,failed=0,lastErr='';
+  const siteUrl=window.location.origin;
+  for(let i=0;i<targets.length;i++){
+    const u=targets[i];
+    try{
+      await emailjs.send(svcId,tplId,{
+        to_email:u.email,
+        to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
+        login_email:u.email,
+        login_password:u.password,
+        site_url:siteUrl
+      });
+      sent++;
+    } catch(e){ failed++; lastErr=e.text||e.message||String(e); }
+    btn.innerHTML=`<span class="spinner-sm"></span>${i+1}/${targets.length}...`;
+  }
+  toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`,sent>0?'success':'error');
+  btn.disabled=false; btn.innerHTML='📧 Login илгээх';
 });
 
 /* ===== ADD SINGLE USER ===== */

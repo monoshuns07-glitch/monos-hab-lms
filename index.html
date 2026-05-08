@@ -815,7 +815,21 @@ async function doLogin(){
   loginBtn.disabled = true;
   loginBtn.innerHTML = '<span class="spinner"></span>Нэвтэрч байна...';
   try{
-    await auth.signInWithEmailAndPassword(email.toLowerCase(), password);
+    const cred = await auth.signInWithEmailAndPassword(email.toLowerCase(), password);
+    // Verify user is registered in Firestore users collection
+    try{
+      const r = await fetch('/.netlify/functions/get-user-profile?uid='+encodeURIComponent(cred.user.uid)+'&email='+encodeURIComponent(email.toLowerCase()));
+      const result = await r.json();
+      if(!result.exists){
+        await auth.signOut();
+        showErr('Та бүртгэлгүй байна. Админтай холбоо барина уу.');
+        return;
+      }
+    }catch(profileErr){
+      await auth.signOut();
+      showErr('Бүртгэл шалгахад алдаа гарлаа. Дахин оролдоно уу.');
+      return;
+    }
     // onAuthStateChanged fires automatically and calls showMain
   } catch(e){
     const code = e.code||'';
@@ -829,7 +843,6 @@ async function doLogin(){
     } else {
       msg='Алдаа ['+code+']: '+e.message;
     }
-    alert(msg);
     showErr(msg);
   } finally {
     loginBtn.disabled = false;
