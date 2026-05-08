@@ -1783,24 +1783,15 @@ document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
   const btn=document.getElementById('deleteAllAuthBtn');
   btn.disabled=true; btn.innerHTML='<span class="spinner-sm"></span>Устгаж байна...';
   try{
-    // 1. Firebase Auth устгах (Netlify function-оор)
     const res=await fetch('/.netlify/functions/delete-all-users',{method:'POST'});
     let data;
     try{ data=await res.json(); }
-    catch(jsonErr){ throw new Error('HTTP '+res.status+' — JSON биш хариу ирлээ. Deploy дуусаагүй байж магадгүй.'); }
-    console.log('[deleteAllAuth] response:', data);
+    catch(jsonErr){ throw new Error('HTTP '+res.status+' — JSON биш. Deploy дуусаагүй байж магадгүй.'); }
+    console.log('[deleteAllAuth]', data);
     if(!data.success){
-      const dbg=(data.debug||[]).join(' | ');
-      throw new Error((data.error||'Auth устгахад алдаа')+(dbg?'\nDEBUG: '+dbg:''));
+      throw new Error((data.error||'Алдаа')+(data.debug?.length?'\nDEBUG: '+data.debug.join(' | '):''));
     }
-    // 2. Firestore users устгах
-    const snap=await db.collection('users').get();
-    if(!snap.empty){
-      const batch=db.batch();
-      snap.docs.forEach(d=>batch.delete(d.ref));
-      await batch.commit();
-    }
-    toast(`✅ Auth: ${data.deleted} хэрэглэгч устгагдлаа`,'success');
+    toast(`✅ Auth: ${data.deleted}, Firestore: ${data.firestoreDeleted||0} устгагдлаа`,'success');
     loadUsers();
   } catch(e){
     alert('АЛДАА:\n'+e.message);
