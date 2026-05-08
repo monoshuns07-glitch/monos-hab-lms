@@ -3,37 +3,38 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-<style>body{font-family:monospace;padding:20px;background:#fff;color:#000}pre{background:#f0f0f0;padding:10px;border:1px solid #ccc;white-space:pre-wrap}.ok{color:green}.err{color:red}</style>
+<style>body{font-family:monospace;padding:20px;background:#fff;color:#000}pre{background:#f0f0f0;padding:10px;border:1px solid #ccc;white-space:pre-wrap}.ok{color:green;font-weight:bold}.err{color:red;font-weight:bold}</style>
 </head><body>
-<h2>Firestore Connection Test</h2>
-<div id="out">Loading...</div>
+<h2>Firestore Test (Auth-aware)</h2>
+<div id="out"></div>
 <script>
 const log=(msg,cls='')=>{document.getElementById('out').innerHTML+=`<div class="${cls}">${msg}</div>`;};
 const firebaseConfig={apiKey:"AIzaSyCXodBPWqm3TTZuJieHkkcu2lLtH5l7IJ0",authDomain:"monos-hk-alba.firebaseapp.com",projectId:"monos-hk-alba",storageBucket:"monos-hk-alba.firebasestorage.app",messagingSenderId:"562718693736",appId:"1:562718693736:web:0fd550284fb40973d41edd"};
 firebase.initializeApp(firebaseConfig);
 const db=firebase.firestore();
-log('1. SDK initialized');
-log('2. Database name from SDK: '+JSON.stringify(db._delegate?._databaseId||'unknown'));
+try{Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
+log('1. SDK ready, db.database='+db._delegate._databaseId.database);
 
-try{
-  Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});
-  log('3. Override applied: '+JSON.stringify(db._delegate._databaseId),'ok');
-}catch(e){log('3. Override FAILED: '+e.message,'err');}
+firebase.auth().onAuthStateChanged(async u=>{
+  if(!u){ log('2. NOT LOGGED IN — please login first at index.html','err'); return; }
+  log(`2. Logged in: ${u.email} (uid=${u.uid})`,'ok');
 
-(async()=>{
-  log('4. Trying to read users collection...');
+  // Test 1: Read entire users collection
   try{
-    const snap=await db.collection('users').limit(3).get();
-    log(`<span class="ok">5. SUCCESS! Read ${snap.size} docs</span>`,'ok');
-    snap.forEach(d=>{const x=d.data();log(`  - ${d.id}: ${x.firstName||'?'} ${x.lastName||'?'} (${x.email||'?'})`);});
-  }catch(e){
-    log(`<span class="err">5. FAIL: code=${e.code} msg=${e.message}</span>`,'err');
-  }
-  log('6. Now trying Auth login state...');
-  firebase.auth().onAuthStateChanged(u=>{
-    if(u) log(`7. Logged in as: ${u.email} uid=${u.uid}`,'ok');
-    else log('7. Not logged in (no session)','err');
-  });
-})();
+    const snap=await db.collection('users').limit(5).get();
+    log(`3. Read users collection: ${snap.size} docs`,'ok');
+    snap.forEach(d=>{const x=d.data();log(`   - ${d.id}: ${x.firstName||'?'} ${x.lastName||'?'} ${x.email||'?'} pos=${x.position||'?'}`);});
+  }catch(e){log(`3. FAIL collection read: ${e.code} — ${e.message}`,'err');}
+
+  // Test 2: Read THIS user's profile
+  try{
+    const snap=await db.collection('users').doc(u.uid).get();
+    if(snap.exists){
+      log(`4. MY profile EXISTS: ${JSON.stringify(snap.data())}`,'ok');
+    }else{
+      log(`4. MY profile DOES NOT EXIST for uid=${u.uid}`,'err');
+    }
+  }catch(e){log(`4. FAIL my profile read: ${e.code} — ${e.message}`,'err');}
+});
 </script>
 </body></html>
