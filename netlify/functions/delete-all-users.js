@@ -1,4 +1,5 @@
-const admin = require('firebase-admin');
+const { initializeApp, getApps, deleteApp, cert } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -6,7 +7,7 @@ exports.handler = async (event) => {
   }
 
   const debug = [];
-  let app;
+  let app = null;
 
   try {
     const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
@@ -17,7 +18,7 @@ exports.handler = async (event) => {
     try {
       sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
     } catch (e) {
-      throw new Error('base64/JSON parse failed: ' + e.message);
+      throw new Error('JSON parse failed: ' + e.message);
     }
 
     if (!sa.project_id || !sa.private_key || !sa.client_email) {
@@ -25,27 +26,31 @@ exports.handler = async (event) => {
     }
     debug.push('sa_ok project=' + sa.project_id);
 
-    // Delete any stale apps to avoid warm-Lambda conflicts
-    await Promise.all(admin.apps.slice().map(a => a.delete().catch(() => {})));
-    debug.push('stale_cleared');
+    // Clean up any apps from warm Lambda
+    const existing = getApps();
+    if (existing.length > 0) {
+      for (const a of existing) {
+        try { await deleteApp(a); } catch (_) {}
+      }
+      debug.push('cleared_' + existing.length);
+    }
 
-    // Use timestamp-named app so it's always fresh
-    app = admin.initializeApp(
-      { credential: admin.credential.cert(sa) },
-      'job_' + Date.now()
-    );
-    debug.push('app_init_ok');
+    // Initialize as DEFAULT app (no name argument) — most compatible
+    app = initializeApp({ credential: cert(sa) });
+    debug.push('app_init_ok name=' + app.name);
 
-    const authSvc = app.auth();
-    debug.push('auth_svc_ok');
+    const auth = getAuth(app);
+    debug.push('got_auth');
 
     let deleted = 0;
     let pageToken;
+    let firstPage = true;
     do {
-      const result = await authSvc.listUsers(1000, pageToken);
+      const result = await auth.listUsers(1000, pageToken);
+      if (firstPage) { debug.push('list_ok=' + result.users.length); firstPage = false; }
       const uids = result.users.map(u => u.uid);
       if (uids.length > 0) {
-        await authSvc.deleteUsers(uids);
+        await auth.deleteUsers(uids);
         deleted += uids.length;
       }
       pageToken = result.pageToken;
@@ -61,9 +66,9 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ success: false, error: e.message, debug })
+      body: JSON.stringify({ success: false, error: e.message, code: e.code || '', debug })
     };
   } finally {
-    if (app) try { await app.delete(); } catch (_) {}
+    if (app) try { await deleteApp(app); } catch (_) {}
   }
 };
