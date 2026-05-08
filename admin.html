@@ -660,6 +660,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <button class="tab-btn" data-tab="users">👥 Хэрэглэгчид</button>
     <button class="tab-btn" data-tab="videos">🎬 Видео</button>
     <button class="tab-btn" data-tab="lms">📖 Сургалт</button>
+    <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
   </div>
 </div>
 
@@ -822,6 +823,31 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <div class="lms-empty" style="padding:48px;text-align:center">Ачаалж байна…</div>
   </div>
 
+</div>
+</div>
+
+<!-- ===== DASHBOARD TAB ===== -->
+<div id="tab-dashboard" class="tab-section">
+<div class="admin-container">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="font-size:18px;font-weight:700;color:var(--white);margin-bottom:6px">📊 Сургалтын дашбоард</div>
+      <div style="font-size:12px;color:var(--muted)">Бүх сургалт болон ажилтны явцыг хянах</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary" id="dashRefreshBtn">🔄 Шинэчлэх</button>
+      <button class="btn btn-primary" id="dashDownloadBtn">⬇ HTML татах</button>
+    </div>
+  </div>
+
+  <div class="stats-grid" id="dashStatsGrid"></div>
+
+  <div style="margin-top:24px">
+    <h3 style="font-size:14px;font-weight:700;color:var(--white);margin-bottom:12px">Сургалт тус бүрийн явц</h3>
+    <div id="dashTrainingTable" style="background:var(--card-bg);border:1px solid var(--card-border);border-radius:12px;overflow:hidden">
+      <div class="loading"><div class="spinner"></div><p>Ачаалж байна...</p></div>
+    </div>
+  </div>
 </div>
 </div>
 
@@ -1669,6 +1695,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
     if(btn.dataset.tab==='users') loadUsers();
     if(btn.dataset.tab==='videos') loadVideos();
+    if(btn.dataset.tab==='dashboard') loadDashboard();
   });
 });
 
@@ -2920,6 +2947,131 @@ window.deleteQuestion=async function(id, trainingId){
     toast('Асуулт устгагдлаа','success');
   } catch(e){toast('Алдаа: '+e.message,'error');}
 };
+
+/* ===== DASHBOARD ===== */
+let _dashData = null;
+async function loadDashboard(){
+  const grid = document.getElementById('dashStatsGrid');
+  const tbl = document.getElementById('dashTrainingTable');
+  grid.innerHTML = '';
+  tbl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Ачаалж байна...</p></div>';
+  try{
+    const res = await fetch('/.netlify/functions/get-dashboard-data');
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    _dashData = data;
+    renderDashboard(data);
+  } catch(e){
+    tbl.innerHTML = `<div style="padding:20px;color:#FF6B6B">Алдаа: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderDashboard(d){
+  const grid = document.getElementById('dashStatsGrid');
+  grid.innerHTML = `
+    <div class="stat-card blue"><div class="stat-label">Нийт ажилтан</div><div class="stat-value">${d.totalUsers}</div></div>
+    <div class="stat-card green"><div class="stat-label">Нийт сургалт</div><div class="stat-value">${d.totalTrainings}</div></div>
+    <div class="stat-card amber"><div class="stat-label">Нийт бүлэг</div><div class="stat-value">${d.totalChapters}</div></div>
+    <div class="stat-card cyan"><div class="stat-label">Сэдэв</div><div class="stat-value">${d.totalTopics}</div></div>
+  `;
+
+  const tbl = document.getElementById('dashTrainingTable');
+  if(!d.trainingStats || d.trainingStats.length === 0){
+    tbl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted)">Сургалт байхгүй байна</div>';
+    return;
+  }
+
+  const fmt = ts => { try{ const dt=new Date(ts); return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`; }catch{return '—';}};
+  tbl.innerHTML = `
+  <table class="user-table" style="width:100%">
+    <thead><tr>
+      <th>#</th><th>Сургалтын нэр</th><th>Эхлэх</th><th>Дуусах</th>
+      <th>Уригдсан</th><th>Тэнцсэн</th><th>Унасан</th><th>Явагдаж байна</th><th>Дундаж оноо</th><th>Төлөв</th>
+    </tr></thead>
+    <tbody>
+    ${d.trainingStats.map((t,i)=>`
+      <tr>
+        <td style="color:var(--muted);width:36px">${i+1}</td>
+        <td style="font-weight:600;max-width:300px">${escapeHtml(t.title||'—')}</td>
+        <td style="font-size:12px;color:var(--muted)">${t.startDate?fmt(t.startDate):'—'}</td>
+        <td style="font-size:12px;color:var(--muted)">${t.endDate?fmt(t.endDate):'—'}</td>
+        <td style="text-align:center;color:var(--cyan);font-weight:600">${t.invitedCount}</td>
+        <td style="text-align:center;color:var(--green);font-weight:600">${t.passed}</td>
+        <td style="text-align:center;color:#FF6B6B;font-weight:600">${t.failed}</td>
+        <td style="text-align:center;color:var(--gold);font-weight:600">${t.inProgress}</td>
+        <td style="text-align:center;font-weight:700">${t.avgScore!==null?t.avgScore+'%':'—'}</td>
+        <td>${t.isActive?'<span style="color:var(--green);font-size:11px">●Идэвхтэй</span>':'<span style="color:var(--muted);font-size:11px">○Идэвхгүй</span>'}</td>
+      </tr>
+    `).join('')}
+    </tbody>
+  </table>`;
+}
+
+document.getElementById('dashRefreshBtn')?.addEventListener('click',loadDashboard);
+document.getElementById('dashDownloadBtn')?.addEventListener('click',()=>{
+  if(!_dashData){ toast('Эхлээд дашбоард ачаалаарай','error'); return; }
+  const d = _dashData;
+  const dt = new Date().toLocaleString('mn-MN');
+  const fmt = ts => { try{ const x=new Date(ts); return `${x.getFullYear()}/${String(x.getMonth()+1).padStart(2,'0')}/${String(x.getDate()).padStart(2,'0')}`; }catch{return '—';}};
+  const html = `<!DOCTYPE html><html lang="mn"><head><meta charset="UTF-8"><title>МОНОС ХҮНС ХК — Сургалтын дашбоард ${dt}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Manrope,Arial,sans-serif;background:#fafafa;color:#0F1117;padding:24px;line-height:1.5}
+h1{font-size:22px;margin-bottom:6px;color:#E30613}
+.meta{color:#6B7280;font-size:12px;margin-bottom:24px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px}
+.stat-l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7280}
+.stat-v{font-size:26px;font-weight:800;margin-top:6px;color:#0F1117}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #f1f5f9;font-size:13px}
+th{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#475569;font-weight:700}
+tr:last-child td{border-bottom:none}
+.c{text-align:center}
+.green{color:#059669;font-weight:600}
+.red{color:#dc2626;font-weight:600}
+.amber{color:#d97706;font-weight:600}
+.blue{color:#2563eb;font-weight:600}
+.muted{color:#94a3b8;font-size:12px}
+</style></head><body>
+<h1>МОНОС ХҮНС ХК — ХАБ-ын алба сургалтын дашбоард</h1>
+<div class="meta">Татсан огноо: ${dt}</div>
+<div class="stats">
+  <div class="stat"><div class="stat-l">Нийт ажилтан</div><div class="stat-v">${d.totalUsers}</div></div>
+  <div class="stat"><div class="stat-l">Нийт сургалт</div><div class="stat-v">${d.totalTrainings}</div></div>
+  <div class="stat"><div class="stat-l">Нийт бүлэг</div><div class="stat-v">${d.totalChapters}</div></div>
+  <div class="stat"><div class="stat-l">Сэдэв</div><div class="stat-v">${d.totalTopics}</div></div>
+</div>
+<table>
+  <thead><tr>
+    <th>#</th><th>Сургалтын нэр</th><th>Эхлэх</th><th>Дуусах</th>
+    <th>Уригдсан</th><th>Тэнцсэн</th><th>Унасан</th><th>Явц</th><th>Дундаж оноо</th><th>Төлөв</th>
+  </tr></thead>
+  <tbody>
+${d.trainingStats.map((t,i)=>`<tr>
+  <td>${i+1}</td>
+  <td><b>${escapeHtml(t.title||'—')}</b></td>
+  <td class="muted">${t.startDate?fmt(t.startDate):'—'}</td>
+  <td class="muted">${t.endDate?fmt(t.endDate):'—'}</td>
+  <td class="c blue">${t.invitedCount}</td>
+  <td class="c green">${t.passed}</td>
+  <td class="c red">${t.failed}</td>
+  <td class="c amber">${t.inProgress}</td>
+  <td class="c"><b>${t.avgScore!==null?t.avgScore+'%':'—'}</b></td>
+  <td>${t.isActive?'<span class="green">●Идэвхтэй</span>':'<span class="muted">○Идэвхгүй</span>'}</td>
+</tr>`).join('')}
+  </tbody>
+</table>
+</body></html>`;
+  const blob = new Blob([html],{type:'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `MonosHuns-dashboard-${new Date().toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Дашбоард татагдлаа','success');
+});
 </script>
 
 <!-- ===== INVITE MODAL ===== -->
