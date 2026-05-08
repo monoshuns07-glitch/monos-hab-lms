@@ -84,7 +84,7 @@ exports.handler = async (event) => {
       while (true) {
         // List documents
         const listRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users?pageSize=300`,
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents/users?pageSize=300`,
           { headers: { 'Authorization': 'Bearer ' + token } }
         );
         if (!listRes.ok) {
@@ -98,7 +98,7 @@ exports.handler = async (event) => {
         // Delete via batch commit
         const writes = docs.map(d => ({ delete: d.name }));
         const commitRes = await fetch(
-          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents:commit`,
           {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
