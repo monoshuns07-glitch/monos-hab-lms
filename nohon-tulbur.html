@@ -2225,6 +2225,154 @@
     }
   }
 
+  /* ========== LAYOUT REDESIGN v3 ========== */
+
+  /* STEP — split layout, compact step-num */
+  .step{
+    grid-template-columns:1fr 1.1fr!important;
+    gap:32px!important;
+    padding:32px 0!important;
+    position:relative;
+  }
+  .step-num{
+    font-size:22px!important;
+    line-height:1!important;
+    letter-spacing:.02em!important;
+    color:rgba(15,17,23,.4)!important;
+    position:absolute!important;
+    top:20px;left:0;
+    padding:6px 14px;
+    background:rgba(255,255,255,.7);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border-radius:999px;
+    border:1px solid rgba(0,0,0,.06);
+    font-family:'Fraunces',serif!important;
+    font-weight:700!important;
+  }
+  .step-num .dot{color:var(--red)!important}
+  .step-body{padding-top:48px}
+
+  @media (max-width:720px){
+    .step{
+      grid-template-columns:1fr!important;
+      gap:18px!important;
+      padding:24px 0!important;
+    }
+    .step-num{
+      font-size:14px!important;
+      padding:4px 10px;
+      top:14px;
+    }
+    .step-body{padding-top:38px}
+    .step-visual{order:-1;margin-bottom:8px}
+  }
+
+  /* BENTO grid utility (opt-in via class) */
+  .bento-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    grid-auto-rows:minmax(180px,auto);
+    gap:16px;
+  }
+  .bento-grid .card-large{grid-column:span 2;grid-row:span 2}
+  .bento-grid .card-wide{grid-column:span 2}
+  .bento-grid .card-tall{grid-row:span 2}
+  @media (max-width:1024px){
+    .bento-grid{grid-template-columns:repeat(2,1fr)}
+    .bento-grid .card-large{grid-column:span 2;grid-row:span 1}
+  }
+
+  /* HORIZONTAL SCROLL utility for mobile */
+  @media (max-width:720px){
+    .doc-grid,
+    .stage-list,
+    .feature-list,
+    .pdf-list,
+    .case-list,
+    .vid-grid,
+    .related-grid,
+    .feature-cards,
+    .info-cards{
+      display:flex!important;
+      flex-wrap:nowrap!important;
+      overflow-x:auto!important;
+      scroll-snap-type:x mandatory;
+      -webkit-overflow-scrolling:touch;
+      gap:14px!important;
+      padding:6px 4px 18px!important;
+      scrollbar-width:none;
+    }
+    .doc-grid::-webkit-scrollbar,
+    .stage-list::-webkit-scrollbar,
+    .feature-list::-webkit-scrollbar,
+    .pdf-list::-webkit-scrollbar,
+    .case-list::-webkit-scrollbar,
+    .vid-grid::-webkit-scrollbar,
+    .related-grid::-webkit-scrollbar,
+    .feature-cards::-webkit-scrollbar,
+    .info-cards::-webkit-scrollbar{display:none}
+    .doc-grid > *,
+    .stage-list > *,
+    .feature-list > *,
+    .pdf-list > *,
+    .case-list > *,
+    .vid-grid > *,
+    .related-grid > *,
+    .feature-cards > *,
+    .info-cards > *{
+      scroll-snap-align:start;
+      flex:0 0 84%!important;
+      min-width:84%;
+      max-width:84%;
+    }
+  }
+
+  /* Hero / heading — compact spacing on mobile, no huge top whitespace */
+  @media (max-width:720px){
+    .hero,
+    .lead,
+    .hero-block,
+    .top-block{
+      padding-top:18px!important;
+      padding-bottom:18px!important;
+      min-height:auto!important;
+    }
+    h1,h2{margin-top:0!important}
+  }
+
+  /* Stat cards — staggered desktop, compact 2x grid mobile */
+  .stat-cards,
+  .stats-row{
+    display:flex;
+    justify-content:center;
+    gap:36px;
+    flex-wrap:wrap;
+    align-items:flex-start;
+  }
+  @media (min-width:1025px){
+    .stat-cards > *:nth-child(2),
+    .stats-row > *:nth-child(2){transform:translateY(40px)}
+    .stat-cards > *:nth-child(3),
+    .stats-row > *:nth-child(3){transform:translateY(80px)}
+    .stat-cards > *:nth-child(4),
+    .stats-row > *:nth-child(4){transform:translateY(20px)}
+  }
+  @media (max-width:720px){
+    .stat-cards,
+    .stats-row{
+      display:grid!important;
+      grid-template-columns:1fr 1fr!important;
+      gap:12px!important;
+    }
+    .stat-cards > *,
+    .stats-row > *{transform:none!important}
+  }
+
+  /* Reveal animation utility */
+  .reveal{opacity:0;transform:translateY(30px);transition:opacity .55s ease,transform .55s ease}
+  .reveal.visible{opacity:1;transform:translateY(0)}
+
 </style>
 <style>
 #starCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.55;display:none}
@@ -4889,6 +5037,41 @@
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
   else init();
+})();
+</script>
+
+<script>
+/* Layout v3 — IntersectionObserver reveal + auto-tag elements */
+(function(){
+  const tagSelectors = ['.step', '.acc-item', '.stage-card', '.info-card', '.feature-card', '.case-block', '.qa-card', '.cnt-card', '.vid-card', '.help-row'];
+  const tag = () => {
+    tagSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        if (!el.classList.contains('reveal')) el.classList.add('reveal');
+      });
+    });
+  };
+  const observe = () => {
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(en => {
+        if (en.isIntersecting) {
+          en.target.classList.add('visible');
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  };
+  const run = () => { tag(); observe(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+  // Re-tag on dynamic content (mutation observer light)
+  const mo = new MutationObserver(() => { tag(); observe(); });
+  mo.observe(document.body, { childList:true, subtree:true });
 })();
 </script>
 
