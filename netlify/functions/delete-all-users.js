@@ -1,5 +1,4 @@
-const { initializeApp, getApps, deleteApp, cert } = require('firebase-admin/app');
-const { getAuth } = require('firebase-admin/auth');
+const admin = require('firebase-admin');
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -7,54 +6,75 @@ exports.handler = async (event) => {
   }
 
   const debug = [];
-  let app = null;
 
   try {
     const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
-    if (!b64) throw new Error('FIREBASE_SERVICE_ACCOUNT_B64 env var missing');
+    if (!b64) throw new Error('FIREBASE_SERVICE_ACCOUNT_B64 missing');
     debug.push('b64_len=' + b64.length);
 
-    let sa;
-    try {
-      sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
-    } catch (e) {
-      throw new Error('JSON parse failed: ' + e.message);
-    }
-
+    const sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
     if (!sa.project_id || !sa.private_key || !sa.client_email) {
-      throw new Error('SA invalid — proj:' + !!sa.project_id + ' key:' + !!sa.private_key + ' email:' + !!sa.client_email);
+      throw new Error('SA invalid');
     }
-    debug.push('sa_ok project=' + sa.project_id);
+    debug.push('project=' + sa.project_id);
 
-    // Clean up any apps from warm Lambda
-    const existing = getApps();
-    if (existing.length > 0) {
-      for (const a of existing) {
-        try { await deleteApp(a); } catch (_) {}
-      }
-      debug.push('cleared_' + existing.length);
-    }
+    // Use admin.credential to get OAuth access token only (bypass auth SDK)
+    const cred = admin.credential.cert(sa);
+    const tokenInfo = await cred.getAccessToken();
+    const token = tokenInfo.access_token;
+    if (!token) throw new Error('No access token');
+    debug.push('got_token len=' + token.length);
 
-    // Initialize as DEFAULT app (no name argument) — most compatible
-    app = initializeApp({ credential: cert(sa) });
-    debug.push('app_init_ok name=' + app.name);
-
-    const auth = getAuth(app);
-    debug.push('got_auth');
-
+    const projectId = sa.project_id;
     let deleted = 0;
-    let pageToken;
-    let firstPage = true;
-    do {
-      const result = await auth.listUsers(1000, pageToken);
-      if (firstPage) { debug.push('list_ok=' + result.users.length); firstPage = false; }
-      const uids = result.users.map(u => u.uid);
+    let pageToken = null;
+
+    // Direct REST API: list users via batchGet
+    while (true) {
+      const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:batchGet`);
+      url.searchParams.set('maxResults', '1000');
+      if (pageToken) url.searchParams.set('nextPageToken', pageToken);
+
+      const listRes = await fetch(url.toString(), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+
+      if (!listRes.ok) {
+        const errText = await listRes.text();
+        throw new Error(`listUsers failed ${listRes.status}: ${errText.substring(0, 300)}`);
+      }
+
+      const listData = await listRes.json();
+      const users = listData.users || [];
+      if (users.length === 0 && !pageToken) {
+        debug.push('no_users');
+        break;
+      }
+      debug.push('listed=' + users.length);
+
+      const uids = users.map(u => u.localId);
       if (uids.length > 0) {
-        await auth.deleteUsers(uids);
+        const delRes = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:batchDelete`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ localIds: uids, force: true })
+          }
+        );
+        if (!delRes.ok) {
+          const errText = await delRes.text();
+          throw new Error(`deleteUsers failed ${delRes.status}: ${errText.substring(0, 300)}`);
+        }
         deleted += uids.length;
       }
-      pageToken = result.pageToken;
-    } while (pageToken);
+
+      pageToken = listData.nextPageToken;
+      if (!pageToken) break;
+    }
 
     debug.push('deleted=' + deleted);
     return {
@@ -66,9 +86,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ success: false, error: e.message, code: e.code || '', debug })
+      body: JSON.stringify({ success: false, error: e.message, debug })
     };
-  } finally {
-    if (app) try { await deleteApp(app); } catch (_) {}
   }
 };
