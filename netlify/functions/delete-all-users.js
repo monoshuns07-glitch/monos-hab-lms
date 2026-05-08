@@ -74,16 +74,20 @@ exports.handler = async (event) => {
 
     // 3. Delete all Firestore users docs (paginated batch deletes)
     let firestoreDeleted = 0;
-    while (true) {
-      const snap = await db.collection('users').limit(400).get();
-      if (snap.empty) break;
-      const batch = db.batch();
-      snap.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      firestoreDeleted += snap.size;
-      if (snap.size < 400) break;
+    try {
+      while (true) {
+        const snap = await db.collection('users').limit(400).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+        firestoreDeleted += snap.size;
+        if (snap.size < 400) break;
+      }
+      debug.push('fs_deleted=' + firestoreDeleted);
+    } catch (fe) {
+      debug.push('fs_err=' + (fe.message||fe.code||'').substring(0, 80));
     }
-    debug.push('fs_deleted=' + firestoreDeleted);
 
     return {
       statusCode: 200,
