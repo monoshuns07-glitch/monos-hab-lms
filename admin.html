@@ -1687,18 +1687,14 @@ const secondaryAuth = secondaryApp.auth();
 let allUsers=[],filteredUsers=[];
 async function loadUsers(){
   try{
-    const snap=await db.collection('users').orderBy('created_at','desc').get();
-    allUsers=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const res=await fetch('/.netlify/functions/list-users');
+    const data=await res.json();
+    if(data.error) throw new Error(data.error);
+    allUsers=data.users||[];
     document.getElementById('statUserTotal').textContent=allUsers.length;
     applyUserFilter();
   } catch(e){
-    /* orderBy may fail if no index yet — fallback */
-    try{
-      const snap2=await db.collection('users').get();
-      allUsers=snap2.docs.map(d=>({id:d.id,...d.data()}));
-      document.getElementById('statUserTotal').textContent=allUsers.length;
-      applyUserFilter();
-    } catch(e2){ toast('Хэрэглэгч ачаалахад алдаа: '+e2.message,'error'); }
+    toast('Хэрэглэгч ачаалахад алдаа: '+e.message,'error');
   }
 }
 function applyUserFilter(){
