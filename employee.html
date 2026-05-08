@@ -741,9 +741,10 @@ auth.onAuthStateChanged(async user=>{
 /* ── Main loader ── */
 async function loadDashboard(){
   try{
-    /* 1. User profile (via server-side function — Web SDK Firestore blocked by Enterprise edition) */
+    /* 1. User profile (via server-side function — falls back to email lookup) */
     try{
-      const r=await fetch('/.netlify/functions/get-user-profile?uid='+encodeURIComponent(currentUser.uid));
+      const url='/.netlify/functions/get-user-profile?uid='+encodeURIComponent(currentUser.uid)+'&email='+encodeURIComponent(currentUser.email||'');
+      const r=await fetch(url);
       const result=await r.json();
       userProfile = result.exists
         ? result.data
