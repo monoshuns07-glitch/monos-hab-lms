@@ -27,7 +27,7 @@ exports.handler = async (event) => {
     const users = [];
     let nextPageToken = '';
     while (true) {
-      const url = new URL(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents/users`);
+      const url = new URL(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users`);
       url.searchParams.set('pageSize', '300');
       if (nextPageToken) url.searchParams.set('pageToken', nextPageToken);
 

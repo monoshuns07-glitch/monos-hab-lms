@@ -32,7 +32,7 @@ exports.handler = async (event) => {
     // Try UID lookup first
     if (uid) {
       const res = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents/users/${uid}`,
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}`,
         { headers: { 'Authorization': 'Bearer ' + token } }
       );
       if (res.ok) {
@@ -57,7 +57,7 @@ exports.handler = async (event) => {
         }
       };
       const qRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents:runQuery`,
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
         {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },

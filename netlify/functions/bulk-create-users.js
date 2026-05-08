@@ -67,7 +67,7 @@ exports.handler = async (event) => {
       const u = r.user;
       writes.push({
         update: {
-          name: `projects/${projectId}/databases/default/documents/users/${r.uid}`,
+          name: `projects/${projectId}/databases/(default)/documents/users/${r.uid}`,
           fields: {
             uid: { stringValue: r.uid },
             email: { stringValue: u._email },
@@ -90,7 +90,7 @@ exports.handler = async (event) => {
     for (let i = 0; i < writes.length; i += 400) {
       const chunk = writes.slice(i, i + 400);
       const commitRes = await fetch(
-        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents:commit`,
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
         {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },

@@ -16,7 +16,7 @@ exports.handler = async (event) => {
     const testDoc = {
       writes: [{
         update: {
-          name: `projects/${projectId}/databases/default/documents/users/test-uid-12345`,
+          name: `projects/${projectId}/databases/(default)/documents/users/test-uid-12345`,
           fields: {
             uid: { stringValue: 'test-uid-12345' },
             email: { stringValue: 'test@test.com' },
@@ -27,7 +27,7 @@ exports.handler = async (event) => {
       }]
     };
     const writeRes = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents:commit`,
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
       {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -39,7 +39,7 @@ exports.handler = async (event) => {
 
     // Test 2: List documents in users collection
     const listRes = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents/users?pageSize=5`,
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users?pageSize=5`,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
     results.list_status = listRes.status;
@@ -48,7 +48,7 @@ exports.handler = async (event) => {
 
     // Test 3: Get the test doc we just wrote
     const getRes = await fetch(
-      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/default/documents/users/test-uid-12345`,
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/test-uid-12345`,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
     results.get_status = getRes.status;
