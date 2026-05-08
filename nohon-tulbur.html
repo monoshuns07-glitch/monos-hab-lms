@@ -2084,6 +2084,147 @@
   /* Step visual light */
   .step-visual{background:#F9FAFB;border-color:var(--border);box-shadow:var(--sh1)}
 
+  /* ========== GLASSMORPHIC OVERLAY (added v2) ========== */
+  body{
+    background:
+      radial-gradient(ellipse at 0% 0%, rgba(227,6,19,.12) 0%, transparent 45%),
+      radial-gradient(ellipse at 100% 0%, rgba(245,158,11,.10) 0%, transparent 45%),
+      radial-gradient(ellipse at 0% 100%, rgba(59,130,246,.10) 0%, transparent 45%),
+      radial-gradient(ellipse at 100% 100%, rgba(168,85,247,.10) 0%, transparent 45%),
+      linear-gradient(180deg, #EEF2FF 0%, #F4F6FB 50%, #F0F4FA 100%);
+    background-attachment:fixed;
+  }
+  .bg-orb1{opacity:.9}
+  .bg-orb2{opacity:.85}
+  .bg-orb3{opacity:.85}
+
+  /* All white card surfaces -> glassy */
+  .acc-item,
+  .stage-card,
+  .stage-list-item,
+  .doc-row,
+  .step-card,
+  .info-card,
+  .table-wrap,
+  .doc-table,
+  .url-row,
+  .step-block,
+  .key-card,
+  .footer-block,
+  .feature-card,
+  .case-block,
+  .help-row,
+  .acc-content,
+  .calc-card,
+  .nav,
+  .summary-bar,
+  .related-block,
+  .action-block,
+  .cnt-card,
+  .vid-card,
+  .pdf-row,
+  .timeline-item,
+  .glossary-item,
+  .qa-card,
+  .reg-card{
+    background:rgba(255,255,255,.62)!important;
+    backdrop-filter:blur(22px) saturate(160%)!important;
+    -webkit-backdrop-filter:blur(22px) saturate(160%)!important;
+    border:1px solid rgba(255,255,255,.55)!important;
+    box-shadow:
+      0 8px 32px rgba(15,30,80,.08),
+      inset 0 1px 0 rgba(255,255,255,.6)!important;
+  }
+
+  /* Soft tint variants stay readable on glass */
+  .warning-box,
+  [style*="background:#FFF8E1"],
+  [style*="background:#FFF4CE"],
+  [style*="background:#FFF1F2"],
+  [style*="background:#FFFBF2"]{
+    backdrop-filter:blur(14px) saturate(150%);
+    -webkit-backdrop-filter:blur(14px) saturate(150%);
+  }
+
+  /* Image polish — proper sizing, rounded, subtle border */
+  .step-visual img,
+  .doc-row img,
+  .info-card img,
+  main img,
+  article img,
+  section img,
+  .acc-content img{
+    max-width:100%;
+    max-height:520px;
+    width:auto;
+    height:auto;
+    object-fit:contain;
+    display:block;
+    margin:14px auto;
+    border-radius:14px;
+    border:1px solid rgba(0,0,0,.06);
+    box-shadow:
+      0 6px 22px rgba(15,30,80,.10),
+      0 1px 0 rgba(255,255,255,.7) inset;
+    background:rgba(255,255,255,.4);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+  }
+
+  /* Containers/sections */
+  .container,
+  .main,
+  main,
+  .layout,
+  .wrapper{
+    position:relative;
+    z-index:2;
+  }
+
+  /* Inputs glassy */
+  input[type=text],
+  input[type=email],
+  input[type=search],
+  input[type=number],
+  input[type=password],
+  textarea,
+  select{
+    background:rgba(255,255,255,.7)!important;
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(0,0,0,.08)!important;
+  }
+  input:focus, textarea:focus, select:focus{
+    background:rgba(255,255,255,.92)!important;
+    border-color:rgba(227,6,19,.35)!important;
+    box-shadow:0 0 0 3px rgba(227,6,19,.08)!important;
+  }
+
+  /* Buttons get a subtle glass ring */
+  .btn, button{
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+  }
+
+  /* Mobile tightening */
+  @media (max-width:720px){
+    .step-visual img,
+    main img,
+    article img,
+    section img{
+      max-height:340px;
+      margin:10px auto;
+      border-radius:12px;
+    }
+    .acc-item,
+    .stage-card,
+    .info-card,
+    .step-card{
+      backdrop-filter:blur(18px) saturate(150%)!important;
+      -webkit-backdrop-filter:blur(18px) saturate(150%)!important;
+    }
+  }
+
 </style>
 <style>
 #starCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.55;display:none}
