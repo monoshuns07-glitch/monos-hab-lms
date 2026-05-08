@@ -4489,25 +4489,14 @@
       }
     };
 
-    /* Verify Firebase Auth state AND allowed_users whitelist */
+    /* Verify Firebase Auth state */
     firebase.auth().onAuthStateChanged(async fbUser=>{
       if(!fbUser){
         localStorage.removeItem('monos_user');
         window.location.href = 'index.html';
         return;
       }
-      try{
-        const db = firebase.firestore();
-        const snap = await db.collection('allowed_users')
-          .where('email','==', fbUser.email.toLowerCase()).limit(1).get();
-        if(snap.empty){
-          await firebase.auth().signOut();
-          localStorage.removeItem('monos_user');
-          window.location.href = 'index.html';
-        } else {
-          _Tracker.init(fbUser.uid);
-        }
-      } catch(e){ /* network error — allow cached session */ }
+      _Tracker.init(fbUser.uid);
     });
   })();
 </script>
