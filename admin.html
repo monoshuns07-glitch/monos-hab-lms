@@ -1945,6 +1945,10 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
   const total=validRows.length;
   statusEl.innerHTML=`<div style="color:var(--muted)">Firebase Auth + Firestore-д бүртгэж байна (${total} хэрэглэгч)...</div>`;
 
+  const withTimeout=(promise,ms,label)=>Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout: '+label)),ms))
+  ]);
   for(let i=0;i<validRows.length;i++){
     const row=validRows[i];
     const email=(row.email||'').trim().toLowerCase();
@@ -1954,34 +1958,31 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     const position=(row['албан тушаал']||row['тушаал']||row.position||'').trim();
     const department=(row['хэлтэс']||row.department||'').trim();
     try{
-      const existingDoc=await db.collection('users').where('email','==',email).get();
-      if(!existingDoc.empty){ skip++; }
-      else{
-        let uid=null;
-        try{
-          const cred=await secondaryAuth.createUserWithEmailAndPassword(email,password);
-          uid=cred.user.uid;
-        } catch(authErr){
-          if(authErr.code==='auth/email-already-in-use'){
-            try{
-              const signIn=await secondaryAuth.signInWithEmailAndPassword(email,password);
-              uid=signIn.user.uid;
-            } catch(e2){ uid=null; }
-          }
-        } finally{
-          try{ await secondaryAuth.signOut(); }catch(e){}
+      let uid=null;
+      try{
+        const cred=await withTimeout(secondaryAuth.createUserWithEmailAndPassword(email,password),15000,'createUser');
+        uid=cred.user.uid;
+      } catch(authErr){
+        console.error('[bulk]',email,authErr.code||authErr.message,authErr);
+        if(authErr.code==='auth/email-already-in-use'){
+          try{
+            const signIn=await withTimeout(secondaryAuth.signInWithEmailAndPassword(email,password),15000,'signIn');
+            uid=signIn.user.uid;
+          } catch(e2){ console.error('[bulk] signIn failed',email,e2.code); uid=null; }
         }
-        if(uid){
-          await db.collection('users').doc(uid).set({
-            email, uid, password, lastName, firstName, position, department,
-            role:'employee', isActive:true,
-            createdAt:firebase.firestore.FieldValue.serverTimestamp(),
-            totalSiteTime:0
-          });
-          success++;
-        } else{ skip++; }
+      } finally{
+        try{ await withTimeout(secondaryAuth.signOut(),5000,'signOut'); }catch(e){}
       }
-    } catch(e){ fail++; }
+      if(uid){
+        await withTimeout(db.collection('users').doc(uid).set({
+          email, uid, password, lastName, firstName, position, department,
+          role:'employee', isActive:true,
+          createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+          totalSiteTime:0
+        }),15000,'firestore');
+        success++;
+      } else{ skip++; }
+    } catch(e){ console.error('[bulk] row',i,e.message); fail++; }
     const pct=Math.round((i+1)/total*100);
     statusEl.innerHTML=
       `<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px">
