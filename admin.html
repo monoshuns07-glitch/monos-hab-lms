@@ -1953,16 +1953,15 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     department:(r['хэлтэс']||r.department||'').trim()
   }));
 
-  // Send in batches of 50 to avoid Netlify timeout
+  // Send in batches of 50 (server creates Auth + Firestore docs)
   const BATCH=50;
   let totalCreated=0, totalSkipped=0, totalFailed=0;
   const allErrors=[];
-  const createdDocs=[];
 
   for(let i=0;i<payload.length;i+=BATCH){
     const batch=payload.slice(i,i+BATCH);
     const pct=Math.round((i/payload.length)*100);
-    statusEl.innerHTML=`<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px"><div style="height:100%;border-radius:6px;background:var(--green);width:${pct}%;transition:width .3s"></div></div><div style="font-size:12px;color:var(--muted)">Batch ${Math.floor(i/BATCH)+1}/${Math.ceil(payload.length/BATCH)} илгээж байна (${batch.length} хэрэглэгч)...</div>`;
+    statusEl.innerHTML=`<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px"><div style="height:100%;border-radius:6px;background:var(--green);width:${pct}%;transition:width .3s"></div></div><div style="font-size:12px;color:var(--muted)">Batch ${Math.floor(i/BATCH)+1}/${Math.ceil(payload.length/BATCH)} (${batch.length} хэрэглэгч)...</div>`;
     try{
       const res=await fetch('/.netlify/functions/bulk-create-users',{
         method:'POST',
@@ -1975,29 +1974,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
       totalSkipped+=data.skipped||0;
       totalFailed+=data.failed||0;
       if(data.errors?.length) allErrors.push(...data.errors);
-      if(data.users?.length) createdDocs.push(...data.users);
     } catch(e){ allErrors.push('Network: '+e.message); break; }
-  }
-
-  // Write Firestore docs for created users (client-side)
-  if(createdDocs.length>0){
-    statusEl.innerHTML+=`<div style="color:var(--muted);font-size:12px;margin-top:6px">Firestore-д бичиж байна (${createdDocs.length})...</div>`;
-    try{
-      // Use batched writes (max 500 per batch)
-      for(let i=0;i<createdDocs.length;i+=400){
-        const chunk=createdDocs.slice(i,i+400);
-        const fbBatch=db.batch();
-        chunk.forEach(u=>{
-          fbBatch.set(db.collection('users').doc(u.uid),{
-            ...u,
-            role:'employee', isActive:true,
-            createdAt:firebase.firestore.FieldValue.serverTimestamp(),
-            totalSiteTime:0
-          });
-        });
-        await fbBatch.commit();
-      }
-    } catch(e){ allErrors.push('Firestore: '+e.message); }
   }
 
   statusEl.innerHTML=
