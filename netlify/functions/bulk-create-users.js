@@ -1,16 +1,5 @@
 const admin = require('firebase-admin');
 
-// Initialize Firestore once via Admin SDK (bypasses security rules)
-function getFirestore(sa) {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(sa),
-      projectId: sa.project_id
-    });
-  }
-  return admin.firestore();
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
@@ -33,9 +22,6 @@ exports.handler = async (event) => {
     const tokenInfo = await cred.getAccessToken();
     const token = tokenInfo.access_token;
 
-    const db = getFirestore(sa);
-    const FieldValue = admin.firestore.FieldValue;
-
     let created = 0, skipped = 0, failed = 0;
     const errors = [];
 
@@ -48,7 +34,7 @@ exports.handler = async (event) => {
       return true;
     });
 
-    // Create all Auth users IN PARALLEL (much faster than sequential)
+    // Create all Auth users IN PARALLEL
     const authResults = await Promise.all(validUsers.map(async (u) => {
       try {
         const res = await fetch(
@@ -73,36 +59,49 @@ exports.handler = async (event) => {
       }
     }));
 
-    // Build Firestore batch
-    let firestoreBatch = db.batch();
-    let batchCount = 0;
-
+    // Build Firestore writes via REST API (commit endpoint)
+    const writes = [];
     for (const r of authResults) {
       if (r.skip) { skipped++; continue; }
       if (r.fail) { failed++; errors.push(`${r.email}: ${r.error}`); continue; }
       const u = r.user;
-      firestoreBatch.set(db.collection('users').doc(r.uid), {
-        uid: r.uid,
-        email: u._email,
-        password: u._password,
-        lastName: (u.lastName || '').trim(),
-        firstName: (u.firstName || '').trim(),
-        position: (u.position || '').trim(),
-        department: (u.department || '').trim(),
-        role: 'employee',
-        isActive: true,
-        createdAt: FieldValue.serverTimestamp(),
-        totalSiteTime: 0
+      writes.push({
+        update: {
+          name: `projects/${projectId}/databases/(default)/documents/users/${r.uid}`,
+          fields: {
+            uid: { stringValue: r.uid },
+            email: { stringValue: u._email },
+            password: { stringValue: u._password },
+            lastName: { stringValue: (u.lastName || '').trim() },
+            firstName: { stringValue: (u.firstName || '').trim() },
+            position: { stringValue: (u.position || '').trim() },
+            department: { stringValue: (u.department || '').trim() },
+            role: { stringValue: 'employee' },
+            isActive: { booleanValue: true },
+            createdAt: { timestampValue: new Date().toISOString() },
+            totalSiteTime: { integerValue: '0' }
+          }
+        }
       });
-      batchCount++;
-      if (batchCount >= 400) {
-        await firestoreBatch.commit();
-        firestoreBatch = db.batch();
-        batchCount = 0;
-      }
       created++;
     }
-    if (batchCount > 0) await firestoreBatch.commit();
+
+    // Commit all writes via Firestore REST API (max 500 per commit)
+    for (let i = 0; i < writes.length; i += 400) {
+      const chunk = writes.slice(i, i + 400);
+      const commitRes = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ writes: chunk })
+        }
+      );
+      if (!commitRes.ok) {
+        const err = await commitRes.text();
+        throw new Error(`Firestore commit ${commitRes.status}: ${err.substring(0, 200)}`);
+      }
+    }
 
     return {
       statusCode: 200,

@@ -78,21 +78,43 @@ exports.handler = async (event) => {
     }
     debug.push('auth_deleted=' + deleted);
 
-    // 3. Delete all Firestore users docs (paginated batch deletes)
+    // 3. Delete all Firestore users docs via REST API
     let firestoreDeleted = 0;
     try {
       while (true) {
-        const snap = await db.collection('users').limit(400).get();
-        if (snap.empty) break;
-        const batch = db.batch();
-        snap.docs.forEach(d => batch.delete(d.ref));
-        await batch.commit();
-        firestoreDeleted += snap.size;
-        if (snap.size < 400) break;
+        // List documents
+        const listRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users?pageSize=300`,
+          { headers: { 'Authorization': 'Bearer ' + token } }
+        );
+        if (!listRes.ok) {
+          debug.push('fs_list_' + listRes.status);
+          break;
+        }
+        const listData = await listRes.json();
+        const docs = listData.documents || [];
+        if (docs.length === 0) break;
+
+        // Delete via batch commit
+        const writes = docs.map(d => ({ delete: d.name }));
+        const commitRes = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:commit`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ writes })
+          }
+        );
+        if (!commitRes.ok) {
+          debug.push('fs_commit_' + commitRes.status);
+          break;
+        }
+        firestoreDeleted += docs.length;
+        if (docs.length < 300) break;
       }
       debug.push('fs_deleted=' + firestoreDeleted);
     } catch (fe) {
-      debug.push('fs_err=' + (fe.message||fe.code||'').substring(0, 80));
+      debug.push('fs_err=' + (fe.message||'').substring(0, 80));
     }
 
     return {
