@@ -1712,11 +1712,13 @@ function renderUsersTable(){
     content.innerHTML=`<div class="empty"><h3>${allUsers.length===0?'Ажилтан бүртгэгдээгүй байна':'Үр дүн олдсонгүй'}</h3><p>${allUsers.length===0?'Ажилтан нэмэх товч дарна уу':'Өөр хаяг оролдоно уу'}</p></div>`;
     return;
   }
-  content.innerHTML=`<table class="user-table"><thead><tr><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Хэлтэс</th><th>Email</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
+  content.innerHTML=`<table class="user-table"><thead><tr><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Хэлтэс</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
     const dt=(u.createdAt?.toDate?.()||u.created_at?.toDate?.())?.toLocaleDateString('mn-MN')||'—';
     const secs=u.totalSiteTime||0;
     const hrs=Math.floor(secs/3600),mins=Math.floor((secs%3600)/60);
     const timeStr=hrs>0?`${hrs}ц ${mins}м`:secs>0?`${mins}м`:'—';
+    const pwd=u.password||'';
+    const pwdCell=pwd?`<button class="pwd-btn" data-pwd="${escapeHtml(pwd)}" onclick="togglePwd(this)" style="background:rgba(255,255,255,.04);border:1px solid var(--input-border);color:var(--muted);padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-family:monospace">••••••</button>`:`<span style="color:var(--muted);font-size:11px">—</span>`;
     return `<tr>
       <td style="color:var(--muted);width:36px">${i+1}</td>
       <td>${escapeHtml(u.lastName||'—')}</td>
@@ -1724,20 +1726,37 @@ function renderUsersTable(){
       <td style="color:var(--muted);font-size:12px">${escapeHtml(u.position||'—')}</td>
       <td><span style="background:rgba(79,142,247,.12);color:var(--blue);padding:2px 8px;border-radius:6px;font-size:11px;white-space:nowrap">${escapeHtml(u.department||'—')}</span></td>
       <td style="font-size:12px;color:var(--muted)">${escapeHtml(u.email||'—')}</td>
+      <td>${pwdCell}</td>
       <td style="color:var(--muted);font-size:12px">${dt}</td>
       <td style="color:var(--cyan);font-weight:600;font-size:13px">${timeStr}</td>
       <td><div class="row-actions"><button class="action-btn" onclick="deleteUser('${u.id}')" title="Устгах"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div></td>
     </tr>`;
   }).join('')}</tbody></table>`;
 }
+window.togglePwd=function(btn){
+  const pwd=btn.dataset.pwd;
+  if(btn.textContent==='••••••'){ btn.textContent=pwd; btn.style.color='var(--cyan)'; }
+  else{ btn.textContent='••••••'; btn.style.color='var(--muted)'; }
+}
 window.deleteUser = async id=>{
-  if(!confirm('Хэрэглэгчийг устгахдаа итгэлтэй байна уу?\n\nFirestore-оос устгагдах бөгөөд нэвтрэх эрх хасагдана.')) return;
+  if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёроос ХОЁУЛАНГ устгана.')) return;
   try{
+    // 1. Auth устгах (Netlify function-оор)
+    const res=await fetch('/.netlify/functions/delete-user',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({uid:id})
+    });
+    const data=await res.json();
+    if(!data.success && !(data.error||'').includes('USER_NOT_FOUND')){
+      throw new Error(data.error||'Auth устгахад алдаа');
+    }
+    // 2. Firestore устгах
     await Promise.all([
       db.collection('users').doc(id).delete(),
-      db.collection('allowed_users').doc(id).delete()
+      db.collection('allowed_users').doc(id).delete().catch(()=>{})
     ]);
-    toast('Хэрэглэгч устгагдлаа','success');
+    toast('Ажилтан устгагдлаа','success');
     loadUsers();
   }
   catch(e){ toast('Алдаа: '+e.message,'error'); }
@@ -1954,7 +1973,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
         }
         if(uid){
           await db.collection('users').doc(uid).set({
-            email, uid, lastName, firstName, position, department,
+            email, uid, password, lastName, firstName, position, department,
             role:'employee', isActive:true,
             createdAt:firebase.firestore.FieldValue.serverTimestamp(),
             totalSiteTime:0
@@ -1972,7 +1991,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
       `<div style="color:var(--green)">✓ ${success} бүртгэгдлаа`+
       (skip?` · <span style="color:var(--muted)">${skip} аль байсан</span>`:'')+
       (fail?` · <span style="color:#FF6B6B">${fail} алдаа</span>`:'')+`</div>`;
-    if(i<validRows.length-1) await new Promise(r=>setTimeout(r,300));
+    if(i<validRows.length-1) await new Promise(r=>setTimeout(r,100));
   }
 
   statusEl.innerHTML=
