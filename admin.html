@@ -894,9 +894,9 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <input type="text" class="form-input" id="newUserPosition" placeholder="Жишээ: Инженер, Менежер..." autocomplete="off" />
       </div>
       <div class="form-group">
-        <label class="form-label">Хэлтэс <span>*</span></label>
+        <label class="form-label">Алба <span>*</span></label>
         <select class="form-input" id="newUserDept">
-          <option value="">Хэлтэс сонгох...</option>
+          <option value="">Алба сонгох...</option>
           <option>Захиргаа</option>
           <option>Санхүү</option>
           <option>Хүний нөөц</option>
@@ -944,7 +944,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
       <div style="background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.2);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12px;line-height:1.7;color:rgba(245,166,35,.9)">
         <b>Excel/CSV файл форматаа бэлдэх:</b><br>
         Эхний мөрд багануудын нэр байх ёстой. <b>email</b> болон <b>нууц үг</b> заавал байна уу (нууц үг 6+ тэмдэгт).<br>
-        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | нууц үг | овог | нэр | албан тушаал | хэлтэс</code>
+        Жишээ: <code style="background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px">email | нууц үг | овог | нэр | албан тушаал | алба</code>
       </div>
 
       <div id="bulkStep1">
@@ -1098,9 +1098,9 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <textarea class="form-textarea" id="chapterDesc" placeholder="Бүлгийн товч тайлбар..." style="min-height:80px"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Хэлтэс (таслалаар тусгаарлана уу)</label>
-        <input type="text" class="form-input" id="chapterDepts" placeholder="Жишээ: Үйлдвэр, Нягтлан — хоосон = бүх хэлтэс" />
-        <div class="form-hint">Хоосон орхивол бүх хэлтэст харагдана</div>
+        <label class="form-label">Алба (таслалаар тусгаарлана уу)</label>
+        <input type="text" class="form-input" id="chapterDepts" placeholder="Жишээ: Үйлдвэр, Нягтлан — хоосон = бүх алба" />
+        <div class="form-hint">Хоосон орхивол бүх албанд харагдана</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
@@ -1708,7 +1708,7 @@ function renderUsersTable(){
     content.innerHTML=`<div class="empty"><h3>${allUsers.length===0?'Ажилтан бүртгэгдээгүй байна':'Үр дүн олдсонгүй'}</h3><p>${allUsers.length===0?'Ажилтан нэмэх товч дарна уу':'Өөр хаяг оролдоно уу'}</p></div>`;
     return;
   }
-  content.innerHTML=`<table class="user-table"><thead><tr><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Хэлтэс</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
+  content.innerHTML=`<table class="user-table"><thead><tr><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Алба</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
     const dt=(u.createdAt?.toDate?.()||u.created_at?.toDate?.())?.toLocaleDateString('mn-MN')||'—';
     const secs=u.totalSiteTime||0;
     const hrs=Math.floor(secs/3600),mins=Math.floor((secs%3600)/60);
@@ -1821,7 +1821,7 @@ document.getElementById('addUserSave').addEventListener('click', async()=>{
   if(!lastName||lastName.length<2){ toast('Овог хоосон байж болохгүй (2+ тэмдэгт)','error'); return; }
   if(!firstName||firstName.length<2){ toast('Нэр хоосон байж болохгүй (2+ тэмдэгт)','error'); return; }
   if(!position){ toast('Албан тушаал оруулна уу','error'); return; }
-  if(!dept){ toast('Хэлтэс сонгоно уу','error'); return; }
+  if(!dept){ toast('Алба сонгоно уу','error'); return; }
   if(!email){ toast('Gmail хаяг оруулна уу','error'); return; }
   if(password.length<6){ toast('Нууц үг доод тал нь 6 тэмдэгт байх ёстой','error'); return; }
   if(password!==password2){ toast('Нууц үг таарахгүй байна','error'); return; }
@@ -1937,7 +1937,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     lastName:(r['овог']||r.lastname||'').trim(),
     firstName:(r['нэр']||r.firstname||r.name||'').trim(),
     position:(r['албан тушаал']||r['тушаал']||r.position||'').trim(),
-    department:(r['хэлтэс']||r.department||'').trim()
+    department:(r['алба']||r['хэлтэс']||r.department||'').trim()
   }));
 
   // Send in batches of 50 (server creates Auth + Firestore docs)
@@ -2905,7 +2905,7 @@ window.deleteQuestion=async function(id, trainingId){
         <div style="display:flex;gap:8px">
           <input type="text" id="inviteSearch" class="form-input" placeholder="Нэрээр хайх..." style="flex:1;padding:8px 12px;font-size:12px" />
           <select id="inviteDeptFilter" class="form-input" style="width:130px;padding:8px 10px;font-size:12px">
-            <option value="">Бүх хэлтэс</option>
+            <option value="">Бүх алба</option>
             <option>Захиргаа</option><option>Санхүү</option><option>Хүний нөөц</option>
             <option>Мэдээллийн технологи</option><option>Маркетинг</option>
             <option>Борлуулалт</option><option>Үйлдвэрлэл</option>
