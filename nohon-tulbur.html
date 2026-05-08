@@ -4496,7 +4496,10 @@
         window.location.href = 'index.html';
         return;
       }
-      _Tracker.init(fbUser.uid);
+      try{ await fbUser.reload(); }
+      catch(e){ await firebase.auth().signOut(); window.location.href='index.html'; return; }
+      if(!firebase.auth().currentUser){ window.location.href='index.html'; return; }
+      _Tracker.init(firebase.auth().currentUser.uid);
     });
   })();
 </script>

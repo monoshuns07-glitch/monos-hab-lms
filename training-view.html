@@ -591,7 +591,9 @@ const Tracker = {
 /* ── Auth guard ── */
 auth.onAuthStateChanged(async user=>{
   if(!user){ location.replace('index.html'); return; }
-  currentUser=user;
+  try{ await user.reload(); }catch(e){ await auth.signOut(); location.replace('index.html'); return; }
+  if(!auth.currentUser){ location.replace('index.html'); return; }
+  currentUser=auth.currentUser;
   Tracker.init();
 
   const params = new URLSearchParams(location.search);
