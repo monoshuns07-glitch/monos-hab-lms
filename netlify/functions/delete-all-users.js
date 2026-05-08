@@ -27,23 +27,29 @@ exports.handler = async (event) => {
 
     const db = getFirestore(sa);
 
-    // 1. List all UIDs (paginated)
+    // 1. List all UIDs via Identity Platform query API (paginated)
     const allUids = [];
-    let pageToken = null;
+    let nextPageToken = null;
     while (true) {
-      const url = new URL(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:batchGet`);
-      url.searchParams.set('maxResults', '1000');
-      if (pageToken) url.searchParams.set('nextPageToken', pageToken);
+      const body = { returnUserInfo: true, limit: 500 };
+      if (nextPageToken) body.offset = nextPageToken;
 
-      const res = await fetch(url.toString(), {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
+      const res = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:query`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }
+      );
       if (!res.ok) throw new Error(`list ${res.status}: ${(await res.text()).substring(0, 200)}`);
       const data = await res.json();
-      const users = data.users || [];
+      const users = data.userInfo || [];
+      if (users.length === 0) break;
       allUids.push(...users.map(u => u.localId));
-      pageToken = data.nextPageToken;
-      if (!pageToken) break;
+      // accounts:query doesn't have built-in pagination tokens, use offset
+      if (users.length < 500) break;
+      nextPageToken = String(allUids.length);
     }
     debug.push('total=' + allUids.length);
 
