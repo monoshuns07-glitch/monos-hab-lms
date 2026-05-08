@@ -445,7 +445,7 @@ firebase.initializeApp({
   appId:"1:562718693736:web:0fd550284fb40973d41edd"
 });
 const auth = firebase.auth();
-const db   = firebase.firestore();
+const db   = firebase.firestore(); try{Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
 
 /* ── State ── */
 let currentUser   = null;

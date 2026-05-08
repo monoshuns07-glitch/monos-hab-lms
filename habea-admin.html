@@ -326,7 +326,7 @@ textarea.inp{resize:vertical}
 // ── Firebase ──
 const firebaseConfig={apiKey:"AIzaSyCXodBPWqm3TTZuJieHkkcu2lLtH5l7IJ0",authDomain:"monos-hk-alba.firebaseapp.com",projectId:"monos-hk-alba",storageBucket:"monos-hk-alba.firebasestorage.app",messagingSenderId:"562718693736",appId:"1:562718693736:web:0fd550284fb40973d41edd"};
 firebase.initializeApp(firebaseConfig);
-const db=firebase.firestore();
+const db=firebase.firestore(); try{Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
 
 // ── State ──
 let CFG={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60,adminPin:"1234"};

@@ -21,7 +21,7 @@
     appId: "1:562718693736:web:0fd550284fb40973d41edd"
   };
   firebase.initializeApp(firebaseConfig);
-  window.fbDb = firebase.firestore();
+  window.fbDb = firebase.firestore(); try{Object.defineProperty(window.fbDb._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
 </script>
 <style>
 @property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}

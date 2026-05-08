@@ -279,7 +279,7 @@ if(!firebase.apps.length){
   });
 }
 const auth = firebase.auth();
-const db   = firebase.firestore();
+const db   = firebase.firestore(); try{Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
 
 let currentUser = null;
 let allResults  = [];

@@ -1345,7 +1345,7 @@ const firebaseConfig = {
   appId: "1:562718693736:web:0fd550284fb40973d41edd"
 };
 firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+const db = firebase.firestore(); try{Object.defineProperty(db._delegate._databaseId,"database",{value:"default",writable:true,configurable:true});}catch(e){}
 const auth = firebase.auth();
 
 let allItems=[],filteredItems=[];
