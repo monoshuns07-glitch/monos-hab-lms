@@ -2404,6 +2404,40 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
+  /* Horizontal scroll carousel for exclusion cards (like videos) */
+  .exc-grid{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    overflow-x:auto!important;
+    overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;
+    gap:14px!important;
+    padding:6px 4px 16px!important;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(227,6,19,.4) rgba(0,0,0,.05);
+    grid-template-columns:none!important;
+  }
+  .exc-grid::-webkit-scrollbar{height:8px}
+  .exc-grid::-webkit-scrollbar-track{background:rgba(0,0,0,.05);border-radius:4px}
+  .exc-grid::-webkit-scrollbar-thumb{background:rgba(227,6,19,.4);border-radius:4px}
+  .exc-grid::-webkit-scrollbar-thumb:hover{background:rgba(227,6,19,.6)}
+  .exc-grid > .exc-card{
+    flex:0 0 320px!important;
+    min-width:320px;
+    max-width:320px;
+    scroll-snap-align:start;
+    margin:0!important;
+  }
+  @media (max-width:720px){
+    .exc-grid{gap:10px!important;padding:4px 2px 12px!important}
+    .exc-grid > .exc-card{
+      flex:0 0 260px!important;
+      min-width:260px!important;
+      max-width:260px!important;
+    }
+  }
+
   /* Section number — same Fraunces font as title, large but not gigantic, left-aligned */
   .section-number{
     font-family:'Fraunces',serif!important;
