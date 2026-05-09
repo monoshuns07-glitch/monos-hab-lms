@@ -1737,14 +1737,21 @@ function renderUsersTable(){
     content.innerHTML=`<div class="empty"><h3>${allUsers.length===0?'Ажилтан бүртгэгдээгүй байна':'Үр дүн олдсонгүй'}</h3><p>${allUsers.length===0?'Ажилтан нэмэх товч дарна уу':'Өөр хаяг оролдоно уу'}</p></div>`;
     return;
   }
-  content.innerHTML=`<table class="user-table"><thead><tr><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Алба</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
+  const allEligibleSelected = filteredUsers.length > 0 && filteredUsers.filter(u=>u.email&&u.password).every(u=>_credSelected.has(u.id));
+  content.innerHTML=`<table class="user-table"><thead><tr><th style="width:32px"><input type="checkbox" id="userSelectAll" ${allEligibleSelected?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)"></th><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Алба</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
     const dt=(u.createdAt?.toDate?.()||u.created_at?.toDate?.())?.toLocaleDateString('mn-MN')||'—';
     const secs=u.totalSiteTime||0;
     const hrs=Math.floor(secs/3600),mins=Math.floor((secs%3600)/60);
     const timeStr=hrs>0?`${hrs}ц ${mins}м`:secs>0?`${mins}м`:'—';
     const pwd=u.password||'';
     const pwdCell=pwd?`<button class="pwd-btn" data-pwd="${escapeHtml(pwd)}" onclick="togglePwd(this)" style="background:rgba(255,255,255,.04);border:1px solid var(--input-border);color:var(--muted);padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-family:monospace">••••••</button>`:`<span style="color:var(--muted);font-size:11px">—</span>`;
-    return `<tr>
+    const canSelect = u.email && u.password;
+    const checked = _credSelected.has(u.id);
+    const cb = canSelect
+      ? `<input type="checkbox" class="user-cb" data-uid="${u.id}" ${checked?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)">`
+      : `<span title="Email эсвэл нууц үг байхгүй" style="color:var(--muted);font-size:11px">—</span>`;
+    return `<tr style="${checked?'background:rgba(0,229,255,.04)':''}">
+      <td style="text-align:center">${cb}</td>
       <td style="color:var(--muted);width:36px">${i+1}</td>
       <td>${escapeHtml(u.lastName||'—')}</td>
       <td style="font-weight:600">${escapeHtml(u.firstName||'—')}</td>
@@ -1757,6 +1764,31 @@ function renderUsersTable(){
       <td><div class="row-actions"><button class="action-btn" onclick="deleteUser('${u.id}')" title="Устгах"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div></td>
     </tr>`;
   }).join('')}</tbody></table>`;
+
+  // Wire checkbox events
+  content.querySelectorAll('.user-cb').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const uid = e.target.dataset.uid;
+      if (e.target.checked) _credSelected.add(uid); else _credSelected.delete(uid);
+      e.target.closest('tr').style.background = e.target.checked ? 'rgba(0,229,255,.04)' : '';
+      updateSendCredsBtn();
+    });
+  });
+  document.getElementById('userSelectAll')?.addEventListener('change', e => {
+    const eligible = filteredUsers.filter(u => u.email && u.password);
+    if (e.target.checked) eligible.forEach(u => _credSelected.add(u.id));
+    else eligible.forEach(u => _credSelected.delete(u.id));
+    renderUsersTable();
+    updateSendCredsBtn();
+  });
+  updateSendCredsBtn();
+}
+
+function updateSendCredsBtn(){
+  const btn = document.getElementById('sendCredsBtn');
+  if (!btn) return;
+  const n = _credSelected.size;
+  btn.innerHTML = n > 0 ? `📧 Login илгээх (${n})` : '📧 Login илгээх';
 }
 window.togglePwd=function(btn){
   const pwd=btn.dataset.pwd;
@@ -1853,23 +1885,57 @@ document.getElementById('emailjsSettingsBtn')?.addEventListener('click',()=>{
       m.classList.remove('show');
       toast('EmailJS тохиргоо хадгалагдлаа','success');
     });
+    document.getElementById('emailjsModalDelete')?.addEventListener('click',()=>{
+      if(!confirm('EmailJS тохиргоог бүрмөсөн устгах уу?')) return;
+      localStorage.removeItem('emailjs_service');
+      localStorage.removeItem('emailjs_template');
+      localStorage.removeItem('emailjs_template_creds');
+      localStorage.removeItem('emailjs_key');
+      document.getElementById('ejsServiceId').value='';
+      document.getElementById('ejsTemplateId').value='';
+      document.getElementById('ejsPublicKey').value='';
+      m.classList.remove('show');
+      toast('EmailJS тохиргоо устгагдлаа','success');
+    });
   }
 });
 
 // Selection state for credentials send
 let _credSelected = new Set();
 
-document.getElementById('sendCredsBtn').addEventListener('click',()=>{
-  const eligible = allUsers.filter(u=>u.email&&u.password);
-  if(eligible.length===0){ toast('Email/нууц үгтэй ажилтан байхгүй','error'); return; }
+document.getElementById('sendCredsBtn').addEventListener('click',async()=>{
+  const targets = allUsers.filter(u => _credSelected.has(u.id) && u.email && u.password);
+  if(targets.length===0){
+    toast('Хүснэгтээс ажилтан сонгоно уу (зүүн талын checkbox)','error');
+    return;
+  }
   const svcId=localStorage.getItem('emailjs_service')||'';
   const tplId=localStorage.getItem('emailjs_template_creds')||localStorage.getItem('emailjs_template')||'';
   const pubKey=localStorage.getItem('emailjs_key')||'';
   if(!svcId||!tplId||!pubKey){ toast('EmailJS тохиргоо хийгдээгүй. ⚙️ дарж тохируулна уу.','error'); return; }
-  // Open selection modal
-  _credSelected = new Set(eligible.map(u=>u.id));
-  renderCredsList(eligible);
-  document.getElementById('credsModal').classList.add('show');
+  if(!confirm(`${targets.length} ажилтанд login email/password илгээх үү?`)) return;
+  const btn=document.getElementById('sendCredsBtn');
+  btn.disabled=true;
+  emailjs.init({ publicKey: pubKey });
+  let sent=0,failed=0,lastErr='';
+  const siteUrl=window.location.origin;
+  for(let i=0;i<targets.length;i++){
+    const u=targets[i];
+    try{
+      await emailjs.send(svcId,tplId,{
+        to_email:u.email,
+        to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
+        login_email:u.email,
+        login_password:u.password,
+        site_url:siteUrl
+      });
+      sent++;
+    } catch(e){ failed++; lastErr=e.text||e.message||String(e); }
+    btn.innerHTML = `<span class="spinner-sm"></span>${i+1}/${targets.length}...`;
+  }
+  toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`,sent>0?'success':'error');
+  btn.disabled=false;
+  updateSendCredsBtn();
 });
 
 function renderCredsList(filterText){
@@ -3253,9 +3319,12 @@ ${d.trainingStats.map((t,i)=>`<tr>
         <input type="text" class="form-input" id="ejsPublicKey" placeholder="xxxxxxxxxxxxxxxxxxxx" />
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" id="emailjsModalCancel">Болих</button>
-      <button class="btn btn-primary" id="emailjsModalSave">Хадгалах</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn" id="emailjsModalDelete" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Устгах</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" id="emailjsModalCancel">Болих</button>
+        <button class="btn btn-primary" id="emailjsModalSave">Хадгалах</button>
+      </div>
     </div>
   </div>
 </div>
