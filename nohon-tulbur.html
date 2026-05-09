@@ -2404,105 +2404,222 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
-  /* ===== STEP CAROUSEL — fixed cards, arrows, swipe hand ===== */
+  /* ===== STEP CAROUSEL (Amar reference layout) ===== */
   .step-scroll-wrap{
     position:relative;
-    margin:24px 0 32px;
-    padding:0 56px;
+    max-width:1400px;
+    margin:24px auto 0;
+    padding:0 60px;
   }
   .step-scroll{
     display:flex!important;
     flex-wrap:nowrap!important;
+    gap:24px!important;
     overflow-x:auto!important;
     overflow-y:hidden;
+    scroll-behavior:smooth;
     scroll-snap-type:x mandatory;
     -webkit-overflow-scrolling:touch;
-    scroll-behavior:smooth;
-    gap:18px!important;
-    padding:8px 4px 14px!important;
+    padding:20px 4px!important;
     scrollbar-width:none;
   }
   .step-scroll::-webkit-scrollbar{display:none}
 
-  /* FIXED SIZE CARDS — stable layout, image always fits */
+  /* SLIDE — 420×720 fixed */
   .step-scroll > .step{
-    flex:0 0 360px!important;
-    width:360px!important;
-    min-width:360px!important;
-    max-width:360px!important;
-    height:600px!important;
-    scroll-snap-align:start;
+    flex:0 0 420px!important;
+    width:420px!important;
+    min-width:420px!important;
+    max-width:420px!important;
+    height:720px!important;
+    scroll-snap-align:center;
     margin:0!important;
-    padding:0!important;
-    border-bottom:none!important;
-    border:1px solid rgba(0,0,0,.08)!important;
-    border-radius:18px!important;
+    padding:28px!important;
     background:#FFFFFF!important;
-    box-shadow:0 4px 16px rgba(0,0,0,.06), 0 1px 4px rgba(0,0,0,.04)!important;
+    border:1px solid #f0e8e8!important;
+    border-radius:16px!important;
+    box-shadow:0 4px 16px rgba(0,0,0,.06)!important;
+    display:flex!important;
+    flex-direction:column!important;
+    gap:20px!important;
+    grid-template-columns:none!important;
+    grid-template-rows:none!important;
+    transition:transform .3s ease!important;
     overflow:hidden;
-    display:grid!important;
-    grid-template-rows:auto auto 1fr!important;
-    grid-template-columns:1fr!important;
-    gap:0!important;
-    transition:transform .3s ease, box-shadow .3s ease;
   }
-  .step-scroll > .step:hover{
-    transform:translateY(-4px);
-    box-shadow:0 12px 32px rgba(0,0,0,.1), 0 4px 12px rgba(0,0,0,.06)!important;
-  }
-  /* Header zone — step number */
+  .step-scroll > .step:hover{transform:translateY(-4px)!important}
+
+  /* Number badge — 44px red circle */
   .step-scroll > .step > .step-num{
-    grid-row:1;
-    margin:16px 16px 0!important;
-    align-self:flex-start;
+    width:44px!important;height:44px!important;
+    border-radius:50%!important;
+    background:var(--red)!important;
+    color:#FFFFFF!important;
+    display:flex!important;align-items:center;justify-content:center;
+    font-size:14px!important;font-weight:700!important;
+    flex-shrink:0;
+    margin:0!important;
+    line-height:1!important;
+    text-shadow:none!important;
+    font-family:inherit!important;
+    letter-spacing:normal!important;
   }
-  /* Body zone — title + text — fixed cap height */
+  .step-scroll > .step > .step-num .dot{display:none}
+
+  /* Body — title + description + checklist */
   .step-scroll > .step > .step-body{
-    grid-row:2;
-    padding:6px 16px 12px!important;
+    flex:0 1 auto!important;
+    padding:0!important;
+    margin:0!important;
     overflow:hidden;
-    height:200px;
-    box-sizing:border-box;
   }
   .step-scroll > .step > .step-body h4{
-    font-size:15px!important;
+    font-size:16px!important;
+    font-weight:700!important;
+    color:#2c2c2a!important;
+    margin:0 0 8px!important;
     line-height:1.3;
-    margin:0 0 6px!important;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   }
   .step-scroll > .step > .step-body p,
   .step-scroll > .step > .step-body .editable{
-    font-size:12px!important;line-height:1.45;margin:0 0 6px!important;
-    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+    font-size:13px!important;
+    color:#555!important;
+    line-height:1.6!important;
+    margin:0 0 14px!important;
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;
   }
-  .step-scroll > .step > .step-body .checklist,
-  .step-scroll > .step > .step-body ul{
-    font-size:11.5px!important;margin:4px 0 0!important;padding-left:0;
-    max-height:80px;overflow:hidden;
+  .step-scroll > .step > .step-body .highlight{
+    color:var(--red)!important;font-weight:600!important;
+    background:#ffe5e5!important;padding:1px 4px!important;border-radius:3px!important;
   }
-  .step-scroll > .step > .step-body .checklist li{margin-bottom:3px!important;line-height:1.3}
-  /* Visual zone — fills bottom, image always fits */
+  .step-scroll > .step > .step-body .checklist{
+    list-style:none;margin:0!important;padding:0!important;
+  }
+  .step-scroll > .step > .step-body .checklist li{
+    display:flex;align-items:flex-start;gap:10px;
+    padding:8px 0!important;
+    border-bottom:1px dashed #ebebeb;
+    font-size:13px!important;color:#333!important;line-height:1.5!important;
+  }
+  .step-scroll > .step > .step-body .checklist li:last-child{border-bottom:none}
+  .step-scroll > .step > .step-body .checklist li::after,
+  .step-scroll > .step > .step-body .checklist li::before{display:none!important}
+
+  /* Preview row — bottom area with mini-card + label */
   .step-scroll > .step > .step-visual{
-    grid-row:3;
-    margin:0 16px 16px!important;
-    overflow:hidden;
-    border-radius:10px;
-    display:flex;align-items:center;justify-content:center;
-    background:#FAFAFA;
-    width:auto;
-    min-height:280px;
-    height:100%;
+    margin-top:auto!important;
+    padding:16px 0 0!important;
+    background:transparent!important;
+    border:none!important;
+    border-radius:0!important;
+    display:flex!important;
+    align-items:center!important;
+    gap:16px!important;
+    flex-shrink:0;
+    overflow:visible;
+    min-height:auto;
+    height:auto;
+    box-shadow:none!important;
   }
-  .step-scroll > .step > .step-visual img,
-  .step-scroll > .step > .step-visual > *{
-    width:100%!important;
-    height:100%!important;
-    max-width:100%;
-    max-height:100%;
-    object-fit:contain!important;
-    border-radius:8px;
+  .step-scroll > .step > .step-visual::before{display:none!important}
+  .step-scroll > .step > .step-visual img{
+    width:160px!important;
+    height:230px!important;
+    object-fit:cover!important;
+    border-radius:8px!important;
+    border:1px solid #ddd!important;
+    box-shadow:0 2px 8px rgba(0,0,0,.08)!important;
+    flex-shrink:0;
     margin:0!important;
     display:block;
+  }
+  .step-scroll > .step > .step-visual .step-visual-label{
+    flex:1;
+    display:flex;align-items:center;gap:8px;
+    color:#888!important;font-size:11px!important;font-weight:600!important;
+    letter-spacing:.5px!important;line-height:1.4!important;
+    margin:0!important;
+    text-transform:uppercase;
+  }
+  .step-scroll > .step > .step-visual .step-visual-label::before{
+    content:"";width:24px;height:1px;background:var(--red)!important;flex-shrink:0;
+  }
+
+  /* Arrow buttons */
+  .step-arrow{
+    position:absolute;top:50%;transform:translateY(-50%);
+    z-index:10;
+    width:44px;height:44px;border-radius:50%;
+    background:#FFFFFF;border:1px solid #e0e0e0;
+    box-shadow:0 2px 8px rgba(0,0,0,.12);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all .2s ease;
+    color:#666;font-size:18px;
+  }
+  .step-arrow:hover{background:var(--red);color:#FFF;border-color:transparent;transform:translateY(-50%) scale(1.1)}
+  .step-arrow.prev{left:8px}
+  .step-arrow.next{right:8px}
+
+  /* Swipe hint */
+  .swipe-indicator{
+    margin:28px auto 16px;display:flex;justify-content:center;
+  }
+  .swipe-track{
+    position:relative;width:280px;height:50px;
+    background:#FFFFFF;border:1px solid #f0e8e8;border-radius:25px;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+    box-shadow:0 2px 8px rgba(0,0,0,.04);
+  }
+  .swipe-text{color:#888;font-size:13px;font-weight:500;margin-left:30px}
+  .swipe-hand{
+    position:absolute;left:18px;top:50%;
+    font-size:24px;line-height:1;
+    transform:translateY(-50%);
+    animation:handSwipe 2.8s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes handSwipe{
+    0%{left:18px;opacity:0;transform:translateY(-50%) scale(.8)}
+    15%{opacity:1;transform:translateY(-50%) scale(1)}
+    50%{left:calc(100% - 50px);opacity:1;transform:translateY(-50%) scale(1)}
+    80%{opacity:.4;transform:translateY(-50%) scale(.95)}
+    100%{left:calc(100% - 50px);opacity:0;transform:translateY(-50%) scale(.8)}
+  }
+
+  /* Progress bar */
+  .step-progress-bar{
+    display:flex;align-items:center;gap:12px;
+    width:90%;max-width:1100px;
+    margin:8px auto 24px;padding:0 12px;
+  }
+  .step-progress-bar .prog-arrow{
+    color:var(--red);font-size:11px;cursor:pointer;user-select:none;padding:4px;
+  }
+  .step-progress-bar .prog-track{
+    flex:1;height:6px;background:#f0ecec;border-radius:3px;
+    position:relative;overflow:hidden;
+  }
+  .step-progress-bar .prog-fill{
+    position:absolute;left:0;top:0;height:100%;
+    background:#d99a9a;border-radius:3px;
+    transition:left .2s ease, width .2s ease;
+  }
+
+  @media (max-width:768px){
+    .step-scroll-wrap{padding:0 16px}
+    .step-arrow{display:none}
+    .step-scroll > .step{
+      flex:0 0 90vw!important;
+      width:90vw!important;
+      min-width:90vw!important;
+      max-width:90vw!important;
+      height:auto!important;
+      min-height:660px!important;
+      padding:22px!important;
+    }
+    .step-scroll > .step > .step-visual img{width:140px!important;height:200px!important}
+    .swipe-track{width:240px;height:46px}
   }
 
   /* Arrow buttons */
@@ -5524,8 +5641,8 @@
 
     const cardWidth = () => {
       const card = scroll.querySelector('.step');
-      if (!card) return 380;
-      return card.getBoundingClientRect().width + 18; // + gap
+      if (!card) return 420;
+      return card.getBoundingClientRect().width + 24; // + gap
     };
 
     prev.addEventListener('click', () => {
@@ -5545,8 +5662,28 @@
     // Swipe indicator
     const ind = document.createElement('div');
     ind.className = 'swipe-indicator';
-    ind.innerHTML = '<div class="swipe-track"><span class="swipe-text">Хойшоо гүйлгэж үзнэ үү</span><div class="swipe-hand">👆</div></div>';
+    ind.innerHTML = '<div class="swipe-track"><div class="swipe-hand">👆</div><span class="swipe-text">Хойшоо гүйлгэж үзнэ үү</span></div>';
     wrap.parentNode.insertBefore(ind, wrap.nextSibling);
+
+    // Progress bar
+    const pb = document.createElement('div');
+    pb.className = 'step-progress-bar';
+    pb.innerHTML = '<span class="prog-arrow prog-left">◀</span><div class="prog-track"><div class="prog-fill"></div></div><span class="prog-arrow prog-right">▶</span>';
+    ind.parentNode.insertBefore(pb, ind.nextSibling);
+
+    const fill = pb.querySelector('.prog-fill');
+    const updateProgress = () => {
+      const max = scroll.scrollWidth - scroll.clientWidth;
+      const ratio = scroll.clientWidth / scroll.scrollWidth;
+      const w = Math.max(ratio * 100, 15);
+      if (max <= 0) { fill.style.width = '100%'; fill.style.left = '0%'; return; }
+      fill.style.width = w + '%';
+      fill.style.left = ((scroll.scrollLeft / max) * (100 - w)) + '%';
+    };
+    scroll.addEventListener('scroll', updateProgress, { passive: true });
+    setTimeout(updateProgress, 100);
+    pb.querySelector('.prog-left').addEventListener('click', () => scroll.scrollBy({ left: -cardWidth(), behavior: 'smooth' }));
+    pb.querySelector('.prog-right').addEventListener('click', () => scroll.scrollBy({ left: cardWidth(), behavior: 'smooth' }));
 
     // Hide swipe hand after first interaction
     let interacted = false;
