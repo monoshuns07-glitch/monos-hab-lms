@@ -2505,7 +2505,10 @@
   .step-scroll > .step > .step-body .checklist li::after,
   .step-scroll > .step > .step-body .checklist li::before{display:none!important}
 
-  /* Preview row — bottom area with mini-card + label */
+  /* Hide download-card inside carousel slides (already represented by example image) */
+  .step-scroll > .step .download-card{display:none!important}
+
+  /* Preview row — bottom area with larger mini-card + label */
   .step-scroll > .step > .step-visual{
     margin-top:auto!important;
     padding:16px 0 0!important;
@@ -2523,12 +2526,12 @@
   }
   .step-scroll > .step > .step-visual::before{display:none!important}
   .step-scroll > .step > .step-visual img{
-    width:160px!important;
-    height:230px!important;
+    width:200px!important;
+    height:280px!important;
     object-fit:cover!important;
-    border-radius:8px!important;
+    border-radius:10px!important;
     border:1px solid #ddd!important;
-    box-shadow:0 2px 8px rgba(0,0,0,.08)!important;
+    box-shadow:0 4px 14px rgba(0,0,0,.12)!important;
     flex-shrink:0;
     margin:0!important;
     display:block;
@@ -2618,7 +2621,7 @@
       min-height:660px!important;
       padding:22px!important;
     }
-    .step-scroll > .step > .step-visual img{width:140px!important;height:200px!important}
+    .step-scroll > .step > .step-visual img{width:170px!important;height:240px!important}
     .swipe-track{width:240px;height:46px}
   }
 
