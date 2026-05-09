@@ -2225,6 +2225,206 @@
     }
   }
 
+  /* ================================================================
+     AMAR DAATGAL — STYLE OVERLAY (clean insurance look)
+     ================================================================ */
+
+  /* Reset glassy bg for clean white insurance feel */
+  body{
+    background:#FFFFFF!important;
+    background-image:none!important;
+  }
+  .bg-orb1,.bg-orb2,.bg-orb3{display:none!important}
+  #bgCanvas{opacity:.3!important}
+
+  /* ── Clean white header (Amar style) ── */
+  .nav{
+    background:#FFFFFF!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    border-bottom:1px solid rgba(0,0,0,.08)!important;
+    box-shadow:0 1px 4px rgba(0,0,0,.04)!important;
+    padding:14px 28px!important;
+  }
+  .nav::after{display:none!important}
+  .brand-name-top{
+    background:none!important;
+    -webkit-text-fill-color:var(--red)!important;
+    color:var(--red)!important;
+    font-weight:900!important;
+    letter-spacing:.04em;
+  }
+
+  /* ── Hero with image + dark overlay (Amar sub-page style) ── */
+  .hero-section, .hub-hero, .top-hero, header.hero{
+    position:relative;
+    background:linear-gradient(135deg, #1a1a1a 0%, #2d0a0a 100%)!important;
+    overflow:hidden;
+    border-radius:0 0 24px 24px;
+    margin-bottom:32px;
+    padding:80px 28px 64px!important;
+  }
+  .hero-section::before, .hub-hero::before, .top-hero::before, header.hero::before{
+    content:'';
+    position:absolute;inset:0;
+    background:url('https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1600&q=70') center/cover;
+    opacity:.35;mix-blend-mode:luminosity;z-index:0;
+  }
+  .hero-section::after, .hub-hero::after, .top-hero::after, header.hero::after{
+    content:'';
+    position:absolute;inset:0;
+    background:linear-gradient(135deg, rgba(0,0,0,.85) 0%, rgba(227,6,19,.4) 100%);
+    z-index:1;
+  }
+  .hero-section > *, .hub-hero > *, .top-hero > *, header.hero > *{
+    position:relative;z-index:2;
+  }
+  .hero-section h1, .hub-hero h1, .top-hero h1, header.hero h1,
+  .hero-section h2, .hub-hero h2, .top-hero h2, header.hero h2{
+    color:#FFFFFF!important;
+    font-weight:900!important;
+    text-shadow:0 2px 12px rgba(0,0,0,.4);
+  }
+  .hero-section p, .hub-hero p, .top-hero p, header.hero p{
+    color:rgba(255,255,255,.92)!important;
+  }
+
+  /* ── Red CTA button (Amar style — pill, with arrow) ── */
+  .btn-cta, .cta-btn, .btn-primary, button.primary, a.primary,
+  .stage-link, .pdf-row a.btn, .doc-link{
+    display:inline-flex!important;
+    align-items:center!important;
+    gap:10px!important;
+    padding:14px 28px!important;
+    background:var(--red)!important;
+    color:#FFFFFF!important;
+    border:none!important;
+    border-radius:999px!important;
+    font-weight:700!important;
+    font-size:14px!important;
+    text-decoration:none!important;
+    transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, background .25s ease;
+    box-shadow:0 6px 20px rgba(227,6,19,.35);
+    cursor:pointer;
+  }
+  .btn-cta:hover, .cta-btn:hover, .btn-primary:hover, button.primary:hover, a.primary:hover{
+    transform:translateY(-2px);
+    background:#C10010!important;
+    box-shadow:0 10px 28px rgba(227,6,19,.45);
+  }
+  .btn-cta::after, .cta-btn::after{
+    content:'→';font-size:16px;line-height:1;
+  }
+
+  /* ── Clean accordion cards (Amar style) ── */
+  .acc-item{
+    background:#FFFFFF!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    border:1px solid rgba(0,0,0,.08)!important;
+    border-radius:14px!important;
+    margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.03)!important;
+    overflow:hidden;
+    transition:border-color .25s ease, box-shadow .25s ease;
+  }
+  .acc-item:hover{
+    border-color:rgba(227,6,19,.2)!important;
+    box-shadow:0 2px 6px rgba(0,0,0,.05), 0 8px 20px rgba(0,0,0,.06)!important;
+  }
+  .acc-item .acc-head, .acc-item > [role=button], .acc-item > summary{
+    padding:18px 22px!important;
+    display:flex;align-items:center;gap:14px;
+  }
+  .acc-toggle{
+    width:32px;height:32px;border-radius:50%;
+    background:rgba(0,0,0,.04)!important;
+    border:none!important;color:#666!important;
+    transition:all .25s ease;
+  }
+  .acc-item[open] .acc-toggle, .acc-item.open .acc-toggle{
+    background:var(--red)!important;color:#FFF!important;
+    transform:rotate(180deg);
+  }
+
+  /* ── Step cards / Info cards: clean white ── */
+  .step,
+  .info-card,
+  .stage-card,
+  .feature-card,
+  .case-block,
+  .qa-card,
+  .doc-row,
+  .step-card,
+  .help-row,
+  .key-card,
+  .calc-card,
+  .vid-card,
+  .reg-card{
+    background:#FFFFFF!important;
+    backdrop-filter:none!important;
+    -webkit-backdrop-filter:none!important;
+    border:1px solid rgba(0,0,0,.07)!important;
+    border-radius:16px!important;
+    box-shadow:0 1px 3px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.04)!important;
+    transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease;
+  }
+  .step:hover, .info-card:hover, .stage-card:hover, .feature-card:hover, .case-block:hover{
+    transform:translateY(-3px);
+    box-shadow:0 4px 12px rgba(0,0,0,.06), 0 12px 28px rgba(0,0,0,.07)!important;
+  }
+
+  /* Step number — circular red badge */
+  .step-num{
+    background:var(--red)!important;
+    color:#FFFFFF!important;
+    width:48px;height:48px;
+    border-radius:50%!important;
+    display:grid;place-items:center;
+    font-size:20px!important;
+    font-weight:900!important;
+    line-height:1!important;
+    text-shadow:none!important;
+    flex-shrink:0;
+  }
+  .step-num .dot{display:none}
+
+  /* ── Dark slate footer (Amar style) ── */
+  footer, .site-footer, .footer-block{
+    background:#3F4651!important;
+    color:rgba(255,255,255,.85)!important;
+    padding:48px 28px 32px!important;
+    margin-top:60px;
+    border-radius:24px 24px 0 0;
+  }
+  footer a, .site-footer a, .footer-block a{
+    color:rgba(255,255,255,.78)!important;
+    text-decoration:none!important;
+    transition:color .2s ease;
+  }
+  footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
+
+  /* ── Mobile (Amar mobile pattern) ── */
+  @media (max-width:720px){
+    .nav{padding:10px 16px!important}
+    .hero-section, .hub-hero, .top-hero, header.hero{
+      padding:48px 18px 36px!important;
+      border-radius:0 0 18px 18px;
+      margin-bottom:20px;
+    }
+    .hero-section h1, .hub-hero h1, .top-hero h1, header.hero h1{
+      font-size:26px!important;line-height:1.2;
+    }
+    .btn-cta, .cta-btn, .btn-primary{
+      padding:12px 22px!important;font-size:13px!important;
+    }
+    .acc-item{border-radius:12px!important;margin-bottom:10px}
+    .acc-item .acc-head, .acc-item > [role=button]{padding:14px 16px!important}
+    .step{padding:20px!important;border-radius:14px!important}
+    .step-num{width:38px;height:38px;font-size:16px!important}
+    footer, .site-footer{padding:32px 18px 24px!important;border-radius:18px 18px 0 0}
+  }
+
 </style>
 <style>
 #starCanvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.55;display:none}
