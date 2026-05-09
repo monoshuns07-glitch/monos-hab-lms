@@ -2442,12 +2442,30 @@
     .help-list,
     .vid-grid,
     .reg-list,
+    .risk-grid,
+    .exc-grid,
+    .cause-grid,
+    .exclude-grid,
     [class*="cards-grid"],
     [class*="cards-row"],
-    [class*="info-row"]{
+    [class*="info-row"],
+    [class*="-grid"]{
       display:grid!important;
       grid-template-columns:repeat(2, 1fr)!important;
       gap:8px!important;
+    }
+    .risk-card,
+    .exc-card,
+    .cause-card{
+      padding:12px!important;
+      border-radius:10px!important;
+      font-size:11.5px!important;
+    }
+    .risk-card-title, .exc-card-title{font-size:12.5px!important}
+    .risk-card-text, .exc-card-text{font-size:11px!important;line-height:1.35}
+    .risk-card-icon, .exc-card-icon{
+      width:26px!important;height:26px!important;
+      font-size:13px!important;
     }
     .doc-grid > *,
     .stage-list > *,
