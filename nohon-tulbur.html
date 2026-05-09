@@ -2404,53 +2404,6 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
-  /* Horizontal scroll carousel for STEP cards (like videos) */
-  .step-scroll{
-    display:flex!important;
-    flex-wrap:nowrap!important;
-    overflow-x:auto!important;
-    overflow-y:hidden;
-    scroll-snap-type:x mandatory;
-    -webkit-overflow-scrolling:touch;
-    gap:14px!important;
-    padding:6px 4px 16px!important;
-    scrollbar-width:thin;
-    scrollbar-color:rgba(227,6,19,.4) rgba(0,0,0,.05);
-    margin-bottom:16px;
-  }
-  .step-scroll::-webkit-scrollbar{height:8px}
-  .step-scroll::-webkit-scrollbar-track{background:rgba(0,0,0,.05);border-radius:4px}
-  .step-scroll::-webkit-scrollbar-thumb{background:rgba(227,6,19,.4);border-radius:4px}
-  .step-scroll::-webkit-scrollbar-thumb:hover{background:rgba(227,6,19,.6)}
-  .step-scroll > .step{
-    flex:0 0 720px!important;
-    min-width:720px;
-    max-width:720px;
-    scroll-snap-align:start;
-    margin:0!important;
-    padding:24px!important;
-    border-bottom:none!important;
-    border:1px solid rgba(0,0,0,.07)!important;
-    border-radius:16px!important;
-    background:#FFFFFF!important;
-    box-shadow:0 1px 3px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.04)!important;
-  }
-  @media (max-width:720px){
-    .step-scroll{gap:10px!important;padding:4px 2px 12px!important}
-    .step-scroll > .step{
-      flex:0 0 280px!important;
-      min-width:280px!important;
-      max-width:280px!important;
-      padding:16px!important;
-      grid-template-columns:1fr!important;
-    }
-    .step-scroll > .step .step-visual,
-    .step-scroll > .step img{
-      max-height:200px!important;
-      margin-top:10px!important;
-    }
-  }
-
   /* Horizontal scroll carousel for exclusion cards (like videos) */
   .exc-grid{
     display:flex!important;
@@ -5338,36 +5291,6 @@
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
   else init();
-})();
-</script>
-
-<script>
-/* Wrap consecutive .step siblings into .step-scroll horizontal carousels */
-(function(){
-  function wrapSteps(){
-    document.querySelectorAll('.step').forEach(step => {
-      // Skip if already wrapped
-      if (step.parentElement?.classList.contains('step-scroll')) return;
-      // Find consecutive .step siblings
-      const group = [step];
-      let next = step.nextElementSibling;
-      while (next && next.classList && next.classList.contains('step')) {
-        group.push(next);
-        next = next.nextElementSibling;
-      }
-      if (group.length < 2) return; // Don't wrap single step
-      // Wrap all in a .step-scroll
-      const wrapper = document.createElement('div');
-      wrapper.className = 'step-scroll';
-      step.parentNode.insertBefore(wrapper, step);
-      group.forEach(g => wrapper.appendChild(g));
-    });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapSteps);
-  else wrapSteps();
-  // Also re-run if accordions are toggled (steps may render later)
-  setTimeout(wrapSteps, 500);
-  setTimeout(wrapSteps, 1500);
 })();
 </script>
 
