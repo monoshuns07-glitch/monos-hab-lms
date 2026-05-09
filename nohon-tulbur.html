@@ -2404,23 +2404,30 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
-  /* Section number — compact pill instead of huge text */
+  /* Section number — same Fraunces font as title, large but not gigantic, left-aligned */
   .section-number{
-    font-size:13px!important;
-    font-weight:800!important;
+    font-family:'Fraunces',serif!important;
+    font-size:clamp(32px,4vw,54px)!important;
+    font-weight:900!important;
     line-height:1!important;
     color:var(--red)!important;
-    letter-spacing:.08em!important;
-    display:inline-flex;align-items:center;gap:8px;
-    padding:6px 14px;
-    background:rgba(227,6,19,.08);
-    border-radius:999px;
-    width:fit-content;
-    margin-bottom:8px;
+    letter-spacing:-.02em!important;
+    background:none!important;
+    padding:0!important;
+    border-radius:0!important;
+    display:block;
+    width:auto;
+    margin:0 0 12px!important;
   }
-  .section-number::before{
-    content:'';width:6px;height:6px;border-radius:50%;
-    background:var(--red);display:inline-block;
+  .section-number::before{display:none!important}
+
+  /* Step grid — tighter gap so number sits closer to text */
+  .step{
+    grid-template-columns:56px 1fr 1fr!important;
+    gap:18px!important;
+  }
+  @media (max-width:768px){
+    .step{grid-template-columns:48px 1fr!important;gap:14px!important}
   }
 
   /* ── Mobile (Amar mobile pattern) — edge-to-edge hero/footer, 2-col grid for cards ── */
