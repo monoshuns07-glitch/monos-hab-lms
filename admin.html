@@ -739,6 +739,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <button class="btn btn-secondary" id="bulkUserBtn">📥 Excel-ээс оруулах</button>
     <button class="btn btn-primary" id="addUserBtn">➕ Ажилтан нэмэх</button>
     <button class="btn" id="sendCredsBtn" style="background:rgba(0,229,255,.12);color:var(--cyan);border:1px solid rgba(0,229,255,.25)">📧 Login илгээх</button>
+    <button class="btn" id="emailjsSettingsBtn" title="EmailJS тохиргоо" style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.08);padding:0 12px">⚙️</button>
     <button class="btn" id="deleteAllUsersBtn" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Firestore устгах</button>
     <button class="btn" id="deleteAllAuthBtn" style="background:rgba(227,6,19,.2);color:#FF4060;border:1px solid rgba(227,6,19,.4)">🔥 Auth+Firestore бүгд устгах</button>
   </div>
@@ -1826,6 +1827,35 @@ document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
 });
 
 /* ===== SEND LOGIN CREDENTIALS EMAIL ===== */
+// EmailJS settings button (Хэрэглэгчид tab) — opens settings modal directly
+document.getElementById('emailjsSettingsBtn')?.addEventListener('click',()=>{
+  // Lazy-init listeners if not yet ready
+  try{ _setupInviteListeners?.(); }catch(e){}
+  const m=document.getElementById('emailjsModal');
+  if(!m){ toast('Modal not found','error'); return; }
+  document.getElementById('ejsServiceId').value=localStorage.getItem('emailjs_service')||'';
+  document.getElementById('ejsTemplateId').value=localStorage.getItem('emailjs_template')||'';
+  document.getElementById('ejsPublicKey').value=localStorage.getItem('emailjs_key')||'';
+  m.classList.add('show');
+  // Wire close/save once
+  if(!m.dataset.wired){
+    m.dataset.wired='1';
+    document.getElementById('emailjsModalClose')?.addEventListener('click',()=>m.classList.remove('show'));
+    document.getElementById('emailjsModalCancel')?.addEventListener('click',()=>m.classList.remove('show'));
+    document.getElementById('emailjsModalSave')?.addEventListener('click',()=>{
+      const svc=document.getElementById('ejsServiceId').value.trim();
+      const tpl=document.getElementById('ejsTemplateId').value.trim();
+      const key=document.getElementById('ejsPublicKey').value.trim();
+      if(!svc||!tpl||!key){ toast('Бүх талбарыг бөглөнө үү','error'); return; }
+      localStorage.setItem('emailjs_service',svc);
+      localStorage.setItem('emailjs_template',tpl);
+      localStorage.setItem('emailjs_key',key);
+      m.classList.remove('show');
+      toast('EmailJS тохиргоо хадгалагдлаа','success');
+    });
+  }
+});
+
 document.getElementById('sendCredsBtn').addEventListener('click',async()=>{
   const targets=allUsers.filter(u=>u.email&&u.password);
   if(targets.length===0){ toast('Email/нууц үгтэй ажилтан байхгүй','error'); return; }
