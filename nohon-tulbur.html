@@ -4766,6 +4766,38 @@
     width:10px; height:10px; border-radius:50%;
     background:#FFD700; border:2px solid white;
   }
+  /* "Чат ботоос асуух" label дээгүүр */
+  .mnos-chat-label{
+    position:fixed;
+    bottom:88px; right:20px;
+    background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
+    color:#fff;
+    padding:8px 14px;
+    border-radius:14px;
+    font-size:13px;
+    font-weight:600;
+    white-space:nowrap;
+    box-shadow:0 6px 16px -4px rgba(227,6,19,.5), 0 2px 6px rgba(0,0,0,.15);
+    z-index:9997;
+    pointer-events:none;
+    animation:mnosLabelBounce 2.6s ease-in-out infinite;
+    transform-origin:bottom right;
+    letter-spacing:.2px;
+  }
+  .mnos-chat-label::after{
+    content:'';
+    position:absolute;
+    bottom:-5px; right:24px;
+    width:10px; height:10px;
+    background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
+    transform:rotate(45deg);
+    border-radius:2px;
+  }
+  .mnos-chat-label.hidden{opacity:0; transform:translateY(8px) scale(.9); pointer-events:none; transition:opacity .2s, transform .2s}
+  @keyframes mnosLabelBounce{
+    0%,100%{transform:translateY(0)}
+    50%{transform:translateY(-4px)}
+  }
 
   /* Chat цонх */
   .mnos-chat-window{
@@ -4969,6 +5001,7 @@
       border-radius:16px;
     }
     .mnos-chat-fab{width:56px; height:56px; bottom:16px; right:16px}
+    .mnos-chat-label{bottom:80px; right:16px; font-size:12px; padding:7px 12px}
   }
 </style>
 <style>
@@ -4991,6 +5024,9 @@
 .mnos-chat-input:focus{border-color:#E30613!important}
 .mnos-chat-footer{background:rgba(5,10,22,.99)!important;color:rgba(170,195,255,.3)!important}
 </style>
+
+<!-- Chat label -->
+<div class="mnos-chat-label" id="mnosChatLabel">💬 Чат ботоос асуух</div>
 
 <!-- Chat товч -->
 <button class="mnos-chat-fab" id="mnosChatFab" aria-label="Чат нээх">
@@ -5033,6 +5069,7 @@
 <script>
   (function(){
     const fab = document.getElementById('mnosChatFab');
+    const label = document.getElementById('mnosChatLabel');
     const win = document.getElementById('mnosChatWindow');
     const closeBtn = document.getElementById('mnosChatClose');
     const body = document.getElementById('mnosChatBody');
@@ -5076,6 +5113,7 @@
     function openChat(){
       win.classList.add('open');
       fab.classList.add('hidden');
+      label?.classList.add('hidden');
       dot.style.display = 'none';
       showWelcome();
       setTimeout(() => input.focus(), 300);
@@ -5083,6 +5121,7 @@
     function closeChat(){
       win.classList.remove('open');
       fab.classList.remove('hidden');
+      label?.classList.remove('hidden');
     }
 
     fab.addEventListener('click', openChat);
