@@ -2404,6 +2404,25 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
+  /* Section number — compact pill instead of huge text */
+  .section-number{
+    font-size:13px!important;
+    font-weight:800!important;
+    line-height:1!important;
+    color:var(--red)!important;
+    letter-spacing:.08em!important;
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 14px;
+    background:rgba(227,6,19,.08);
+    border-radius:999px;
+    width:fit-content;
+    margin-bottom:8px;
+  }
+  .section-number::before{
+    content:'';width:6px;height:6px;border-radius:50%;
+    background:var(--red);display:inline-block;
+  }
+
   /* ── Mobile (Amar mobile pattern) — edge-to-edge hero/footer, 2-col grid for cards ── */
   @media (max-width:720px){
     body{padding:0!important;margin:0!important;overflow-x:hidden}
