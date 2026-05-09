@@ -2404,7 +2404,7 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
-  /* Horizontal scroll carousel for STEP cards (same size as .exc-grid) */
+  /* Horizontal scroll carousel for STEP cards (like videos) */
   .step-scroll{
     display:flex!important;
     flex-wrap:nowrap!important;
@@ -2423,37 +2423,31 @@
   .step-scroll::-webkit-scrollbar-thumb{background:rgba(227,6,19,.4);border-radius:4px}
   .step-scroll::-webkit-scrollbar-thumb:hover{background:rgba(227,6,19,.6)}
   .step-scroll > .step{
-    flex:0 0 320px!important;
-    min-width:320px!important;
-    max-width:320px!important;
+    flex:0 0 720px!important;
+    min-width:720px;
+    max-width:720px;
     scroll-snap-align:start;
     margin:0!important;
-    padding:18px!important;
+    padding:24px!important;
     border-bottom:none!important;
     border:1px solid rgba(0,0,0,.07)!important;
     border-radius:16px!important;
     background:#FFFFFF!important;
     box-shadow:0 1px 3px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.04)!important;
-    grid-template-columns:1fr!important;
-    gap:12px!important;
-  }
-  .step-scroll > .step .step-visual,
-  .step-scroll > .step img{
-    max-height:200px!important;
-    width:100%;
-    object-fit:contain;
   }
   @media (max-width:720px){
     .step-scroll{gap:10px!important;padding:4px 2px 12px!important}
     .step-scroll > .step{
-      flex:0 0 260px!important;
-      min-width:260px!important;
-      max-width:260px!important;
-      padding:14px!important;
+      flex:0 0 280px!important;
+      min-width:280px!important;
+      max-width:280px!important;
+      padding:16px!important;
+      grid-template-columns:1fr!important;
     }
     .step-scroll > .step .step-visual,
     .step-scroll > .step img{
-      max-height:160px!important;
+      max-height:200px!important;
+      margin-top:10px!important;
     }
   }
 
