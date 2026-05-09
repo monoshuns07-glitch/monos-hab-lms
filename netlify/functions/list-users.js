@@ -17,6 +17,9 @@ exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
   try {
     const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+    if (!b64) {
+      return { statusCode: 500, headers, body: JSON.stringify({ error: 'FIREBASE_SERVICE_ACCOUNT_B64 environment variable is not set on the server' }) };
+    }
     const sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
     const projectId = sa.project_id;
 

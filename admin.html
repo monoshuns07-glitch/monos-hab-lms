@@ -1726,8 +1726,8 @@ async function loadUsers(){
   }
 }
 function applyUserFilter(){
-  const q=document.getElementById('userSearchInput').value.trim().toLowerCase();
-  filteredUsers=allUsers.filter(u=>!q||(u.email||'').toLowerCase().includes(q));
+  const q=(document.getElementById('userSearchInput')?.value||'').trim().toLowerCase();
+  filteredUsers=(allUsers||[]).filter(u=>!q||(u?.email||'').toLowerCase().includes(q));
   renderUsersTable();
 }
 function renderUsersTable(){

@@ -39,7 +39,8 @@ exports.handler = async () => {
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' };
   try {
     const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
-    const sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
+    if (!b64) throw new Error("FIREBASE_SERVICE_ACCOUNT_B64 environment variable is not set");
+    const sa = JSON.parse(Buffer.from(b64.trim(), "base64").toString("utf8"));
     const projectId = sa.project_id;
     const cred = admin.credential.cert(sa);
     const tokenInfo = await cred.getAccessToken();
