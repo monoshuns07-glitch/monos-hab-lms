@@ -2404,6 +2404,34 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
+  /* Download card — compact on mobile */
+  @media (max-width:720px){
+    .download-card{
+      padding:18px 16px!important;
+      border-radius:14px!important;
+      gap:14px!important;
+      grid-template-columns:1fr auto!important;
+      align-items:center;
+    }
+    .download-card-text .dl-label{
+      font-size:10px!important;letter-spacing:.1em;margin-bottom:4px!important;
+    }
+    .download-card-text h5{
+      font-size:15px!important;line-height:1.3!important;margin-bottom:2px!important;
+      white-space:normal;
+    }
+    .download-card-text p{font-size:11.5px!important;line-height:1.35}
+    .dl-btn{
+      padding:10px 16px!important;font-size:12.5px!important;gap:6px!important;
+    }
+    .dl-btn svg{width:14px!important;height:14px!important}
+  }
+  @media (max-width:420px){
+    .download-card{padding:14px 12px!important;gap:10px!important}
+    .download-card-text h5{font-size:14px!important}
+    .dl-btn{padding:9px 13px!important;font-size:11.5px!important}
+  }
+
   /* Horizontal scroll carousel for exclusion cards (like videos) */
   .exc-grid{
     display:flex!important;
