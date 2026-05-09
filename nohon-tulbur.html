@@ -1957,8 +1957,7 @@
   .mnos-h2{color:var(--ink);border-bottom-color:var(--border)}
   .mnos-h3{color:var(--red)}
   .mnos-hr{border-top-color:var(--border)}
-  .mnos-typing{background:rgba(0,0,0,.04);box-shadow:none}
-  .mnos-typing span{background:rgba(59,130,246,.4)}
+  .mnos-typing{background:rgba(0,0,0,.04);box-shadow:none;color:#555}
   .mnos-quick{background:#F4F6FB;border-color:var(--border2);color:var(--red)}
   .mnos-quick:hover{background:rgba(227,6,19,.07);border-color:var(--red)}
   .mnos-chat-input-wrap{background:#F4F6FB;border-top-color:var(--border)}
@@ -4914,21 +4913,24 @@
   .mnos-typing{
     align-self:flex-start;
     background:white;
-    padding:12px 16px;
+    padding:10px 14px;
     border-radius:16px; border-bottom-left-radius:4px;
     box-shadow:0 1px 2px rgba(0,0,0,.06);
-    display:flex; gap:4px;
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; line-height:1.4;
+    color:#444;
+    max-width:85%;
   }
-  .mnos-typing span{
-    width:6px; height:6px; border-radius:50%;
-    background:#999;
-    animation:mnosDot 1.4s infinite ease-in-out;
+  .mnos-typing-spinner{
+    width:14px; height:14px;
+    border:2px solid rgba(227,6,19,.18);
+    border-top-color:#E30613;
+    border-radius:50%;
+    animation:mnosSpin .8s linear infinite;
+    flex-shrink:0;
   }
-  .mnos-typing span:nth-child(2){animation-delay:.2s}
-  .mnos-typing span:nth-child(3){animation-delay:.4s}
-  @keyframes mnosDot{
-    0%,60%,100%{transform:scale(.7); opacity:.5}
-    30%{transform:scale(1); opacity:1}
+  @keyframes mnosSpin{
+    to{transform:rotate(360deg)}
   }
 
   /* Quick replies — эхлэх асуултууд */
@@ -5014,8 +5016,7 @@
 .mnos-h2{color:#EEF3FF!important;border-bottom-color:rgba(255,255,255,.1)!important}
 .mnos-h3{color:#FF8A8A!important}
 .mnos-hr{border-top-color:rgba(255,255,255,.08)!important}
-.mnos-typing{background:rgba(255,255,255,.07)!important;box-shadow:none!important}
-.mnos-typing span{background:rgba(170,195,255,.45)!important}
+.mnos-typing{background:rgba(255,255,255,.07)!important;box-shadow:none!important;color:rgba(238,243,255,.85)!important}
 .mnos-quick{background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.1)!important;color:#E30613!important}
 .mnos-quick:hover{background:rgba(227,6,19,.12)!important;border-color:#E30613!important}
 .mnos-chat-input-wrap{background:rgba(5,10,22,.99)!important;border-top:1px solid rgba(255,255,255,.08)!important}
@@ -5214,7 +5215,7 @@
       const t = document.createElement('div');
       t.className = 'mnos-typing';
       t.id = 'mnosTyping';
-      t.innerHTML = '<span></span><span></span><span></span>';
+      t.innerHTML = '<span class="mnos-typing-spinner"></span><span>Таны асуусан асуултын хариултыг боловсруулж байна, та түр хүлээнэ үү...</span>';
       body.appendChild(t);
       scrollBottom();
     }
