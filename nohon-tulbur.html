@@ -2404,6 +2404,153 @@
   }
   footer a:hover, .site-footer a:hover{color:#FFFFFF!important}
 
+  /* ===== STEP CAROUSEL — fixed cards, arrows, swipe hand ===== */
+  .step-scroll-wrap{
+    position:relative;
+    margin:24px 0 32px;
+    padding:0 56px;
+  }
+  .step-scroll{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    overflow-x:auto!important;
+    overflow-y:hidden;
+    scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;
+    scroll-behavior:smooth;
+    gap:18px!important;
+    padding:8px 4px 14px!important;
+    scrollbar-width:none;
+  }
+  .step-scroll::-webkit-scrollbar{display:none}
+
+  /* FIXED SIZE CARDS */
+  .step-scroll > .step{
+    flex:0 0 380px!important;
+    width:380px!important;
+    min-width:380px!important;
+    max-width:380px!important;
+    height:560px!important;
+    scroll-snap-align:start;
+    margin:0!important;
+    padding:0!important;
+    border-bottom:none!important;
+    border:1px solid rgba(0,0,0,.08)!important;
+    border-radius:18px!important;
+    background:#FFFFFF!important;
+    box-shadow:0 4px 16px rgba(0,0,0,.06), 0 1px 4px rgba(0,0,0,.04)!important;
+    overflow:hidden;
+    display:flex!important;
+    flex-direction:column!important;
+    grid-template-columns:none!important;
+    transition:transform .3s ease, box-shadow .3s ease;
+  }
+  .step-scroll > .step:hover{
+    transform:translateY(-4px);
+    box-shadow:0 12px 32px rgba(0,0,0,.1), 0 4px 12px rgba(0,0,0,.06)!important;
+  }
+  .step-scroll > .step > .step-num{
+    flex-shrink:0;
+    margin:18px 18px 6px!important;
+    align-self:flex-start;
+  }
+  .step-scroll > .step > .step-body{
+    padding:0 18px 14px!important;
+    overflow:hidden;
+    display:flex;flex-direction:column;
+    flex:0 0 auto;
+    min-height:0;
+  }
+  .step-scroll > .step > .step-body h4{
+    font-size:16px!important;
+    line-height:1.3;
+    margin-bottom:8px!important;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .step-scroll > .step > .step-body p,
+  .step-scroll > .step > .step-body .editable{
+    font-size:12.5px!important;line-height:1.5;margin-bottom:8px!important;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .step-scroll > .step > .step-body .checklist,
+  .step-scroll > .step > .step-body ul{font-size:11.5px!important;margin:6px 0 0!important}
+  .step-scroll > .step > .step-body .checklist li{margin-bottom:4px!important}
+  .step-scroll > .step > .step-visual{
+    flex:1 1 auto;
+    min-height:0;
+    margin:auto 18px 18px!important;
+    overflow:hidden;
+    border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    background:#FAFAFA;
+  }
+  .step-scroll > .step > .step-visual img{
+    width:100%;height:100%;object-fit:contain;
+    border-radius:8px;margin:0!important;
+  }
+
+  /* Arrow buttons */
+  .step-arrow{
+    position:absolute;top:50%;transform:translateY(-50%);
+    z-index:10;
+    width:44px;height:44px;border-radius:50%;
+    background:#FFFFFF;border:1px solid rgba(0,0,0,.1);
+    box-shadow:0 4px 12px rgba(0,0,0,.1);
+    cursor:pointer;display:grid;place-items:center;
+    transition:transform .25s ease, box-shadow .25s ease, background .25s ease;
+    color:var(--ink);font-size:18px;font-weight:700;
+  }
+  .step-arrow:hover{transform:translateY(-50%) scale(1.08);box-shadow:0 6px 18px rgba(0,0,0,.14);background:var(--red);color:#FFF;border-color:transparent}
+  .step-arrow.prev{left:6px}
+  .step-arrow.next{right:6px}
+  .step-arrow:disabled{opacity:.35;cursor:not-allowed;transform:translateY(-50%)}
+  .step-arrow:disabled:hover{transform:translateY(-50%);background:#FFF;color:var(--ink);border-color:rgba(0,0,0,.1)}
+
+  /* Swipe indicator with animated hand */
+  .swipe-indicator{
+    margin-top:18px;display:flex;justify-content:center;
+  }
+  .swipe-track{
+    position:relative;width:260px;height:46px;
+    background:rgba(0,0,0,.04);border-radius:23px;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .swipe-text{
+    color:#888;font-size:13px;letter-spacing:.3px;font-weight:600;
+  }
+  .swipe-hand{
+    position:absolute;left:20px;top:50%;
+    font-size:24px;line-height:1;
+    transform:translateY(-50%);
+    animation:handSwipe 2.6s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes handSwipe{
+    0%{left:18px;opacity:0;transform:translateY(-50%) scale(.85)}
+    15%{opacity:1;transform:translateY(-50%) scale(1)}
+    55%{left:calc(100% - 50px);opacity:1;transform:translateY(-50%) scale(1)}
+    75%{opacity:.4}
+    100%{left:calc(100% - 50px);opacity:0;transform:translateY(-50%) scale(.85)}
+  }
+
+  @media (max-width:720px){
+    .step-scroll-wrap{padding:0 8px}
+    .step-arrow{display:none}
+    .step-scroll > .step{
+      flex:0 0 85vw!important;
+      width:85vw!important;
+      min-width:85vw!important;
+      max-width:85vw!important;
+      height:520px!important;
+    }
+    .step-scroll > .step > .step-body h4{font-size:15px!important}
+    .step-scroll > .step > .step-body p,
+    .step-scroll > .step > .step-body .editable{font-size:12px!important}
+    .swipe-track{width:220px;height:42px}
+    .swipe-text{font-size:12px}
+  }
+
   /* Download card — compact on mobile */
   @media (max-width:720px){
     .download-card{
@@ -5319,6 +5466,92 @@
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
   else init();
+})();
+</script>
+
+<script>
+/* Step Carousel — wrap consecutive .step into .step-scroll-wrap with arrows + swipe indicator */
+(function(){
+  function buildCarousel(firstStep){
+    if (!firstStep || firstStep.parentElement?.classList.contains('step-scroll')) return;
+    const group = [firstStep];
+    let next = firstStep.nextElementSibling;
+    while (next && next.classList && next.classList.contains('step')) {
+      group.push(next);
+      next = next.nextElementSibling;
+    }
+    if (group.length < 2) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'step-scroll-wrap';
+
+    const scroll = document.createElement('div');
+    scroll.className = 'step-scroll';
+
+    firstStep.parentNode.insertBefore(wrap, firstStep);
+    group.forEach(s => scroll.appendChild(s));
+    wrap.appendChild(scroll);
+
+    // Arrow buttons
+    const prev = document.createElement('button');
+    prev.className = 'step-arrow prev';
+    prev.setAttribute('aria-label','Өмнөх');
+    prev.innerHTML = '‹';
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'step-arrow next';
+    nextBtn.setAttribute('aria-label','Дараах');
+    nextBtn.innerHTML = '›';
+    wrap.appendChild(prev);
+    wrap.appendChild(nextBtn);
+
+    const cardWidth = () => {
+      const card = scroll.querySelector('.step');
+      if (!card) return 380;
+      return card.getBoundingClientRect().width + 18; // + gap
+    };
+
+    prev.addEventListener('click', () => {
+      scroll.scrollBy({ left: -cardWidth(), behavior: 'smooth' });
+    });
+    nextBtn.addEventListener('click', () => {
+      scroll.scrollBy({ left: cardWidth(), behavior: 'smooth' });
+    });
+
+    const updateArrows = () => {
+      prev.disabled = scroll.scrollLeft <= 4;
+      nextBtn.disabled = scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 4;
+    };
+    scroll.addEventListener('scroll', updateArrows, { passive: true });
+    setTimeout(updateArrows, 100);
+
+    // Swipe indicator
+    const ind = document.createElement('div');
+    ind.className = 'swipe-indicator';
+    ind.innerHTML = '<div class="swipe-track"><span class="swipe-text">Хойшоо гүйлгэж үзнэ үү</span><div class="swipe-hand">👆</div></div>';
+    wrap.parentNode.insertBefore(ind, wrap.nextSibling);
+
+    // Hide swipe hand after first interaction
+    let interacted = false;
+    const stopHand = () => {
+      if (interacted) return;
+      interacted = true;
+      const hand = ind.querySelector('.swipe-hand');
+      if (hand) hand.style.animation = 'none';
+      ind.style.opacity = '.5';
+      try{ sessionStorage.setItem('swipeSeen', '1'); }catch(e){}
+    };
+    scroll.addEventListener('scroll', stopHand, { once: true, passive: true });
+    if (sessionStorage.getItem('swipeSeen')) stopHand();
+  }
+
+  function buildAll(){
+    document.querySelectorAll('.step').forEach(s => buildCarousel(s));
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildAll);
+  else buildAll();
+  setTimeout(buildAll, 500);
+  setTimeout(buildAll, 1500);
 })();
 </script>
 
