@@ -5089,7 +5089,7 @@
 
     function showWelcome(){
       if (body.children.length > 0) return;
-      addBotMessage('Сайн байна уу! 👋 Би Монос Хүнс ХК-ийн ХАБ-ын албаны AI туслах. Даатгал, нөхөн төлбөрийн талаар асуулт байвал асуугаарай.');
+      addBotMessage('Сайн байна уу! 👋 Би Монос Хүнс ХК-ийн ХАБ-ын албаны AI туслах. Даатгал, нөхөн төлбөрийн талаар асуулт байвал асуугаарай.\n\nℹ️ Та өдөрт 2 удаа л асуулт асуух боломжтой.');
 
       const wrap = document.createElement('div');
       wrap.className = 'mnos-quick-wrap';
@@ -5262,6 +5262,13 @@
       const text = input.value.trim();
       if (!text) return;
 
+      // Нэвтэрсэн эсэхийг шалгана
+      const u = JSON.parse(localStorage.getItem('monos_user') || 'null');
+      if (!u || !u.uid){
+        addBotMessage('🔒 Чат ботоор асуухын тулд эхлээд нэвтэрнэ үү. Та өдөрт 2 удаа л асуулт асуух боломжтой.');
+        return;
+      }
+
       addUserMessage(text);
       input.value = '';
       input.style.height = 'auto';
@@ -5279,12 +5286,23 @@
           body: JSON.stringify({
             question: text,
             context: kbContext,
-            history: history.slice(-6)
+            history: history.slice(-6),
+            uid: u.uid
           })
         });
 
         const data = await res.json();
         hideTyping();
+
+        if (res.status === 429){
+          addBotMessage('⏳ ' + (data.error || 'Та өнөөдрийн хязгаарт хүрсэн байна.') + '\n\n📅 Маргааш 00:00 цагт дахин асуух боломжтой болно.');
+          return;
+        }
+
+        if (res.status === 401){
+          addBotMessage('🔒 ' + (data.error || 'Нэвтэрнэ үү.'));
+          return;
+        }
 
         if (!res.ok){
           addBotMessage('⚠️ Алдаа гарлаа: ' + (data.error || 'Тодорхойгүй алдаа'));

@@ -54,6 +54,13 @@ service cloud.firestore {
       allow write: if isAuth();
     }
 
+    // Chat daily usage — written by server (admin SDK) only.
+    // Authenticated clients may read their own counter (optional UI display).
+    match /chat_usage/{docId} {
+      allow read:  if isAuth();
+      allow write: if false;
+    }
+
     // Deny everything not explicitly matched above.
     match /{document=**} {
       allow read, write: if false;
