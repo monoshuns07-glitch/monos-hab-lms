@@ -325,6 +325,127 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--ink);min-
   .result-card{padding:28px 20px}
   .result-score{font-size:36px}
 }
+
+/* ─────────────────────────────────────────────
+   COMPREHENSIVE MOBILE FIXES (≤768px)
+   ───────────────────────────────────────────── */
+@media(max-width:768px){
+  /* prevent page-wide horizontal scroll */
+  html,body{overflow-x:hidden;max-width:100vw}
+
+  /* Nav — compact + ellipsis */
+  .nav{padding:0 12px;gap:8px;height:54px}
+  :root{--nav-h:54px}
+  .nav-back{padding:8px 11px;font-size:12px;border-radius:8px;min-height:36px}
+  .nav-back svg{width:14px;height:14px}
+  .nav-title{font-size:13px;min-width:0}
+  .nav-status-badge{padding:5px 10px;font-size:11px}
+
+  /* Main padding */
+  .main{padding-left:12px;padding-right:12px;padding-top:calc(54px + 16px);padding-bottom:40px}
+
+  /* Training header */
+  .training-hdr{padding:16px 14px;border-radius:14px;margin-bottom:14px}
+  .training-title{font-size:17px;line-height:1.3}
+  .training-desc{font-size:12.5px;margin-bottom:12px}
+  .training-breadcrumb{font-size:11px}
+  .meta-pill{padding:4px 10px;font-size:11px}
+
+  /* Video section */
+  .video-section{border-radius:14px;margin-bottom:14px}
+  .video-header{padding:12px 14px;flex-wrap:wrap;gap:8px}
+  .video-header-title{font-size:13px}
+  .video-bar{width:80px}
+  .video-pct{font-size:11px}
+
+  /* Exam unlock bar — stack vertically on mobile */
+  .exam-unlock-bar{
+    flex-direction:column;align-items:stretch;
+    padding:14px;gap:12px;
+  }
+  .unlock-text{font-size:12.5px;text-align:center;line-height:1.5}
+  .btn-start-exam{
+    width:100%;justify-content:center;
+    padding:13px 20px;font-size:13px;
+    min-height:46px;
+  }
+
+  /* Passed banner — wraps cleanly */
+  .passed-banner{
+    flex-wrap:wrap;padding:14px;gap:10px;
+    border-radius:12px;margin-bottom:14px;
+  }
+  .passed-banner-icon{width:36px;height:36px}
+  .passed-banner-icon svg{width:18px;height:18px}
+  .passed-banner-title{font-size:13px}
+  .passed-banner-sub{font-size:11.5px}
+  .btn-retake{
+    width:100%;text-align:center;padding:10px 14px;
+    font-size:12.5px;min-height:40px;
+  }
+
+  /* Exam — better mobile spacing */
+  #examSection{border-radius:14px;margin-bottom:14px}
+  .exam-header{padding:14px;flex-wrap:wrap;gap:6px}
+  .exam-title{font-size:14px}
+  .exam-meta{font-size:11.5px}
+  .exam-body{padding:14px}
+  .question-block{margin-bottom:22px}
+  .question-text{font-size:14px;line-height:1.55}
+  .option-label{
+    padding:12px 12px;font-size:13px;
+    min-height:46px;align-items:center;
+  }
+  .option-label input[type=radio],
+  .option-label input[type=checkbox]{
+    width:18px;height:18px;margin-top:0;
+  }
+
+  /* Exam footer — stack */
+  .exam-footer{
+    flex-direction:column;align-items:stretch;
+    padding:14px;gap:10px;
+  }
+  .exam-answer-count{text-align:center;font-size:12.5px}
+  .btn-submit{
+    width:100%;justify-content:center;
+    padding:13px 20px;font-size:13px;min-height:46px;
+  }
+
+  /* Result modal */
+  .result-overlay{padding:14px}
+  .result-card{padding:28px 20px;border-radius:18px;max-width:100%}
+  .result-icon{width:60px;height:60px;margin-bottom:14px}
+  .result-icon svg{width:26px;height:26px}
+  .result-title{font-size:18px}
+  .result-score{font-size:38px;margin:10px 0}
+  .result-info{font-size:12px}
+  .result-btns{flex-direction:column;gap:8px}
+  .btn-result-home,.btn-retry{
+    width:100%;padding:13px;font-size:13px;
+    min-height:46px;
+  }
+
+  /* Toast — wider */
+  .toast{
+    left:14px;right:14px;transform:translateY(12px);
+    text-align:center;white-space:normal;font-size:12.5px;
+    max-width:none;
+  }
+  .toast.show{transform:translateY(0)}
+}
+
+/* Extra small phones */
+@media(max-width:380px){
+  .training-title{font-size:16px}
+  .nav-title{display:none}
+  .nav-back{font-size:11.5px;padding:7px 10px}
+  .main{padding-left:10px;padding-right:10px}
+  .training-hdr,.video-section,#examSection,.passed-banner{
+    border-radius:12px;
+  }
+  .exam-body,.training-hdr{padding:12px}
+}
 </style>
 </head>
 <body>

@@ -5024,6 +5024,120 @@
 .mnos-chat-input::placeholder,textarea.mnos-chat-input::placeholder{color:rgba(255,255,255,.45)!important;-webkit-text-fill-color:rgba(255,255,255,.45)!important}
 .mnos-chat-input:focus{border-color:#E30613!important}
 .mnos-chat-footer{background:rgba(5,10,22,.99)!important;color:rgba(170,195,255,.3)!important}
+
+/* ═══════════════════════════════════════════════════
+   ☰ COMPREHENSIVE MOBILE FIXES — final override layer
+   ═══════════════════════════════════════════════════ */
+@media (max-width:768px){
+  /* Stop horizontal scroll at the document level */
+  html,body{overflow-x:hidden!important;max-width:100vw!important;width:100%!important}
+  *{max-width:100vw}
+  img,video,iframe,svg{max-width:100%;height:auto}
+
+  /* Container side-padding for breathing room */
+  .container,
+  [class*="-inner"],
+  [class*="-wrap"]:not(.mnos-chat-input-wrap):not(.mnos-chat-window){
+    padding-left:16px!important;padding-right:16px!important;
+  }
+  .nav{padding-left:12px!important;padding-right:12px!important}
+
+  /* Touch-friendly sizes — min 44px */
+  button:not(.mnos-quick):not(.pwd-btn):not(.action-btn),
+  .btn,
+  a.btn,
+  .nav-back,
+  .admin-btn,
+  .hub-back-btn{
+    min-height:44px;padding-top:10px;padding-bottom:10px;
+    font-size:13.5px;
+  }
+
+  /* Tables → horizontal scroll without breaking layout */
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+
+  /* Headings — readable but not overwhelming */
+  h1{font-size:26px!important;line-height:1.2!important}
+  h2{font-size:22px!important;line-height:1.25!important}
+  h3{font-size:18px!important;line-height:1.3!important}
+  h4{font-size:16px!important;line-height:1.35!important}
+
+  /* Body text minimum — prevent iOS zoom on input */
+  input,textarea,select{font-size:16px!important}
+
+  /* Section header rendering — single column */
+  .section-header,
+  .send-inner,
+  .foot-inner{
+    grid-template-columns:1fr!important;gap:18px!important;
+  }
+
+  /* Card grids — single column */
+  [class*="grid"]:not(.mnos-quick-wrap){
+    grid-template-columns:1fr!important;
+  }
+
+  /* Form fields full width */
+  input[type=text],input[type=email],input[type=tel],input[type=password],
+  textarea,select{width:100%}
+
+  /* Modals → full-screen friendly */
+  .modal-content,
+  [class*="modal"] [class*="content"]{
+    max-width:calc(100vw - 24px)!important;
+    margin:12px;border-radius:16px!important;
+  }
+
+  /* Chat window — fill the screen better on mobile */
+  .mnos-chat-window{
+    width:calc(100vw - 16px)!important;
+    height:calc(100dvh - 90px)!important;
+    max-height:calc(100dvh - 90px)!important;
+    bottom:80px!important;right:8px!important;left:8px!important;
+    border-radius:18px!important;
+  }
+  .mnos-chat-window.open{transform:translateY(0) scale(1)!important}
+
+  /* Chat label — slightly smaller on mobile */
+  .mnos-chat-label{
+    bottom:80px!important;right:14px!important;
+    font-size:12px!important;padding:7px 12px!important;
+  }
+
+  /* Hero / lead section spacing */
+  [class*="hero"],
+  [class*="lead"]{padding:32px 16px!important}
+
+  /* Carousels — prevent right-edge overflow */
+  [class*="carousel"],[class*="scroll"]{
+    margin-left:-16px;margin-right:-16px;
+    padding-left:16px;padding-right:16px;
+    scroll-padding-left:16px;
+  }
+}
+
+/* Extra-small phones (≤420px) */
+@media (max-width:420px){
+  h1{font-size:22px!important}
+  h2{font-size:19px!important}
+  h3{font-size:16px!important}
+  .container,[class*="-inner"]{padding-left:12px!important;padding-right:12px!important}
+  .nav{padding-left:10px!important;padding-right:10px!important}
+  .mnos-chat-fab{width:52px!important;height:52px!important;bottom:14px!important;right:14px!important}
+  .mnos-chat-fab svg{width:24px!important;height:24px!important}
+  .mnos-chat-label{bottom:74px!important;font-size:11.5px!important}
+  /* Chat label arrow follow */
+  .mnos-chat-label::after{right:18px!important}
+}
+
+/* Landscape phones — reduce vertical padding */
+@media (max-width:900px) and (orientation:landscape) and (max-height:500px){
+  .mnos-chat-window{
+    height:calc(100dvh - 70px)!important;
+    bottom:64px!important;
+  }
+  [class*="hero"]{padding:20px 16px!important}
+}
 </style>
 
 <!-- Chat label -->
