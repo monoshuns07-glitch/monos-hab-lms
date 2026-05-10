@@ -1,131 +1,77 @@
 /* ═══════════════════════════════════════════════════════════
-   🌲 FOREST THEME — Shared glass + nature scene styles
-   For all МОНОС ХҮНС HSE pages
+   🌲 FOREST THEME — Real AI-generated photo backgrounds
+   + glass refraction cards + animated overlay
    ═══════════════════════════════════════════════════════════ */
 
-/* ─── Color tokens ─── */
 :root{
-  --forest-deep:#0a1f1c;
-  --forest-mid:#1a3a2e;
-  --forest-light:#2d5a3d;
-  --leaf:#4a8c5a;
-  --leaf-bright:#8bc97c;
-  --bark:#3d2817;
-  --sky-day:#a8d8e8;
-  --sky-mid:#b8e0c8;
-  --sky-pink:#f4cdb5;
-  --sun:#ffe9b3;
   --firefly:#fff7c2;
   --glass-tint:rgba(255,255,255,.18);
   --glass-edge:rgba(255,255,255,.45);
-  --glass-deep:rgba(15,40,30,.35);
-  --glass-shadow:0 8px 32px rgba(0,0,0,.25), 0 2px 8px rgba(0,0,0,.18);
-  --glass-inner:inset 0 1px 0 rgba(255,255,255,.45), inset 0 -1px 0 rgba(255,255,255,.06);
 }
 
-/* ─── Forest background scene ─── */
+/* ─── Forest scene container (full-bleed background) ─── */
 .forest-scene{
   position:fixed;
   inset:0;
   z-index:0;
   overflow:hidden;
   pointer-events:none;
-  background:
-    linear-gradient(180deg,
-      #c8e4dc 0%,
-      #b8d8c8 25%,
-      #a8c4a0 50%,
-      #7a9d6d 75%,
-      #4d6e44 100%);
 }
 
+/* Real photo background layer */
+.forest-photo{
+  position:absolute;
+  inset:0;
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  /* gentle Ken Burns zoom + drift */
+  animation:photoBreath 32s ease-in-out infinite alternate;
+  transform-origin:center;
+}
+@keyframes photoBreath{
+  0%{transform:scale(1.0) translateX(0)}
+  100%{transform:scale(1.08) translateX(-2%)}
+}
+
+/* Variants — different photo per page */
+.forest-scene--day .forest-photo{ background-image:url('img/bg/login-mongolian-steppe.jpg') }
+.forest-scene--lake .forest-photo{ background-image:url('img/bg/dashboard-khovsgol.jpg') }
+.forest-scene--sunlit .forest-photo{ background-image:url('img/bg/nohon-sunlit-forest.jpg') }
+.forest-scene--evening .forest-photo{ background-image:url('img/bg/admin-evening-mountain.jpg') }
+
+/* Atmospheric overlays — soften the photo + add mood */
 .forest-scene::before{
-  /* Sky atmosphere + sun rays */
   content:"";position:absolute;inset:0;
   background:
-    radial-gradient(ellipse 60% 40% at 50% 8%, rgba(255,233,179,.55), transparent 65%),
-    radial-gradient(circle at 50% 10%, rgba(255,255,255,.4), transparent 35%);
-  animation:forestBreath 8s ease-in-out infinite;
-}
-@keyframes forestBreath{
-  0%,100%{opacity:.85}
-  50%{opacity:1}
-}
-
-/* Light rays through trees */
-.forest-rays{
-  position:absolute;top:0;left:0;right:0;height:100%;
-  background:
-    linear-gradient(105deg, transparent 30%, rgba(255,243,200,.18) 32%, transparent 34%) center/100% 100%,
-    linear-gradient(95deg, transparent 50%, rgba(255,243,200,.14) 52%, transparent 54%) center/100% 100%,
-    linear-gradient(115deg, transparent 70%, rgba(255,243,200,.12) 72%, transparent 74%) center/100% 100%;
-  mix-blend-mode:screen;
-  animation:raysShift 14s ease-in-out infinite;
-}
-@keyframes raysShift{
-  0%,100%{opacity:.55; transform:translateX(0)}
-  50%{opacity:.85; transform:translateX(20px)}
-}
-
-/* Distant mountains */
-.forest-far{
-  position:absolute;left:0;right:0;bottom:35%;height:30%;
-  background:
-    linear-gradient(180deg, transparent 0%, rgba(60,90,75,.4) 60%, rgba(60,90,75,.65) 100%);
-  clip-path:polygon(
-    0 70%, 8% 50%, 14% 60%, 22% 40%, 30% 55%, 38% 35%, 48% 50%, 58% 30%, 68% 50%, 78% 38%, 88% 55%, 96% 45%, 100% 60%, 100% 100%, 0 100%
-  );
-  filter:blur(.5px);
-  opacity:.7;
-}
-
-/* Mid forest layer */
-.forest-mid{
-  position:absolute;left:0;right:0;bottom:18%;height:32%;
+    radial-gradient(ellipse 80% 50% at 50% 100%, rgba(0,0,0,.18) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255,255,255,.10) 0%, transparent 60%);
   pointer-events:none;
+  z-index:2;
 }
 
-/* Foreground trees (silhouettes) */
-.forest-near{
-  position:absolute;left:0;right:0;bottom:0;height:30%;
-  background:linear-gradient(180deg, transparent 0%, rgba(20,40,30,.8) 70%, rgba(10,30,22,.95) 100%);
+/* Drifting mist (subtle white veil that moves) */
+.forest-scene::after{
+  content:"";position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 40% 30% at 30% 70%, rgba(255,255,255,.12), transparent),
+    radial-gradient(ellipse 35% 25% at 75% 65%, rgba(255,255,255,.10), transparent);
+  filter:blur(20px);
+  animation:mistDrift 18s ease-in-out infinite alternate;
   pointer-events:none;
+  z-index:3;
+}
+@keyframes mistDrift{
+  0%{transform:translateX(0) translateY(0); opacity:.7}
+  100%{transform:translateX(40px) translateY(-10px); opacity:1}
 }
 
-/* SVG trees positioned absolutely */
-.tree{
-  position:absolute;
-  bottom:0;
-  filter:drop-shadow(0 4px 12px rgba(0,0,0,.3));
-  transform-origin:bottom center;
-  animation:treeSway 6s ease-in-out infinite;
+/* ─── Fireflies / particles overlay ─── */
+.firefly-layer{
+  position:absolute;inset:0;
+  pointer-events:none;
+  z-index:4;
 }
-.tree.t1{left:-2%;width:200px; animation-duration:7s; animation-delay:-1s}
-.tree.t2{left:12%;width:150px; animation-duration:5.5s; bottom:-5%}
-.tree.t3{right:8%;width:230px; animation-duration:8s; animation-delay:-2s}
-.tree.t4{right:-3%;width:170px; animation-duration:6.5s; animation-delay:-3s; bottom:-3%}
-.tree.t5{left:42%;width:120px; animation-duration:7.5s; animation-delay:-1.5s; bottom:8%; opacity:.6}
-
-@keyframes treeSway{
-  0%,100%{transform:rotate(-1.2deg)}
-  50%{transform:rotate(1.2deg)}
-}
-
-/* Back layer trees (smaller, distant) */
-.tree-far{
-  position:absolute;
-  bottom:30%;
-  filter:drop-shadow(0 2px 6px rgba(0,0,0,.2)) blur(.6px);
-  opacity:.6;
-  transform-origin:bottom center;
-  animation:treeSway 9s ease-in-out infinite;
-}
-.tree-far.tf1{left:5%;width:90px}
-.tree-far.tf2{left:25%;width:70px;animation-delay:-2s}
-.tree-far.tf3{left:55%;width:80px;animation-delay:-1s}
-.tree-far.tf4{left:75%;width:75px;animation-delay:-3s}
-
-/* ─── Fireflies ─── */
 .firefly{
   position:absolute;
   width:5px;height:5px;border-radius:50%;
@@ -136,24 +82,26 @@
     0 0 26px rgba(255,247,194,.4);
   pointer-events:none;
   opacity:0;
-  animation:fireflyDrift 10s ease-in-out infinite, fireflyBlink 2.4s ease-in-out infinite;
+  animation:fireflyDrift 12s ease-in-out infinite, fireflyBlink 2.4s ease-in-out infinite;
 }
-.firefly:nth-child(1){left:10%;top:60%; animation-delay:0s,0s}
-.firefly:nth-child(2){left:25%;top:55%; animation-delay:-2s,-.8s}
-.firefly:nth-child(3){left:40%;top:65%; animation-delay:-4s,-1.2s}
-.firefly:nth-child(4){left:60%;top:50%; animation-delay:-1s,-.4s}
-.firefly:nth-child(5){left:75%;top:70%; animation-delay:-3s,-1.8s}
-.firefly:nth-child(6){left:85%;top:55%; animation-delay:-5s,-1.0s}
-.firefly:nth-child(7){left:30%;top:75%; animation-delay:-7s,-2.2s}
-.firefly:nth-child(8){left:55%;top:80%; animation-delay:-6s,-.6s}
-.firefly:nth-child(9){left:8%;top:45%; animation-delay:-8s,-1.4s}
-.firefly:nth-child(10){left:90%;top:40%; animation-delay:-9s,-2.0s}
+.firefly:nth-child(1){left:8%;top:55%; animation-delay:0s,0s}
+.firefly:nth-child(2){left:22%;top:50%; animation-delay:-2s,-.8s}
+.firefly:nth-child(3){left:38%;top:60%; animation-delay:-4s,-1.2s}
+.firefly:nth-child(4){left:58%;top:48%; animation-delay:-1s,-.4s}
+.firefly:nth-child(5){left:72%;top:65%; animation-delay:-3s,-1.8s}
+.firefly:nth-child(6){left:84%;top:55%; animation-delay:-5s,-1.0s}
+.firefly:nth-child(7){left:30%;top:72%; animation-delay:-7s,-2.2s}
+.firefly:nth-child(8){left:55%;top:78%; animation-delay:-6s,-.6s}
+.firefly:nth-child(9){left:6%;top:42%; animation-delay:-8s,-1.4s}
+.firefly:nth-child(10){left:90%;top:38%; animation-delay:-9s,-2.0s}
+.firefly:nth-child(11){left:48%;top:35%; animation-delay:-10s,-1.6s}
+.firefly:nth-child(12){left:15%;top:80%; animation-delay:-11s,-.2s}
 
 @keyframes fireflyDrift{
   0%{transform:translate(0,0)}
-  25%{transform:translate(40px,-25px)}
-  50%{transform:translate(80px,10px)}
-  75%{transform:translate(30px,40px)}
+  25%{transform:translate(50px,-30px)}
+  50%{transform:translate(100px,15px)}
+  75%{transform:translate(40px,50px)}
   100%{transform:translate(0,0)}
 }
 @keyframes fireflyBlink{
@@ -163,66 +111,24 @@
   90%{opacity:.3}
 }
 
-/* ─── Butterflies ─── */
-.butterfly{
-  position:absolute;
-  width:24px;height:24px;
-  pointer-events:none;
-  animation:butterflyFlight 18s ease-in-out infinite;
-}
-.butterfly::before, .butterfly::after{
-  content:"";
-  position:absolute;
-  width:12px;height:14px;
-  background:radial-gradient(ellipse at center, #ff8da3 0%, #d4546b 60%, transparent 80%);
-  border-radius:60% 40% 50% 50%;
-  top:5px;
-  animation:wingFlap .25s ease-in-out infinite;
-  filter:drop-shadow(0 1px 2px rgba(0,0,0,.3));
-}
-.butterfly::before{left:0; transform-origin:right center}
-.butterfly::after{right:0; transform-origin:left center}
-
-.butterfly.b1{top:25%;left:-30px; animation-delay:-2s}
-.butterfly.b2{top:40%;left:-30px; animation-duration:24s; animation-delay:-8s}
-.butterfly.b3{top:55%;left:-30px; animation-duration:20s; animation-delay:-14s}
-
-@keyframes butterflyFlight{
-  0%{transform:translate(0,0)}
-  20%{transform:translate(25vw,-30px)}
-  40%{transform:translate(45vw,20px)}
-  60%{transform:translate(65vw,-15px)}
-  80%{transform:translate(85vw,25px)}
-  100%{transform:translate(110vw,0)}
-}
-@keyframes wingFlap{
-  0%,100%{transform:scaleX(1)}
-  50%{transform:scaleX(.4)}
-}
-.butterfly::after{animation:wingFlapR .25s ease-in-out infinite}
-@keyframes wingFlapR{
-  0%,100%{transform:scaleX(1)}
-  50%{transform:scaleX(-.4)}
-}
-
-/* Smaller fairy lights / particles */
+/* Floating dust particles */
 .particle{
   position:absolute;
   width:2px;height:2px;border-radius:50%;
-  background:rgba(255,255,255,.7);
-  box-shadow:0 0 4px rgba(255,255,255,.5);
-  animation:particleFall 14s linear infinite;
+  background:rgba(255,255,255,.6);
+  box-shadow:0 0 4px rgba(255,255,255,.4);
+  animation:particleFall 20s linear infinite;
+  pointer-events:none;
 }
-
 @keyframes particleFall{
-  0%{transform:translate(0,-100vh); opacity:0}
-  10%{opacity:.7}
-  90%{opacity:.5}
-  100%{transform:translate(20px,100vh); opacity:0}
+  0%{transform:translate(0,-10vh); opacity:0}
+  10%{opacity:.6}
+  90%{opacity:.4}
+  100%{transform:translate(30px,110vh); opacity:0}
 }
 
 /* ═══════════════════════════════════════════════════════════
-   🪟 GLASS REFRACTION CARD — apply to any element
+   🪟 GLASS REFRACTION CARD
    ═══════════════════════════════════════════════════════════ */
 .glass{
   position:relative;
@@ -242,7 +148,6 @@
   overflow:hidden;
 }
 .glass::before{
-  /* Top edge highlight (refraction) */
   content:"";
   position:absolute; top:0; left:0; right:0; height:50%;
   background:linear-gradient(180deg,
@@ -251,40 +156,8 @@
   pointer-events:none;
   border-radius:inherit;
 }
-.glass::after{
-  /* Chromatic edge shimmer */
-  content:"";
-  position:absolute; inset:-1px;
-  border-radius:inherit;
-  padding:1px;
-  background:linear-gradient(135deg,
-    rgba(255,200,200,.5) 0%,
-    rgba(200,255,220,.0) 25%,
-    rgba(200,220,255,.5) 50%,
-    rgba(255,255,200,.0) 75%,
-    rgba(255,200,255,.4) 100%);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask-composite:exclude;
-  pointer-events:none;
-  opacity:.6;
-}
 
-.glass-dark{
-  background:linear-gradient(135deg,
-    rgba(15,40,30,.45) 0%,
-    rgba(20,50,38,.30) 50%,
-    rgba(15,40,30,.45) 100%);
-  border:1px solid rgba(255,255,255,.18);
-  color:#fff;
-}
-.glass-dark::before{
-  background:linear-gradient(180deg,
-    rgba(255,255,255,.12) 0%,
-    transparent 100%);
-}
-
-/* Glass tilt on hover (true 5D effect) */
+/* Glass tilt on hover (3D) */
 .glass-tilt{
   transition:transform .4s cubic-bezier(.2,.8,.2,1), box-shadow .4s;
   transform-style:preserve-3d;
@@ -297,7 +170,7 @@
     inset 0 1px 0 rgba(255,255,255,.6);
 }
 
-/* Glass form input */
+/* Glass form input (scoped — apply class explicitly) */
 .glass-input{
   background:rgba(255,255,255,.18) !important;
   border:1.5px solid rgba(255,255,255,.32) !important;
@@ -314,7 +187,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════
-   ✨ Login flash transition (light-burst before navigating)
+   ✨ Login flash transition (light burst before navigating)
    ═══════════════════════════════════════════════════════════ */
 .flash-overlay{
   position:fixed;
