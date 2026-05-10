@@ -20,7 +20,7 @@ async function getFirestoreToken() {
 
 async function checkAndIncrementUsage(uid) {
   const date = getMongoliaDate();
-  const docId = `${uid}_${date}`;
+  const docId = `global_${date}`; // Бүх хэрэглэгчид нийтлэг counter
   const { token, projectId } = await getFirestoreToken();
   const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/chat_usage/${docId}`;
 
@@ -43,9 +43,9 @@ async function checkAndIncrementUsage(uid) {
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       fields: {
-        uid: { stringValue: uid },
         date: { stringValue: date },
         count: { integerValue: String(newCount) },
+        lastUid: { stringValue: uid },
         updatedAt: { timestampValue: new Date().toISOString() }
       }
     })
@@ -94,7 +94,7 @@ exports.handler = async (event, context) => {
         statusCode: 429,
         headers,
         body: JSON.stringify({
-          error: `Та өнөөдөр аль хэдийн ${usage.limit} удаа асуултаа асуусан байна. Маргааш дахин асууна уу.`,
+          error: `Чат бот өнөөдрийн хариулах хязгаартаа (${usage.limit}) хүрсэн байна. Маргааш дахин оролдоно уу.`,
           limit: usage.limit,
           count: usage.count
         })
