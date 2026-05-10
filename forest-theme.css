@@ -18,27 +18,20 @@
   pointer-events:none;
 }
 
-/* Real photo background layer */
-.forest-photo{
+/* Live looping nature video as background */
+.forest-video{
   position:absolute;
   inset:0;
-  background-size:cover;
-  background-position:center;
-  background-repeat:no-repeat;
-  /* gentle Ken Burns zoom + drift */
-  animation:photoBreath 32s ease-in-out infinite alternate;
-  transform-origin:center;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  /* slight cinematic zoom for added depth */
+  animation:videoBreath 22s ease-in-out infinite alternate;
 }
-@keyframes photoBreath{
-  0%{transform:scale(1.0) translateX(0)}
-  100%{transform:scale(1.08) translateX(-2%)}
+@keyframes videoBreath{
+  0%{transform:scale(1.02)}
+  100%{transform:scale(1.08)}
 }
-
-/* Variants — different photo per page */
-.forest-scene--day .forest-photo{ background-image:url('img/bg/login-mongolian-steppe.jpg') }
-.forest-scene--lake .forest-photo{ background-image:url('img/bg/dashboard-khovsgol.jpg') }
-.forest-scene--sunlit .forest-photo{ background-image:url('img/bg/nohon-sunlit-forest.jpg') }
-.forest-scene--evening .forest-photo{ background-image:url('img/bg/admin-evening-mountain.jpg') }
 
 /* Atmospheric overlays — soften the photo + add mood */
 .forest-scene::before{
