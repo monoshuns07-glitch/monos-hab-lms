@@ -2,7 +2,7 @@
 <html lang="mn">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=1280, user-scalable=yes, maximum-scale=5" />
+<meta name="viewport" content="width=1024, user-scalable=yes, maximum-scale=5" />
 <title>МОНОС ХҮНС ХК — ХАБ-ын алба · Нөхөн төлбөрийн гарын авлага</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -145,8 +145,7 @@
 
   /* HERO */
   .hero{
-    min-height:100vh;
-    padding:140px 40px 80px;
+    padding:90px 40px 60px;
     display:grid;
     grid-template-columns:1.1fr .9fr;
     gap:60px;align-items:center;
@@ -4730,8 +4729,8 @@
   /* Chat товч */
   .mnos-chat-fab{
     position:fixed;
-    bottom:20px; right:20px;
-    width:60px; height:60px;
+    bottom:24px; right:24px;
+    width:120px; height:120px;
     border-radius:50%;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     color:white;
@@ -4739,15 +4738,15 @@
     cursor:pointer;
     box-shadow:
       0 1px 0 rgba(255,255,255,.2) inset,
-      0 12px 28px -6px rgba(227,6,19,.45),
-      0 4px 10px rgba(227,6,19,.25);
+      0 16px 36px -6px rgba(227,6,19,.55),
+      0 8px 16px rgba(227,6,19,.3);
     display:grid; place-items:center;
     z-index:9998;
     transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s;
   }
   .mnos-chat-fab:hover{transform:translateY(-3px) scale(1.03)}
   .mnos-chat-fab.hidden{transform:scale(0); opacity:0; pointer-events:none}
-  .mnos-chat-fab svg{width:28px; height:28px; stroke:white; fill:none; stroke-width:2}
+  .mnos-chat-fab svg{width:58px; height:58px; stroke:white; fill:none; stroke-width:2}
   .mnos-chat-fab .pulse{
     position:absolute; inset:0;
     border-radius:50%;
@@ -4768,15 +4767,15 @@
   /* "Чат ботоос асуух" label дээгүүр */
   .mnos-chat-label{
     position:fixed;
-    bottom:88px; right:20px;
+    bottom:160px; right:24px;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     color:#fff;
-    padding:8px 14px;
-    border-radius:14px;
-    font-size:13px;
-    font-weight:600;
+    padding:18px 28px;
+    border-radius:22px;
+    font-size:30px;
+    font-weight:700;
     white-space:nowrap;
-    box-shadow:0 6px 16px -4px rgba(227,6,19,.5), 0 2px 6px rgba(0,0,0,.15);
+    box-shadow:0 12px 28px -6px rgba(227,6,19,.55), 0 4px 10px rgba(0,0,0,.18);
     z-index:9997;
     pointer-events:none;
     animation:mnosLabelBounce 2.6s ease-in-out infinite;
@@ -4786,11 +4785,11 @@
   .mnos-chat-label::after{
     content:'';
     position:absolute;
-    bottom:-5px; right:24px;
-    width:10px; height:10px;
+    bottom:-9px; right:42px;
+    width:18px; height:18px;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     transform:rotate(45deg);
-    border-radius:2px;
+    border-radius:3px;
   }
   .mnos-chat-label.hidden{opacity:0; transform:translateY(8px) scale(.9); pointer-events:none; transition:opacity .2s, transform .2s}
   @keyframes mnosLabelBounce{
