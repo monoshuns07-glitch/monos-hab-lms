@@ -6,6 +6,7 @@
 <title>МОНОС ХҮНС ХК — ХАБ-ын алба</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="forest-theme.css" />
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -427,15 +428,112 @@ body{
   .brand-name{font-size:28px}
   .brand-logo{width:80px;height:80px}
 }
-</style>
-</head>
-<body>
 
-<canvas id="bgCanvas"></canvas>
-<div class="orb orb1"></div>
-<div class="orb orb2"></div>
-<div class="orb orb3"></div>
-<div class="orb orb4"></div>
+/* ═══════════════════════════════════════════════════
+   🌲 FOREST + GLASS OVERRIDE — Forest theme integration
+   ═══════════════════════════════════════════════════ */
+body{background:transparent !important}
+.orb{display:none !important}
+
+/* Brand text on forest bg — needs more contrast */
+.brand-company{color:#1a3a2e !important; text-shadow:0 1px 2px rgba(255,255,255,.5)}
+.brand-name{
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.25)) drop-shadow(0 1px 3px rgba(255,255,255,.6));
+}
+.brand-sub{color:#2d5a3d !important; text-shadow:0 1px 2px rgba(255,255,255,.5)}
+
+/* Login card → glass refraction */
+.login-card-inner{
+  background:linear-gradient(135deg,
+    rgba(255,255,255,.32) 0%,
+    rgba(255,255,255,.18) 50%,
+    rgba(255,255,255,.28) 100%) !important;
+  backdrop-filter:blur(28px) saturate(180%);
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  border:1px solid rgba(255,255,255,.45) !important;
+  box-shadow:
+    0 12px 40px rgba(0,0,0,.28),
+    0 4px 12px rgba(0,0,0,.18),
+    inset 0 1px 0 rgba(255,255,255,.7),
+    inset 0 -1px 0 rgba(255,255,255,.1) !important;
+  position:relative;
+}
+.login-card-inner::before{
+  /* refraction shimmer at top */
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.6) 30%,rgba(200,255,220,.5) 60%,transparent) !important;
+}
+.login-card-inner::after{
+  /* chromatic edge glow */
+  content:"";
+  position:absolute;
+  inset:-1px;
+  border-radius:inherit;
+  background:linear-gradient(135deg,
+    rgba(255,200,200,.4) 0%,
+    transparent 25%,
+    rgba(200,220,255,.5) 50%,
+    transparent 75%,
+    rgba(255,200,255,.4) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask-composite:exclude;
+  padding:1px;
+  pointer-events:none;
+  opacity:.5;
+  width:auto !important;height:auto !important;
+  top:auto !important;right:auto !important;
+}
+
+.card-heading{color:#0a1f1c !important}
+.card-sub{color:rgba(15,40,30,.7) !important}
+.form-label{color:rgba(15,40,30,.65) !important}
+
+/* Glass form inputs */
+.form-input{
+  background:rgba(255,255,255,.30) !important;
+  border:1.5px solid rgba(255,255,255,.45) !important;
+  color:#0a1f1c !important;
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  font-weight:500;
+}
+.form-input::placeholder{color:rgba(15,40,30,.40) !important}
+.form-input:focus{
+  border-color:rgba(255,255,255,.85) !important;
+  background:rgba(255,255,255,.45) !important;
+  box-shadow:0 0 0 3px rgba(255,255,255,.25), 0 4px 16px rgba(0,0,0,.15) !important;
+}
+
+/* Login button keeps red but adds glass-style glow */
+.login-btn{
+  box-shadow:
+    0 8px 24px rgba(227,6,19,.5),
+    0 2px 6px rgba(227,6,19,.3),
+    inset 0 1px 0 rgba(255,255,255,.35) !important;
+}
+
+.login-footer{color:rgba(15,40,30,.55) !important; text-shadow:0 1px 1px rgba(255,255,255,.5)}
+
+/* Mobile zoom-out: enlarge form text for legibility */
+@media (hover:none) and (pointer:coarse){
+  .login-card-inner{padding:48px 40px}
+  .card-heading{font-size:30px}
+  .card-sub{font-size:16px}
+  .form-input{font-size:16px;padding:18px 18px}
+  .login-btn{padding:20px;font-size:16px}
+  .form-label{font-size:13px}
+}
+</style>
+<script src="forest-scene.js" defer></script>
+</head>
+<body data-forest="day">
+
+<!-- Light flash overlay (shows on successful login) -->
+<div class="flash-overlay" id="flashOverlay"></div>
+
+<!-- Old decorative orbs disabled (forest scene replaces them) -->
+<canvas id="bgCanvas" style="display:none"></canvas>
 
 <!-- ══════════════ LOGIN SCREEN ══════════════ -->
 <div id="loginScreen">
@@ -853,6 +951,12 @@ async function doLogin(){
 function showErr(msg){ loginErr.textContent=msg; loginErr.classList.add('show'); }
 
 async function showMain(user){
+  // ✨ Light flash transition — "walking out into a beautiful place"
+  const flash = document.getElementById('flashOverlay');
+  if (flash) flash.classList.add('active');
+
+  // Determine destination, then navigate after the flash completes
+  let destination = 'employee.html';
   try{
     const snap=await db.collection('users').doc(user.uid).get();
     if(!snap.exists){
@@ -862,14 +966,13 @@ async function showMain(user){
         createdAt:firebase.firestore.FieldValue.serverTimestamp(),
         totalSiteTime:0
       });
-      location.replace('employee.html');
     } else {
       const role=snap.data().role||'employee';
-      location.replace(role==='admin'?'admin.html':'employee.html');
+      destination = (role==='admin' ? 'admin.html' : 'employee.html');
     }
-  } catch(e){
-    location.replace('employee.html');
-  }
+  } catch(e){ /* fall through */ }
+
+  setTimeout(() => location.replace(destination), 1100);
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async()=>{
