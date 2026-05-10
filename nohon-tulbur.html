@@ -4726,11 +4726,11 @@
 <!-- CHATBOT WIDGET — Монос ХАБ Туслах                                 -->
 <!-- ================================================================ -->
 <style>
-  /* Chat товч */
+  /* Chat товч — desktop хэмжээ */
   .mnos-chat-fab{
     position:fixed;
-    bottom:24px; right:24px;
-    width:120px; height:120px;
+    bottom:20px; right:20px;
+    width:60px; height:60px;
     border-radius:50%;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     color:white;
@@ -4738,15 +4738,15 @@
     cursor:pointer;
     box-shadow:
       0 1px 0 rgba(255,255,255,.2) inset,
-      0 16px 36px -6px rgba(227,6,19,.55),
-      0 8px 16px rgba(227,6,19,.3);
+      0 12px 28px -6px rgba(227,6,19,.45),
+      0 4px 10px rgba(227,6,19,.25);
     display:grid; place-items:center;
     z-index:9998;
     transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s;
   }
   .mnos-chat-fab:hover{transform:translateY(-3px) scale(1.03)}
   .mnos-chat-fab.hidden{transform:scale(0); opacity:0; pointer-events:none}
-  .mnos-chat-fab svg{width:58px; height:58px; stroke:white; fill:none; stroke-width:2}
+  .mnos-chat-fab svg{width:28px; height:28px; stroke:white; fill:none; stroke-width:2}
   .mnos-chat-fab .pulse{
     position:absolute; inset:0;
     border-radius:50%;
@@ -4764,18 +4764,18 @@
     width:10px; height:10px; border-radius:50%;
     background:#FFD700; border:2px solid white;
   }
-  /* "Чат ботоос асуух" label дээгүүр */
+  /* "Чат ботоос асуух" label дээгүүр — desktop хэмжээ */
   .mnos-chat-label{
     position:fixed;
-    bottom:160px; right:24px;
+    bottom:88px; right:20px;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     color:#fff;
-    padding:18px 28px;
-    border-radius:22px;
-    font-size:30px;
-    font-weight:700;
+    padding:8px 14px;
+    border-radius:14px;
+    font-size:13px;
+    font-weight:600;
     white-space:nowrap;
-    box-shadow:0 12px 28px -6px rgba(227,6,19,.55), 0 4px 10px rgba(0,0,0,.18);
+    box-shadow:0 6px 16px -4px rgba(227,6,19,.5), 0 2px 6px rgba(0,0,0,.15);
     z-index:9997;
     pointer-events:none;
     animation:mnosLabelBounce 2.6s ease-in-out infinite;
@@ -4785,11 +4785,37 @@
   .mnos-chat-label::after{
     content:'';
     position:absolute;
-    bottom:-9px; right:42px;
-    width:18px; height:18px;
+    bottom:-5px; right:24px;
+    width:10px; height:10px;
     background:linear-gradient(135deg, #E30613 0%, #B00510 100%);
     transform:rotate(45deg);
-    border-radius:3px;
+    border-radius:2px;
+  }
+
+  /* TOUCH DEVICE — phones/tablets only: enlarge chat label + FAB */
+  @media (hover:none) and (pointer:coarse){
+    .mnos-chat-fab{
+      width:120px; height:120px;
+      bottom:24px; right:24px;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.2) inset,
+        0 16px 36px -6px rgba(227,6,19,.55),
+        0 8px 16px rgba(227,6,19,.3);
+    }
+    .mnos-chat-fab svg{width:58px; height:58px}
+    .mnos-chat-label{
+      bottom:160px; right:24px;
+      padding:18px 28px;
+      border-radius:22px;
+      font-size:30px;
+      font-weight:700;
+      box-shadow:0 12px 28px -6px rgba(227,6,19,.55), 0 4px 10px rgba(0,0,0,.18);
+    }
+    .mnos-chat-label::after{
+      bottom:-9px; right:42px;
+      width:18px; height:18px;
+      border-radius:3px;
+    }
   }
   .mnos-chat-label.hidden{opacity:0; transform:translateY(8px) scale(.9); pointer-events:none; transition:opacity .2s, transform .2s}
   @keyframes mnosLabelBounce{
