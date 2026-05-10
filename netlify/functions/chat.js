@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
 
-const DAILY_LIMIT = 2;
+const DAILY_LIMIT = 100;
 
 // Mongolia (UTC+8) өдрийн он-сар-өдөр string буцаана
 function getMongoliaDate() {
