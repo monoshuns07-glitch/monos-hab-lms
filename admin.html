@@ -1909,31 +1909,49 @@ document.getElementById('sendCredsBtn').addEventListener('click',async()=>{
     toast('Хүснэгтээс ажилтан сонгоно уу (зүүн талын checkbox)','error');
     return;
   }
+  // Check EmailJS SDK loaded
+  if(typeof emailjs === 'undefined' || !emailjs?.send){
+    toast('EmailJS SDK ачаалагдаагүй байна. Хуудсаа дахин ачаалаад үзнэ үү.','error');
+    console.error('emailjs is undefined or send method missing');
+    return;
+  }
   const svcId=localStorage.getItem('emailjs_service')||'';
   const tplId=localStorage.getItem('emailjs_template_creds')||localStorage.getItem('emailjs_template')||'';
   const pubKey=localStorage.getItem('emailjs_key')||'';
   if(!svcId||!tplId||!pubKey){ toast('EmailJS тохиргоо хийгдээгүй. ⚙️ дарж тохируулна уу.','error'); return; }
+  console.log('[EmailJS] service:', svcId, 'template:', tplId, 'key:', pubKey.slice(0,4)+'...');
   if(!confirm(`${targets.length} ажилтанд login email/password илгээх үү?`)) return;
   const btn=document.getElementById('sendCredsBtn');
   btn.disabled=true;
-  emailjs.init({ publicKey: pubKey });
+  try { emailjs.init({ publicKey: pubKey }); }
+  catch(e){ console.error('emailjs.init failed:', e); toast('EmailJS init: '+e.message,'error'); btn.disabled=false; return; }
   let sent=0,failed=0,lastErr='';
   const siteUrl=window.location.origin;
   for(let i=0;i<targets.length;i++){
     const u=targets[i];
+    const params = {
+      to_email:u.email,
+      to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
+      login_email:u.email,
+      login_password:u.password,
+      site_url:siteUrl
+    };
     try{
-      await emailjs.send(svcId,tplId,{
-        to_email:u.email,
-        to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
-        login_email:u.email,
-        login_password:u.password,
-        site_url:siteUrl
-      });
+      const res = await emailjs.send(svcId,tplId,params);
+      console.log(`[EmailJS] sent to ${u.email}:`, res.status, res.text);
       sent++;
-    } catch(e){ failed++; lastErr=e.text||e.message||String(e); }
+    } catch(e){
+      failed++;
+      lastErr=e.text||e.message||(typeof e==='object'?JSON.stringify(e):String(e));
+      console.error(`[EmailJS] failed for ${u.email}:`, e, 'params:', params);
+    }
     btn.innerHTML = `<span class="spinner-sm"></span>${i+1}/${targets.length}...`;
   }
-  toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`,sent>0?'success':'error');
+  if(sent===0 && failed>0){
+    toast(`✗ Бүгд (${failed}) илгээгдсэнгүй. Алдаа: ${lastErr.slice(0,180)}`,'error');
+  } else {
+    toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа`:''}`,sent>0?'success':'error');
+  }
   btn.disabled=false;
   updateSendCredsBtn();
 });
