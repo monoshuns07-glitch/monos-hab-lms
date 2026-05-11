@@ -1871,19 +1871,173 @@
   .exc-card-text{color:rgba(120,53,15,.8)}
   .exc-card-text b{color:#78350F}
 
-  /* Guide phone screen — keep dark for contrast (phone UI look) */
-  .guide-screen{background:linear-gradient(180deg,#0E1525 0%,#141E30 100%)}
-  .guide-step-num{background:rgba(227,6,19,.18);color:#FF8080}
-  .guide-slide h4{color:#EEF3FF}
-  .guide-slide p{color:rgba(170,195,255,.65)}
-  .guide-choice-item{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:rgba(200,215,255,.85)}
-  .guide-choice-item.active{border-color:var(--red);background:rgba(227,6,19,.14);color:#FF9090}
-  .guide-check{background:rgba(255,255,255,.05);color:rgba(200,215,255,.8)}
-  .guide-phone{background:rgba(10,16,32,.9);box-shadow:0 40px 80px rgba(0,30,80,.25),0 12px 24px rgba(0,20,60,.15),inset 0 0 0 1.5px rgba(255,255,255,.08)}
-  .guide-phone-notch{background:rgba(10,16,32,.9)}
-  .guide-phone-notch::after{background:rgba(59,130,246,.4)}
-  .guide-dot{background:rgba(255,255,255,.15)}
-  .guide-email-addr{color:#EEF3FF}
+  /* ═══════════════════════════════════════════════════════════
+     📱 Premium phone mockup (refreshed for brand consistency)
+     ═══════════════════════════════════════════════════════════ */
+
+  /* Phone frame — premium dark gradient with red ambient glow */
+  .guide-phone{
+    background:linear-gradient(160deg,#1a1f2e 0%,#0c1018 50%,#1a1f2e 100%) !important;
+    box-shadow:
+      0 40px 80px rgba(20,30,60,.35),
+      0 16px 28px rgba(10,15,40,.2),
+      0 4px 10px rgba(227,6,19,.08),
+      inset 0 0 0 1.5px rgba(255,255,255,.10),
+      inset 0 1px 0 rgba(255,255,255,.15) !important;
+    position:relative;
+  }
+  /* Ambient red+gold halo behind phone */
+  .guide-phone::before{
+    content:"";
+    position:absolute; inset:-30px;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(227,6,19,.25), transparent 60%),
+      radial-gradient(ellipse at 70% 80%, rgba(245,158,11,.18), transparent 60%);
+    z-index:-1;
+    filter:blur(40px);
+    border-radius:50%;
+    animation:phoneHalo 8s ease-in-out infinite alternate;
+  }
+  @keyframes phoneHalo{
+    0%{opacity:.6; transform:scale(1)}
+    100%{opacity:1; transform:scale(1.05)}
+  }
+
+  .guide-phone-notch{
+    background:linear-gradient(180deg,#0a0e16 0%,#141a26 100%) !important;
+    box-shadow:0 2px 4px rgba(0,0,0,.4);
+  }
+  .guide-phone-notch::after{background:rgba(89,160,255,.5) !important}
+
+  /* Screen — refined dark with subtle texture */
+  .guide-screen{
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(227,6,19,.08) 0%, transparent 50%),
+      linear-gradient(180deg,#0E1525 0%,#141E30 60%,#0F1828 100%) !important;
+  }
+  /* Status bar (fake time, battery) */
+  .guide-screen::before{
+    content:"9:41";
+    position:absolute; top:14px; left:24px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:13px; font-weight:600;
+    color:#EEF3FF;
+    z-index:2;
+    letter-spacing:-.5px;
+  }
+  .guide-screen::after{
+    content:"📶 🔋";
+    position:absolute; top:14px; right:24px;
+    font-size:11px;
+    z-index:2;
+    letter-spacing:2px;
+    opacity:.85;
+  }
+
+  /* Home indicator at bottom */
+  .guide-slide::after{
+    content:"";
+    position:absolute;
+    bottom:6px; left:50%; transform:translateX(-50%);
+    width:90px; height:4px;
+    background:rgba(255,255,255,.35);
+    border-radius:100px;
+    z-index:1;
+  }
+
+  /* Step number — gradient red→gold pill with glow */
+  .guide-step-num{
+    background:linear-gradient(135deg,#E30613 0%,#B00510 100%) !important;
+    color:#FFFFFF !important;
+    padding:5px 14px !important;
+    font-size:13px !important;
+    letter-spacing:.18em;
+    box-shadow:
+      0 4px 12px rgba(227,6,19,.4),
+      inset 0 1px 0 rgba(255,255,255,.25);
+  }
+
+  /* Title — premium white serif */
+  .guide-slide h4{
+    color:#FFFFFF !important;
+    text-shadow:0 2px 8px rgba(0,0,0,.3);
+    letter-spacing:-.025em !important;
+  }
+  .guide-slide p{
+    color:rgba(170,195,255,.7) !important;
+    font-weight:500;
+  }
+
+  /* Choice items — glass cards (slide 1) */
+  .guide-choice-item{
+    background:linear-gradient(135deg,rgba(255,255,255,.08) 0%,rgba(255,255,255,.04) 100%) !important;
+    border:1px solid rgba(255,255,255,.12) !important;
+    color:rgba(220,230,255,.9) !important;
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    transition:all .35s cubic-bezier(.2,.8,.2,1);
+  }
+  .guide-choice-item.active{
+    border-color:rgba(227,6,19,.6) !important;
+    background:linear-gradient(135deg,rgba(227,6,19,.20) 0%,rgba(227,6,19,.10) 100%) !important;
+    color:#FFB0B0 !important;
+    box-shadow:
+      0 4px 16px rgba(227,6,19,.25),
+      inset 0 1px 0 rgba(255,255,255,.1);
+  }
+
+  /* Check items (slide 2) — glass with red gradient checkbox */
+  .guide-check{
+    background:linear-gradient(135deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.02) 100%) !important;
+    border:1px solid rgba(255,255,255,.08);
+    color:rgba(220,230,255,.92) !important;
+    padding:10px 14px !important;
+    border-radius:10px !important;
+    font-weight:500;
+    transition:transform .25s, box-shadow .25s;
+  }
+  .guide-check:hover{
+    transform:translateX(3px);
+    box-shadow:0 4px 12px rgba(227,6,19,.15);
+  }
+  .guide-check .ch{
+    background:linear-gradient(135deg,#E30613 0%,#B00510 100%) !important;
+    box-shadow:0 2px 6px rgba(227,6,19,.4), inset 0 1px 0 rgba(255,255,255,.25);
+    width:20px !important; height:20px !important;
+  }
+
+  /* Download icon (slide 3) — subtle white card */
+  .guide-doc-icon svg rect:first-of-type{
+    fill:rgba(255,255,255,.95) !important;
+  }
+  .guide-dl-label{color:#FF8080 !important}
+
+  /* Email addr (slide 4) */
+  .guide-email-addr{
+    color:#FFFFFF !important;
+    text-shadow:0 2px 8px rgba(0,0,0,.3);
+  }
+  .guide-env svg rect:first-of-type{
+    fill:rgba(255,255,255,.95) !important;
+  }
+
+  /* Progress dots — red gradient when active */
+  .guide-dot{background:rgba(255,255,255,.18) !important}
+  .guide-dot.active{
+    background:linear-gradient(90deg,#E30613,#FF6B6B) !important;
+    box-shadow:0 0 8px rgba(227,6,19,.6);
+  }
+
+  /* Hero badge stamp — premium gradient + better shadow */
+  .hero-badge{
+    background:linear-gradient(135deg,#E30613 0%,#B00510 100%) !important;
+    box-shadow:
+      0 14px 36px rgba(227,6,19,.5),
+      0 4px 10px rgba(227,6,19,.3),
+      inset 0 1.5px 0 rgba(255,255,255,.25),
+      inset 0 -1.5px 0 rgba(0,0,0,.15) !important;
+    text-shadow:0 1px 2px rgba(0,0,0,.2);
+  }
 
   /* Marquee — elegant light strip */
   .marquee{
