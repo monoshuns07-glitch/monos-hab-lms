@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>МОНОС ХҮНС ХК — ХАБ-ын алба</title>
+<title>МОНОС ХҮНС ХК — ХАБЭА-н алба</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="forest-theme.css" />
@@ -435,6 +435,14 @@ body{
 body{background:transparent !important}
 .orb{display:none !important}
 
+/* PERFORMANCE — disable heavy animations on login screen */
+#loginScreen .brand-logo{animation:none !important}
+#loginScreen .brand-logo-ring{animation:none !important; background:linear-gradient(135deg,#E30613,#F59E0B) !important; filter:none !important}
+#loginScreen .brand-name{animation:none !important; background:linear-gradient(135deg,#0F1117,#E30613) !important; -webkit-background-clip:text !important; background-clip:text !important}
+#loginScreen .login-card-glow{animation:none !important; opacity:.4}
+#loginScreen .login-card-border{animation:none !important; background:linear-gradient(135deg,rgba(227,6,19,.4),rgba(245,158,11,.3)) !important; filter:none !important}
+#loginScreen .login-btn::after{animation:none !important; display:none !important}
+
 /* Brand text on forest bg — needs more contrast */
 .brand-company{color:#1a3a2e !important; text-shadow:0 1px 2px rgba(255,255,255,.5)}
 .brand-name{
@@ -442,14 +450,14 @@ body{background:transparent !important}
 }
 .brand-sub{color:#2d5a3d !important; text-shadow:0 1px 2px rgba(255,255,255,.5)}
 
-/* Login card → glass refraction */
+/* Login card → glass refraction (lightweight blur for perf) */
 .login-card-inner{
   background:linear-gradient(135deg,
-    rgba(255,255,255,.32) 0%,
+    rgba(255,255,255,.30) 0%,
     rgba(255,255,255,.18) 50%,
-    rgba(255,255,255,.28) 100%) !important;
-  backdrop-filter:blur(28px) saturate(180%);
-  -webkit-backdrop-filter:blur(28px) saturate(180%);
+    rgba(255,255,255,.26) 100%) !important;
+  backdrop-filter:blur(12px) saturate(150%);
+  -webkit-backdrop-filter:blur(12px) saturate(150%);
   border:1px solid rgba(255,255,255,.45) !important;
   box-shadow:
     0 12px 40px rgba(0,0,0,.28),
@@ -485,9 +493,9 @@ body{background:transparent !important}
   top:auto !important;right:auto !important;
 }
 
-.card-heading{color:#0a1f1c !important}
-.card-sub{color:rgba(15,40,30,.7) !important}
-.form-label{color:rgba(15,40,30,.65) !important}
+.card-heading{color:#0a1f1c !important; text-shadow:0 1px 2px rgba(255,255,255,.4)}
+.card-sub{color:rgba(15,40,30,.85) !important; text-shadow:0 1px 1px rgba(255,255,255,.4)}
+.form-label{color:rgba(15,40,30,.85) !important; text-shadow:0 1px 1px rgba(255,255,255,.4)}
 
 /* Glass form inputs */
 .form-input{
@@ -527,7 +535,7 @@ body{background:transparent !important}
 </style>
 <script src="forest-scene.js" defer></script>
 </head>
-<body data-forest="day">
+<body data-forest="login">
 
 <!-- Light flash overlay (shows on successful login) -->
 <div class="flash-overlay" id="flashOverlay"></div>
@@ -558,7 +566,7 @@ body{background:transparent !important}
       </div>
     </div>
     <div class="brand-company">МОНОС ХҮНС ХК</div>
-    <div class="brand-name">ХАБ-ын алба</div>
+    <div class="brand-name">ХАБЭА-н алба</div>
     <div class="brand-sub">
       <div class="brand-sub-dot"></div>
       ХАБЭА · Мэдлэгийн нэгдсэн сан
@@ -584,7 +592,7 @@ body{background:transparent !important}
       <div class="login-err" id="loginErr"></div>
     </div>
   </div>
-  <div class="login-footer">© 2025 МОНОС ХҮНС ХК — ХАБ-ын алба &nbsp;·&nbsp; Зөвхөн бүртгэлтэй ажилтнууд нэвтрэх боломжтой</div>
+  <div class="login-footer">© 2025 МОНОС ХҮНС ХК — ХАБЭА-н алба &nbsp;·&nbsp; Зөвхөн бүртгэлтэй ажилтнууд нэвтрэх боломжтой</div>
 </div>
 
 <!-- ══════════════ MAIN SCREEN ══════════════ -->
@@ -604,7 +612,7 @@ body{background:transparent !important}
         </div>
         <div class="nav-logo-text-wrap">
           <div class="nav-logo-text">МОНОС ХҮНС ХК</div>
-          <div class="nav-logo-dept">ХАБ-ын алба · ХАБЭА мэдлэгийн сан</div>
+          <div class="nav-logo-dept">ХАБЭА-н алба · ХАБЭА мэдлэгийн сан</div>
         </div>
       </div>
       <div class="nav-right">
@@ -625,7 +633,7 @@ body{background:transparent !important}
       <div class="hero-top-line"></div>
       <div class="hero-badge">
         <div class="hero-badge-dot"></div>
-        <span class="hero-badge-text">МОНОС ХҮНС ХК · ХАБ-ын алба</span>
+        <span class="hero-badge-text">МОНОС ХҮНС ХК · ХАБЭА-н алба</span>
       </div>
       <h1 class="hero-title" id="welcomeName">Тавтай <span>морилно уу!</span></h1>
       <p class="hero-sub">Хөдөлмөрийн аюулгүй байдал, эрүүл ахуй, байгаль орчны мэдлэгийн нэгдсэн систем</p>
@@ -659,7 +667,7 @@ body{background:transparent !important}
         <div class="info-icon cyan">🛡️</div>
         <div>
           <div class="info-card-label">Алба</div>
-          <div class="info-card-value">ХАБ-ын алба</div>
+          <div class="info-card-value">ХАБЭА-н алба</div>
         </div>
       </div>
     </div>

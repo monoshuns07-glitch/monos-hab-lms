@@ -25,12 +25,6 @@
   width:100%;
   height:100%;
   object-fit:cover;
-  /* slight cinematic zoom for added depth */
-  animation:videoBreath 22s ease-in-out infinite alternate;
-}
-@keyframes videoBreath{
-  0%{transform:scale(1.02)}
-  100%{transform:scale(1.08)}
 }
 
 /* Atmospheric overlays — soften the photo + add mood */
@@ -43,39 +37,65 @@
   z-index:2;
 }
 
-/* Drifting mist (subtle white veil that moves) */
-.forest-scene::after{
-  content:"";position:absolute;inset:0;
-  background:
-    radial-gradient(ellipse 40% 30% at 30% 70%, rgba(255,255,255,.12), transparent),
-    radial-gradient(ellipse 35% 25% at 75% 65%, rgba(255,255,255,.10), transparent);
-  filter:blur(20px);
-  animation:mistDrift 18s ease-in-out infinite alternate;
+/* Mist drift removed for performance — video provides the motion */
+
+/* ─── Bubbles rising overlay (login water scene) ─── */
+.bubble-layer{
+  position:absolute; inset:0;
   pointer-events:none;
-  z-index:3;
+  z-index:5;
+  overflow:hidden;
 }
-@keyframes mistDrift{
-  0%{transform:translateX(0) translateY(0); opacity:.7}
-  100%{transform:translateX(40px) translateY(-10px); opacity:1}
+.bubble{
+  position:absolute;
+  bottom:-50px;
+  border-radius:50%;
+  background:radial-gradient(circle at 30% 30%,
+    rgba(255,255,255,.85) 0%,
+    rgba(220,245,255,.45) 35%,
+    rgba(180,220,250,.20) 70%,
+    transparent 100%);
+  border:1.5px solid rgba(255,255,255,.7);
+  box-shadow:
+    inset -3px -3px 5px rgba(120,180,220,.25),
+    inset 2px 2px 4px rgba(255,255,255,.4),
+    0 0 6px rgba(255,255,255,.3);
+  animation:bubbleRise linear infinite;
+  opacity:0;
+}
+@keyframes bubbleRise{
+  0%   { transform:translate(0, 0) scale(.5); opacity:0 }
+  8%   { opacity:var(--max-opacity, .85) }
+  50%  { transform:translate(var(--drift, 0), -55vh) scale(1) }
+  90%  { opacity:calc(var(--max-opacity, .85) * .6) }
+  100% { transform:translate(0, -115vh) scale(1.2); opacity:0 }
+}
+@media (hover:none) and (pointer:coarse){
+  /* fewer bubbles needed on small screens — just keep them */
+  .bubble{ filter:none }
 }
 
-/* ─── Fireflies / particles overlay ─── */
+/* ─── Fireflies / particles overlay (light, GPU-friendly) ─── */
 .firefly-layer{
   position:absolute;inset:0;
   pointer-events:none;
   z-index:4;
+  /* hide fireflies entirely on touch (mobile) for perf */
+}
+@media (hover:none) and (pointer:coarse){
+  .firefly-layer{ display:none }
 }
 .firefly{
   position:absolute;
-  width:5px;height:5px;border-radius:50%;
+  width:4px;height:4px;border-radius:50%;
   background:var(--firefly);
   box-shadow:
-    0 0 6px var(--firefly),
-    0 0 14px rgba(255,247,194,.7),
-    0 0 26px rgba(255,247,194,.4);
+    0 0 4px var(--firefly),
+    0 0 10px rgba(255,247,194,.5);
   pointer-events:none;
   opacity:0;
-  animation:fireflyDrift 12s ease-in-out infinite, fireflyBlink 2.4s ease-in-out infinite;
+  animation:fireflyBlink 3s ease-in-out infinite;
+  will-change:opacity;
 }
 .firefly:nth-child(1){left:8%;top:55%; animation-delay:0s,0s}
 .firefly:nth-child(2){left:22%;top:50%; animation-delay:-2s,-.8s}
@@ -90,18 +110,9 @@
 .firefly:nth-child(11){left:48%;top:35%; animation-delay:-10s,-1.6s}
 .firefly:nth-child(12){left:15%;top:80%; animation-delay:-11s,-.2s}
 
-@keyframes fireflyDrift{
-  0%{transform:translate(0,0)}
-  25%{transform:translate(50px,-30px)}
-  50%{transform:translate(100px,15px)}
-  75%{transform:translate(40px,50px)}
-  100%{transform:translate(0,0)}
-}
 @keyframes fireflyBlink{
   0%,100%{opacity:0}
-  10%{opacity:1}
-  50%{opacity:.7}
-  90%{opacity:.3}
+  50%{opacity:.6}
 }
 
 /* Floating dust particles */
