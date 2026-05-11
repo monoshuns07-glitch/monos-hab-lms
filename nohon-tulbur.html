@@ -5228,7 +5228,7 @@
 
     function showWelcome(){
       if (body.children.length > 0) return;
-      addBotMessage('Сайн байна уу! 👋 Би Монос Хүнс ХК-ийн ХАБ-ын албаны AI туслах. Даатгал, нөхөн төлбөрийн талаар асуулт байвал асуугаарай.\n\nℹ️ Чат бот өдөрт 100 хариулт өгөх боломжтой.');
+      addBotMessage('Сайн байна уу! 👋 Би Монос Хүнс ХК-ийн ХАБ-ын албаны AI туслах. Даатгал, нөхөн төлбөрийн талаар асуулт байвал асуугаарай.');
 
       const wrap = document.createElement('div');
       wrap.className = 'mnos-quick-wrap';
@@ -5432,11 +5432,6 @@
 
         const data = await res.json();
         hideTyping();
-
-        if (res.status === 429){
-          addBotMessage('⏳ ' + (data.error || 'Чат бот өнөөдрийн хязгаартаа хүрсэн байна.') + '\n\n📅 Маргааш 00:00 цагт дахин боломжтой болно.');
-          return;
-        }
 
         if (res.status === 401){
           addBotMessage('🔒 ' + (data.error || 'Нэвтэрнэ үү.'));

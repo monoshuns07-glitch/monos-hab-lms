@@ -1,59 +1,3 @@
-const admin = require('firebase-admin');
-
-const DAILY_LIMIT = 100;
-
-// Mongolia (UTC+8) өдрийн он-сар-өдөр string буцаана
-function getMongoliaDate() {
-  const now = new Date();
-  const mn = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-  return mn.toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-async function getFirestoreToken() {
-  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
-  if (!b64) throw new Error('FIREBASE_SERVICE_ACCOUNT_B64 missing');
-  const sa = JSON.parse(Buffer.from(b64.trim(), 'base64').toString('utf8'));
-  const cred = admin.credential.cert(sa);
-  const tokenInfo = await cred.getAccessToken();
-  return { token: tokenInfo.access_token, projectId: sa.project_id };
-}
-
-async function checkAndIncrementUsage(uid) {
-  const date = getMongoliaDate();
-  const docId = `global_${date}`; // Бүх хэрэглэгчид нийтлэг counter
-  const { token, projectId } = await getFirestoreToken();
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/chat_usage/${docId}`;
-
-  // Read current count
-  let count = 0;
-  const getRes = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-  if (getRes.ok) {
-    const data = await getRes.json();
-    count = parseInt(data.fields?.count?.integerValue || '0');
-  }
-
-  if (count >= DAILY_LIMIT) {
-    return { allowed: false, count, limit: DAILY_LIMIT };
-  }
-
-  // Increment
-  const newCount = count + 1;
-  await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fields: {
-        date: { stringValue: date },
-        count: { integerValue: String(newCount) },
-        lastUid: { stringValue: uid },
-        updatedAt: { timestampValue: new Date().toISOString() }
-      }
-    })
-  });
-
-  return { allowed: true, count: newCount, limit: DAILY_LIMIT };
-}
-
 exports.handler = async (event, context) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -79,26 +23,6 @@ exports.handler = async (event, context) => {
 
     if (!uid) {
       return { statusCode: 401, headers, body: JSON.stringify({ error: 'Чат ашиглахын тулд нэвтэрнэ үү' }) };
-    }
-
-    // Daily limit шалгалт
-    let usage;
-    try {
-      usage = await checkAndIncrementUsage(uid);
-    } catch (e) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: 'Хязгаар шалгахад алдаа: ' + e.message }) };
-    }
-
-    if (!usage.allowed) {
-      return {
-        statusCode: 429,
-        headers,
-        body: JSON.stringify({
-          error: `Чат бот өнөөдрийн хариулах хязгаартаа (${usage.limit}) хүрсэн байна. Маргааш дахин оролдоно уу.`,
-          limit: usage.limit,
-          count: usage.count
-        })
-      };
     }
 
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
