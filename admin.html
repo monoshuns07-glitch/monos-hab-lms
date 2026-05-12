@@ -770,7 +770,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 
   <!-- Add Video Form -->
   <div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:16px;padding:24px;margin-bottom:24px">
-    <h3 style="font-size:15px;font-weight:700;margin-bottom:18px;color:var(--white)">➕ Шинэ видео нэмэх</h3>
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:18px;color:var(--white)">➕ Шинэ медиа нэмэх (Видео / PDF / Зураг)</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div>
         <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Гарчиг *</label>
@@ -782,8 +782,8 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
       </div>
     </div>
     <div style="margin-top:14px">
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Видео файл * (.mp4/.webm, дээд 500MB)</label>
-      <input type="file" id="videoFile" accept="video/mp4,video/webm,video/quicktime" style="width:100%;padding:11px 14px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:10px;font-size:13px;font-family:inherit;color:var(--white);outline:none;cursor:pointer" />
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Файл * (Видео .mp4/.webm — 500MB, эсвэл PDF/зураг — 50MB)</label>
+      <input type="file" id="videoFile" accept="video/mp4,video/webm,video/quicktime,application/pdf,image/png,image/jpeg,image/webp,image/gif" style="width:100%;padding:11px 14px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:10px;font-size:13px;font-family:inherit;color:var(--white);outline:none;cursor:pointer" />
       <div id="videoUploadProgress" style="display:none;margin-top:10px">
         <div style="background:var(--input-border);border-radius:6px;height:8px;overflow:hidden">
           <div id="videoUploadBar" style="height:100%;background:linear-gradient(90deg,var(--red),var(--gold));width:0%;transition:width .2s"></div>
@@ -791,7 +791,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <div id="videoUploadText" style="font-size:11px;color:var(--muted);margin-top:5px"></div>
       </div>
       <input type="hidden" id="videoUrl" />
-      <div style="font-size:11px;color:var(--muted);margin-top:5px">🔒 Файл Firebase Storage-д хадгалагдан, зөвхөн нэвтэрсэн хэрэглэгч үзэх боломжтой</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">🔒 Файл Firebase Storage-д хадгалагдан, зөвхөн нэвтэрсэн хэрэглэгч үзэх боломжтой · 🎬 Видео · 📄 PDF · 🖼 Зураг</div>
     </div>
     <div style="margin-top:14px">
       <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Тайлбар</label>
@@ -2422,10 +2422,18 @@ async function deleteVideo(id){
   } catch(e){ toast('Алдаа: '+e.message,'error'); }
 }
 
-/* Upload video file to Firebase Storage; resolve to a downloadable URL + storage path */
+/* Upload any media file (video, PDF, image) to Firebase Storage */
 async function uploadVideoFile(file, kind = 'library') {
-  if (file.size > 500 * 1024 * 1024) throw new Error('Файл 500MB-аас их байна');
-  if (!file.type.startsWith('video/')) throw new Error('Зөвхөн видео файл оруулна уу');
+  // Classify
+  const isVideo = file.type.startsWith('video/');
+  const isImage = file.type.startsWith('image/');
+  const isPdf   = file.type === 'application/pdf';
+  if (!isVideo && !isImage && !isPdf){
+    throw new Error('Зөвхөн видео, зураг эсвэл PDF файл оруулна уу');
+  }
+  const sizeLimit = isVideo ? 500 * 1024 * 1024 : 50 * 1024 * 1024;
+  const sizeLimitMB = isVideo ? '500MB' : '50MB';
+  if (file.size > sizeLimit) throw new Error(`Файл ${sizeLimitMB}-аас их байна`);
 
   // Preflight checks
   if (typeof firebase === 'undefined' || !firebase.storage) {
@@ -2438,7 +2446,8 @@ async function uploadVideoFile(file, kind = 'library') {
   const storage = firebase.storage();
   const ts = Date.now();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `training-videos/${kind}/${ts}_${safeName}`;
+  const folder = isVideo ? 'training-videos' : 'training-attachments';
+  const path = `${folder}/${kind}/${ts}_${safeName}`;
   const ref = storage.ref(path);
   console.log('[Upload] start', { path, sizeMB: (file.size/1024/1024).toFixed(2), type: file.type });
 
@@ -2498,18 +2507,23 @@ document.getElementById('addVideoBtn').addEventListener('click', async()=>{
   const fileInput = document.getElementById('videoFile');
   const file = fileInput.files[0];
   if(!title){ toast('Гарчиг оруулна уу','error'); return; }
-  if(!file){ toast('Видео файл сонгоно уу','error'); return; }
+  if(!file){ toast('Файл сонгоно уу (Видео / PDF / Зураг)','error'); return; }
   const btn = document.getElementById('addVideoBtn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>Ачаалж байна...';
   try{
     const { url, path } = await uploadVideoFile(file, 'library');
+    const mediaType = file.type.startsWith('video/') ? 'video'
+                    : file.type.startsWith('image/') ? 'image'
+                    : file.type === 'application/pdf' ? 'pdf' : 'other';
     await db.collection('videos').add({
-      title, url, storagePath: path, description:desc, category:cat,
+      title, url, storagePath: path,
+      mediaType, mimeType: file.type,
+      description:desc, category:cat,
       fileName: file.name, fileSize: file.size,
       active: true,
       created_at: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Видео нэмэгдлээ','success');
+    toast(`${mediaType==='video'?'Видео':mediaType==='pdf'?'PDF':'Зураг'} нэмэгдлээ`,'success');
     document.getElementById('videoTitle').value='';
     fileInput.value='';
     document.getElementById('videoDesc').value='';
