@@ -1225,6 +1225,20 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <input type="hidden" id="trainingVideoPath" />
         <div class="form-hint">🔒 Файл Firebase Storage-д хадгалагдан зөвхөн нэвтэрсэн хэрэглэгчид үзэх боломжтой. 500MB-н хязгаар.</div>
       </div>
+
+      <!-- Attachments (PDF / image) -->
+      <div class="form-group">
+        <label class="form-label">Нэмэлт материал (PDF, зураг)</label>
+        <input type="file" class="form-input" id="trainingAttachFiles" accept="application/pdf,image/png,image/jpeg,image/webp,image/gif" multiple />
+        <div id="trainingAttachProgress" style="display:none;margin-top:8px">
+          <div style="background:var(--input-border);border-radius:6px;height:7px;overflow:hidden">
+            <div id="trainingAttachBar" style="height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));width:0%;transition:width .2s"></div>
+          </div>
+          <div id="trainingAttachText" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+        </div>
+        <div id="trainingAttachList" style="margin-top:10px;display:flex;flex-direction:column;gap:6px"></div>
+        <div class="form-hint">📎 Олон файл сонгох боломжтой. PDF / PNG / JPG / WEBP / GIF, тус бүр 50MB хүртэл.</div>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
         <div class="form-group">
           <label class="form-label">Үргэлжлэх хугацаа (мин)</label>
@@ -2844,6 +2858,8 @@ window.openTrainingModal=function(id=null){
   document.getElementById('trainingEditId').value=id||'';
   document.getElementById('trainingVideoFile').value='';
   document.getElementById('trainingUploadProgress').style.display='none';
+  document.getElementById('trainingAttachFiles').value='';
+  document.getElementById('trainingAttachProgress').style.display='none';
   if(id){
     const t=lmsTrainings.find(x=>x.id===id)||{};
     document.getElementById('trainingTitle').value=t.title||'';
@@ -2855,6 +2871,7 @@ window.openTrainingModal=function(id=null){
     document.getElementById('trainingWatchThreshold').value=t.watchThreshold||80;
     document.getElementById('trainingOrder').value=t.order||1;
     document.getElementById('trainingActive').checked=t.isActive!==false;
+    _attachments = Array.isArray(t.attachments) ? [...t.attachments] : [];
   } else {
     document.getElementById('trainingTitle').value='';
     document.getElementById('trainingDesc').value='';
@@ -2865,9 +2882,80 @@ window.openTrainingModal=function(id=null){
     document.getElementById('trainingWatchThreshold').value=80;
     document.getElementById('trainingOrder').value=lmsTrainings.length+1;
     document.getElementById('trainingActive').checked=true;
+    _attachments = [];
   }
+  renderAttachmentsList();
   document.getElementById('trainingModal').classList.add('show');
 };
+
+/* ── Training attachments (PDF / image) ── */
+let _attachments = [];
+
+function renderAttachmentsList(){
+  const wrap = document.getElementById('trainingAttachList');
+  if (!wrap) return;
+  if (_attachments.length === 0){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = _attachments.map((a, i) => {
+    const isPdf = (a.type || '').includes('pdf') || /\.pdf$/i.test(a.name);
+    const icon  = isPdf ? '📄' : '🖼';
+    const sizeStr = a.size ? ` · ${(a.size/1024/1024).toFixed(2)}MB` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--input-border);border-radius:8px">
+      <span style="font-size:18px">${icon}</span>
+      <a href="${a.url}" target="_blank" rel="noopener" style="flex:1;font-size:13px;color:var(--cyan);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.name}</a>
+      <span style="font-size:11px;color:var(--muted)">${sizeStr}</span>
+      <button type="button" onclick="removeAttachment(${i})" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer">✕</button>
+    </div>`;
+  }).join('');
+}
+
+window.removeAttachment = function(i){
+  if (!confirm('Энэ файлыг устгах уу?')) return;
+  _attachments.splice(i, 1);
+  renderAttachmentsList();
+};
+
+async function uploadAttachments(files){
+  const wrap = document.getElementById('trainingAttachProgress');
+  const bar  = document.getElementById('trainingAttachBar');
+  const text = document.getElementById('trainingAttachText');
+  if (!files.length) return [];
+  wrap.style.display = 'block';
+
+  const storage = firebase.storage();
+  const uploaded = [];
+  for (let i = 0; i < files.length; i++){
+    const file = files[i];
+    if (file.size > 50 * 1024 * 1024){
+      toast(`${file.name}: 50MB-аас их`, 'error');
+      continue;
+    }
+    const ts = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `training-attachments/lms/${ts}_${i}_${safeName}`;
+    const ref = storage.ref(path);
+    try {
+      const url = await new Promise((res, rej) => {
+        const task = ref.put(file, { contentType: file.type });
+        task.on('state_changed',
+          (snap) => {
+            const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+            bar.style.width = pct.toFixed(1) + '%';
+            text.textContent = `📎 ${i+1}/${files.length}: ${file.name} — ${pct.toFixed(0)}%`;
+          },
+          rej,
+          async () => { res(await task.snapshot.ref.getDownloadURL()); }
+        );
+      });
+      uploaded.push({ name: file.name, url, type: file.type, size: file.size, path });
+    } catch (e) {
+      console.error('attachment upload failed:', file.name, e);
+      toast(`${file.name} ачаалал амжилтгүй: ${e.message}`, 'error');
+    }
+  }
+  text.textContent = `✓ ${uploaded.length}/${files.length} файл ачаалагдсан`;
+  setTimeout(() => { wrap.style.display = 'none'; }, 1500);
+  return uploaded;
+}
 
 window.saveTraining=async function(){
   const title=document.getElementById('trainingTitle').value.trim();
@@ -2931,6 +3019,23 @@ window.saveTraining=async function(){
       return;
     }
   }
+  // Upload any newly-selected attachment files
+  const attachInput = document.getElementById('trainingAttachFiles');
+  const attachFiles = Array.from(attachInput.files || []);
+  if (attachFiles.length) {
+    if(saveBtn){ saveBtn.disabled=true; saveBtn.innerHTML='<span class="spinner-sm"></span> Материал ачаалж байна...'; }
+    try {
+      const newAttachments = await uploadAttachments(attachFiles);
+      _attachments = [..._attachments, ...newAttachments];
+      attachInput.value = '';
+      renderAttachmentsList();
+    } catch (e) {
+      toast('Материал ачаалахад алдаа: '+e.message, 'error');
+      if(saveBtn){ saveBtn.disabled=false; saveBtn.innerHTML=_origSaveLabel; }
+      return;
+    }
+  }
+
   if(saveBtn){ saveBtn.disabled=true; saveBtn.innerHTML='<span class="spinner-sm"></span> Хадгалж байна...'; }
 
   const data={
@@ -2938,6 +3043,7 @@ window.saveTraining=async function(){
     description:document.getElementById('trainingDesc').value.trim(),
     videoUrl,
     videoStoragePath,
+    attachments: _attachments,
     duration:parseInt(document.getElementById('trainingDuration').value)||0,
     passingScore:parseInt(document.getElementById('trainingPassScore').value)||70,
     watchThreshold:parseInt(document.getElementById('trainingWatchThreshold').value)||80,

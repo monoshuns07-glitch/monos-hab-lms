@@ -515,6 +515,14 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--ink);min-
         Шалгалт өгөх
       </button>
     </div>
+    <!-- Attachments (PDF / image materials) -->
+    <div id="attachmentsBlock" style="display:none;padding:18px 22px;border-top:1px solid var(--border);background:rgba(0,0,0,.02)">
+      <div style="font-size:13px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--red);fill:none;stroke-width:2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        Нэмэлт материал
+      </div>
+      <div id="attachmentsList" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
   </div>
 
   <!-- Exam section -->
@@ -822,6 +830,9 @@ function renderTraining(chTitle, tpTitle){
   /* Video player */
   renderVideoPlayer(t.videoUrl||'', t.duration||0, p?.watchProgress||0);
 
+  /* Attachments (PDF / image) */
+  renderAttachments(t.attachments || []);
+
   /* If already passed, still allow re-watching and retake */
   if(p?.status==='passed'){
     document.getElementById('btnStartExam').disabled=false;
@@ -907,6 +918,26 @@ function initYTTracking(durationMin){
       initManualTimer(durationMin);
     }
   }, 3000);
+}
+
+/* ── Render training attachments (PDF / image) ── */
+function renderAttachments(items){
+  const block = document.getElementById('attachmentsBlock');
+  const list  = document.getElementById('attachmentsList');
+  if (!block || !list) return;
+  if (!items || !items.length){ block.style.display = 'none'; list.innerHTML = ''; return; }
+  block.style.display = 'block';
+  list.innerHTML = items.map((a) => {
+    const isPdf = (a.type || '').includes('pdf') || /\.pdf$/i.test(a.name || '');
+    const icon  = isPdf ? '📄' : '🖼';
+    const sizeStr = a.size ? `${(a.size/1024/1024).toFixed(1)}MB` : '';
+    return `<a href="${a.url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-decoration:none;color:var(--ink);transition:all .18s">
+      <span style="font-size:20px">${icon}</span>
+      <span style="flex:1;font-size:13px;font-weight:600">${(a.name || 'Файл').replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</span>
+      <span style="font-size:11px;color:var(--muted)">${sizeStr}</span>
+      <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--red);fill:none;stroke-width:2"><path d="M7 17L17 7M7 7h10v10"/></svg>
+    </a>`;
+  }).join('');
 }
 
 /* ── Secure video loader — fetch as Blob so the real URL isn't exposed in <video src> ── */
