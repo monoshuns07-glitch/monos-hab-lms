@@ -4154,16 +4154,15 @@
 </section>
 
 
-<!-- Video Modal -->
-<div id="videoModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:20px">
-  <div style="width:100%;max-width:900px;position:relative">
-    <button onclick="closeVideoModal()" style="position:absolute;top:-44px;right:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>
-    <div style="aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden">
-      <iframe id="videoIframe" src="" frameborder="0" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen style="width:100%;height:100%"></iframe>
-      <video id="videoPlayer" src="" controls style="width:100%;height:100%;display:none"></video>
-    </div>
-    <div id="videoModalTitle" style="margin-top:14px;font-size:16px;font-weight:700;color:white;text-align:center"></div>
+<!-- Video / PDF / Image Modal -->
+<div id="videoModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:20px;flex-direction:column">
+  <button onclick="closeVideoModal()" style="position:absolute;top:18px;right:18px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:white;width:36px;height:36px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:2">✕</button>
+  <div id="videoModalBox" style="width:100%;max-width:1200px;height:calc(100vh - 120px);position:relative;background:#0A1628;border-radius:14px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+    <iframe id="videoIframe" src="" frameborder="0" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen style="width:100%;height:100%;display:none"></iframe>
+    <video id="videoPlayer" src="" controls style="max-width:100%;max-height:100%;display:none"></video>
+    <img id="videoImage" src="" style="max-width:100%;max-height:100%;object-fit:contain;display:none" alt="" />
   </div>
+  <div id="videoModalTitle" style="margin-top:14px;font-size:16px;font-weight:700;color:white;text-align:center;max-width:1200px"></div>
 </div>
 
 <footer>
@@ -5750,22 +5749,46 @@
       snap.forEach(doc=>{
         const v = doc.data();
         const idx = videoData.length;
-        videoData.push({ url: v.url||'', title: v.title||'Гарчиггүй' });
+        // Detect media type
+        const fnLower = (v.fileName || '').toLowerCase();
+        const pathLower = (v.storagePath || v.url || '').toLowerCase();
+        const isPdf   = v.mediaType==='pdf' || v.mimeType==='application/pdf' || /\.pdf/.test(fnLower) || /\.pdf/.test(pathLower);
+        const isImage = v.mediaType==='image' || v.mimeType?.startsWith('image/') || /\.(png|jpe?g|gif|webp)/.test(fnLower) || /\.(png|jpe?g|gif|webp)/.test(pathLower);
+        const mediaType = isPdf ? 'pdf' : isImage ? 'image' : 'video';
+        videoData.push({ url: v.url||'', title: v.title||'Гарчиггүй', mediaType });
+
         const ytId  = getYtId(v.url||'');
         const gdId  = getGDriveId(v.url||'');
         const thumb = ytId ? `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`
                     : gdId ? `https://drive.google.com/thumbnail?id=${gdId}&sz=w400`
                     : '';
+
+        // Card visual differs per media type
+        let cellHTML;
+        if (mediaType === 'pdf'){
+          cellHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#E30613;gap:6px">
+            <div style="font-size:48px">📄</div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.1em">PDF</div>
+          </div>`;
+        } else if (mediaType === 'image'){
+          cellHTML = `<img src="${v.url||''}" style="width:100%;height:100%;object-fit:contain;display:block;background:#050C1A" onerror="this.style.display='none'">`;
+        } else {
+          cellHTML = `${thumb ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:40px">🎬</div>'}
+            <div style="position:absolute;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center">
+              <div style="width:56px;height:56px;border-radius:50%;background:rgba(227,6,19,.95);display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 0 30px rgba(227,6,19,.7)">▶</div>
+            </div>`;
+        }
+
+        const typeBadge = mediaType === 'pdf' ? '📄 PDF' : mediaType === 'image' ? '🖼 Зураг' : '';
+
         cards.push(`
           <div onclick="openVideoModal(${idx})"
                style="cursor:pointer;flex-shrink:0;width:300px;background:var(--surface);border:1px solid var(--border2);border-radius:18px;overflow:hidden;transition:all .3s;box-shadow:var(--sh1);scroll-snap-align:start"
                onmouseover="this.style.borderColor='rgba(227,6,19,.25)';this.style.transform='translateY(-4px)';this.style.boxShadow='0 12px 32px rgba(0,0,0,.12)'"
                onmouseout="this.style.borderColor='rgba(0,0,0,.11)';this.style.transform='';this.style.boxShadow=''">
-            <div style="position:relative;aspect-ratio:16/9;background:#050C1A;overflow:hidden">
-              ${thumb ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:40px">🎬</div>'}
-              <div style="position:absolute;inset:0;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center">
-                <div style="width:56px;height:56px;border-radius:50%;background:rgba(227,6,19,.95);display:flex;align-items:center;justify-content:center;font-size:24px;box-shadow:0 0 30px rgba(227,6,19,.7)">▶</div>
-              </div>
+            <div style="position:relative;aspect-ratio:16/9;background:#FFF;overflow:hidden">
+              ${cellHTML}
+              ${typeBadge ? `<div style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.7);color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.06em">${typeBadge}</div>` : ''}
             </div>
             <div style="padding:16px 18px">
               <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px">${(v.title||'Гарчиггүй').replace(/</g,'&lt;')}</div>
@@ -5783,17 +5806,27 @@
     const modal  = document.getElementById('videoModal');
     const iframe = document.getElementById('videoIframe');
     const video  = document.getElementById('videoPlayer');
+    const img    = document.getElementById('videoImage');
     const titleEl= document.getElementById('videoModalTitle');
     titleEl.textContent = v.title;
-    const embedUrl = getEmbedUrl(v.url);
-    if(v.url && v.url.match(/\.(mp4|webm|ogg|mov)(\?|$)/i)){
+    // Hide all first
+    iframe.style.display = 'none'; iframe.src = '';
+    video.style.display = 'none';  video.src = '';
+    img.style.display = 'none';    img.src = '';
+
+    if (v.mediaType === 'image'){
+      img.src = v.url;
+      img.style.display = 'block';
+    } else if (v.mediaType === 'pdf'){
+      // Native browser PDF viewer — toolbar enabled, fits to full modal height
+      iframe.src = v.url + (v.url.includes('#') ? '' : '#view=FitH');
+      iframe.style.display = 'block';
+    } else if (v.url && v.url.match(/\.(mp4|webm|ogg|mov)(\?|$)/i)){
       video.src = v.url;
       video.style.display = 'block';
-      iframe.style.display = 'none';
     } else {
-      iframe.src = embedUrl;
+      iframe.src = getEmbedUrl(v.url);
       iframe.style.display = 'block';
-      video.style.display = 'none';
     }
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
@@ -5803,8 +5836,10 @@
     const modal  = document.getElementById('videoModal');
     const iframe = document.getElementById('videoIframe');
     const video  = document.getElementById('videoPlayer');
+    const img    = document.getElementById('videoImage');
     iframe.src = '';
     video.pause(); video.src = '';
+    if (img) img.src = '';
     modal.style.display = 'none';
     document.body.style.overflow = '';
   };
