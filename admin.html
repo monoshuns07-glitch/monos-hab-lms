@@ -2391,20 +2391,48 @@ function renderVideoList(){
   wrap.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">${
     allVideos.map(v=>{
       const ytId = getYtId(v.url||'');
-      const thumb = ytId ? getYtThumb(ytId) : '';
-      return `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(227,6,19,.3)'" onmouseout="this.style.borderColor='var(--line)'">
-        <div style="position:relative;aspect-ratio:16/9;background:#0A1628;display:flex;align-items:center;justify-content:center;overflow:hidden">
-          ${thumb ? `<img src="${escapeHtml(thumb)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">` : ''}
+      const ytThumb = ytId ? getYtThumb(ytId) : '';
+      const mediaType = v.mediaType
+        || (v.mimeType?.startsWith('image/') ? 'image'
+            : v.mimeType === 'application/pdf' ? 'pdf'
+            : /\.(pdf)$/i.test(v.fileName||v.url||'') ? 'pdf'
+            : /\.(png|jpe?g|gif|webp)$/i.test(v.fileName||v.url||'') ? 'image'
+            : 'video');
+
+      let mediaCell;
+      if (mediaType === 'image'){
+        mediaCell = `<img src="${escapeHtml(v.url||'')}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">`;
+      } else if (mediaType === 'pdf'){
+        mediaCell = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#FF8080">
+          <div style="font-size:48px">📄</div>
+          <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">PDF</div>
+        </div>`;
+      } else if (ytThumb){
+        mediaCell = `<img src="${escapeHtml(ytThumb)}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.style.display='none'">
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3)">
             <div style="width:48px;height:48px;border-radius:50%;background:rgba(227,6,19,.9);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 20px rgba(227,6,19,.5)">▶</div>
-          </div>
+          </div>`;
+      } else {
+        // video without thumbnail (Firebase Storage)
+        mediaCell = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.5)">
+          <div style="width:48px;height:48px;border-radius:50%;background:rgba(227,6,19,.9);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 20px rgba(227,6,19,.5)">▶</div>
+          <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">Видео</div>
+        </div>`;
+      }
+
+      const typeBadge = mediaType === 'pdf' ? '📄 PDF' : mediaType === 'image' ? '🖼 Зураг' : '🎬 Видео';
+
+      return `<div style="background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;overflow:hidden;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(227,6,19,.3)'" onmouseout="this.style.borderColor='var(--line)'">
+        <div style="position:relative;aspect-ratio:16/9;background:#0A1628;display:flex;align-items:center;justify-content:center;overflow:hidden">
+          ${mediaCell}
+          <div style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,.7);color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700">${typeBadge}</div>
         </div>
         <div style="padding:14px 16px">
           <div style="font-size:14px;font-weight:700;color:var(--white);margin-bottom:4px;line-clamp:2;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(v.title||'Гарчиггүй')}</div>
           ${v.category ? `<div style="font-size:11px;color:var(--gold);font-weight:600;margin-bottom:4px">${escapeHtml(v.category)}</div>` : ''}
           ${v.description ? `<div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-clamp:2;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(v.description)}</div>` : ''}
           <div style="display:flex;gap:8px;margin-top:10px">
-            <a href="${escapeHtml(v.url||'#')}" target="_blank" style="flex:1;padding:8px;background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.2);border-radius:8px;font-size:12px;font-weight:600;color:#4A9EFF;text-decoration:none;text-align:center;transition:all .2s" onmouseover="this.style.background='rgba(74,158,255,.2)'" onmouseout="this.style.background='rgba(74,158,255,.1)'">🔗 Нээх</a>
+            <a href="${escapeHtml(v.url||'#')}" target="_blank" rel="noopener" style="flex:1;padding:8px;background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.2);border-radius:8px;font-size:12px;font-weight:600;color:#4A9EFF;text-decoration:none;text-align:center;transition:all .2s" onmouseover="this.style.background='rgba(74,158,255,.2)'" onmouseout="this.style.background='rgba(74,158,255,.1)'">${mediaType==='pdf'?'📄 Нээх':mediaType==='image'?'🖼 Үзэх':'🎬 Тоглуулах'}</a>
             <button onclick="deleteVideo('${v.id}')" style="padding:8px 12px;background:rgba(227,6,19,.1);border:1px solid rgba(227,6,19,.2);border-radius:8px;font-size:12px;font-weight:600;color:#FF8080;cursor:pointer;transition:all .2s;font-family:inherit" onmouseover="this.style.background='rgba(227,6,19,.22)'" onmouseout="this.style.background='rgba(227,6,19,.1)'">🗑</button>
           </div>
         </div>
