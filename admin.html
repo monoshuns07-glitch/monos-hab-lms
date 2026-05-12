@@ -2844,38 +2844,60 @@ window.saveTraining=async function(){
   const file=fileInput.files[0];
   let videoUrl=document.getElementById('trainingVideoUrl').value.trim();
   let videoStoragePath=document.getElementById('trainingVideoPath').value.trim();
+  // Find the save button to show live status
+  const saveBtn=document.querySelector('#trainingModal .btn-primary, #trainingModal [onclick*="saveTraining"]')
+    || Array.from(document.querySelectorAll('#trainingModal button')).find(b=>/хадгал|save/i.test(b.textContent));
+  const _origSaveLabel=saveBtn?.innerHTML;
+
   if(file){
+    const sizeMB=(file.size/1024/1024).toFixed(1);
     const bar=document.getElementById('trainingUploadBar');
     const text=document.getElementById('trainingUploadText');
     const wrap=document.getElementById('trainingUploadProgress');
     wrap.style.display='block';
+    if(saveBtn){ saveBtn.disabled=true; saveBtn.innerHTML='<span class="spinner-sm"></span> Видео ачаалж байна...'; }
     try{
       const storage=firebase.storage();
       const ts=Date.now();
       const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
       const path=`training-videos/lms/${ts}_${safeName}`;
       const ref=storage.ref(path);
+      const startTime=Date.now();
+      let lastBytes=0, lastTime=startTime;
       await new Promise((res,rej)=>{
         const task=ref.put(file,{contentType:file.type});
         task.on('state_changed',
           (snap)=>{
             const pct=(snap.bytesTransferred/snap.totalBytes)*100;
+            const now=Date.now();
+            const elapsed=(now-startTime)/1000;
+            const speedMBps=(snap.bytesTransferred/1024/1024)/Math.max(elapsed,1);
+            const remainingBytes=snap.totalBytes-snap.bytesTransferred;
+            const etaSecs=remainingBytes/(snap.bytesTransferred/Math.max(elapsed,1));
+            const etaMin=Math.floor(etaSecs/60);
+            const etaSec=Math.floor(etaSecs%60);
+            const etaStr= etaMin>0 ? `${etaMin}мин ${etaSec}сек` : `${etaSec}сек`;
             bar.style.width=pct.toFixed(1)+'%';
-            text.textContent=`Ачаалж байна... ${pct.toFixed(0)}%`;
+            text.innerHTML=`📤 <b>${pct.toFixed(0)}%</b> · ${(snap.bytesTransferred/1024/1024).toFixed(1)}/${sizeMB} MB · ${speedMBps.toFixed(2)} MB/с · ⏱ ${etaStr} үлдсэн`;
+            if(saveBtn) saveBtn.innerHTML=`<span class="spinner-sm"></span> ${pct.toFixed(0)}% (${etaStr})`;
+            lastBytes=snap.bytesTransferred; lastTime=now;
           },
           rej,
           async()=>{
             videoUrl=await task.snapshot.ref.getDownloadURL();
             videoStoragePath=path;
-            text.textContent='✓ Ачаалал амжилттай';
+            const total=((Date.now()-startTime)/1000).toFixed(1);
+            text.innerHTML=`✓ Ачаалал амжилттай · <b>${sizeMB} MB</b> · ${total}сек`;
             res();
           });
       });
     }catch(e){
       toast('Видео ачаалахад алдаа: '+e.message,'error');
+      if(saveBtn){ saveBtn.disabled=false; saveBtn.innerHTML=_origSaveLabel; }
       return;
     }
   }
+  if(saveBtn){ saveBtn.disabled=true; saveBtn.innerHTML='<span class="spinner-sm"></span> Хадгалж байна...'; }
 
   const data={
     title,
@@ -2912,6 +2934,7 @@ window.saveTraining=async function(){
     renderLMSTree();
     document.getElementById('trainingModal').classList.remove('show');
   } catch(e){toast('Алдаа: '+e.message,'error');}
+  finally{ if(saveBtn){ saveBtn.disabled=false; saveBtn.innerHTML=_origSaveLabel; } }
 };
 
 window.deleteTraining=async function(id){
