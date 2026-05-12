@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 <style>
 @property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
 :root{
@@ -856,10 +857,19 @@ function renderVideoPlayer(url, durationMin, savedProgress){
       allow="autoplay" allowfullscreen></iframe>`;
     /* For GDrive: start manual timer when iframe is visible */
     initManualTimer(durationMin);
-  } else if(url.match(/\.(mp4|webm|ogg)(\?|$)/i)){
-    wrap.innerHTML=`<video id="htmlVideo" controls preload="metadata" controlslist="nodownload">
-      <source src="${esc(url)}" type="video/mp4">
-    </video>`;
+  } else if(url.match(/\.(mp4|webm|ogg)(\?|$)/i) || url.includes('firebasestorage.googleapis.com') || url.includes('storage.googleapis.com')){
+    /* Direct/Firebase Storage video — blob fetch + anti-download protections */
+    wrap.innerHTML = `
+      <div class="secure-video-wrap" oncontextmenu="return false" onselectstart="return false" style="position:relative;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none">
+        <video id="htmlVideo" controls preload="metadata" playsinline disablepictureinpicture
+          controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
+          oncontextmenu="return false"
+          style="pointer-events:auto"></video>
+        <div id="videoLoadingMsg" style="position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;font-size:13px;z-index:5">
+          <div><div class="spinner-sm" style="margin:0 auto 8px"></div>Видео ачаалж байна...</div>
+        </div>
+      </div>`;
+    loadSecureVideo(url);
     initHTML5Tracking();
   } else {
     /* Fallback: embed as iframe + manual timer */
@@ -899,6 +909,45 @@ function initYTTracking(durationMin){
   }, 3000);
 }
 
+/* ── Secure video loader — fetch as Blob so the real URL isn't exposed in <video src> ── */
+let _currentBlobURL = null;
+async function loadSecureVideo(url){
+  const video = document.getElementById('htmlVideo');
+  const loading = document.getElementById('videoLoadingMsg');
+  if (!video) return;
+  try {
+    // Try Firebase Storage SDK first (works with restrictive storage rules)
+    let blob;
+    if (url.includes('firebasestorage') && window.firebase?.storage){
+      // Extract path from URL: .../o/training-videos%2Flms%2F...
+      const match = url.match(/\/o\/([^?]+)/);
+      const path = match ? decodeURIComponent(match[1]) : null;
+      if (path) {
+        const ref = firebase.storage().ref(path);
+        const dlUrl = await ref.getDownloadURL();
+        const res = await fetch(dlUrl, { mode:'cors' });
+        if (!res.ok) throw new Error('Видео ачаалал: HTTP '+res.status);
+        blob = await res.blob();
+      }
+    }
+    // Fallback: plain fetch (only works if CORS allows)
+    if (!blob){
+      const res = await fetch(url, { mode:'cors' });
+      if (!res.ok) throw new Error('Видео ачаалал: HTTP '+res.status);
+      blob = await res.blob();
+    }
+    if (_currentBlobURL) URL.revokeObjectURL(_currentBlobURL);
+    _currentBlobURL = URL.createObjectURL(blob);
+    video.src = _currentBlobURL;
+    if (loading) loading.style.display = 'none';
+  } catch(e){
+    console.error('Secure video load failed:', e);
+    if (loading) loading.innerHTML = '<div style="color:#FF8080">⚠️ Видео ачаалж чадсангүй: '+e.message+'</div>';
+    // Fallback: assign URL directly (player will work, but URL is in DOM)
+    video.src = url;
+  }
+}
+
 /* ── HTML5 video tracking ── */
 function initHTML5Tracking(){
   const video=document.getElementById('htmlVideo');
@@ -909,6 +958,70 @@ function initHTML5Tracking(){
   video.addEventListener('play', ()=>VideoTracker.start());
   video.addEventListener('pause', ()=>VideoTracker.stop());
   video.addEventListener('ended', ()=>{ VideoTracker.complete(); });
+
+  /* ── Anti-download / anti-screenshot protections ── */
+
+  // Block right-click on video and surrounding wrap
+  video.addEventListener('contextmenu', e => { e.preventDefault(); return false; });
+
+  // Pause video + show warning when DevTools is opened (size-mismatch heuristic)
+  let devtoolsOpen = false;
+  function checkDevtools(){
+    const threshold = 160;
+    const wDiff = window.outerWidth  - window.innerWidth;
+    const hDiff = window.outerHeight - window.innerHeight;
+    const opened = wDiff > threshold || hDiff > threshold;
+    if (opened && !devtoolsOpen){
+      devtoolsOpen = true;
+      video.pause();
+      showProtectionWarning('Сэлбэрэх (DevTools) илрэв. Видео түр зогссон.');
+    } else if (!opened && devtoolsOpen){
+      devtoolsOpen = false;
+      hideProtectionWarning();
+    }
+  }
+  setInterval(checkDevtools, 1000);
+
+  // Pause when tab/window loses focus (screen-recorder typically requires focus elsewhere)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) video.pause();
+  });
+
+  // Pause if user starts a screen recording via getDisplayMedia (best-effort)
+  if (navigator.mediaDevices?.getDisplayMedia){
+    const orig = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getDisplayMedia = function(...args){
+      try { video.pause(); showProtectionWarning('Дэлгэц бичих үйлдэл илрэв. Видео зогссон.'); } catch(e){}
+      return orig(...args);
+    };
+  }
+
+  // Block common save shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && (e.key === 's' || e.key === 'S' || e.key === 'u' || e.key === 'U')) {
+      e.preventDefault();
+    }
+    // F12 / Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+Shift+C — DevTools
+    if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key.toUpperCase()))){
+      e.preventDefault();
+    }
+  });
+}
+
+function showProtectionWarning(msg){
+  let el = document.getElementById('protectionWarning');
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'protectionWarning';
+    el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    document.body.appendChild(el);
+  }
+  el.textContent = '⚠️ ' + msg;
+  el.style.display = 'block';
+}
+function hideProtectionWarning(){
+  const el = document.getElementById('protectionWarning');
+  if (el) el.style.display = 'none';
 }
 
 /* ── Manual timer (for GDrive / unknown embeds) ── */

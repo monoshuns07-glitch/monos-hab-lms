@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
@@ -781,9 +782,16 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
       </div>
     </div>
     <div style="margin-top:14px">
-      <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Видео URL * (YouTube эсвэл шууд mp4 холбоос)</label>
-      <input type="url" id="videoUrl" placeholder="https://drive.google.com/file/d/FILE_ID/view  эсвэл  YouTube URL" style="width:100%;padding:11px 14px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:10px;font-size:13px;font-family:inherit;color:var(--white);outline:none" />
-      <div style="font-size:11px;color:var(--muted);margin-top:5px">💡 Google Drive: файлыг <b>Хүн бүр харж болно</b> гэж тохируулсан байх шаардлагатай</div>
+      <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Видео файл * (.mp4/.webm, дээд 500MB)</label>
+      <input type="file" id="videoFile" accept="video/mp4,video/webm,video/quicktime" style="width:100%;padding:11px 14px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:10px;font-size:13px;font-family:inherit;color:var(--white);outline:none;cursor:pointer" />
+      <div id="videoUploadProgress" style="display:none;margin-top:10px">
+        <div style="background:var(--input-border);border-radius:6px;height:8px;overflow:hidden">
+          <div id="videoUploadBar" style="height:100%;background:linear-gradient(90deg,var(--red),var(--gold));width:0%;transition:width .2s"></div>
+        </div>
+        <div id="videoUploadText" style="font-size:11px;color:var(--muted);margin-top:5px"></div>
+      </div>
+      <input type="hidden" id="videoUrl" />
+      <div style="font-size:11px;color:var(--muted);margin-top:5px">🔒 Файл Firebase Storage-д хадгалагдан, зөвхөн нэвтэрсэн хэрэглэгч үзэх боломжтой</div>
     </div>
     <div style="margin-top:14px">
       <label style="display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Тайлбар</label>
@@ -1205,9 +1213,17 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <textarea class="form-textarea" id="trainingDesc" placeholder="Сургалтын тайлбар..." style="min-height:70px"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Видео URL</label>
-        <input type="url" class="form-input" id="trainingVideoUrl" placeholder="YouTube URL эсвэл Google Drive холбоос" />
-        <div class="form-hint">YouTube, Google Drive, эсвэл шууд .mp4 холбоос</div>
+        <label class="form-label">Видео файл</label>
+        <input type="file" class="form-input" id="trainingVideoFile" accept="video/mp4,video/webm,video/quicktime" />
+        <div id="trainingUploadProgress" style="display:none;margin-top:8px">
+          <div style="background:var(--input-border);border-radius:6px;height:7px;overflow:hidden">
+            <div id="trainingUploadBar" style="height:100%;background:linear-gradient(90deg,var(--red),var(--gold));width:0%;transition:width .2s"></div>
+          </div>
+          <div id="trainingUploadText" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+        </div>
+        <input type="hidden" id="trainingVideoUrl" />
+        <input type="hidden" id="trainingVideoPath" />
+        <div class="form-hint">🔒 Файл Firebase Storage-д хадгалагдан зөвхөн нэвтэрсэн хэрэглэгчид үзэх боломжтой. 500MB-н хязгаар.</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
         <div class="form-group">
@@ -2392,25 +2408,62 @@ async function deleteVideo(id){
   } catch(e){ toast('Алдаа: '+e.message,'error'); }
 }
 
+/* Upload video file to Firebase Storage; resolve to a downloadable URL + storage path */
+async function uploadVideoFile(file, kind = 'library') {
+  if (file.size > 500 * 1024 * 1024) throw new Error('Файл 500MB-аас их байна');
+  if (!file.type.startsWith('video/')) throw new Error('Зөвхөн видео файл оруулна уу');
+
+  const storage = firebase.storage();
+  const ts = Date.now();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `training-videos/${kind}/${ts}_${safeName}`;
+  const ref = storage.ref(path);
+
+  const bar = document.getElementById('videoUploadBar');
+  const text = document.getElementById('videoUploadText');
+  const wrap = document.getElementById('videoUploadProgress');
+  if (wrap) wrap.style.display = 'block';
+
+  return new Promise((resolve, reject) => {
+    const task = ref.put(file, { contentType: file.type });
+    task.on('state_changed',
+      (snap) => {
+        const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
+        if (bar) bar.style.width = pct.toFixed(1) + '%';
+        if (text) text.textContent = `Ачаалж байна... ${pct.toFixed(0)}% (${(snap.bytesTransferred/1024/1024).toFixed(1)}/${(snap.totalBytes/1024/1024).toFixed(1)}MB)`;
+      },
+      (err) => { if (wrap) wrap.style.display = 'none'; reject(err); },
+      async () => {
+        const url = await task.snapshot.ref.getDownloadURL();
+        if (text) text.textContent = '✓ Ачаалал амжилттай';
+        setTimeout(() => { if (wrap) wrap.style.display = 'none'; }, 1500);
+        resolve({ url, path });
+      }
+    );
+  });
+}
+
 document.getElementById('addVideoBtn').addEventListener('click', async()=>{
   const title = document.getElementById('videoTitle').value.trim();
-  const url   = document.getElementById('videoUrl').value.trim();
   const desc  = document.getElementById('videoDesc').value.trim();
   const cat   = document.getElementById('videoCategory').value.trim();
-  const msg   = document.getElementById('videoAddMsg');
+  const fileInput = document.getElementById('videoFile');
+  const file = fileInput.files[0];
   if(!title){ toast('Гарчиг оруулна уу','error'); return; }
-  if(!url){ toast('URL оруулна уу','error'); return; }
+  if(!file){ toast('Видео файл сонгоно уу','error'); return; }
   const btn = document.getElementById('addVideoBtn');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>Нэмж байна...';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-sm"></span>Ачаалж байна...';
   try{
+    const { url, path } = await uploadVideoFile(file, 'library');
     await db.collection('videos').add({
-      title, url, description:desc, category:cat,
+      title, url, storagePath: path, description:desc, category:cat,
+      fileName: file.name, fileSize: file.size,
       active: true,
       created_at: firebase.firestore.FieldValue.serverTimestamp()
     });
     toast('Видео нэмэгдлээ','success');
     document.getElementById('videoTitle').value='';
-    document.getElementById('videoUrl').value='';
+    fileInput.value='';
     document.getElementById('videoDesc').value='';
     document.getElementById('videoCategory').value='';
     loadVideos();
@@ -2755,11 +2808,14 @@ window.openTrainingModal=function(id=null){
   editingTrainingId=id;
   document.getElementById('trainingModalTitle').textContent=id?'Сургалт засах':'Шинэ сургалт';
   document.getElementById('trainingEditId').value=id||'';
+  document.getElementById('trainingVideoFile').value='';
+  document.getElementById('trainingUploadProgress').style.display='none';
   if(id){
     const t=lmsTrainings.find(x=>x.id===id)||{};
     document.getElementById('trainingTitle').value=t.title||'';
     document.getElementById('trainingDesc').value=t.description||'';
     document.getElementById('trainingVideoUrl').value=t.videoUrl||'';
+    document.getElementById('trainingVideoPath').value=t.videoStoragePath||'';
     document.getElementById('trainingDuration').value=t.duration||0;
     document.getElementById('trainingPassScore').value=t.passingScore||70;
     document.getElementById('trainingWatchThreshold').value=t.watchThreshold||80;
@@ -2769,6 +2825,7 @@ window.openTrainingModal=function(id=null){
     document.getElementById('trainingTitle').value='';
     document.getElementById('trainingDesc').value='';
     document.getElementById('trainingVideoUrl').value='';
+    document.getElementById('trainingVideoPath').value='';
     document.getElementById('trainingDuration').value=0;
     document.getElementById('trainingPassScore').value=70;
     document.getElementById('trainingWatchThreshold').value=80;
@@ -2781,10 +2838,50 @@ window.openTrainingModal=function(id=null){
 window.saveTraining=async function(){
   const title=document.getElementById('trainingTitle').value.trim();
   if(!title){toast('Сургалтын нэр оруулна уу','error');return;}
+
+  // If a new file was selected, upload it first
+  const fileInput=document.getElementById('trainingVideoFile');
+  const file=fileInput.files[0];
+  let videoUrl=document.getElementById('trainingVideoUrl').value.trim();
+  let videoStoragePath=document.getElementById('trainingVideoPath').value.trim();
+  if(file){
+    const bar=document.getElementById('trainingUploadBar');
+    const text=document.getElementById('trainingUploadText');
+    const wrap=document.getElementById('trainingUploadProgress');
+    wrap.style.display='block';
+    try{
+      const storage=firebase.storage();
+      const ts=Date.now();
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const path=`training-videos/lms/${ts}_${safeName}`;
+      const ref=storage.ref(path);
+      await new Promise((res,rej)=>{
+        const task=ref.put(file,{contentType:file.type});
+        task.on('state_changed',
+          (snap)=>{
+            const pct=(snap.bytesTransferred/snap.totalBytes)*100;
+            bar.style.width=pct.toFixed(1)+'%';
+            text.textContent=`Ачаалж байна... ${pct.toFixed(0)}%`;
+          },
+          rej,
+          async()=>{
+            videoUrl=await task.snapshot.ref.getDownloadURL();
+            videoStoragePath=path;
+            text.textContent='✓ Ачаалал амжилттай';
+            res();
+          });
+      });
+    }catch(e){
+      toast('Видео ачаалахад алдаа: '+e.message,'error');
+      return;
+    }
+  }
+
   const data={
     title,
     description:document.getElementById('trainingDesc').value.trim(),
-    videoUrl:document.getElementById('trainingVideoUrl').value.trim(),
+    videoUrl,
+    videoStoragePath,
     duration:parseInt(document.getElementById('trainingDuration').value)||0,
     passingScore:parseInt(document.getElementById('trainingPassScore').value)||70,
     watchThreshold:parseInt(document.getElementById('trainingWatchThreshold').value)||80,
