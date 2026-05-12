@@ -2413,11 +2413,20 @@ async function uploadVideoFile(file, kind = 'library') {
   if (file.size > 500 * 1024 * 1024) throw new Error('Файл 500MB-аас их байна');
   if (!file.type.startsWith('video/')) throw new Error('Зөвхөн видео файл оруулна уу');
 
+  // Preflight checks
+  if (typeof firebase === 'undefined' || !firebase.storage) {
+    throw new Error('Firebase Storage SDK ачаалагдаагүй байна. Хуудсыг refresh хийнэ үү.');
+  }
+  if (!firebase.auth().currentUser) {
+    throw new Error('Та нэвтрэх ёстой (Firebase Auth). Logout/Login хийгээд дахин оролдоно уу.');
+  }
+
   const storage = firebase.storage();
   const ts = Date.now();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `training-videos/${kind}/${ts}_${safeName}`;
   const ref = storage.ref(path);
+  console.log('[Upload] start', { path, sizeMB: (file.size/1024/1024).toFixed(2), type: file.type });
 
   const bar = document.getElementById('videoUploadBar');
   const text = document.getElementById('videoUploadText');
@@ -2426,16 +2435,41 @@ async function uploadVideoFile(file, kind = 'library') {
 
   return new Promise((resolve, reject) => {
     const task = ref.put(file, { contentType: file.type });
+    let lastProgress = Date.now();
+    // Stall detector — if no progress event in 20 seconds, surface the error
+    const stallTimer = setInterval(() => {
+      if (Date.now() - lastProgress > 20000) {
+        clearInterval(stallTimer);
+        console.error('[Upload] STALLED — no progress for 20s. Check: Storage enabled, rules deployed, CORS configured.');
+        task.cancel();
+        reject(new Error('Upload 20+ секундэд хөдлөхгүй байна. Firebase Storage идэвхжээгүй эсвэл CORS тохируулагдаагүй байж магадгүй. F12 → Console-д дэлгэрэнгүй'));
+      }
+    }, 5000);
+
     task.on('state_changed',
       (snap) => {
+        lastProgress = Date.now();
         const pct = (snap.bytesTransferred / snap.totalBytes) * 100;
         if (bar) bar.style.width = pct.toFixed(1) + '%';
         if (text) text.textContent = `Ачаалж байна... ${pct.toFixed(0)}% (${(snap.bytesTransferred/1024/1024).toFixed(1)}/${(snap.totalBytes/1024/1024).toFixed(1)}MB)`;
       },
-      (err) => { if (wrap) wrap.style.display = 'none'; reject(err); },
+      (err) => {
+        clearInterval(stallTimer);
+        console.error('[Upload] ERROR', err.code, err.message, err);
+        if (wrap) wrap.style.display = 'none';
+        const hint = err.code === 'storage/unauthorized'
+          ? ' (Rules дутуу — Firebase Console → Storage → Rules-ийг шинэчилнэ үү)'
+          : err.code === 'storage/canceled' ? ''
+          : err.message?.includes('CORS') || err.code === 'storage/retry-limit-exceeded'
+            ? ' (CORS — Cloud Shell-д gsutil cors set ажиллуулна уу)'
+            : '';
+        reject(new Error(err.message + hint));
+      },
       async () => {
+        clearInterval(stallTimer);
         const url = await task.snapshot.ref.getDownloadURL();
         if (text) text.textContent = '✓ Ачаалал амжилттай';
+        console.log('[Upload] complete', { url, path });
         setTimeout(() => { if (wrap) wrap.style.display = 'none'; }, 1500);
         resolve({ url, path });
       }
