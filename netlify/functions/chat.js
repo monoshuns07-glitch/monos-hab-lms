@@ -560,12 +560,12 @@ ${BASE_KNOWLEDGE}${kbContext ? '\n\n--- Нэмэлт мэдээлэл ---\n' + k
 
     contents.push({ role: 'user', parts: [{ text: question }] });
 
-    const requestBody = {
+    const baseBody = {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents,
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
         topP: 0.9
       },
       safetySettings: [
@@ -576,12 +576,23 @@ ${BASE_KNOWLEDGE}${kbContext ? '\n\n--- Нэмэлт мэдээлэл ---\n' + k
       ]
     };
 
-    const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite'];
+    // Хурд: эхэлж хамгийн хурдан flash, дараа нь flash-lite, эцэст нь pro-г оролдоно.
+    const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
     let response = null;
     let lastError = '';
 
     for (const model of models) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+      // flash төрлүүд дээр "thinking"-г унтрааж хариултыг шууд, хурдан гаргуулна.
+      // (pro нь thinking-г бүрэн унтраах боломжгүй тул түүнд хэвээр нь үлдээнэ.)
+      const requestBody = {
+        ...baseBody,
+        generationConfig: {
+          ...baseBody.generationConfig,
+          ...(model.includes('flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+        }
+      };
 
       try {
         response = await fetch(url, {
