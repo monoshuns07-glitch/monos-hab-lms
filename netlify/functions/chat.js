@@ -565,7 +565,7 @@ ${BASE_KNOWLEDGE}${kbContext ? '\n\n--- Нэмэлт мэдээлэл ---\n' + k
       contents,
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 4096,
         topP: 0.9
       },
       safetySettings: [
@@ -576,8 +576,8 @@ ${BASE_KNOWLEDGE}${kbContext ? '\n\n--- Нэмэлт мэдээлэл ---\n' + k
       ]
     };
 
-    // Нарийвчлал: эхэлж хамгийн ухаалаг pro (нарийн логик), боломжгүй бол flash руу шилжинэ.
-    const models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    // Netlify-ийн 10 сек timeout-д багтаахын тулд хурдан flash-г үндсэн болгоно (pro нь timeout өгдөг).
+    const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'];
     let response = null;
     let lastError = '';
 
