@@ -584,15 +584,9 @@ ${BASE_KNOWLEDGE}${kbContext ? '\n\n--- Нэмэлт мэдээлэл ---\n' + k
     for (const model of models) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
-      // flash төрлүүд дээр "thinking"-г унтрааж хариултыг шууд, хурдан гаргуулна.
-      // (pro нь thinking-г бүрэн унтраах боломжгүй тул түүнд хэвээр нь үлдээнэ.)
-      const requestBody = {
-        ...baseBody,
-        generationConfig: {
-          ...baseBody.generationConfig,
-          ...(model.includes('flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {})
-        }
-      };
+      // Нарийвчлалыг нэн тэргүүнд барина: "thinking"-г хэвийн (default) горимоор үлдээж,
+      // загвар хариулахаасаа өмнө мэдээллийн сангаа сайтар бодож үнэн зөв хариулна.
+      const requestBody = baseBody;
 
       try {
         response = await fetch(url, {
