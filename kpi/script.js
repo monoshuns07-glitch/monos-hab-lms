@@ -1750,14 +1750,28 @@ function establishSession() {
     try { u = JSON.parse(localStorage.getItem('monos_user') || 'null'); } catch (e) {}
     if (!u || !u.uid) { location.replace('/index.html'); return; } // нэвтрээгүй → нэвтрэх хуудас
     if (!fbReady) { SESSION = { role: 'admin', email: u.email, uid: u.uid }; resolve(); return; }
-    fdb.collection('users').doc(u.uid).get().then(function (snap) {
-      var role = (snap.exists && snap.data() && snap.data().role === 'admin') ? 'admin' : 'employee';
-      SESSION = { role: role, email: u.email, uid: u.uid, empId: null };
-      resolve();
-    }).catch(function () {
-      SESSION = { role: 'employee', email: u.email, uid: u.uid, empId: null };
-      resolve();
+
+    function proceed(uid, email) {
+      fdb.collection('users').doc(uid).get().then(function (snap) {
+        var role = (snap.exists && snap.data() && snap.data().role === 'admin') ? 'admin' : 'employee';
+        SESSION = { role: role, email: email, uid: uid, empId: null };
+        resolve();
+      }).catch(function () {
+        SESSION = { role: 'employee', email: email, uid: uid, empId: null };
+        resolve();
+      });
+    }
+
+    // Firebase auth сессийг сэргээхийг хүлээнэ (эс бөгөөс Firestore хүсэлт эрхгүй болж унана)
+    var settled = false;
+    var unsub = fauth.onAuthStateChanged(function (fbUser) {
+      if (settled) return; settled = true;
+      try { unsub(); } catch (e) {}
+      if (fbUser) { proceed(fbUser.uid, fbUser.email || u.email); }
+      else { localStorage.removeItem('monos_user'); location.replace('/index.html'); } // сесси дууссан
     });
+    // Найдваргүй тохиолдолд 5 сек дараа үргэлжлүүлнэ
+    setTimeout(function () { if (!settled) { settled = true; proceed(u.uid, u.email); } }, 5000);
   });
 }
 
