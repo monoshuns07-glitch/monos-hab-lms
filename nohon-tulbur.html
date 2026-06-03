@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=1024, user-scalable=yes, maximum-scale=5" />
+
+<!-- ═══════════ PWA ═══════════ -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Монос ХАБЭА">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<meta name="msapplication-TileColor" content="#E30613">
+<meta name="msapplication-TileImage" content="/icons/icon-144.png">
+<script type="module" src="/pwa-init.js"></script>
+
 <title>МОНОС ХҮНС ХК — ХАБ-ын алба · Нөхөн төлбөрийн гарын авлага</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -5571,8 +5587,8 @@
         // 1. Мэдлэгийн сангаас хайна
         const kbContext = await searchKnowledgeBase(text);
 
-        // 2. Netlify Function руу явуулна
-        const res = await fetch('/.netlify/functions/chat', {
+        // 2. Cloudflare Pages Function руу явуулна (Gemini Pro, timeout-гүй)
+        const res = await fetch('https://monos-chat.pages.dev/api/chat', {
           method:'POST',
           headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
