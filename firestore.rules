@@ -61,6 +61,10 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // KPI / SafeWork ХАБЭА систем — нэвтэрсэн хэрэглэгч унших/бичих.
+    // (Админ эрхийг апп давхаргад шалгана — энгийн ажилтанд засах UI харагдахгүй.)
+    match /kpi_state/{docId} { allow read, write: if isAuth(); }
+
     // Deny everything not explicitly matched above.
     match /{document=**} {
       allow read, write: if false;
