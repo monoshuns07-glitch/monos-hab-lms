@@ -1,0 +1,1820 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeWork · ХАБЭА удирдлагын систем</title>
+<link rel="stylesheet" href="vendor/fonts.css">
+<link rel="stylesheet" href="vendor/tabler-icons.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <div class="logo-mark"><i class="ti ti-shield-check"></i></div>
+      <div class="logo-text">
+        <div class="logo-name">SafeWork</div>
+        <div class="logo-tag">ХАБЭА удирдлага</div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-section">
+      <div class="nav-section-title">Үндсэн</div>
+      <a class="nav-item active" data-page="dashboard"><i class="ti ti-layout-dashboard"></i><span>Хяналтын самбар</span></a>
+      <a class="nav-item" data-page="employees"><i class="ti ti-users"></i><span>Ажилтнууд</span><span class="nav-badge">142</span></a>
+      <a class="nav-item" data-page="kpi"><i class="ti ti-chart-radar"></i><span>KPI үнэлгээ</span></a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Мэдээлэл цуглуулалт</div>
+      <a class="nav-item" data-page="hazards"><i class="ti ti-alert-triangle"></i><span>Эрсдэл, аюул</span><span class="nav-badge nav-badge-warn">28</span></a>
+      <a class="nav-item" data-page="incidents"><i class="ti ti-first-aid-kit"></i><span>Осол, гэмтэл</span></a>
+      <a class="nav-item" data-page="inspections"><i class="ti ti-clipboard-check"></i><span>Шалгалт</span></a>
+      <a class="nav-item" data-page="suggestions"><i class="ti ti-bulb"></i><span>Сайжруулалтын санал</span></a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Үйл ажиллагаа</div>
+      <a class="nav-item" data-page="training"><i class="ti ti-school"></i><span>Сургалт</span></a>
+      <a class="nav-item" data-page="health"><i class="ti ti-stethoscope"></i><span>Эрүүл мэндийн үзлэг</span></a>
+      <a class="nav-item" data-page="ppe"><i class="ti ti-helmet"></i><span>ХХХ хяналт</span></a>
+      <a class="nav-item" data-page="council"><i class="ti ti-users-group"></i><span>ХАБЭА-н зөвлөл</span></a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Интеграц, систем</div>
+      <a class="nav-item" data-page="teams"><i class="ti ti-brand-teams"></i><span>Teams интеграц</span><span class="nav-dot"></span></a>
+      <a class="nav-item" data-page="chatbot"><i class="ti ti-message-chatbot"></i><span>Чат бот</span></a>
+      <a class="nav-item" data-page="reports"><i class="ti ti-file-analytics"></i><span>Тайлан</span></a>
+      <a class="nav-item" data-page="dataflow"><i class="ti ti-network"></i><span>Дата урсгал</span></a>
+      <a class="nav-item" data-page="settings"><i class="ti ti-settings"></i><span>Тохиргоо</span></a>
+    </div>
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="user-card">
+      <div class="avatar">ДА</div>
+      <div class="user-info">
+        <div class="user-name">Д. Ариунаа</div>
+        <div class="user-role">ХАБЭА-н мэргэжилтэн</div>
+      </div>
+      <i class="ti ti-chevron-up user-menu"></i>
+    </div>
+  </div>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<main class="main">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <button class="menu-toggle" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
+    <div class="breadcrumb">
+      <span class="bc-home"><i class="ti ti-home"></i></span>
+      <i class="ti ti-chevron-right bc-sep"></i>
+      <span class="bc-current" id="bcCurrent">Хяналтын самбар</span>
+    </div>
+    <div class="topbar-actions">
+      <div class="search-box">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Хайх...">
+        <kbd>⌘K</kbd>
+      </div>
+      <button class="icon-btn" title="Шинэ эрсдэл мэдээлэх"><i class="ti ti-plus"></i></button>
+      <button class="icon-btn notif"><i class="ti ti-bell"></i><span class="notif-dot"></span></button>
+      <button class="icon-btn"><i class="ti ti-help-circle"></i></button>
+    </div>
+  </header>
+
+  <!-- ============ PAGE: DASHBOARD ============ -->
+  <section class="page active" data-page="dashboard">
+    <div class="page-header">
+      <div>
+        <h1>Хяналтын самбар</h1>
+        <p class="page-subtitle">2026 оны 5-р сар · Сүүлчийн шинэчлэлт 5 минутын өмнө</p>
+      </div>
+      <div class="page-actions">
+        <div class="select-pill">
+          <i class="ti ti-calendar"></i>
+          <span>Энэ сар</span>
+          <i class="ti ti-chevron-down"></i>
+        </div>
+        <button class="btn btn-secondary"><i class="ti ti-download"></i> Тайлан татах</button>
+        <button class="btn btn-primary"><i class="ti ti-refresh"></i> Шинэчлэх</button>
+      </div>
+    </div>
+
+    <!-- Hero KPI cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card kpi-hero">
+        <div class="kpi-label"><i class="ti ti-target"></i> Нийт KPI оноо</div>
+        <div class="kpi-value">87.4<span class="kpi-unit">/100</span></div>
+        <div class="kpi-trend up"><i class="ti ti-trending-up"></i> +3.2 өмнөх сараас</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:87.4%"></div></div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label"><i class="ti ti-school"></i> Сургалтын хамрах</div>
+        <div class="kpi-value">94<span class="kpi-unit">%</span></div>
+        <div class="kpi-sub">134/142 ажилтан</div>
+        <div class="kpi-mini-chart">
+          <div class="mini-bar" style="height:60%"></div>
+          <div class="mini-bar" style="height:70%"></div>
+          <div class="mini-bar" style="height:65%"></div>
+          <div class="mini-bar" style="height:80%"></div>
+          <div class="mini-bar" style="height:75%"></div>
+          <div class="mini-bar" style="height:90%"></div>
+          <div class="mini-bar active" style="height:94%"></div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label"><i class="ti ti-alert-triangle"></i> Мэдээлсэн эрсдэл</div>
+        <div class="kpi-value">28</div>
+        <div class="kpi-sub">сүүлийн 30 хоногт</div>
+        <div class="kpi-mini-chart">
+          <div class="mini-bar warn" style="height:40%"></div>
+          <div class="mini-bar warn" style="height:55%"></div>
+          <div class="mini-bar warn" style="height:30%"></div>
+          <div class="mini-bar warn" style="height:70%"></div>
+          <div class="mini-bar warn" style="height:60%"></div>
+          <div class="mini-bar warn" style="height:80%"></div>
+          <div class="mini-bar warn active" style="height:90%"></div>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-label"><i class="ti ti-shield-check"></i> Осолгүй өдөр</div>
+        <div class="kpi-value">142</div>
+        <div class="kpi-trend up"><i class="ti ti-check"></i> Жилийн зорилт хангалаа</div>
+        <div class="kpi-mini-chart">
+          <div class="mini-bar success" style="height:80%"></div>
+          <div class="mini-bar success" style="height:85%"></div>
+          <div class="mini-bar success" style="height:90%"></div>
+          <div class="mini-bar success" style="height:92%"></div>
+          <div class="mini-bar success" style="height:95%"></div>
+          <div class="mini-bar success" style="height:98%"></div>
+          <div class="mini-bar success active" style="height:100%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI categories radar + activity feed -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>KPI ангиллын дүн</h3>
+            <p class="card-subtitle">5 ангиллын дундаж жинтэй оноо</p>
+          </div>
+          <button class="link-btn">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
+        </div>
+        <canvas id="kpiRadar" height="280"></canvas>
+        <div class="legend-row">
+          <div class="legend-item"><span class="dot dot-amber"></span>Сургалт <strong>92</strong></div>
+          <div class="legend-item"><span class="dot dot-teal"></span>Оролцоо <strong>78</strong></div>
+          <div class="legend-item"><span class="dot dot-emerald"></span>Дүрэм <strong>89</strong></div>
+          <div class="legend-item"><span class="dot dot-blue"></span>Эрүүл мэнд <strong>95</strong></div>
+          <div class="legend-item"><span class="dot dot-coral"></span>Манлайлал <strong>73</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Сүүлд мэдээлсэн</h3>
+            <p class="card-subtitle">Teams ба вэбээс ирсэн</p>
+          </div>
+          <button class="link-btn">Бүгд <i class="ti ti-arrow-right"></i></button>
+        </div>
+        <ul class="activity-list">
+          <li>
+            <div class="act-icon act-warn"><i class="ti ti-alert-triangle"></i></div>
+            <div class="act-body">
+              <div class="act-title">Цахилгааны кабель гэмтсэн</div>
+              <div class="act-meta">Б. Энхбат · Цех №2 · <span class="src src-teams">Teams</span></div>
+            </div>
+            <div class="act-time">2 ц</div>
+          </li>
+          <li>
+            <div class="act-icon act-info"><i class="ti ti-bulb"></i></div>
+            <div class="act-body">
+              <div class="act-title">Сайжруулалтын санал — агааржуулалт</div>
+              <div class="act-meta">Ц. Сараа · Захиргаа · <span class="src src-web">Вэб</span></div>
+            </div>
+            <div class="act-time">5 ц</div>
+          </li>
+          <li>
+            <div class="act-icon act-success"><i class="ti ti-check"></i></div>
+            <div class="act-body">
+              <div class="act-title">Бараг осол мэдээлсэн</div>
+              <div class="act-meta">Д. Ариунаа · Цех №1 · <span class="src src-bot">Бот</span></div>
+            </div>
+            <div class="act-time">8 ц</div>
+          </li>
+          <li>
+            <div class="act-icon act-purple"><i class="ti ti-school"></i></div>
+            <div class="act-body">
+              <div class="act-title">Сургалт дуусгасан · Гал түймрийн аюулгүй байдал</div>
+              <div class="act-meta">12 ажилтан · <span class="src src-system">Систем</span></div>
+            </div>
+            <div class="act-time">өчигдөр</div>
+          </li>
+          <li>
+            <div class="act-icon act-warn"><i class="ti ti-alert-triangle"></i></div>
+            <div class="act-body">
+              <div class="act-title">#аюул кран нь чичирхийлэлтэй</div>
+              <div class="act-meta">М. Баатар · Цех №3 · <span class="src src-teams">Teams</span></div>
+            </div>
+            <div class="act-time">өчигдөр</div>
+          </li>
+          <li>
+            <div class="act-icon act-info"><i class="ti ti-stethoscope"></i></div>
+            <div class="act-body">
+              <div class="act-title">Эрүүл мэндийн үзлэгт хамрагдсан</div>
+              <div class="act-meta">8 ажилтан · <span class="src src-system">Систем</span></div>
+            </div>
+            <div class="act-time">2 өдөр</div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Trend chart full width -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3>ХАБЭА-н үзүүлэлтийн хандлага</h3>
+          <p class="card-subtitle">Сүүлийн 12 сар</p>
+        </div>
+        <div class="chip-group">
+          <button class="chip active">Бүгд</button>
+          <button class="chip">Эрсдэл</button>
+          <button class="chip">Сургалт</button>
+          <button class="chip">Осол</button>
+        </div>
+      </div>
+      <canvas id="trendChart" height="100"></canvas>
+    </div>
+
+    <!-- Department breakdown -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Хэлтсийн KPI харьцуулалт</h3>
+          <button class="link-btn">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
+        </div>
+        <div class="dept-list">
+          <div class="dept-row">
+            <div class="dept-name">Цех №1 · Угсралт</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:92%; background:var(--emerald)"></div></div>
+            <div class="dept-score">92</div>
+          </div>
+          <div class="dept-row">
+            <div class="dept-name">Цех №2 · Боловсруулалт</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:76%; background:var(--amber)"></div></div>
+            <div class="dept-score">76</div>
+          </div>
+          <div class="dept-row">
+            <div class="dept-name">Цех №3 · Тоног төхөөрөмж</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:84%; background:var(--emerald)"></div></div>
+            <div class="dept-score">84</div>
+          </div>
+          <div class="dept-row">
+            <div class="dept-name">Захиргаа</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:95%; background:var(--emerald)"></div></div>
+            <div class="dept-score">95</div>
+          </div>
+          <div class="dept-row">
+            <div class="dept-name">Тээвэр, ложистик</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:81%; background:var(--emerald)"></div></div>
+            <div class="dept-score">81</div>
+          </div>
+          <div class="dept-row">
+            <div class="dept-name">Үйлчилгээ</div>
+            <div class="dept-bar-wrap"><div class="dept-bar" style="width:68%; background:var(--coral)"></div></div>
+            <div class="dept-score">68</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Шуурхай үйлдлүүд</h3>
+        </div>
+        <div class="quick-grid">
+          <a class="quick-card quick-warn" onclick="goTo('hazards')">
+            <i class="ti ti-alert-triangle"></i>
+            <div>Эрсдэл мэдээлэх</div>
+          </a>
+          <a class="quick-card quick-info" onclick="goTo('suggestions')">
+            <i class="ti ti-bulb"></i>
+            <div>Санал гаргах</div>
+          </a>
+          <a class="quick-card quick-success" onclick="goTo('training')">
+            <i class="ti ti-school"></i>
+            <div>Сургалт үзэх</div>
+          </a>
+          <a class="quick-card quick-purple" onclick="goTo('inspections')">
+            <i class="ti ti-clipboard-check"></i>
+            <div>Шалгалт хийх</div>
+          </a>
+          <a class="quick-card quick-blue" onclick="goTo('health')">
+            <i class="ti ti-stethoscope"></i>
+            <div>Эрүүл мэнд</div>
+          </a>
+          <a class="quick-card quick-coral" onclick="goTo('chatbot')">
+            <i class="ti ti-message-chatbot"></i>
+            <div>Бот ярих</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: EMPLOYEES ============ -->
+  <section class="page" data-page="employees">
+    <div class="page-header">
+      <div>
+        <h1>Ажилтнууд</h1>
+        <p class="page-subtitle">Нийт 142 идэвхтэй ажилтан</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary"><i class="ti ti-filter"></i> Шүүх</button>
+        <button class="btn btn-secondary"><i class="ti ti-download"></i> Excel</button>
+        <button class="btn btn-primary"><i class="ti ti-user-plus"></i> Шинэ ажилтан</button>
+      </div>
+    </div>
+
+    <!-- Stats strip -->
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num">142</div><div class="stat-lbl">Нийт</div></div>
+      <div class="stat-item"><div class="stat-num">128</div><div class="stat-lbl">Идэвхтэй</div></div>
+      <div class="stat-item"><div class="stat-num">14</div><div class="stat-lbl">Чөлөөтэй</div></div>
+      <div class="stat-item"><div class="stat-num emerald">87.4</div><div class="stat-lbl">Дундаж KPI</div></div>
+      <div class="stat-item"><div class="stat-num warn">8</div><div class="stat-lbl">Сайжруулалт хэрэгтэй</div></div>
+    </div>
+
+    <div class="card">
+      <div class="filter-bar">
+        <div class="search-box flex-grow">
+          <i class="ti ti-search"></i>
+          <input type="text" placeholder="Нэр, овог, ID-аар хайх...">
+        </div>
+        <div class="select-pill"><i class="ti ti-building"></i><span>Бүх хэлтэс</span><i class="ti ti-chevron-down"></i></div>
+        <div class="select-pill"><i class="ti ti-briefcase"></i><span>Бүх албан тушаал</span><i class="ti ti-chevron-down"></i></div>
+        <div class="select-pill"><i class="ti ti-sort-ascending"></i><span>KPI оноо</span><i class="ti ti-chevron-down"></i></div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:30px"><input type="checkbox"></th>
+            <th>Ажилтан</th>
+            <th>Хэлтэс</th>
+            <th>Сургалт</th>
+            <th>Оролцоо</th>
+            <th>Дүрэм</th>
+            <th>Эрүүл мэнд</th>
+            <th>Нийт оноо</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="empTableBody">
+        </tbody>
+      </table>
+
+      <div class="table-footer">
+        <div>1-10 / 142 ажилтан</div>
+        <div class="pagination">
+          <button class="page-btn"><i class="ti ti-chevron-left"></i></button>
+          <button class="page-btn active">1</button>
+          <button class="page-btn">2</button>
+          <button class="page-btn">3</button>
+          <button class="page-btn">...</button>
+          <button class="page-btn">15</button>
+          <button class="page-btn"><i class="ti ti-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: KPI ============ -->
+  <section class="page" data-page="kpi">
+    <div class="page-header">
+      <div>
+        <h1>KPI үнэлгээний систем</h1>
+        <p class="page-subtitle">5 ангилал, жинтэй үнэлгээ — 2026 оны загвар</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary"><i class="ti ti-history"></i> Түүх</button>
+        <button class="btn btn-primary"><i class="ti ti-edit"></i> Жин засах</button>
+      </div>
+    </div>
+
+    <!-- KPI formula card -->
+    <div class="card formula-card">
+      <div class="formula-label">Үнэлгээний томьёо</div>
+      <div class="formula">
+        <span>Нийт оноо =</span>
+        <span class="f-term f-amber">Сургалт × <strong>0.20</strong></span>
+        <span>+</span>
+        <span class="f-term f-teal">Оролцоо × <strong>0.30</strong></span>
+        <span>+</span>
+        <span class="f-term f-emerald">Дүрэм × <strong>0.25</strong></span>
+        <span>+</span>
+        <span class="f-term f-blue">Эрүүл мэнд × <strong>0.15</strong></span>
+        <span>+</span>
+        <span class="f-term f-coral">Манлайлал × <strong>0.10</strong></span>
+      </div>
+    </div>
+
+    <!-- 5 KPI categories -->
+    <div class="kpi-cat-grid">
+      <!-- Category 1: Training -->
+      <div class="kpi-cat-card">
+        <div class="kpi-cat-head">
+          <div class="kpi-cat-icon" style="background:#FEF3C7;color:#92400E"><i class="ti ti-school"></i></div>
+          <div>
+            <h3>Сургалт, мэдлэг</h3>
+            <p>Жин: 20%</p>
+          </div>
+          <div class="kpi-cat-score">92</div>
+        </div>
+        <ul class="kpi-cat-items">
+          <li><span>Заавал сургалтад хамрагдсан</span><span class="badge badge-success">100%</span></li>
+          <li><span>Сургалтын тест дундаж оноо</span><span class="badge badge-success">86</span></li>
+          <li><span>Давтан сургалтад хугацаандаа орсон</span><span class="badge badge-warn">94%</span></li>
+        </ul>
+      </div>
+
+      <!-- Category 2: Participation -->
+      <div class="kpi-cat-card">
+        <div class="kpi-cat-head">
+          <div class="kpi-cat-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-hand-stop"></i></div>
+          <div>
+            <h3>Идэвхтэй оролцоо</h3>
+            <p>Жин: 30%</p>
+          </div>
+          <div class="kpi-cat-score warn">78</div>
+        </div>
+        <ul class="kpi-cat-items">
+          <li><span>Аюул, эрсдэл мэдээлсэн (сард)</span><span class="badge badge-success">1.3</span></li>
+          <li><span>Сайжруулалтын санал гаргасан</span><span class="badge badge-warn">0.4/улирал</span></li>
+          <li><span>Эрсдэлийн үнэлгээнд оролцсон</span><span class="badge badge-success">2/жил</span></li>
+          <li><span>Ажил эхлэхийн өмнөх шалгалт</span><span class="badge badge-warn">88%</span></li>
+        </ul>
+      </div>
+
+      <!-- Category 3: Discipline -->
+      <div class="kpi-cat-card">
+        <div class="kpi-cat-head">
+          <div class="kpi-cat-icon" style="background:#DBEAFE;color:#1E40AF"><i class="ti ti-helmet"></i></div>
+          <div>
+            <h3>Дүрэм сахилт</h3>
+            <p>Жин: 25%</p>
+          </div>
+          <div class="kpi-cat-score">89</div>
+        </div>
+        <ul class="kpi-cat-items">
+          <li><span>ХХХ зөв хэрэглэсэн</span><span class="badge badge-success">96%</span></li>
+          <li><span>ХАБЭА-н журам зөрчсөн</span><span class="badge badge-success">2 тохиолдол</span></li>
+          <li><span>Ажлын байрны эмх цэгц (5S)</span><span class="badge badge-success">87%</span></li>
+        </ul>
+      </div>
+
+      <!-- Category 4: Health -->
+      <div class="kpi-cat-card">
+        <div class="kpi-cat-head">
+          <div class="kpi-cat-icon" style="background:#E0E7FF;color:#3730A3"><i class="ti ti-stethoscope"></i></div>
+          <div>
+            <h3>Эрүүл мэнд, осол</h3>
+            <p>Жин: 15%</p>
+          </div>
+          <div class="kpi-cat-score">95</div>
+        </div>
+        <ul class="kpi-cat-items">
+          <li><span>Эрүүл мэндийн үзлэгт цаг тухайд нь</span><span class="badge badge-success">100%</span></li>
+          <li><span>Ажлын байрны осол</span><span class="badge badge-success">0</span></li>
+          <li><span>Бараг осол мэдээлсэн (сард)</span><span class="badge badge-success">1.5</span></li>
+        </ul>
+      </div>
+
+      <!-- Category 5: Leadership -->
+      <div class="kpi-cat-card">
+        <div class="kpi-cat-head">
+          <div class="kpi-cat-icon" style="background:#FEE2E2;color:#991B1B"><i class="ti ti-star"></i></div>
+          <div>
+            <h3>Манлайлал, хамт олонч</h3>
+            <p>Жин: 10%</p>
+          </div>
+          <div class="kpi-cat-score danger">73</div>
+        </div>
+        <ul class="kpi-cat-items">
+          <li><span>Шинэ ажилтанд зааварчилгаа өгсөн</span><span class="badge badge-warn">0.7/жил</span></li>
+          <li><span>ХАБЭА-н зөвлөл хуралд</span><span class="badge badge-success">85%</span></li>
+          <li><span>Хамт ажиллагсаддаа сануулсан</span><span class="badge badge-warn">Дунд</span></li>
+        </ul>
+      </div>
+
+      <!-- Evaluation thresholds -->
+      <div class="kpi-cat-card threshold-card">
+        <h3>Үнэлгээний түвшин</h3>
+        <div class="threshold-list">
+          <div class="threshold-row threshold-excellent">
+            <div class="threshold-range">90–100</div>
+            <div class="threshold-label">Маш сайн</div>
+            <div class="threshold-action">Урамшуулал</div>
+          </div>
+          <div class="threshold-row threshold-good">
+            <div class="threshold-range">75–89</div>
+            <div class="threshold-label">Сайн</div>
+            <div class="threshold-action">Тогтмол үргэлжлүүлэх</div>
+          </div>
+          <div class="threshold-row threshold-ok">
+            <div class="threshold-range">60–74</div>
+            <div class="threshold-label">Хангалттай</div>
+            <div class="threshold-action">Сайжруулах төлөвлөгөө</div>
+          </div>
+          <div class="threshold-row threshold-low">
+            <div class="threshold-range">&lt;60</div>
+            <div class="threshold-label">Хангалтгүй</div>
+            <div class="threshold-action">Давтан сургалт</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: HAZARDS ============ -->
+  <section class="page" data-page="hazards">
+    <div class="page-header">
+      <div>
+        <h1>Эрсдэл, аюул мэдээлэл</h1>
+        <p class="page-subtitle">Teams, чат бот, газар дээрх мэдээлэл нэг дор</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary"><i class="ti ti-map"></i> Газрын зураг</button>
+        <button class="btn btn-primary"><i class="ti ti-plus"></i> Шинэ мэдээлэл</button>
+      </div>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num">28</div><div class="stat-lbl">Энэ сард</div></div>
+      <div class="stat-item"><div class="stat-num warn">7</div><div class="stat-lbl">Шийдвэрлэлт хүлээж буй</div></div>
+      <div class="stat-item"><div class="stat-num emerald">19</div><div class="stat-lbl">Шийдвэрлэгдсэн</div></div>
+      <div class="stat-item"><div class="stat-num danger">2</div><div class="stat-lbl">Яаралтай</div></div>
+      <div class="stat-item"><div class="stat-num">3.2 өдөр</div><div class="stat-lbl">Дундаж шийдэх хугацаа</div></div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Quick report form -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Шинэ эрсдэл мэдээлэх</h3>
+            <p class="card-subtitle">30 секундэд бүртгэнэ</p>
+          </div>
+          <span class="src-badge"><i class="ti ti-world"></i> Вэб форм</span>
+        </div>
+
+        <div class="form">
+          <div class="form-group">
+            <label>Эрсдэлийн төрөл</label>
+            <div class="chip-select">
+              <button class="chip-opt active"><i class="ti ti-bolt"></i> Цахилгаан</button>
+              <button class="chip-opt"><i class="ti ti-settings"></i> Машин механизм</button>
+              <button class="chip-opt"><i class="ti ti-flame"></i> Гал</button>
+              <button class="chip-opt"><i class="ti ti-droplet"></i> Хор</button>
+              <button class="chip-opt"><i class="ti ti-dots"></i> Бусад</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Байршил</label>
+            <div class="form-row">
+              <select><option>Цех №2 — Боловсруулалт</option><option>Цех №1</option><option>Цех №3</option></select>
+              <button class="btn btn-secondary"><i class="ti ti-current-location"></i> GPS</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Тайлбар</label>
+            <textarea rows="3" placeholder="Юу болсон, юу харсан тухайгаа товч бичнэ үү..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Яаралтай байдал</label>
+            <div class="severity-bar">
+              <button class="sev-btn">1 · Бага</button>
+              <button class="sev-btn">2</button>
+              <button class="sev-btn active">3 · Дунд</button>
+              <button class="sev-btn">4</button>
+              <button class="sev-btn">5 · Яаралтай</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <button class="btn btn-secondary flex-grow"><i class="ti ti-camera"></i> Зураг хавсаргах</button>
+            <button class="btn btn-primary flex-grow"><i class="ti ti-send"></i> Илгээх</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent reports -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>Сүүлийн мэдээллүүд</h3>
+            <p class="card-subtitle">Бүх сувгаас</p>
+          </div>
+        </div>
+        <ul class="hazard-list">
+          <li class="hazard-item">
+            <div class="hazard-sev sev-3">3</div>
+            <div class="hazard-body">
+              <div class="hazard-title">Цахилгааны кабель ил гарсан</div>
+              <div class="hazard-meta">Цех №2 · Б. Энхбат · 2 цагийн өмнө</div>
+              <div class="hazard-tags">
+                <span class="src src-teams"><i class="ti ti-brand-teams"></i> Teams #аюул</span>
+                <span class="tag tag-warn">Шийдвэрлэгдээгүй</span>
+              </div>
+            </div>
+          </li>
+          <li class="hazard-item">
+            <div class="hazard-sev sev-5">5</div>
+            <div class="hazard-body">
+              <div class="hazard-title">Тэсрэх бодис буруу хадгалагдсан</div>
+              <div class="hazard-meta">Агуулах · М. Баатар · 5 цагийн өмнө</div>
+              <div class="hazard-tags">
+                <span class="src src-bot"><i class="ti ti-message-chatbot"></i> Чат бот</span>
+                <span class="tag tag-danger">Яаралтай</span>
+              </div>
+            </div>
+          </li>
+          <li class="hazard-item">
+            <div class="hazard-sev sev-2">2</div>
+            <div class="hazard-body">
+              <div class="hazard-title">Гал унтраагуурын хугацаа дууссан</div>
+              <div class="hazard-meta">Захиргааны байр · Ц. Сараа · өчигдөр</div>
+              <div class="hazard-tags">
+                <span class="src src-web"><i class="ti ti-world"></i> Вэб</span>
+                <span class="tag tag-emerald">Шийдвэрлэгдсэн</span>
+              </div>
+            </div>
+          </li>
+          <li class="hazard-item">
+            <div class="hazard-sev sev-3">3</div>
+            <div class="hazard-body">
+              <div class="hazard-title">Кран чичирхийлэлтэй, шалгуулах</div>
+              <div class="hazard-meta">Цех №3 · О. Бат · өчигдөр</div>
+              <div class="hazard-tags">
+                <span class="src src-teams"><i class="ti ti-brand-teams"></i> Teams #аюул</span>
+                <span class="tag tag-info">Хянагдаж буй</span>
+              </div>
+            </div>
+          </li>
+          <li class="hazard-item">
+            <div class="hazard-sev sev-1">1</div>
+            <div class="hazard-body">
+              <div class="hazard-title">Шатны гэрэлтүүлэг бүдэг</div>
+              <div class="hazard-meta">2 давхар · Г. Намуун · 2 өдрийн өмнө</div>
+              <div class="hazard-tags">
+                <span class="src src-bot"><i class="ti ti-message-chatbot"></i> Чат бот</span>
+                <span class="tag tag-emerald">Шийдвэрлэгдсэн</span>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: INCIDENTS ============ -->
+  <section class="page" data-page="incidents">
+    <div class="page-header">
+      <div>
+        <h1>Осол, гэмтлийн бүртгэл</h1>
+        <p class="page-subtitle">Үйлдвэрлэлийн осол, мөрдөн шалгалт, нөхөн сэргээх</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-danger"><i class="ti ti-alert-circle"></i> Яаралтай осол бүртгэх</button>
+      </div>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num emerald">142</div><div class="stat-lbl">Осолгүй өдөр</div></div>
+      <div class="stat-item"><div class="stat-num">3</div><div class="stat-lbl">Энэ жил бүртгэгдсэн</div></div>
+      <div class="stat-item"><div class="stat-num warn">7</div><div class="stat-lbl">Бараг осол</div></div>
+      <div class="stat-item"><div class="stat-num">0</div><div class="stat-lbl">Хүндэвтэр</div></div>
+      <div class="stat-item"><div class="stat-num">15.2 хоног</div><div class="stat-lbl">Дундаж нөхөн сэргээх</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Осолгүй өдрийн тоологч</h3>
+      </div>
+      <div class="counter-big">
+        <div class="counter-num">142</div>
+        <div class="counter-info">
+          <div class="counter-title">Үргэлжлэх хугацаа</div>
+          <div class="counter-sub">Сүүлчийн осол: 2025-12-29 · Цех №2</div>
+          <div class="counter-tags">
+            <span class="tag tag-emerald"><i class="ti ti-trophy"></i> Жилийн зорилт хангалаа</span>
+            <span class="tag tag-info">Дараагийн зорилт: 365 хоног</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Осол, бараг ослын түүх</h3>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Огноо</th>
+            <th>Төрөл</th>
+            <th>Байршил</th>
+            <th>Гэмтсэн</th>
+            <th>Шалтгаан</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2025-12-29</td>
+            <td><span class="tag tag-warn">Хөнгөн</span></td>
+            <td>Цех №2</td>
+            <td>Б. Дорж</td>
+            <td>Тэгш бус шал</td>
+            <td><span class="tag tag-emerald">Шийдвэрлэгдсэн</span></td>
+          </tr>
+          <tr>
+            <td>2025-11-12</td>
+            <td><span class="tag tag-info">Бараг осол</span></td>
+            <td>Цех №3</td>
+            <td>—</td>
+            <td>Кран чичирхийлэл</td>
+            <td><span class="tag tag-emerald">Хаалттай</span></td>
+          </tr>
+          <tr>
+            <td>2025-10-04</td>
+            <td><span class="tag tag-warn">Хөнгөн</span></td>
+            <td>Агуулах</td>
+            <td>М. Цогт</td>
+            <td>ХХХ зөв ашиглаагүй</td>
+            <td><span class="tag tag-emerald">Шийдвэрлэгдсэн</span></td>
+          </tr>
+          <tr>
+            <td>2025-08-21</td>
+            <td><span class="tag tag-warn">Хөнгөн</span></td>
+            <td>Цех №1</td>
+            <td>А. Бат</td>
+            <td>Тоног төхөөрөмжийн эвдрэл</td>
+            <td><span class="tag tag-emerald">Шийдвэрлэгдсэн</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: INSPECTIONS ============ -->
+  <section class="page" data-page="inspections">
+    <div class="page-header">
+      <div>
+        <h1>Хяналт шалгалт</h1>
+        <p class="page-subtitle">Дотоод, гадаад шалгалт, газар дээрх үзлэг</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-clipboard-plus"></i> Шинэ шалгалт</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Төлөвлөгөөт шалгалтууд</h3>
+        </div>
+        <ul class="inspection-list">
+          <li>
+            <div class="ins-icon" style="background:#FEF3C7;color:#92400E"><i class="ti ti-calendar"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Цех №2 — Цахилгааны системийн шалгалт</div>
+              <div class="ins-meta">Огноо: 2026-05-25 · Хариуцагч: Д. Ариунаа</div>
+            </div>
+            <span class="tag tag-warn">5 хоног</span>
+          </li>
+          <li>
+            <div class="ins-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-flame"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Гал унтраах хэрэгслийн ерөнхий шалгалт</div>
+              <div class="ins-meta">Огноо: 2026-06-01 · Хариуцагч: Б. Туяа</div>
+            </div>
+            <span class="tag tag-info">12 хоног</span>
+          </li>
+          <li>
+            <div class="ins-icon" style="background:#DBEAFE;color:#1E40AF"><i class="ti ti-helmet"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">ХХХ-ийн ерөнхий аудит</div>
+              <div class="ins-meta">Огноо: 2026-06-15 · Хариуцагч: М. Баатар</div>
+            </div>
+            <span class="tag tag-info">26 хоног</span>
+          </li>
+          <li>
+            <div class="ins-icon" style="background:#FEE2E2;color:#991B1B"><i class="ti ti-building"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Хөдөлмөрийн хяналтын улсын байцаагч</div>
+              <div class="ins-meta">Огноо: 2026-07-01 · Гадны</div>
+            </div>
+            <span class="tag tag-info">42 хоног</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Сүүлд хийгдсэн</h3>
+        </div>
+        <ul class="inspection-list">
+          <li>
+            <div class="ins-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-check"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Цех №1 — 5S аудит</div>
+              <div class="ins-meta">Дүн: 87/100 · 2026-05-10</div>
+            </div>
+            <span class="tag tag-emerald">Сайн</span>
+          </li>
+          <li>
+            <div class="ins-icon" style="background:#FEF3C7;color:#92400E"><i class="ti ti-alert-triangle"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Цех №2 — Эрсдэлийн үнэлгээ</div>
+              <div class="ins-meta">3 зөрчил илрсэн · 2026-05-08</div>
+            </div>
+            <span class="tag tag-warn">Анхаарал</span>
+          </li>
+          <li>
+            <div class="ins-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-check"></i></div>
+            <div class="ins-body">
+              <div class="ins-title">Захиргааны байр — Гал түймэр</div>
+              <div class="ins-meta">Дүн: 95/100 · 2026-05-02</div>
+            </div>
+            <span class="tag tag-emerald">Маш сайн</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: TRAINING ============ -->
+  <section class="page" data-page="training">
+    <div class="page-header">
+      <div>
+        <h1>Сургалт, мэдлэг ахиулах</h1>
+        <p class="page-subtitle">Онлайн модулиуд, дадлага, гэрчилгээ</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary"><i class="ti ti-certificate"></i> Гэрчилгээ</button>
+        <button class="btn btn-primary"><i class="ti ti-plus"></i> Сургалт нэмэх</button>
+      </div>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num">24</div><div class="stat-lbl">Идэвхтэй модуль</div></div>
+      <div class="stat-item"><div class="stat-num emerald">134</div><div class="stat-lbl">Хамрагдсан</div></div>
+      <div class="stat-item"><div class="stat-num warn">8</div><div class="stat-lbl">Хугацаа дуусах</div></div>
+      <div class="stat-item"><div class="stat-num">94%</div><div class="stat-lbl">Хамрах хувь</div></div>
+      <div class="stat-item"><div class="stat-num">86</div><div class="stat-lbl">Дундаж оноо</div></div>
+    </div>
+
+    <div class="training-grid">
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#FEF3C7,#FBBF24)"><i class="ti ti-flame"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Заавал</div>
+          <h4>Гал түймрийн аюулгүй байдал</h4>
+          <p class="train-desc">Гал унтраах, нүүлгэн шилжүүлэх, анхны тусламж</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:100%"></div></div>
+            <span>Дууссан</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 45 мин</span>
+            <span><i class="ti ti-users"></i> 142 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#DBEAFE,#3B82F6)"><i class="ti ti-bolt"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Заавал</div>
+          <h4>Цахилгааны аюулгүй байдал</h4>
+          <p class="train-desc">Цахилгаан хэрэгсэлтэй ажиллахдаа баримтлах журам</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:65%"></div></div>
+            <span>65%</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 60 мин</span>
+            <span><i class="ti ti-users"></i> 92 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#D1FAE5,#10B981)"><i class="ti ti-first-aid-kit"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Заавал</div>
+          <h4>Анхны тусламж</h4>
+          <p class="train-desc">Гэмтсэн хүнд яаралтай тусламж үзүүлэх</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:100%"></div></div>
+            <span>Дууссан</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 90 мин</span>
+            <span><i class="ti ti-users"></i> 128 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#E0E7FF,#6366F1)"><i class="ti ti-helmet"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Сонголттой</div>
+          <h4>Хувийн хамгаалах хэрэгсэл</h4>
+          <p class="train-desc">ХХХ зөв сонгох, хэрэглэх, арчлах</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:40%"></div></div>
+            <span>40%</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 30 мин</span>
+            <span><i class="ti ti-users"></i> 56 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#FEE2E2,#EF4444)"><i class="ti ti-droplet"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Цех №2</div>
+          <h4>Хортой бодистой ажиллах</h4>
+          <p class="train-desc">Химийн бодис, аюулгүй ажиллагаа, MSDS</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:0%"></div></div>
+            <span>Эхлээгүй</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 75 мин</span>
+            <span><i class="ti ti-users"></i> 0 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="train-card">
+        <div class="train-thumb" style="background:linear-gradient(135deg,#FCE7F3,#EC4899)"><i class="ti ti-lifebuoy"></i></div>
+        <div class="train-body">
+          <div class="train-cat">Сонголттой</div>
+          <h4>Эргономик ба биеийн дасгал</h4>
+          <p class="train-desc">Оффисын ажилтнуудад зориулсан</p>
+          <div class="train-progress">
+            <div class="train-bar"><div class="train-bar-fill" style="width:88%"></div></div>
+            <span>88%</span>
+          </div>
+          <div class="train-meta">
+            <span><i class="ti ti-clock"></i> 25 мин</span>
+            <span><i class="ti ti-users"></i> 34 хамрагдсан</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: HEALTH ============ -->
+  <section class="page" data-page="health">
+    <div class="page-header">
+      <div>
+        <h1>Эрүүл мэндийн үзлэг</h1>
+        <p class="page-subtitle">Урьдчилсан, тогтмол, тусгай үзлэгүүд</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-calendar-plus"></i> Үзлэг товлох</button>
+      </div>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num emerald">100%</div><div class="stat-lbl">Хамрагдсан</div></div>
+      <div class="stat-item"><div class="stat-num">142</div><div class="stat-lbl">Үзлэг хийгдсэн</div></div>
+      <div class="stat-item"><div class="stat-num warn">12</div><div class="stat-lbl">Дахин үзлэг</div></div>
+      <div class="stat-item"><div class="stat-num">4</div><div class="stat-lbl">Тусгай үзлэг</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Удахгүй болох үзлэгүүд</h3>
+        </div>
+        <ul class="health-list">
+          <li class="health-item">
+            <div class="hl-date"><div class="hl-day">22</div><div class="hl-mon">5-р сар</div></div>
+            <div class="hl-body">
+              <div class="hl-title">Жилийн ерөнхий үзлэг</div>
+              <div class="hl-meta">14 ажилтан · Цех №1</div>
+            </div>
+            <span class="tag tag-info">Товлогдсон</span>
+          </li>
+          <li class="health-item">
+            <div class="hl-date"><div class="hl-day">28</div><div class="hl-mon">5-р сар</div></div>
+            <div class="hl-body">
+              <div class="hl-title">Уушгины тусгай үзлэг</div>
+              <div class="hl-meta">8 ажилтан · Цех №2 (тоосны өртөлт)</div>
+            </div>
+            <span class="tag tag-warn">Тусгай</span>
+          </li>
+          <li class="health-item">
+            <div class="hl-date"><div class="hl-day">05</div><div class="hl-mon">6-р сар</div></div>
+            <div class="hl-body">
+              <div class="hl-title">Шинэ ажилтны урьдчилсан үзлэг</div>
+              <div class="hl-meta">3 ажилтан</div>
+            </div>
+            <span class="tag tag-info">Урьдчилсан</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Эрсдэлийн ангилал</h3>
+        </div>
+        <div class="health-risk-list">
+          <div class="hr-item">
+            <div class="hr-name">Уушгины өвчний эрсдэл</div>
+            <div class="hr-bar"><div class="hr-fill" style="width:18%; background:var(--amber)"></div></div>
+            <div class="hr-num">18 ажилтан</div>
+          </div>
+          <div class="hr-item">
+            <div class="hr-name">Дуу шуугианы өртөлт</div>
+            <div class="hr-bar"><div class="hr-fill" style="width:32%; background:var(--amber)"></div></div>
+            <div class="hr-num">32 ажилтан</div>
+          </div>
+          <div class="hr-item">
+            <div class="hr-name">Эргономик асуудал</div>
+            <div class="hr-bar"><div class="hr-fill" style="width:24%; background:var(--blue)"></div></div>
+            <div class="hr-num">24 ажилтан</div>
+          </div>
+          <div class="hr-item">
+            <div class="hr-name">Химийн бодис</div>
+            <div class="hr-bar"><div class="hr-fill" style="width:8%; background:var(--coral)"></div></div>
+            <div class="hr-num">8 ажилтан</div>
+          </div>
+          <div class="hr-item">
+            <div class="hr-name">Стресс, сэтгэцийн</div>
+            <div class="hr-bar"><div class="hr-fill" style="width:15%; background:var(--blue)"></div></div>
+            <div class="hr-num">15 ажилтан</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: PPE ============ -->
+  <section class="page" data-page="ppe">
+    <div class="page-header">
+      <div>
+        <h1>Хувийн хамгаалах хэрэгсэл (ХХХ)</h1>
+        <p class="page-subtitle">Хуваарилалт, ашиглалт, эвдрэл</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-package"></i> ХХХ захиалах</button>
+      </div>
+    </div>
+
+    <div class="ppe-grid">
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-helmet"></i></div>
+        <div class="ppe-name">Дуулга</div>
+        <div class="ppe-num">142</div>
+        <div class="ppe-meta">Бүх ажилтанд хуваарилагдсан</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:96%"></div></div>
+        <div class="ppe-stat"><span>Ашиглалт</span><span>96%</span></div>
+      </div>
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-hand-stop"></i></div>
+        <div class="ppe-name">Бээлий</div>
+        <div class="ppe-num">98</div>
+        <div class="ppe-meta">Цех ажилтнуудад</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:88%"></div></div>
+        <div class="ppe-stat"><span>Ашиглалт</span><span>88%</span></div>
+      </div>
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-glasses"></i></div>
+        <div class="ppe-name">Хамгаалалтын шил</div>
+        <div class="ppe-num">76</div>
+        <div class="ppe-meta">Гагнуурчид, цех</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:92%"></div></div>
+        <div class="ppe-stat"><span>Ашиглалт</span><span>92%</span></div>
+      </div>
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-ear"></i></div>
+        <div class="ppe-name">Чихэвч</div>
+        <div class="ppe-num">42</div>
+        <div class="ppe-meta">Дуу шуугианы бүсэд</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:74%"></div></div>
+        <div class="ppe-stat warn"><span>Ашиглалт</span><span>74%</span></div>
+      </div>
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-mask"></i></div>
+        <div class="ppe-name">Амьсгалын маск</div>
+        <div class="ppe-num">28</div>
+        <div class="ppe-meta">Тоосны бүс, химийн</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:81%"></div></div>
+        <div class="ppe-stat"><span>Ашиглалт</span><span>81%</span></div>
+      </div>
+      <div class="ppe-card">
+        <div class="ppe-icon"><i class="ti ti-shirt"></i></div>
+        <div class="ppe-name">Ажлын хувцас</div>
+        <div class="ppe-num">142</div>
+        <div class="ppe-meta">Бүх ажилтанд</div>
+        <div class="ppe-bar"><div class="ppe-fill" style="width:98%"></div></div>
+        <div class="ppe-stat"><span>Ашиглалт</span><span>98%</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: COUNCIL ============ -->
+  <section class="page" data-page="council">
+    <div class="page-header">
+      <div>
+        <h1>ХАБЭА-н зөвлөл</h1>
+        <p class="page-subtitle">Ажил олгогч, ажилтны төлөөллийн хамтын байгууллага</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-calendar-plus"></i> Хурал товлох</button>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Зөвлөлийн гишүүд</h3>
+          <span class="tag tag-info">10 гишүүн</span>
+        </div>
+        <div class="member-list">
+          <div class="member-row">
+            <div class="avatar avatar-md">ДА</div>
+            <div class="member-body">
+              <div class="member-name">Д. Ариунаа</div>
+              <div class="member-role">Дарга · ХАБЭА-н мэргэжилтэн</div>
+            </div>
+            <span class="tag tag-info">Дарга</span>
+          </div>
+          <div class="member-row">
+            <div class="avatar avatar-md">БТ</div>
+            <div class="member-body">
+              <div class="member-name">Б. Туяа</div>
+              <div class="member-role">Нарийн бичгийн дарга</div>
+            </div>
+            <span class="tag tag-emerald">Ажилтан</span>
+          </div>
+          <div class="member-row">
+            <div class="avatar avatar-md">МБ</div>
+            <div class="member-body">
+              <div class="member-name">М. Баатар</div>
+              <div class="member-role">Цех №3 төлөөлөл</div>
+            </div>
+            <span class="tag tag-emerald">Ажилтан</span>
+          </div>
+          <div class="member-row">
+            <div class="avatar avatar-md">ОБ</div>
+            <div class="member-body">
+              <div class="member-name">О. Бат</div>
+              <div class="member-role">Цех №1 ахлагч</div>
+            </div>
+            <span class="tag tag-warn">Удирдлага</span>
+          </div>
+          <div class="member-row">
+            <div class="avatar avatar-md">ЦС</div>
+            <div class="member-body">
+              <div class="member-name">Ц. Сараа</div>
+              <div class="member-role">Захиргааны төлөөлөл</div>
+            </div>
+            <span class="tag tag-warn">Удирдлага</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Сүүлийн хурлууд</h3>
+        </div>
+        <ul class="meeting-list">
+          <li>
+            <div class="meet-date">5/15</div>
+            <div class="meet-body">
+              <div class="meet-title">Сарын ерөнхий хурал</div>
+              <div class="meet-meta">9 оролцсон · 5 шийдвэр · Тэмдэглэл бэлэн</div>
+            </div>
+            <button class="link-btn">Үзэх <i class="ti ti-external-link"></i></button>
+          </li>
+          <li>
+            <div class="meet-date">4/18</div>
+            <div class="meet-body">
+              <div class="meet-title">Эрсдэлийн үнэлгээ хэлэлцэх</div>
+              <div class="meet-meta">10 оролцсон · 8 шийдвэр</div>
+            </div>
+            <button class="link-btn">Үзэх <i class="ti ti-external-link"></i></button>
+          </li>
+          <li>
+            <div class="meet-date">3/20</div>
+            <div class="meet-body">
+              <div class="meet-title">Жилийн төлөвлөгөө</div>
+              <div class="meet-meta">10 оролцсон · 12 шийдвэр</div>
+            </div>
+            <button class="link-btn">Үзэх <i class="ti ti-external-link"></i></button>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: SUGGESTIONS ============ -->
+  <section class="page" data-page="suggestions">
+    <div class="page-header">
+      <div>
+        <h1>Сайжруулалтын санал</h1>
+        <p class="page-subtitle">Ажилтнуудаас ирсэн санаачлага</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-bulb"></i> Санал гаргах</button>
+      </div>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-item"><div class="stat-num">47</div><div class="stat-lbl">Энэ жил</div></div>
+      <div class="stat-item"><div class="stat-num emerald">23</div><div class="stat-lbl">Хэрэгжүүлсэн</div></div>
+      <div class="stat-item"><div class="stat-num warn">15</div><div class="stat-lbl">Хянагдаж буй</div></div>
+      <div class="stat-item"><div class="stat-num">9</div><div class="stat-lbl">Шинэ</div></div>
+    </div>
+
+    <div class="card">
+      <div class="suggest-grid">
+        <div class="suggest-card">
+          <div class="suggest-head">
+            <span class="tag tag-emerald">Хэрэгжүүлсэн</span>
+            <span class="suggest-votes"><i class="ti ti-thumb-up"></i> 24</span>
+          </div>
+          <h4>Цех №1-д агааржуулалт нэмэх</h4>
+          <p>Зуны халуунд цехийн агаар бүгчим болдог. Нэмэлт сэнс суурилуулбал...</p>
+          <div class="suggest-foot">
+            <div class="avatar avatar-sm">ЦС</div>
+            <span>Ц. Сараа · 2 сарын өмнө</span>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <div class="suggest-head">
+            <span class="tag tag-warn">Хянагдаж буй</span>
+            <span class="suggest-votes"><i class="ti ti-thumb-up"></i> 18</span>
+          </div>
+          <h4>Эргономик сандал шинэчлэх</h4>
+          <p>Оффисын сандал хуучирсан, нурууны өвчинд хүргэж байна...</p>
+          <div class="suggest-foot">
+            <div class="avatar avatar-sm">БТ</div>
+            <span>Б. Туяа · 3 долоо хоногийн өмнө</span>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <div class="suggest-head">
+            <span class="tag tag-info">Шинэ</span>
+            <span class="suggest-votes"><i class="ti ti-thumb-up"></i> 7</span>
+          </div>
+          <h4>Шатны гэрэлтүүлэг сайжруулах</h4>
+          <p>Шатанд хөдөлгөөн мэдрэх гэрэл суурилуулбал...</p>
+          <div class="suggest-foot">
+            <div class="avatar avatar-sm">ГН</div>
+            <span>Г. Намуун · өчигдөр</span>
+          </div>
+        </div>
+        <div class="suggest-card">
+          <div class="suggest-head">
+            <span class="tag tag-emerald">Хэрэгжүүлсэн</span>
+            <span class="suggest-votes"><i class="ti ti-thumb-up"></i> 31</span>
+          </div>
+          <h4>Гар утасны апп — эрсдэл мэдээлэх</h4>
+          <p>QR-аар уншуулж шууд мэдэгдэх боломж олгох...</p>
+          <div class="suggest-foot">
+            <div class="avatar avatar-sm">МБ</div>
+            <span>М. Баатар · 4 сарын өмнө</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: TEAMS INTEGRATION ============ -->
+  <section class="page" data-page="teams">
+    <div class="page-header">
+      <div>
+        <h1>Microsoft Teams интеграц</h1>
+        <p class="page-subtitle">Нэг чанал, бодит цагт мэдээлэл цуглуулна</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-secondary"><i class="ti ti-refresh"></i> Синхрончлох</button>
+        <button class="btn btn-primary"><i class="ti ti-settings"></i> Тохиргоо</button>
+      </div>
+    </div>
+
+    <!-- Connection status -->
+    <div class="card teams-status">
+      <div class="status-row">
+        <div class="status-ind ok"><i class="ti ti-check"></i></div>
+        <div class="status-body">
+          <div class="status-title">Холболт идэвхтэй</div>
+          <div class="status-meta">Microsoft Graph API · Сүүлд шалгасан: 2 минутын өмнө</div>
+        </div>
+        <div class="status-stats">
+          <div><strong>1,247</strong><span>Татсан мессеж</span></div>
+          <div><strong>284</strong><span>Боловсруулсан</span></div>
+          <div><strong>28</strong><span>Энэ сар</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data flow visualization -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Мэдээллийн урсгал</h3>
+        <span class="card-subtitle">Teams чанал → Backend → Database → KPI</span>
+      </div>
+      <div class="flow-diagram">
+        <div class="flow-node flow-teams">
+          <i class="ti ti-brand-teams"></i>
+          <div>Teams чанал</div>
+          <span>HABEA-Notifications</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-api">
+          <i class="ti ti-api"></i>
+          <div>Microsoft Graph</div>
+          <span>Webhook + polling</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-ai">
+          <i class="ti ti-brain"></i>
+          <div>AI ангилал</div>
+          <span>Хаштаг + AI</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-db">
+          <i class="ti ti-database"></i>
+          <div>PostgreSQL</div>
+          <span>Бүтэцлэгдсэн</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-kpi">
+          <i class="ti ti-chart-bar"></i>
+          <div>KPI самбар</div>
+          <span>Бодит цагт</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hashtag rules -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Идэвхтэй хаштагууд</h3>
+          <button class="link-btn"><i class="ti ti-plus"></i> Нэмэх</button>
+        </div>
+        <div class="tag-rule-list">
+          <div class="tag-rule">
+            <code>#аюул</code>
+            <div class="tr-info">Эрсдэл мэдээлэх</div>
+            <div class="tr-count">14 мессеж</div>
+          </div>
+          <div class="tag-rule">
+            <code>#осол</code>
+            <div class="tr-info">Осол гарсан</div>
+            <div class="tr-count">3 мессеж</div>
+          </div>
+          <div class="tag-rule">
+            <code>#санал</code>
+            <div class="tr-info">Сайжруулалтын санал</div>
+            <div class="tr-count">8 мессеж</div>
+          </div>
+          <div class="tag-rule">
+            <code>#сургалт-дууссан</code>
+            <div class="tr-info">Сургалт дуусгасан</div>
+            <div class="tr-count">12 мессеж</div>
+          </div>
+          <div class="tag-rule">
+            <code>#тоног-эвдэрсэн</code>
+            <div class="tr-info">Техникийн асуудал</div>
+            <div class="tr-count">5 мессеж</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Сүүлийн мессежүүд</h3>
+        </div>
+        <ul class="teams-msg-list">
+          <li>
+            <div class="avatar avatar-sm">БЭ</div>
+            <div class="msg-body">
+              <div class="msg-head"><strong>Б. Энхбат</strong><span>2 ц</span></div>
+              <div class="msg-text"><code>#аюул</code> Цех №2-д цахилгааны кабель ил гарсан байна. Зураг хавсаргалаа.</div>
+              <div class="msg-tags"><span class="tag tag-warn">Эрсдэл</span><span class="tag tag-info">Боловсруулсан</span></div>
+            </div>
+          </li>
+          <li>
+            <div class="avatar avatar-sm">МБ</div>
+            <div class="msg-body">
+              <div class="msg-head"><strong>М. Баатар</strong><span>4 ц</span></div>
+              <div class="msg-text"><code>#аюул</code> Кран нь чичирхийлэлтэй болсон. Шалгуулах хэрэгтэй.</div>
+              <div class="msg-tags"><span class="tag tag-warn">Эрсдэл</span><span class="tag tag-info">Боловсруулсан</span></div>
+            </div>
+          </li>
+          <li>
+            <div class="avatar avatar-sm">ЦС</div>
+            <div class="msg-body">
+              <div class="msg-head"><strong>Ц. Сараа</strong><span>5 ц</span></div>
+              <div class="msg-text"><code>#санал</code> Агааржуулалтыг сайжруулах хэрэгтэй гэж бодож байна.</div>
+              <div class="msg-tags"><span class="tag tag-info">Санал</span><span class="tag tag-info">Боловсруулсан</span></div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: CHATBOT ============ -->
+  <section class="page chat-page" data-page="chatbot">
+    <div class="page-header">
+      <div>
+        <h1>ХАБЭА чат бот</h1>
+        <p class="page-subtitle">Ажилтны туслах · AI-аар ангилах</p>
+      </div>
+    </div>
+
+    <div class="chat-shell">
+      <div class="chat-sidebar">
+        <button class="btn btn-primary btn-block"><i class="ti ti-plus"></i> Шинэ яриа</button>
+        <div class="chat-list">
+          <div class="chat-list-section">Сүүлийн</div>
+          <a class="chat-list-item active">
+            <i class="ti ti-message"></i>
+            <span>Аюул мэдээлэх</span>
+          </a>
+          <a class="chat-list-item">
+            <i class="ti ti-message"></i>
+            <span>Сургалтын мэдээлэл</span>
+          </a>
+          <a class="chat-list-item">
+            <i class="ti ti-message"></i>
+            <span>Эрүүл мэндийн үзлэг</span>
+          </a>
+          <a class="chat-list-item">
+            <i class="ti ti-message"></i>
+            <span>ХХХ захиалга</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="chat-main">
+        <div class="chat-messages" id="chatMessages">
+          <div class="bot-msg">
+            <div class="avatar avatar-sm bot-av"><i class="ti ti-robot"></i></div>
+            <div class="bubble">
+              Сайн байна уу, <strong>Д. Ариунаа</strong>. Юугаар туслах вэ?
+              <div class="quick-replies">
+                <button class="qr-btn" onclick="botReply('hazard')">🚨 Аюул мэдээлэх</button>
+                <button class="qr-btn" onclick="botReply('suggest')">💡 Санал гаргах</button>
+                <button class="qr-btn" onclick="botReply('training')">🎓 Сургалт</button>
+                <button class="qr-btn" onclick="botReply('health')">🩺 Эрүүл мэнд</button>
+                <button class="qr-btn" onclick="botReply('other')">… Бусад</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input">
+          <button class="icon-btn-sm"><i class="ti ti-paperclip"></i></button>
+          <button class="icon-btn-sm"><i class="ti ti-camera"></i></button>
+          <input type="text" placeholder="Мессеж бичих..." id="chatInput" onkeydown="if(event.key==='Enter') sendChat()">
+          <button class="icon-btn-sm"><i class="ti ti-microphone"></i></button>
+          <button class="btn btn-primary btn-icon" onclick="sendChat()"><i class="ti ti-send"></i></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: REPORTS ============ -->
+  <section class="page" data-page="reports">
+    <div class="page-header">
+      <div>
+        <h1>Тайлан</h1>
+        <p class="page-subtitle">Автомат болон гар тайлан</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary"><i class="ti ti-file-plus"></i> Шинэ тайлан</button>
+      </div>
+    </div>
+
+    <div class="report-grid">
+      <div class="report-card">
+        <div class="report-icon" style="background:#FEF3C7;color:#92400E"><i class="ti ti-calendar-month"></i></div>
+        <h4>Сар бүрийн ХАБЭА-н тайлан</h4>
+        <p>Сургалт, осол, эрсдэл, арга хэмжээ нэгтгэсэн ерөнхий тайлан</p>
+        <div class="report-foot">
+          <span>Автомат · Сарын 1-нд</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Татах</button>
+        </div>
+      </div>
+      <div class="report-card">
+        <div class="report-icon" style="background:#FEE2E2;color:#991B1B"><i class="ti ti-alert-octagon"></i></div>
+        <h4>Ослын мөрдөн шалгах акт</h4>
+        <p>Үйлдвэрлэлийн ослын дэлгэрэнгүй шалгалт, шалтгаан, шийдвэр</p>
+        <div class="report-foot">
+          <span>Шаардлагатай үед</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Загвар</button>
+        </div>
+      </div>
+      <div class="report-card">
+        <div class="report-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-grid-pattern"></i></div>
+        <h4>Эрсдэлийн үнэлгээ (HAZOP)</h4>
+        <p>Эрсдэлийн матриц, магадлал, ноцтой байдлын үнэлгээ</p>
+        <div class="report-foot">
+          <span>Улирал бүр</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Татах</button>
+        </div>
+      </div>
+      <div class="report-card">
+        <div class="report-icon" style="background:#DBEAFE;color:#1E40AF"><i class="ti ti-school"></i></div>
+        <h4>Сургалтын тайлан</h4>
+        <p>Сургалт, оролцогч, оноо, гэрчилгээ нэгтгэл</p>
+        <div class="report-foot">
+          <span>Автомат · Сар тутам</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Татах</button>
+        </div>
+      </div>
+      <div class="report-card">
+        <div class="report-icon" style="background:#E0E7FF;color:#3730A3"><i class="ti ti-clipboard-check"></i></div>
+        <h4>Газар дээрх шалгалт</h4>
+        <p>Зөрчил, гэрэл зураг, арга хэмжээ нэгтгэсэн тайлан</p>
+        <div class="report-foot">
+          <span>Шалгалт бүрд</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Татах</button>
+        </div>
+      </div>
+      <div class="report-card">
+        <div class="report-icon" style="background:#FCE7F3;color:#9D174D"><i class="ti ti-building-bank"></i></div>
+        <h4>Хөдөлмөрийн хяналтад зориулсан</h4>
+        <p>Улсын байцаагчид өгөх албан ёсны тайлан</p>
+        <div class="report-foot">
+          <span>Шаардлагатай үед</span>
+          <button class="link-btn"><i class="ti ti-download"></i> Татах</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: DATA FLOW ============ -->
+  <section class="page" data-page="dataflow">
+    <div class="page-header">
+      <div>
+        <h1>Мэдээллийн урсгалын архитектур</h1>
+        <p class="page-subtitle">Эх сурвалж → Боловсруулалт → KPI</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Эх сурвалжууд</h3>
+      </div>
+      <div class="source-grid">
+        <div class="src-card src-card-teams">
+          <i class="ti ti-brand-teams"></i>
+          <h4>Teams чанал</h4>
+          <p>Хаштаг, реакц, чөлөөт чат</p>
+          <div class="src-stat">14 / 28 эрсдэл</div>
+        </div>
+        <div class="src-card src-card-bot">
+          <i class="ti ti-message-chatbot"></i>
+          <h4>Вэб чат бот</h4>
+          <p>Бүтэцлэгдсэн форм</p>
+          <div class="src-stat">8 / 28 эрсдэл</div>
+        </div>
+        <div class="src-card src-card-web">
+          <i class="ti ti-world"></i>
+          <h4>Вэб форм</h4>
+          <p>Цахим бүртгэл</p>
+          <div class="src-stat">4 / 28 эрсдэл</div>
+        </div>
+        <div class="src-card src-card-report">
+          <i class="ti ti-file-text"></i>
+          <h4>Тайлан, баримт</h4>
+          <p>Word, Excel, PDF</p>
+          <div class="src-stat">Сар бүр</div>
+        </div>
+        <div class="src-card src-card-hr">
+          <i class="ti ti-building-skyscraper"></i>
+          <h4>HR/ERP систем</h4>
+          <p>1C, Time Boss</p>
+          <div class="src-stat">API синхрон</div>
+        </div>
+        <div class="src-card src-card-lms">
+          <i class="ti ti-school"></i>
+          <h4>Сургалтын систем</h4>
+          <p>LMS дотоод</p>
+          <div class="src-stat">Бодит цагт</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Боловсруулалтын давхарга</h3>
+      </div>
+      <div class="layer-list">
+        <div class="layer">
+          <div class="layer-num">1</div>
+          <div class="layer-body">
+            <h4>Цуглуулах · API gateway</h4>
+            <p>Microsoft Graph webhook, REST API endpoints, файл уншигч (OCR)</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">Node.js</span>
+              <span class="tag tag-info">Express</span>
+              <span class="tag tag-info">MS Graph SDK</span>
+            </div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-num">2</div>
+          <div class="layer-body">
+            <h4>Шалгах · Validation</h4>
+            <p>Заавал талбар, тоон утгын хязгаар, дубль илрүүлэх, outlier detection</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">Joi/Zod</span>
+              <span class="tag tag-info">Custom rules</span>
+            </div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-num">3</div>
+          <div class="layer-body">
+            <h4>Ангилах · AI боловсруулалт</h4>
+            <p>Хаштаг таних, AI ангилал, түлхүүр үг олох, нэр таних</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">OpenAI/Claude API</span>
+              <span class="tag tag-info">Regex</span>
+              <span class="tag tag-info">NLP</span>
+            </div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-num">4</div>
+          <div class="layer-body">
+            <h4>Хадгалах · Database</h4>
+            <p>PostgreSQL дотор бүтэцлэгдсэн өгөгдөл, цаг хугацааны архив</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">PostgreSQL</span>
+              <span class="tag tag-info">Redis cache</span>
+            </div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-num">5</div>
+          <div class="layer-body">
+            <h4>Тооцоолох · KPI engine</h4>
+            <p>5 ангиллын жинтэй оноо, түвшин тогтоох, хандлага тооцоолох</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">Scheduled jobs</span>
+              <span class="tag tag-info">Real-time triggers</span>
+            </div>
+          </div>
+        </div>
+        <div class="layer">
+          <div class="layer-num">6</div>
+          <div class="layer-body">
+            <h4>Харагдуулах · Frontend ба сэрэмжлүүлэг</h4>
+            <p>Самбар, тайлан, имэйл/Teams мэдэгдэл</p>
+            <div class="layer-tags">
+              <span class="tag tag-info">React</span>
+              <span class="tag tag-info">Chart.js</span>
+              <span class="tag tag-info">WebSocket</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PAGE: SETTINGS ============ -->
+  <section class="page" data-page="settings">
+    <div class="page-header">
+      <div>
+        <h1>Тохиргоо</h1>
+        <p class="page-subtitle">Систем, эрх, мэдэгдэл, интеграц</p>
+      </div>
+    </div>
+
+    <div class="settings-layout">
+      <div class="settings-nav">
+        <a class="set-nav active"><i class="ti ti-building"></i> Байгууллага</a>
+        <a class="set-nav"><i class="ti ti-users"></i> Эрх, дүр</a>
+        <a class="set-nav"><i class="ti ti-bell"></i> Мэдэгдэл</a>
+        <a class="set-nav"><i class="ti ti-puzzle"></i> Интеграц</a>
+        <a class="set-nav"><i class="ti ti-shield-lock"></i> Аюулгүй байдал</a>
+        <a class="set-nav"><i class="ti ti-language"></i> Хэл, бүс</a>
+        <a class="set-nav"><i class="ti ti-database"></i> Backup</a>
+      </div>
+
+      <div class="settings-body">
+        <div class="card">
+          <h3>Байгууллагын мэдээлэл</h3>
+          <div class="form">
+            <div class="form-group">
+              <label>Байгууллагын нэр</label>
+              <input type="text" value="Үндэсний Үйлдвэрлэл ХХК">
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label>Регистрийн дугаар</label>
+                <input type="text" value="6021234">
+              </div>
+              <div class="form-group flex-grow">
+                <label>Үйл ажиллагааны салбар</label>
+                <select><option>Хөнгөн үйлдвэр</option><option>Уул уурхай</option><option>Барилга</option></select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-grow">
+                <label>Ажилтны тоо</label>
+                <input type="number" value="142">
+              </div>
+              <div class="form-group flex-grow">
+                <label>Эрсдэлийн ангилал</label>
+                <select><option>Дунд</option><option>Бага</option><option>Өндөр</option></select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary">Цуцлах</button>
+              <button class="btn btn-primary">Хадгалах</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>KPI үнэлгээний жин</h3>
+          <p class="card-subtitle">5 ангиллын жинг тохируулна. Нийт 100% байх ёстой.</p>
+          <div class="weight-list">
+            <div class="weight-row">
+              <div class="weight-name"><i class="ti ti-school" style="color:var(--amber)"></i> Сургалт</div>
+              <input type="range" min="0" max="50" value="20">
+              <div class="weight-val">20%</div>
+            </div>
+            <div class="weight-row">
+              <div class="weight-name"><i class="ti ti-hand-stop" style="color:var(--emerald)"></i> Идэвхтэй оролцоо</div>
+              <input type="range" min="0" max="50" value="30">
+              <div class="weight-val">30%</div>
+            </div>
+            <div class="weight-row">
+              <div class="weight-name"><i class="ti ti-helmet" style="color:var(--blue)"></i> Дүрэм сахилт</div>
+              <input type="range" min="0" max="50" value="25">
+              <div class="weight-val">25%</div>
+            </div>
+            <div class="weight-row">
+              <div class="weight-name"><i class="ti ti-stethoscope" style="color:var(--blue)"></i> Эрүүл мэнд, осол</div>
+              <input type="range" min="0" max="50" value="15">
+              <div class="weight-val">15%</div>
+            </div>
+            <div class="weight-row">
+              <div class="weight-name"><i class="ti ti-star" style="color:var(--coral)"></i> Манлайлал</div>
+              <input type="range" min="0" max="50" value="10">
+              <div class="weight-val">10%</div>
+            </div>
+            <div class="weight-total">Нийт: <strong>100%</strong> ✓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="vendor/chart.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
