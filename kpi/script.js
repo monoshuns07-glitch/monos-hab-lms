@@ -1807,6 +1807,12 @@ async function init() {
   applyRole();
   renderAll();
 
+  // URL-аас тодорхой хэсэг нээх (жишээ: /kpi/?page=hazards)
+  try {
+    var qp = new URLSearchParams(location.search).get('page');
+    if (qp) switchPage(qp);
+  } catch (e) {}
+
   document.addEventListener('click', handleClick, true);
   document.addEventListener('input', handleInput);
 
