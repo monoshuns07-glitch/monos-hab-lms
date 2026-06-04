@@ -231,6 +231,11 @@ async function buildEmployeesFromRealData() {
       progSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
     } catch (e) {}
 
+    // Эрсдэл/санал тоо (KPI системд тухайн ажилтны оруулсан) — оролцоонд нэмнэ
+    var reportByUid = {};
+    (DB.hazards || []).forEach(function (h) { if (h.reporterUid) reportByUid[h.reporterUid] = (reportByUid[h.reporterUid] || 0) + 1; });
+    (DB.suggestions || []).forEach(function (s) { if (s.authorUid) reportByUid[s.authorUid] = (reportByUid[s.authorUid] || 0) + 1; });
+
     var out = [];
     usersSnap.forEach(function (d) {
       var u = d.data() || {}; var uid = u.uid || d.id;
@@ -245,7 +250,8 @@ async function buildEmployeesFromRealData() {
       else if (examAvg != null) training = Math.round(examAvg);
       else if (progAvg != null) training = Math.round(progAvg);
       var passed = exams.filter(function (e) { return e.passed; }).length;
-      var participation = clamp(Math.round(passed * 25 + progs.length * 10), 0, 100);
+      var reports = reportByUid[uid] || 0;
+      var participation = clamp(Math.round(passed * 20 + progs.length * 8 + reports * 12), 0, 100);
       out.push({
         id: uid, uid: uid, initials: makeInitials(name), name: name,
         role: u.position || 'Ажилтан', dept: u.department || 'Тодорхойгүй', email: u.email || '',
@@ -989,6 +995,7 @@ function createHazard(data) {
     id: nextHazardId(), title: data.title, type: data.type || 'Бусад',
     location: data.location || AREAS[0], severity: data.severity || 3,
     status: 'open', source: data.source || 'web', reporter: USER.name,
+    reporterUid: (SESSION && SESSION.uid) || null,
     desc: data.desc || '', createdAt: new Date().toISOString()
   };
   DB.hazards.unshift(h);
@@ -1079,6 +1086,7 @@ function actionAddSuggestion() {
       var s = {
         id: nextId('SG', DB.suggestions), title: v.title, body: v.body, dept: v.dept,
         status: 'new', votes: 0, author: USER.name, authorInitials: USER.initials,
+        authorUid: (SESSION && SESSION.uid) || null,
         voted: false, createdAt: new Date().toISOString()
       };
       DB.suggestions.unshift(s);
