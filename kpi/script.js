@@ -216,33 +216,93 @@ function seedDB() {
   };
 }
 
-function loadDB() {
-  // Firestore-оос ачаална; интернэт/Firebase боломжгүй бол локал cache руу шилжинэ.
-  return new Promise(function (resolve) {
-    function useLocalOrSeed() {
-      var fresh = false;
-      try {
-        var raw = localStorage.getItem(LSKEY);
-        if (raw) { DB = JSON.parse(raw); if (!DB || !DB.employees || !DB.settings) { DB = seedDB(); fresh = true; } }
-        else { DB = seedDB(); fresh = true; }
-      } catch (e) { DB = seedDB(); fresh = true; }
-      resolve(fresh);
+/* ===== Жинхэнэ ажилчид + сургалт/шалгалтаас KPI автоматаар бодох ===== */
+async function buildEmployeesFromRealData() {
+  if (!fbReady) return null;
+  try {
+    var usersSnap = await fdb.collection('users').get();
+    var examByUser = {}, progByUser = {};
+    try {
+      var examSnap = await fdb.collection('exam_results').get();
+      examSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (examByUser[x.userId] = examByUser[x.userId] || []).push(x); });
+    } catch (e) {}
+    try {
+      var progSnap = await fdb.collection('training_progress').get();
+      progSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
+    } catch (e) {}
+
+    var out = [];
+    usersSnap.forEach(function (d) {
+      var u = d.data() || {}; var uid = u.uid || d.id;
+      if (u.role === 'admin' && !(u.firstName || u.lastName)) return; // нэргүй админ системийн бүртгэл алгасна
+      var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
+      var name = (ln + (u.firstName || '')).trim() || (u.email || '').split('@')[0] || 'Ажилтан';
+      var exams = examByUser[uid] || [], progs = progByUser[uid] || [];
+      var examAvg = exams.length ? avg(exams.map(function (e) { return num(e.score); })) : null;
+      var progAvg = progs.length ? avg(progs.map(function (p) { return num(p.watchProgress); })) : null;
+      var training = 0;
+      if (examAvg != null && progAvg != null) training = Math.round(examAvg * 0.7 + progAvg * 0.3);
+      else if (examAvg != null) training = Math.round(examAvg);
+      else if (progAvg != null) training = Math.round(progAvg);
+      var passed = exams.filter(function (e) { return e.passed; }).length;
+      var participation = clamp(Math.round(passed * 25 + progs.length * 10), 0, 100);
+      out.push({
+        id: uid, uid: uid, initials: makeInitials(name), name: name,
+        role: u.position || 'Ажилтан', dept: u.department || 'Тодорхойгүй', email: u.email || '',
+        training: training, participation: participation,
+        discipline: 100, health: 75, leadership: 60, // суурь утга — админ засна; бодит дата ирэхэд автоматжина
+        onLeave: u.isActive === false
+      });
+    });
+    return out;
+  } catch (e) { return null; }
+}
+
+// Жинхэнэ датаг DB.employees руу нэгтгэнэ: training/participation автомат, гар засвар (health/sahilga)-ыг хадгална
+async function syncEmployeesWithRealData() {
+  var real = await buildEmployeesFromRealData();
+  if (!real || !real.length) return false;
+  var prevByUid = {};
+  (DB.employees || []).forEach(function (e) { if (e.uid) prevByUid[e.uid] = e; });
+  DB.employees = real.map(function (r) {
+    var prev = prevByUid[r.uid];
+    if (prev) {
+      return Object.assign({}, prev, {
+        name: r.name, dept: r.dept, role: r.role, email: r.email, initials: r.initials,
+        training: r.training, participation: r.participation, onLeave: r.onLeave
+      });
     }
-    if (!fbReady) { useLocalOrSeed(); return; }
-    KPI_DOC().get().then(function (snap) {
-      if (snap.exists && snap.data() && snap.data().employees && snap.data().settings) {
-        DB = snap.data();
-        try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
-        resolve(false);
-      } else {
-        // Cloud хоосон — жишээ өгөгдөл үүсгэнэ (зөвхөн админ cloud руу бичнэ)
-        DB = seedDB();
-        try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
-        if (isAdmin()) { KPI_DOC().set(DB).catch(function () {}); }
-        resolve(true);
-      }
-    }).catch(function () { useLocalOrSeed(); });
+    return r;
   });
+  return true;
+}
+
+async function loadDB() {
+  var fresh = false;
+  if (fbReady) {
+    try {
+      var snap = await KPI_DOC().get();
+      if (snap.exists && snap.data() && snap.data().settings) {
+        DB = snap.data();
+      } else {
+        DB = seedDB(); fresh = true;
+        if (isAdmin()) { try { await KPI_DOC().set(DB); } catch (e) {} }
+      }
+    } catch (e) {
+      try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
+      if (!DB || !DB.settings) { DB = seedDB(); }
+    }
+    // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
+    try {
+      var synced = await syncEmployeesWithRealData();
+      if (synced && isAdmin()) { try { await KPI_DOC().set(DB); } catch (e) {} } // жинхэнэ жагсаалтыг хадгална
+    } catch (e) {}
+  } else {
+    try { var raw2 = localStorage.getItem(LSKEY); if (raw2) { DB = JSON.parse(raw2); if (!DB || !DB.settings) { DB = seedDB(); fresh = true; } } else { DB = seedDB(); fresh = true; } }
+    catch (e) { DB = seedDB(); fresh = true; }
+  }
+  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+  return fresh;
 }
 var _saveTimer = null;
 function saveDB() {
