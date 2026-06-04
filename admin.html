@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- ═══════════ PWA ═══════════ -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Монос ХАБЭА">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<meta name="msapplication-TileColor" content="#E30613">
+<meta name="msapplication-TileImage" content="/icons/icon-144.png">
+<script type="module" src="/pwa-init.js"></script>
+
 <title>МОНОС ХҮНС ХК — ХАБ-ын алба Админ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -662,6 +678,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <button class="tab-btn" data-tab="videos">🎬 Видео</button>
     <button class="tab-btn" data-tab="lms">📖 Сургалт</button>
     <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
+    <a class="tab-btn" href="/kpi/" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">🛡️ KPI / ХАБЭА</a>
   </div>
 </div>
 
@@ -1746,7 +1763,7 @@ const secondaryAuth = secondaryApp.auth();
 let allUsers=[],filteredUsers=[];
 async function loadUsers(){
   try{
-    const res=await fetch('/.netlify/functions/list-users');
+    const res=await fetch('/api/list-users');
     const data=await res.json();
     if(data.error) throw new Error(data.error);
     allUsers=data.users||[];
@@ -1829,7 +1846,7 @@ window.deleteUser = async id=>{
   if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёроос ХОЁУЛАНГ устгана.')) return;
   try{
     // 1. Auth устгах (Netlify function-оор)
-    const res=await fetch('/.netlify/functions/delete-user',{
+    const res=await fetch('/api/delete-user',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({uid:id})
@@ -1870,7 +1887,7 @@ document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
   const btn=document.getElementById('deleteAllAuthBtn');
   btn.disabled=true; btn.innerHTML='<span class="spinner-sm"></span>Устгаж байна...';
   try{
-    const res=await fetch('/.netlify/functions/delete-all-users',{method:'POST'});
+    const res=await fetch('/api/delete-all-users',{method:'POST'});
     let data;
     try{ data=await res.json(); }
     catch(jsonErr){ throw new Error('HTTP '+res.status+' — JSON биш. Deploy дуусаагүй байж магадгүй.'); }
@@ -2226,7 +2243,7 @@ document.getElementById('bulkUserConfirm').addEventListener('click', async()=>{
     const pct=Math.round((i/payload.length)*100);
     statusEl.innerHTML=`<div style="background:rgba(0,0,0,.08);border-radius:6px;height:8px;overflow:hidden;margin-bottom:6px"><div style="height:100%;border-radius:6px;background:var(--green);width:${pct}%;transition:width .3s"></div></div><div style="font-size:12px;color:var(--muted)">Batch ${Math.floor(i/BATCH)+1}/${Math.ceil(payload.length/BATCH)} (${batch.length} хэрэглэгч)...</div>`;
     try{
-      const res=await fetch('/.netlify/functions/bulk-create-users',{
+      const res=await fetch('/api/bulk-create-users',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({users:batch})
@@ -3449,7 +3466,7 @@ async function loadDashboard(){
   grid.innerHTML = '';
   tbl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Ачаалж байна...</p></div>';
   try{
-    const res = await fetch('/.netlify/functions/get-dashboard-data');
+    const res = await fetch('/api/get-dashboard-data');
     const data = await res.json();
     if(data.error) throw new Error(data.error);
     _dashData = data;
