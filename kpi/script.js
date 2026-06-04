@@ -1864,6 +1864,8 @@ function applyRole() {
     var pe = document.querySelector('.page[data-page="' + pg + '"]');
     if (pe) pe.setAttribute('data-locked', '1');
   });
+  // Зөвхөн админд зориулсан холбоосуудыг (Контент удирдлага г.м) ажилтанд нуух
+  $$('.nav-item[data-admin]').forEach(function (el) { el.style.display = 'none'; });
   var active = document.querySelector('.nav-item.active');
   if (active && ADMIN_ONLY_PAGES.indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
