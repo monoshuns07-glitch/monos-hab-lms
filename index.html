@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- ═══════════ PWA ═══════════ -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Монос ХАБЭА">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<meta name="msapplication-TileColor" content="#E30613">
+<meta name="msapplication-TileImage" content="/icons/icon-144.png">
+<script type="module" src="/pwa-init.js"></script>
+
 <title>МОНОС ХҮНС ХК — ХАБЭА-н алба</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -924,7 +940,7 @@ async function doLogin(){
     const cred = await auth.signInWithEmailAndPassword(email.toLowerCase(), password);
     // Verify user is registered in Firestore users collection
     try{
-      const r = await fetch('/.netlify/functions/get-user-profile?uid='+encodeURIComponent(cred.user.uid)+'&email='+encodeURIComponent(email.toLowerCase()));
+      const r = await fetch('/api/get-user-profile?uid='+encodeURIComponent(cred.user.uid)+'&email='+encodeURIComponent(email.toLowerCase()));
       const result = await r.json();
       if(!result.exists){
         await auth.signOut();
@@ -964,7 +980,7 @@ async function showMain(user){
   if (flash) flash.classList.add('active');
 
   // Determine destination, then navigate after the flash completes
-  let destination = 'employee.html';
+  let destination = '/kpi/';  // нэвтэрмэгц НЭГДСЭН ХАБЭА/KPI систем рүү (сургалт бол түүний дотор хэсэг)
   try{
     const snap=await db.collection('users').doc(user.uid).get();
     if(!snap.exists){
@@ -974,9 +990,6 @@ async function showMain(user){
         createdAt:firebase.firestore.FieldValue.serverTimestamp(),
         totalSiteTime:0
       });
-    } else {
-      const role=snap.data().role||'employee';
-      destination = (role==='admin' ? 'admin.html' : 'employee.html');
     }
   } catch(e){ /* fall through */ }
 
