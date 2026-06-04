@@ -1836,7 +1836,7 @@ function establishSession() {
       if (settled) return; settled = true;
       try { unsub(); } catch (e) {}
       if (fbUser) { proceed(fbUser.uid, fbUser.email || u.email); }
-      else { localStorage.removeItem('monos_user'); location.replace('/index.html'); } // сесси дууссан
+      else { proceed(u.uid, u.email); } // auth удаан/хуваалцаагүй ч monos_user-т итгэж үргэлжлүүлнэ (давталтаас сэргийлнэ)
     });
     // Найдваргүй тохиолдолд 5 сек дараа үргэлжлүүлнэ
     setTimeout(function () { if (!settled) { settled = true; proceed(u.uid, u.email); } }, 5000);
