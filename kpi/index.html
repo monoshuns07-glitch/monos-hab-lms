@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="mn">
 <head>
 <meta charset="UTF-8">
@@ -7,6 +7,24 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
 <link rel="stylesheet" href="style.css">
+<style>
+  /* Сургалтын шатлалт мод цэс */
+  .nav-tree { display: block; }
+  .nav-tree > summary { list-style: none; cursor: pointer; user-select: none; }
+  .nav-tree > summary::-webkit-details-marker { display: none; }
+  .nav-tree > summary::marker { content: ""; }
+  .nav-tree-head .tree-arrow { margin-left: auto; font-size: 15px; transition: transform .15s ease; opacity: .6; }
+  .nav-tree[open] > summary .tree-arrow { transform: rotate(90deg); }
+  .nav-tree-body { padding-left: 16px; border-left: 1px solid rgba(0,0,0,.07); margin-left: 14px; }
+  .nav-item.leaf { font-size: 12.5px; padding-top: 7px; padding-bottom: 7px; }
+  .nav-item.leaf span { white-space: normal; line-height: 1.3; }
+  .nav-item.leaf.active { background: rgba(16,142,89,.12); color: #0e8e59; font-weight: 600; border-radius: 8px; }
+  .nav-tree-head.sub span { font-size: 13px; }
+  /* Гарах товч */
+  .kpi-logout-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 10px 14px; background: #fff; color: #dc2626; border: 1px solid rgba(220,38,38,.25); border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .kpi-logout-btn:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .kpi-logout-btn i { font-size: 16px; }
+</style>
 </head>
 <body>
 
@@ -25,9 +43,39 @@
   <nav class="nav">
     <div class="nav-section">
       <div class="nav-section-title">Монос систем</div>
-      <a class="nav-item" href="/employee.html"><i class="ti ti-school"></i><span>Сургалт</span></a>
+      <details class="nav-tree" open>
+        <summary class="nav-item nav-tree-head"><i class="ti ti-school"></i><span>Сургалт</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
+        <div class="nav-tree-body">
+          <details class="nav-tree">
+            <summary class="nav-item nav-tree-head sub"><i class="ti ti-building-skyscraper"></i><span>Гадны сургалт</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
+            <div class="nav-tree-body">
+              <a class="nav-item leaf" data-cat="Нийт ажилтаны сургалт"><span>Нийт ажилтаны сургалт</span></a>
+              <a class="nav-item leaf" data-cat="Удирдах ажилтны сургалт"><span>Удирдах ажилтны сургалт</span></a>
+              <a class="nav-item leaf" data-cat="Химийн бодисын сургалт"><span>Химийн бодисын сургалт</span></a>
+              <a class="nav-item leaf" data-cat="Анхны тусламжийн сургалт"><span>Анхны тусламжийн сургалт</span></a>
+              <a class="nav-item leaf" data-cat="Сэрээт ачигчийн аюулгүй ажиллагааны сургалт"><span>Сэрээт ачигчийн аюулгүй ажиллагааны сургалт</span></a>
+              <a class="nav-item leaf" data-cat="Өндөрт ажиллах аюулгүй ажиллагааны сургалт"><span>Өндөрт ажиллах аюулгүй ажиллагааны сургалт</span></a>
+            </div>
+          </details>
+          <details class="nav-tree">
+            <summary class="nav-item nav-tree-head sub"><i class="ti ti-home"></i><span>Дотоод сургалт</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
+            <div class="nav-tree-body">
+              <a class="nav-item leaf" data-cat="Урьдчилсан зааварчилгаа"><span>Урьдчилсан зааварчилгаа</span></a>
+              <a class="nav-item leaf" data-cat="Анхан шатны зааварчилгаа"><span>Анхан шатны зааварчилгаа</span></a>
+              <details class="nav-tree">
+                <summary class="nav-item nav-tree-head sub"><i class="ti ti-repeat"></i><span>Давтан зааварчилгаа</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
+                <div class="nav-tree-body">
+                  <a class="nav-item leaf" data-cat="Ээлжит давтан зааварчилгаа"><span>Ээлжит давтан зааварчилгаа</span></a>
+                  <a class="nav-item leaf" data-cat="Ээлжит бус давтан зааварчилгаа"><span>Ээлжит бус давтан зааварчилгаа</span></a>
+                  <a class="nav-item leaf" data-cat="Өдөр дутмын зааварчилгаа"><span>Өдөр дутмын зааварчилгаа</span></a>
+                </div>
+              </details>
+              <a class="nav-item leaf" href="/my-results.html"><i class="ti ti-chart-line"></i><span>Дотоод сургалтын дүн</span></a>
+            </div>
+          </details>
+        </div>
+      </details>
       <a class="nav-item" href="/nohon-tulbur.html"><i class="ti ti-shield-heart"></i><span>Даатгал</span></a>
-      <a class="nav-item" href="/my-results.html"><i class="ti ti-chart-line"></i><span>Миний дүн</span></a>
       <a class="nav-item" href="/admin.html" data-admin="1"><i class="ti ti-settings-cog"></i><span>Контент удирдлага</span></a>
     </div>
 
@@ -40,17 +88,17 @@
 
     <div class="nav-section">
       <div class="nav-section-title">Мэдээлэл цуглуулалт</div>
-      <a class="nav-item" data-page="hazards"><i class="ti ti-alert-triangle"></i><span>Эрсдэл, аюул</span><span class="nav-badge nav-badge-warn">28</span></a>
+      <a class="nav-item" data-page="reportflow"><i class="ti ti-flag-2"></i><span>Аюул/Near-miss мэдээлэл</span><span class="nav-dot"></span></a>
+      <a class="nav-item" data-page="hazards"><i class="ti ti-alert-triangle"></i><span>Эрсдэлийн бүртгэл</span><span class="nav-badge nav-badge-warn">28</span></a>
       <a class="nav-item" data-page="incidents"><i class="ti ti-first-aid-kit"></i><span>Осол, гэмтэл</span></a>
-      <a class="nav-item" data-page="inspections"><i class="ti ti-clipboard-check"></i><span>Шалгалт</span></a>
+      <a class="nav-item" data-page="inspections"><i class="ti ti-clipboard-check"></i><span>Үзлэг, шалгалт</span></a>
       <a class="nav-item" data-page="suggestions"><i class="ti ti-bulb"></i><span>Сайжруулалтын санал</span></a>
     </div>
 
     <div class="nav-section">
       <div class="nav-section-title">Үйл ажиллагаа</div>
-      <a class="nav-item" data-page="training"><i class="ti ti-school"></i><span>Сургалт</span></a>
       <a class="nav-item" data-page="health"><i class="ti ti-stethoscope"></i><span>Эрүүл мэндийн үзлэг</span></a>
-      <a class="nav-item" data-page="ppe"><i class="ti ti-helmet"></i><span>ХХХ хяналт</span></a>
+      <a class="nav-item" data-page="ppe"><i class="ti ti-helmet"></i><span>ХХХ ба анхны тусламж</span></a>
       <a class="nav-item" data-page="council"><i class="ti ti-users-group"></i><span>ХАБЭА-н зөвлөл</span></a>
     </div>
 
@@ -73,6 +121,7 @@
       </div>
       <i class="ti ti-chevron-up user-menu"></i>
     </div>
+    <button class="kpi-logout-btn" id="kpiLogoutBtn"><i class="ti ti-logout"></i><span>Гарах</span></button>
   </div>
 </aside>
 
@@ -384,11 +433,11 @@
           <tr>
             <th style="width:30px"><input type="checkbox"></th>
             <th>Ажилтан</th>
-            <th>Хэлтэс</th>
-            <th>Сургалт</th>
-            <th>Оролцоо</th>
-            <th>Дүрэм</th>
-            <th>Эрүүл мэнд</th>
+            <th>Алба</th>
+            <th>Видео %</th>
+            <th>Шалгалт</th>
+            <th>Ахиц</th>
+            <th>Бонус</th>
             <th>Нийт оноо</th>
             <th></th>
           </tr>
@@ -558,6 +607,9 @@
       </div>
     </div>
   </section>
+
+  <!-- ============ PAGE: REPORTFLOW (Аюул/Near-miss → баталгаажуулалт → бонус) ============ -->
+  <section class="page" data-page="reportflow"></section>
 
   <!-- ============ PAGE: HAZARDS ============ -->
   <section class="page" data-page="hazards">
@@ -1817,12 +1869,31 @@
     </div>
   </section>
 
+  <section class="page" data-page="trn-cat">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title" data-cat-title>Сургалт</h1>
+        <p class="page-desc" data-cat-desc>Энэ ангиллын сургалтын мэдээлэл</p>
+      </div>
+    </div>
+    <div class="card" style="padding:28px;margin-top:18px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <i class="ti ti-school" style="font-size:28px;color:#0e8e59"></i>
+        <h2 style="margin:0;font-size:18px" data-cat-title2>Сургалт</h2>
+      </div>
+      <p style="color:#64748b;line-height:1.6">Энэ ангиллын сургалтууд, хамрагдсан ажилчид, дүн энд харагдана. Бодит сургалтын мэдээллийг холбох ажил үргэлжилж байна.</p>
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(16,142,89,.06);border-radius:10px;color:#0e8e59;font-size:13px">
+        <i class="ti ti-info-circle"></i> Сургалт нэмэх, ажилтан хамруулах хэсэг удахгүй идэвхжинэ.
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js"></script>
+<script src="script.js?v=8"></script>
 </body>
 </html>
