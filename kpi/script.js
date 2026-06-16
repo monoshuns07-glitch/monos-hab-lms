@@ -31,19 +31,34 @@ try {
 /* Firestore байршил: KPI-ийн бүх өгөгдөл нэг баримтад (kpi_state/main) */
 var KPI_DOC = function () { return fdb.collection('kpi_state').doc('main'); };
 
+/* DEMO горим: локалаар (file://) эсвэл ?demo=1-ээр нээвэл Firebase-гүй, жишээ датагаар бүрэн ажиллана.
+   Netlify дээр (https) бол жинхэнэ Firebase горим хэвээр. */
+var DEMO = false;
+try { DEMO = (location.protocol === 'file:') || (String(location.search).indexOf('demo=1') > -1); } catch (e) {}
+
 /* Нэвтэрсэн хэрэглэгчийн сешн: { role:'admin' } эсвэл { role:'employee', empId, email, uid } */
 var SESSION = null;
 function isAdmin() { return SESSION && SESSION.role === 'admin'; }
+function isDeptHead() { return SESSION && SESSION.role === 'depthead'; }
 function isEmp() { return SESSION && SESSION.role === 'employee'; }
 function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(function (e) { return e.id === SESSION.empId; })[0] : null; }
 
-/* Энгийн ажилтанд нуух хуудсууд (Илүү нээлттэй горим — өөрийн KPI/Шалгалт/ХХХ харна) */
+/* Нэвтрэх эрхийн 3 түвшин:
+   - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
+   - depthead (Албаны дарга): зөвхөн өөрийн алба
+   - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
 var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings'];
+var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow'];
+function blockedPages() {
+  if (isAdmin()) return [];
+  if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
+  return ADMIN_ONLY_PAGES;
+}
 function rand4() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
 var pageLabels = {
   dashboard: 'Хяналтын самбар', employees: 'Ажилтнууд', kpi: 'KPI үнэлгээ',
-  hazards: 'Эрсдэл, аюул', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
+  reportflow: 'Аюул/Near-miss мэдээлэл', hazards: 'Эрсдэлийн бүртгэл', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', council: 'ХАБЭА-н зөвлөл', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо'
@@ -147,6 +162,13 @@ function seedEmployees() {
       onLeave: Math.random() < 0.1
     });
   }
+  /* Шинэ KPI загварын суурь үзүүлэлтүүд (видео үзэлт %, шалгалтын дүн, ахиц, эхний удаа тэнцсэн) */
+  list.forEach(function (e) {
+    e.video = clamp(Math.round(gauss(e.training, 6)), 30, 100);
+    e.examScore = clamp(Math.round(gauss(e.training - 2, 7)), 30, 100);
+    e.examPrev = clamp(e.examScore - Math.round(gauss(6, 9)), 25, 100);
+    e.firstTry = Math.random() < (e.examScore / 120) ? 1 : 0;
+  });
   return list;
 }
 
@@ -199,20 +221,81 @@ function seedDB() {
     };
   });
 
+  /* Аюул / осолд дөхсөн (near-miss) мэдээлэл — баталгаажуулалттай, бонус оноо төрүүлдэг эх үүсвэр */
+  var rp = [
+    // [type, risk, status, desc, location, dept, reporterId, reporterName, hoursAgo]
+    ['near_miss', 'high', 'verified', 'Краны тросс элэгдэж эхэлсэн — ачаа унаж болзошгүй', 'Цех №3', 'Цех №3', 'EMP-004', 'О. Бат', 30],
+    ['hazard', 'mid', 'verified', 'Шатны хашлага сул, ганхаж байна', 'Захиргааны байр', 'Захиргаа', 'EMP-007', 'Г. Намуун', 60],
+    ['near_miss', 'mid', 'reported', 'Шалан дээр тос асгарсан, гулгаж болзошгүй', 'Цех №1', 'Цех №1', 'EMP-002', 'Б. Туяа', 5],
+    ['hazard', 'low', 'verified', 'Агуулахын гэрэлтүүлэг бүдэг', 'Агуулах', 'Тээвэр', 'EMP-009', 'Э. Төгөлдөр', 120],
+    ['near_miss', 'high', 'verified', 'Цахилгааны самбар ил, оч гарсан', 'Цех №2', 'Цех №2', 'EMP-006', 'Б. Энхбат', 10],
+    ['near_miss', 'low', 'reported', 'Гарцад хайрцаг тавьсан, замыг хааж байна', 'Агуулах', 'Цех №1', 'EMP-002', 'Б. Туяа', 2],
+    ['near_miss', 'mid', 'rejected', 'Давхардсан мэдээлэл', 'Цех №2', 'Цех №2', 'EMP-006', 'Б. Энхбат', 200]
+  ];
+  var reports = rp.map(function (r, i) {
+    return {
+      id: 'RP-' + pad(i + 1), type: r[0], risk_level: r[1], status: r[2], desc: r[3],
+      location: r[4], dept: r[5], reporterId: r[6], reporterName: r[7], reporterUid: '',
+      photo: '', verifiedBy: (r[2] === 'verified' ? 'Д. Ариунаа' : ''),
+      createdAt: hoursAgoISO(r[8]), verifiedAt: (r[2] === 'verified' ? hoursAgoISO(r[8] - 4) : '')
+    };
+  });
+
+  /* Анхны тусламжийн хайрцгийн шалгалт (эрүүл ахуйч, алба бүрээр) */
+  var fa = [
+    // [dept, complete, missingItems[], hoursAgo]
+    ['Цех №1', true, [], 240], ['Цех №2', false, ['Боолт', 'Антисептик'], 72],
+    ['Цех №3', true, [], 480], ['Захиргаа', true, [], 360], ['Тээвэр', false, ['Гэмтлийн тэвш'], 24]
+  ];
+  var FA_TOTAL = 12;
+  var firstAidChecks = fa.map(function (c, i) {
+    return {
+      id: 'FA-' + pad(i + 1), dept: c[0], totalItems: FA_TOTAL, complete: c[1],
+      missing: c[2], checkedBy: 'Эрүүл ахуйч', restockedAt: (c[1] ? hoursAgoISO(c[3]) : ''),
+      createdAt: hoursAgoISO(c[3])
+    };
+  });
+
+  /* PPE мөрдөлтийн ажиглалт (ХАБ ажилтан) — зөрчлийн тоо биш, мөрдөлтийн % */
+  var pp = [
+    // [dept, total, compliant, hoursAgo]
+    ['Цех №1', 50, 47, 96], ['Цех №2', 40, 33, 48], ['Цех №3', 45, 42, 120],
+    ['Захиргаа', 20, 20, 168], ['Тээвэр', 30, 26, 36]
+  ];
+  var ppeObservations = pp.map(function (o, i) {
+    return {
+      id: 'PP-' + pad(i + 1), dept: o[0], total: o[1], compliant: o[2],
+      observedBy: 'ХАБ ажилтан', photo: '', createdAt: hoursAgoISO(o[3])
+    };
+  });
+
   return {
     settings: {
       org: { name: 'Үндэсний Үйлдвэрлэл ХХК', regNo: '6021234', sector: 'Хөнгөн үйлдвэр', headcount: 142, riskClass: 'Дунд' },
-      weights: { training: 20, participation: 30, discipline: 25, health: 15, leadership: 10 }
+      weights: { training: 20, participation: 30, discipline: 25, health: 15, leadership: 10 },
+      /* ====== Шинэ KPI арга зүйн тохиргоо — бүгд эндээс өөрчлөгдөнө ====== */
+      kpi: {
+        weights: { video: 50, exam: 22, improvement: 8, firstTry: 5, bonus: 15 }, // нийлбэр = 100
+        baseThreshold: 75,   // албаны coverage-д тооцох суурь оноо (бонусгүй) босго
+        bonusTarget: 30,     // энэ хэмжээний бонус оноо = бонус жингийн 100%
+        bonus: {
+          hazard: 5,                                  // баталгаажсан аюул бүрт
+          nearMiss: { low: 3, mid: 6, high: 10 },     // near-miss эрсдэлийн зэргээр
+          monthlyCap: 3                               // нэг хүн нэг сард авах дээд тоо
+        },
+        dept: { coverage: 55, bonus: 15, firstAid: 15, ppe: 15 } // албаны онооны жин, нийлбэр = 100
+      }
     },
-    employees: seedEmployees(),
-    hazards: hazards,
-    suggestions: suggestions,
-    incidents: incidents,
-    notifications: [
-      { id: 'N1', text: 'Шинэ эрсдэл мэдээлэгдлээ — Цех №2', time: hoursAgoISO(2), read: false, page: 'hazards' },
-      { id: 'N2', text: 'Сарын KPI тайлан бэлэн боллоо', time: hoursAgoISO(20), read: false, page: 'reports' },
-      { id: 'N3', text: 'Сургалтын хугацаа 3 хоногийн дараа дуусна', time: hoursAgoISO(46), read: true, page: 'training' }
-    ]
+    employees: [],
+    hazards: [],
+    suggestions: [],
+    incidents: [],
+    notifications: [],
+    reports: reports,
+    firstAidChecks: firstAidChecks,
+    ppeObservations: ppeObservations,
+    videoViews: [],
+    examResults: []
   };
 }
 
@@ -252,11 +335,25 @@ async function buildEmployeesFromRealData() {
       var passed = exams.filter(function (e) { return e.passed; }).length;
       var reports = reportByUid[uid] || 0;
       var participation = clamp(Math.round(passed * 20 + progs.length * 8 + reports * 12), 0, 100);
+      /* ===== Шинэ KPI загвар: видео үзэлт %, шалгалт, ахиц, эхний удаа тэнцсэн ===== */
+      var examsSorted = exams.slice().sort(function (a, b) {
+        return new Date(a.completedAt || a.date || a.createdAt || 0) - new Date(b.completedAt || b.date || b.createdAt || 0);
+      });
+      var firstTry = examsSorted.length ? (examsSorted[0].passed ? 1 : 0) : 0;
+      var video = progAvg != null ? Math.round(progAvg) : training;
+      var examScore = examAvg != null ? Math.round(examAvg) : training;
+      var examPrev = null;
+      if (examsSorted.length >= 2) { // сүүлийн хагасыг өмнөх хагастай харьцуулж ахицыг тооцно
+        var half = Math.floor(examsSorted.length / 2);
+        examPrev = Math.round(avg(examsSorted.slice(0, half).map(function (e) { return num(e.score); })));
+        examScore = Math.round(avg(examsSorted.slice(half).map(function (e) { return num(e.score); })));
+      }
       out.push({
         id: uid, uid: uid, initials: makeInitials(name), name: name,
         role: u.position || 'Ажилтан', dept: u.department || 'Тодорхойгүй', email: u.email || '',
         training: training, participation: participation,
-        discipline: 100, health: 75, leadership: 60, // суурь утга — админ засна; бодит дата ирэхэд автоматжина
+        video: video, examScore: examScore, examPrev: examPrev, firstTry: firstTry,
+        discipline: 100, health: 75, leadership: 60, // хуучин үзүүлэлт — нийцлийн төлөө хадгална
         onLeave: u.isActive === false
       });
     });
@@ -275,7 +372,8 @@ async function syncEmployeesWithRealData() {
     if (prev) {
       return Object.assign({}, prev, {
         name: r.name, dept: r.dept, role: r.role, email: r.email, initials: r.initials,
-        training: r.training, participation: r.participation, onLeave: r.onLeave
+        training: r.training, participation: r.participation, onLeave: r.onLeave,
+        video: r.video, examScore: r.examScore, examPrev: r.examPrev, firstTry: r.firstTry
       });
     }
     return r;
@@ -285,11 +383,22 @@ async function syncEmployeesWithRealData() {
 
 async function loadDB() {
   var fresh = false;
+  if (DEMO) { // Локал жишээ горим — Firebase-гүй, localStorage-д хадгална
+    try { var rawD = localStorage.getItem(LSKEY); DB = rawD ? JSON.parse(rawD) : null; } catch (e) { DB = null; }
+    if (!DB || !DB.settings) { DB = seedDB(); fresh = true; }
+    if (!DB.employees || !DB.employees.length) DB.employees = seedEmployees(); // жишээ 142 ажилтан (зөвхөн DEMO)
+    try { migrateDB(); } catch (e) {}
+    try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+    return fresh;
+  }
   if (fbReady) {
     try {
       var snap = await KPI_DOC().get();
-      if (snap.exists && snap.data() && snap.data().settings) {
-        DB = snap.data();
+      var d = snap.exists ? snap.data() : null;
+      if (d && (d.settings || d.hazards || d.suggestions || d.incidents)) {
+        DB = d;
+        if (!DB.settings) DB.settings = seedDB().settings;
+        migrateDB();
       } else {
         DB = seedDB(); fresh = true;
         if (isAdmin()) { try { await KPI_DOC().set(DB); } catch (e) {} }
@@ -299,47 +408,203 @@ async function loadDB() {
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
     // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
-    try {
-      var synced = await syncEmployeesWithRealData();
-      if (synced && isAdmin()) { try { await KPI_DOC().set(DB); } catch (e) {} } // жинхэнэ жагсаалтыг хадгална
-    } catch (e) {}
+    try { await syncEmployeesWithRealData(); } catch (e) {}
+    // Ажилтан бол DB-г зөвхөн өөрийнхөөр шүүнэ (admin бүгдийг хардаг)
+    try { scopeDataForEmployee(); } catch (e) {}
   } else {
     try { var raw2 = localStorage.getItem(LSKEY); if (raw2) { DB = JSON.parse(raw2); if (!DB || !DB.settings) { DB = seedDB(); fresh = true; } } else { DB = seedDB(); fresh = true; } }
     catch (e) { DB = seedDB(); fresh = true; }
   }
+  try { migrateDB(); } catch (e) {}
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   return fresh;
 }
-var _saveTimer = null;
-function saveDB() {
-  // Локал cache-д шууд хадгална
-  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
-  // Cloud (Firestore) руу debounce-той бичнэ — бүх ажилтны мэдээлэл нэг газар
-  if (!fbReady) return;
-  if (_saveTimer) clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(function () {
-    KPI_DOC().set(DB).catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
-  }, 700);
+
+/* Хуучин (шинэ талбаргүй) DB-г шинэ загварт нийцүүлэх — алдагдсан массив/тохиргоог нөхнө */
+function migrateDB() {
+  if (!DB) return;
+  ['employees', 'hazards', 'suggestions', 'incidents', 'notifications',
+   'reports', 'firstAidChecks', 'ppeObservations', 'videoViews', 'examResults'].forEach(function (k) {
+    if (!Array.isArray(DB[k])) DB[k] = [];
+  });
+  if (!DB.settings) DB.settings = seedDB().settings;
+  if (!DB.settings.kpi) DB.settings.kpi = seedDB().settings.kpi;
+  // Дутуу дэд тохиргоог нөхөх (хэрэглэгчийн өөрчилснийг хадгална)
+  var def = seedDB().settings.kpi, k = DB.settings.kpi;
+  if (!k.weights) k.weights = def.weights;
+  if (k.baseThreshold == null) k.baseThreshold = def.baseThreshold;
+  if (k.bonusTarget == null) k.bonusTarget = def.bonusTarget;
+  if (!k.bonus) k.bonus = def.bonus;
+  else if (!k.bonus.nearMiss) k.bonus.nearMiss = def.bonus.nearMiss;
+  if (!k.dept) k.dept = def.dept;
 }
 
-/* ============ KPI тооцоо ============ */
-function empTotal(e) {
-  var w = DB.settings.weights;
-  var t = (e.training * w.training + e.participation * w.participation +
-           e.discipline * w.discipline + e.health * w.health + e.leadership * w.leadership) / 100;
-  return Math.round(t);
+/* Ажилтны хувьд зөвхөн өөрийн датаг харуулна. ХАБЭА (admin) бол бүгдийг хэвээр. */
+var _empHazIds = null, _empSugIds = null, _empRepIds = null;
+function _sameEmail(a, b) { return !!(a && b && String(a).toLowerCase() === String(b).toLowerCase()); }
+function scopeDataForEmployee() {
+  _empHazIds = null; _empSugIds = null; _empRepIds = null;
+  if (isAdmin() || !SESSION) return;
+  // Албаны дарга — өөрийн албаны бүх ажилтныг харна (доор Phase 5-д тусгайлан зохицуулна)
+  if (SESSION.role === 'depthead') { scopeDataForDeptHead(); return; }
+  var uid = SESSION.uid, email = SESSION.email, eid = SESSION.empId;
+  DB.employees = (DB.employees || []).filter(function (e) { return e.uid === uid || _sameEmail(e.email, email) || (eid && e.id === eid); });
+  DB.hazards = (DB.hazards || []).filter(function (h) { return h.reporterUid === uid; });
+  DB.suggestions = (DB.suggestions || []).filter(function (s) { return s.authorUid === uid; });
+  DB.incidents = (DB.incidents || []).filter(function (n) { return n.uid === uid || _sameEmail(n.email, email); });
+  DB.reports = (DB.reports || []).filter(function (r) { return r.reporterUid === uid || _sameEmail(r.reporterEmail, email) || (eid && r.reporterId === eid); });
+  DB.notifications = (DB.notifications || []).filter(function (n) { return n.uid === uid; });
+  _empHazIds = {}; DB.hazards.forEach(function (h) { _empHazIds[h.id] = 1; });
+  _empSugIds = {}; DB.suggestions.forEach(function (s) { _empSugIds[s.id] = 1; });
+  _empRepIds = {}; DB.reports.forEach(function (r) { _empRepIds[r.id] = 1; });
 }
+
+/* Албаны дарга — зөвхөн өөрийн албаны бүх ажилтан, мэдээлэл, PPE, хайрцаг */
+function scopeDataForDeptHead() {
+  var dept = SESSION && SESSION.dept;
+  if (!dept) return; // алба тодорхойгүй бол шүүхгүй (админ Firestore дээр department талбар тааруулна)
+  var uids = {}, ids = {};
+  DB.employees = (DB.employees || []).filter(function (e) { return e.dept === dept; });
+  DB.employees.forEach(function (e) { if (e.uid) uids[e.uid] = 1; if (e.id) ids[e.id] = 1; });
+  DB.reports = (DB.reports || []).filter(function (r) { return r.dept === dept || uids[r.reporterUid] || ids[r.reporterId]; });
+  DB.firstAidChecks = (DB.firstAidChecks || []).filter(function (c) { return c.dept === dept; });
+  DB.ppeObservations = (DB.ppeObservations || []).filter(function (o) { return o.dept === dept; });
+  DB.suggestions = (DB.suggestions || []).filter(function (s) { return s.dept === dept; });
+}
+
+var _saveTimer = null;
+function saveDB() {
+  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+  if (!fbReady) return;
+  if (isAdmin()) {
+    // Admin — бүтэн датаг хадгална (бүгдийг харж, удирдана)
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(function () {
+      KPI_DOC().set(DB).catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+    }, 700);
+  } else {
+    // Ажилтан — зөвхөн өөрийн ШИНЭ эрсдэл/санал/мэдээллийг бусдын датаг эвдэлгүйгээр нэмнэ (arrayUnion)
+    try {
+      var newHaz = (DB.hazards || []).filter(function (h) { return _empHazIds && !_empHazIds[h.id]; });
+      var newSug = (DB.suggestions || []).filter(function (s) { return _empSugIds && !_empSugIds[s.id]; });
+      var newRep = (DB.reports || []).filter(function (r) { return _empRepIds && !_empRepIds[r.id]; });
+      if (!newHaz.length && !newSug.length && !newRep.length) return;
+      var upd = {};
+      if (newHaz.length) upd.hazards = firebase.firestore.FieldValue.arrayUnion.apply(null, newHaz);
+      if (newSug.length) upd.suggestions = firebase.firestore.FieldValue.arrayUnion.apply(null, newSug);
+      if (newRep.length) upd.reports = firebase.firestore.FieldValue.arrayUnion.apply(null, newRep);
+      KPI_DOC().set(upd, { merge: true }).then(function () {
+        if (_empHazIds) newHaz.forEach(function (h) { _empHazIds[h.id] = 1; });
+        if (_empSugIds) newSug.forEach(function (s) { _empSugIds[s.id] = 1; });
+        if (_empRepIds) newRep.forEach(function (r) { _empRepIds[r.id] = 1; });
+      }).catch(function () { toast('Хадгалахад алдаа гарлаа', 'error'); });
+    } catch (e) {}
+  }
+}
+
+/* ============ KPI тооцоо (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
 function avg(arr) { return arr.length ? arr.reduce(function (a, b) { return a + b; }, 0) / arr.length : 0; }
+function kpiCfg() { return (DB.settings && DB.settings.kpi) || seedDB().settings.kpi; }
+function _f(v, fb) { var n = parseFloat(v); return isNaN(n) ? (fb || 0) : n; }
+
+/* — Суурь үзүүлэлтүүд (хувь хүн, 0–100). Юу ч хасахгүй — — */
+function kpiVideo(e) { return clamp(Math.round(_f(e.video, e.training)), 0, 100); }
+function kpiExam(e) { return clamp(Math.round(_f(e.examScore, e.training)), 0, 100); }
+function kpiImprovement(e) {
+  if (e.examPrev == null || e.examScore == null) return 60; // дата дутуу — саармаг
+  return clamp(Math.round(50 + (_f(e.examScore) - _f(e.examPrev)) * 4), 0, 100); // эерэг ахиц → өндөр оноо
+}
+function kpiFirstTry(e) { return e.firstTry ? 100 : 0; }
+
+/* Суурь оноо (бонусгүй, 0–100). Албаны coverage үүн дээр тооцогдоно */
+function empBase(e) {
+  var w = kpiCfg().weights, bw = w.video + w.exam + w.improvement + w.firstTry;
+  if (bw <= 0) return 0;
+  return Math.round((kpiVideo(e) * w.video + kpiExam(e) * w.exam +
+    kpiImprovement(e) * w.improvement + kpiFirstTry(e) * w.firstTry) / bw);
+}
+
+/* — Бонус (нэмэгдэх, зөвхөн баталгаажсан мэдээллээс, сарын cap-тай) — */
+function reportPoints(r) {
+  var b = kpiCfg().bonus;
+  if (r.type === 'near_miss') return (b.nearMiss && b.nearMiss[r.risk_level]) || (b.nearMiss && b.nearMiss.low) || 3;
+  return b.hazard;
+}
+function reportBelongsTo(r, e) {
+  if (r.reporterUid && e.uid) return r.reporterUid === e.uid;
+  if (r.reporterId && e.id) return r.reporterId === e.id;
+  return _sameEmail(r.reporterEmail, e.email);
+}
+function monthKey(iso) { var d = new Date(iso || Date.now()); return d.getFullYear() + '-' + (d.getMonth() + 1); }
+
+/* Ажилтны бонус оноо: сар бүр дээд тоо (cap), өндөр оноотойг нь эхэлж тооцно */
+function empBonusPoints(e) {
+  var cap = kpiCfg().bonus.monthlyCap || 99, byMonth = {};
+  (DB.reports || []).forEach(function (r) {
+    if (r.status !== 'verified' || !reportBelongsTo(r, e)) return;
+    (byMonth[monthKey(r.verifiedAt || r.createdAt)] = byMonth[monthKey(r.verifiedAt || r.createdAt)] || []).push(reportPoints(r));
+  });
+  var total = 0;
+  Object.keys(byMonth).forEach(function (mk) {
+    var pts = byMonth[mk].sort(function (a, b) { return b - a; });
+    for (var i = 0; i < pts.length && i < cap; i++) total += pts[i];
+  });
+  return total;
+}
+function empBonusScore(e) { return clamp(Math.round(empBonusPoints(e) / (kpiCfg().bonusTarget || 30) * 100), 0, 100); }
+
+/* Нийт оноо (0–100): суурь хувь + бонус хувь. Бонус зөвхөн НЭМНЭ, хэзээ ч хасахгүй */
+function empTotal(e) {
+  var w = kpiCfg().weights, bw = w.video + w.exam + w.improvement + w.firstTry;
+  return Math.round((empBase(e) * bw + empBonusScore(e) * w.bonus) / 100);
+}
 function avgKpi() { return avg(DB.employees.map(empTotal)); }
+
+/* Суурь үзүүлэлт + бонусын дундаж (KPI хуудсанд) */
 function categoryAverages() {
   var e = DB.employees;
   return {
-    training: Math.round(avg(e.map(function (x) { return x.training; }))),
-    participation: Math.round(avg(e.map(function (x) { return x.participation; }))),
-    discipline: Math.round(avg(e.map(function (x) { return x.discipline; }))),
-    health: Math.round(avg(e.map(function (x) { return x.health; }))),
-    leadership: Math.round(avg(e.map(function (x) { return x.leadership; })))
+    video: Math.round(avg(e.map(kpiVideo))), exam: Math.round(avg(e.map(kpiExam))),
+    improvement: Math.round(avg(e.map(kpiImprovement))), firstTry: Math.round(avg(e.map(kpiFirstTry))),
+    bonus: Math.round(avg(e.map(empBonusScore)))
   };
+}
+
+/* — Албаны түвшний оноо (coverage + бонус + анхны тусламж + PPE) — */
+function deptList() {
+  var s = {}; (DB.employees || []).forEach(function (e) { if (e.dept) s[e.dept] = 1; });
+  return Object.keys(s);
+}
+function deptMembers(dept) { return (DB.employees || []).filter(function (e) { return e.dept === dept && !e.onLeave; }); }
+function deptCoverage(dept) {
+  var m = deptMembers(dept); if (!m.length) return 0;
+  var th = kpiCfg().baseThreshold, ok = m.filter(function (e) { return empBase(e) >= th; }).length;
+  return Math.round(ok / m.length * 100);
+}
+function deptBonusScore(dept) { var m = deptMembers(dept); return m.length ? Math.round(avg(m.map(empBonusScore))) : 0; }
+function deptFirstAid(dept) {
+  var c = (DB.firstAidChecks || []).filter(function (x) { return x.dept === dept; })
+    .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })[0];
+  if (!c) return null;
+  if (c.complete) return 100;
+  var tot = c.totalItems || 12;
+  return clamp(Math.round((tot - (c.missing || []).length) / tot * 100), 0, 100);
+}
+function deptPpe(dept) {
+  var obs = (DB.ppeObservations || []).filter(function (o) { return o.dept === dept; });
+  if (!obs.length) return null;
+  var tot = obs.reduce(function (a, o) { return a + _f(o.total); }, 0);
+  var comp = obs.reduce(function (a, o) { return a + _f(o.compliant); }, 0);
+  return tot ? Math.round(comp / tot * 100) : null;
+}
+function deptScore(dept) {
+  var dw = kpiCfg().dept;
+  var parts = [
+    { v: deptCoverage(dept), w: dw.coverage }, { v: deptBonusScore(dept), w: dw.bonus },
+    { v: deptFirstAid(dept), w: dw.firstAid }, { v: deptPpe(dept), w: dw.ppe }
+  ].filter(function (p) { return p.v != null; });
+  var ws = parts.reduce(function (a, p) { return a + p.w; }, 0);
+  return ws ? Math.round(parts.reduce(function (a, p) { return a + p.v * p.w; }, 0) / ws) : 0;
 }
 function dayCounter() {
   var acc = DB.incidents.filter(function (i) { return i.type !== 'near-miss'; });
@@ -525,8 +790,8 @@ function openMenu(anchor, items, onSelect) {
 
 /* ============ Хуудас солих ============ */
 function switchPage(pageId) {
-  // Энгийн ажилтан админ хуудас руу орохыг хориглоно
-  if (!isAdmin() && ADMIN_ONLY_PAGES.indexOf(pageId) >= 0) { pageId = 'dashboard'; }
+  // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
+  if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
   $$('.nav-item').forEach(function (it) {
     it.classList.toggle('active', it.getAttribute('data-page') === pageId);
   });
@@ -538,6 +803,13 @@ function switchPage(pageId) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (window.innerWidth < 768) { var sb = $('#sidebar'); if (sb) sb.classList.remove('open'); }
   if (pageId === 'dashboard') setTimeout(renderCharts, 60);
+  // Динамикаар зурагддаг хуудсуудыг шинэчилнэ
+  if (pageId === 'reportflow') renderReportflow();
+  else if (pageId === 'kpi') renderKpiPage();
+  else if (pageId === 'ppe') renderPpe();
+  else if (pageId === 'inspections') renderInspections();
+  else if (pageId === 'dataflow') renderDataflow();
+  else if (pageId === 'settings') renderSettings();
 }
 
 /* ============ Sidebar badge-ууд ============ */
@@ -554,7 +826,65 @@ function setStat(scopeSel, idx, value) {
   var nodes = $$(scopeSel + ' .stat-num');
   if (nodes[idx]) nodes[idx].textContent = value;
 }
+/* Ажилтны өөрийн ажилтны бүртгэлийг олох (scope хийгдсэн DB дотроос) */
+function myEmployeeRecord() {
+  if (!SESSION) return null;
+  var me = (DB.employees || []).filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email) || (SESSION.empId && e.id === SESSION.empId); })[0];
+  return me || (DB.employees || [])[0] || null;
+}
+function kpiLevel(total) {
+  if (total >= 90) return { name: 'Алтан', icon: 'ti-trophy', color: '#D97706', next: null, min: 90 };
+  if (total >= 75) return { name: 'Мөнгөн', icon: 'ti-medal', color: '#0EA5E9', next: 90, min: 75 };
+  if (total >= 60) return { name: 'Хүрэл', icon: 'ti-award', color: '#B45309', next: 75, min: 60 };
+  return { name: 'Эхлэгч', icon: 'ti-seedling', color: '#16A34A', next: 60, min: 0 };
+}
+
+/* Эерэг ажилтны дашбоард — "би өсч байна", бусадтай харьцуулахгүй */
+function renderEmployeeDashboard() {
+  var sec = pageEl('dashboard'); if (!sec) return;
+  var e = myEmployeeRecord();
+  if (!e) { sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-user-question"></i><div>Таны мэдээлэл олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.</div></div>'; return; }
+  var total = empTotal(e), bonus = empBonusPoints(e), lvl = kpiLevel(total);
+  var toNext = lvl.next != null ? Math.max(0, lvl.next - total) : 0;
+  var progPct = lvl.next != null ? clamp(Math.round((total - lvl.min) / (lvl.next - lvl.min) * 100), 0, 100) : 100;
+  var improved = (e.examPrev != null && e.examScore != null) ? (num(e.examScore) - num(e.examPrev)) : null;
+  var myReports = (DB.reports || []).filter(function (r) { return reportBelongsTo(r, e); });
+  var verifiedCnt = myReports.filter(function (r) { return r.status === 'verified'; }).length;
+  var bars = [
+    ['Видео сургалтын үзэлт', kpiVideo(e), 'ti-player-play'], ['Шалгалтын дүн', kpiExam(e), 'ti-clipboard-check'],
+    ['Шалгалтын ахиц', kpiImprovement(e), 'ti-trending-up'], ['Дахин шалгалтгүй тэнцсэн', kpiFirstTry(e), 'ti-medal']
+  ];
+  var firstName = (e.name || '').split(/\s+/).pop();
+  sec.innerHTML =
+    '<div style="margin-bottom:18px"><h1 style="margin:0">Сайн байна уу, ' + esc(firstName) + '! 👋</h1>' +
+    '<p class="page-subtitle" style="margin-top:4px">Энэ бол зөвхөн таны өөрийн ахиц — бусадтай харьцуулахгүй, өөртэйгөө л өрсөлдөнө.</p></div>' +
+    '<div class="card" style="padding:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:18px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
+    '<div style="width:78px;height:78px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';display:flex;align-items:center;justify-content:center;font-size:38px"><i class="ti ' + lvl.icon + '"></i></div>' +
+    '<div style="flex:1;min-width:200px"><div style="font-size:13px;color:#64748B">Таны түвшин</div>' +
+    '<div style="font-size:26px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif">' + lvl.name + ' · ' + total + '/100</div>' +
+    (lvl.next != null ? '<div style="margin-top:8px;display:flex;align-items:center;gap:10px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12px;color:#64748B;margin-top:4px">Дараагийн түвшин хүртэл <strong>' + toNext + '</strong> оноо</div>' : '<div style="color:#16A34A;font-weight:600;margin-top:6px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
+    '</div></div>' +
+    '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 14px">Миний суурь үзүүлэлт</h3>' +
+    bars.map(function (b) {
+      return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:13px"><i class="ti ' + b[2] + '" style="color:#64748B;width:20px;text-align:center"></i>' +
+        '<div style="width:180px;font-size:13px">' + b[0] + '</div>' + miniBar(b[1]) + '<div style="width:36px;text-align:right;font-weight:700">' + b[1] + '</div></div>';
+    }).join('') + '</div>' +
+    '<div style="display:flex;gap:18px;flex-wrap:wrap">' +
+    '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
+    '<div style="display:flex;align-items:center;gap:10px"><i class="ti ti-gift" style="font-size:28px;color:#16A34A"></i>' +
+    '<div><div style="font-size:26px;font-weight:800;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif">+' + bonus + '</div><div style="font-size:13px;color:#64748B">Нэмэгдэх бонус оноо</div></div></div>' +
+    '<div style="font-size:13px;color:#64748B;margin-top:10px">Та ' + verifiedCnt + ' баталгаажсан мэдээлэл оруулсан. Аюул/near-miss мэдээлэх тусам бонус нэмэгдэнэ — хэзээ ч хасагдахгүй.</div>' +
+    '<button class="btn btn-primary btn-sm" data-goreport="1" style="margin-top:12px"><i class="ti ti-flag-2"></i> Мэдээлэх</button></div>' +
+    (improved != null ? '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
+      '<div style="display:flex;align-items:center;gap:10px"><i class="ti ' + (improved >= 0 ? 'ti-trending-up' : 'ti-arrow-down') + '" style="font-size:28px;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + '"></i>' +
+      '<div><div style="font-size:26px;font-weight:800;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + ';font-family:\'Bricolage Grotesque\',sans-serif">' + (improved >= 0 ? '+' : '') + improved + '</div><div style="font-size:13px;color:#64748B">Шалгалтын ахиц</div></div></div>' +
+      '<div style="font-size:13px;color:#64748B;margin-top:10px">' + (improved > 0 ? 'Гайхалтай! Та өмнөх үеэсээ сайжирсан. 👏' : (improved === 0 ? 'Тогтвортой байна. Дараагийн шалгалтад ахихыг зорь!' : 'Зүгээр ээ — дараагийн удаа сайжруулъя. Бид тусална.')) + '</div></div>' : '') +
+    '</div>';
+  if (!sec._empWired) { sec._empWired = true; sec.addEventListener('click', function (ev) { if (ev.target.closest('[data-goreport]')) switchPage('reportflow'); }); }
+}
+
 function renderDashboard() {
+  if (isEmp()) { renderEmployeeDashboard(); return; }
   var a = avgKpi();
   var hero = $('.page[data-page="dashboard"] .kpi-hero .kpi-value');
   if (hero) hero.innerHTML = a.toFixed(1) + '<span class="kpi-unit">/100</span>';
@@ -564,21 +894,48 @@ function renderDashboard() {
   var cards = $$('.page[data-page="dashboard"] .kpi-grid .kpi-card');
   if (cards[2]) {
     var v2 = cards[2].querySelector('.kpi-value');
-    if (v2) v2.textContent = DB.hazards.length;
+    var pendCnt = (DB.reports || []).filter(function (r) { return r.status === 'reported'; }).length;
+    if (v2) v2.textContent = (DB.reports || []).length;
+    var lbl2 = cards[2].querySelector('.kpi-label');
+    if (lbl2) lbl2.innerHTML = '<i class="ti ti-flag-2"></i> Аюул/near-miss мэдээлэл';
+    var sub2 = cards[2].querySelector('.kpi-sub');
+    if (sub2) sub2.textContent = pendCnt + ' хүлээгдэж буй';
   }
   if (cards[3]) {
     var v3 = cards[3].querySelector('.kpi-value');
     if (v3) v3.textContent = dayCounter();
   }
+  /* Видео сургалтын хамрах — DB.employees-ээс динамикаар */
+  cards.forEach(function (card) {
+    var label = card.querySelector('.kpi-label');
+    if (label && /хамрах/i.test(label.textContent)) {
+      var total = DB.employees.length;
+      var trained = DB.employees.filter(function (e) { return kpiVideo(e) >= 60; }).length;
+      var pct = total ? Math.round(trained / total * 100) : 0;
+      var vv = card.querySelector('.kpi-value');
+      if (vv) vv.innerHTML = pct + '<span class="kpi-unit">%</span>';
+      var sub = card.querySelector('.kpi-sub');
+      if (sub) sub.textContent = trained + '/' + total + ' ажилтан';
+    }
+  });
 
-  /* Хэлтсийн KPI */
-  var deptList = $('.page[data-page="dashboard"] .dept-list');
-  if (deptList) {
-    var rows = DEPTS.map(function (d) {
-      var emps = DB.employees.filter(function (e) { return e.dept === d; });
-      return { dept: d, score: emps.length ? Math.round(avg(emps.map(empTotal))) : 0, n: emps.length };
+  /* Радар легенд — шинэ үзүүлэлтээр динамик */
+  var cat = categoryAverages();
+  var legVals = [cat.video, cat.exam, cat.improvement, cat.firstTry, cat.bonus];
+  var legLabels = ['Видео', 'Шалгалт', 'Ахиц', 'Анх тэнцсэн', 'Бонус'];
+  $$('.page[data-page="dashboard"] .legend-item').forEach(function (li, i) {
+    if (legVals[i] == null) return;
+    var dot = li.querySelector('.dot') ? li.querySelector('.dot').outerHTML : '';
+    li.innerHTML = dot + legLabels[i] + ' <strong>' + legVals[i] + '</strong>';
+  });
+
+  /* Албадын оноо (coverage + бонус + анхны тусламж + PPE) */
+  var deptListEl = $('.page[data-page="dashboard"] .dept-list');
+  if (deptListEl) {
+    var rows = deptList().map(function (d) {
+      return { dept: d, score: deptScore(d), n: DB.employees.filter(function (e) { return e.dept === d; }).length };
     }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.score - a.score; });
-    deptList.innerHTML = rows.map(function (r) {
+    deptListEl.innerHTML = rows.map(function (r) {
       var color = r.score >= 85 ? 'var(--emerald)' : (r.score >= 70 ? 'var(--amber)' : 'var(--coral)');
       return '<div class="dept-row"><div class="dept-name">' + esc(r.dept) +
         ' · ' + r.n + ' ажилтан</div><div class="dept-bar-wrap"><div class="dept-bar" style="width:' +
@@ -660,10 +1017,10 @@ function renderEmployees() {
         (e.onLeave ? ' <span class="tag tag-warn">Чөлөөтэй</span>' : '') +
         '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
         '<td>' + esc(e.dept) + '</td>' +
-        '<td><span class="score-pill ' + scoreClass(e.training) + '">' + e.training + '</span></td>' +
-        '<td><span class="score-pill ' + scoreClass(e.participation) + '">' + e.participation + '</span></td>' +
-        '<td><span class="score-pill ' + scoreClass(e.discipline) + '">' + e.discipline + '</span></td>' +
-        '<td><span class="score-pill ' + scoreClass(e.health) + '">' + e.health + '</span></td>' +
+        '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '</span></td>' +
+        '<td><span class="score-pill ' + scoreClass(kpiExam(e)) + '">' + kpiExam(e) + '</span></td>' +
+        '<td><span class="score-pill ' + scoreClass(kpiImprovement(e)) + '">' + kpiImprovement(e) + '</span></td>' +
+        '<td><span class="score-pill score-bonus" title="' + empBonusPoints(e) + ' оноо">+' + empBonusPoints(e) + '</span></td>' +
         '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
         '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
         '</tr>';
@@ -694,25 +1051,113 @@ function renderEmployees() {
   setStat('.page[data-page="employees"] .stat-strip', 4, DB.employees.filter(function (e) { return empTotal(e) < 75; }).length);
 }
 
-/* ============ KPI хуудас ============ */
+/* ============ KPI хуудас (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
+var KPI_BASE_META = [
+  { key: 'video', label: 'Видео сургалтын үзэлт', icon: 'ti-player-play', color: ['#FEF3C7', '#92400E'], desc: 'Гадаад платформоос импортолсон үзэлтийн %', fn: kpiVideo },
+  { key: 'exam', label: 'Танхим шалгалтын дүн', icon: 'ti-clipboard-check', color: ['#D1FAE5', '#065F46'], desc: 'QR кодоор өгсөн шалгалтын дундаж дүн', fn: kpiExam },
+  { key: 'improvement', label: 'Шалгалтын дүнгийн ахиц', icon: 'ti-trending-up', color: ['#DBEAFE', '#1E40AF'], desc: 'Өмнөх улирлаас дээшилсэн нь урамшина', fn: kpiImprovement },
+  { key: 'firstTry', label: 'Дахин шалгалтгүй тэнцсэн', icon: 'ti-medal', color: ['#E0E7FF', '#3730A3'], desc: 'Анхны шалгалтаа дан тэнцсэн (жижиг бонус)', fn: kpiFirstTry }
+];
+function scoreTone(v) { return v >= 88 ? '' : (v >= 75 ? ' warn' : ' danger'); }
+function badgeTone(v) { return v >= 88 ? 'success' : (v >= 75 ? 'warn' : 'danger'); }
+function miniBar(v, color) {
+  return '<div style="flex:1;height:7px;border-radius:4px;background:#EEF1F4;overflow:hidden">' +
+    '<div style="height:100%;width:' + clamp(v, 0, 100) + '%;background:' + (color || '#16A34A') + '"></div></div>';
+}
+
 function renderKpiPage() {
-  var w = DB.settings.weights;
-  var order = ['training', 'participation', 'discipline', 'health', 'leadership'];
-  var strongs = $$('.page[data-page="kpi"] .formula .f-term strong');
-  order.forEach(function (k, i) {
-    if (strongs[i]) strongs[i].textContent = (w[k] / 100).toFixed(2);
+  var w = kpiCfg().weights, b = kpiCfg().bonus, emps = DB.employees || [];
+  var sub = $('.page[data-page="kpi"] .page-subtitle');
+  if (sub) sub.textContent = 'Суурь үзүүлэлт + нэмэгдэх бонус · leading indicator загвар';
+
+  // page-actions товчнуудыг утга оноох
+  var editBtn = $('.page[data-page="kpi"] .page-actions .btn-primary');
+  if (editBtn) { editBtn.innerHTML = '<i class="ti ti-adjustments"></i> Жин тохируулах'; editBtn.onclick = function () { switchPage('settings'); }; }
+  var infoBtn = $('.page[data-page="kpi"] .page-actions .btn-secondary');
+  if (infoBtn) { infoBtn.innerHTML = '<i class="ti ti-info-circle"></i> Арга зүй'; infoBtn.onclick = function () { infoModal('Үнэлгээний арга зүй', kpiMethodologyHtml(), '560px'); }; }
+
+  // Динамик томьёо
+  var fr = $('.page[data-page="kpi"] .formula');
+  if (fr) {
+    var terms = [['f-amber', 'Видео', w.video], ['f-teal', 'Шалгалт', w.exam], ['f-emerald', 'Ахиц', w.improvement],
+      ['f-blue', 'Анх тэнцсэн', w.firstTry], ['f-coral', 'Бонус', w.bonus]];
+    fr.innerHTML = '<span>Нийт =</span>' + terms.map(function (t, i) {
+      return (i ? '<span>+</span>' : '') + '<span class="f-term ' + t[0] + '">' + t[1] + ' × <strong>' + (t[2] / 100).toFixed(2) + '</strong></span>';
+    }).join('') + '<span style="margin-left:8px;font-size:12px;color:#16A34A;font-weight:600">бонус зөвхөн нэмнэ ↑</span>';
+  }
+
+  var grid = $('.page[data-page="kpi"] .kpi-cat-grid');
+  if (!grid) return;
+  var html = '';
+
+  // — 4 суурь үзүүлэлт —
+  KPI_BASE_META.forEach(function (m) {
+    var v = emps.length ? Math.round(avg(emps.map(m.fn))) : 0;
+    html += '<div class="kpi-cat-card"><div class="kpi-cat-head">' +
+      '<div class="kpi-cat-icon" style="background:' + m.color[0] + ';color:' + m.color[1] + '"><i class="ti ' + m.icon + '"></i></div>' +
+      '<div><h3>' + m.label + '</h3><p>Жин: ' + w[m.key] + '%</p></div>' +
+      '<div class="kpi-cat-score' + scoreTone(v) + '">' + v + '</div></div>' +
+      '<ul class="kpi-cat-items"><li><span>' + m.desc + '</span></li>' +
+      '<li><span>Байгууллагын дундаж</span><span class="badge badge-' + badgeTone(v) + '">' + v + '</span></li></ul></div>';
   });
-  var cat = categoryAverages();
-  var scores = $$('.page[data-page="kpi"] .kpi-cat-score');
-  var ps = $$('.page[data-page="kpi"] .kpi-cat-head p');
-  order.forEach(function (k, i) {
-    if (scores[i]) {
-      var v = cat[k];
-      scores[i].textContent = v;
-      scores[i].className = 'kpi-cat-score' + (v >= 88 ? '' : (v >= 75 ? ' warn' : ' danger'));
+
+  // — Нэмэгдэх бонус карт —
+  var bonusAvg = emps.length ? Math.round(avg(emps.map(empBonusScore))) : 0;
+  var vNm = (DB.reports || []).filter(function (r) { return r.type === 'near_miss' && r.status === 'verified'; }).length;
+  var vHz = (DB.reports || []).filter(function (r) { return r.type === 'hazard' && r.status === 'verified'; }).length;
+  var pend = (DB.reports || []).filter(function (r) { return r.status === 'reported'; }).length;
+  html += '<div class="kpi-cat-card" style="border:1.5px solid #BBF7D0"><div class="kpi-cat-head">' +
+    '<div class="kpi-cat-icon" style="background:#DCFCE7;color:#166534"><i class="ti ti-gift"></i></div>' +
+    '<div><h3>Нэмэгдэх бонус</h3><p>Жин: ' + w.bonus + '% · зөвхөн нэмнэ</p></div>' +
+    '<div class="kpi-cat-score' + scoreTone(bonusAvg) + '">' + bonusAvg + '</div></div>' +
+    '<ul class="kpi-cat-items">' +
+    '<li><span>Баталгаажсан near-miss</span><span class="badge badge-success">' + vNm + '</span></li>' +
+    '<li><span>Баталгаажсан аюул</span><span class="badge badge-success">' + vHz + '</span></li>' +
+    '<li><span>Хүлээгдэж буй мэдээлэл</span><span class="badge badge-warn">' + pend + '</span></li>' +
+    '<li><span>Near-miss оноо (эрсдэлээр)</span><span style="font-size:12px">бага ' + b.nearMiss.low + ' · дунд ' + b.nearMiss.mid + ' · өндөр ' + b.nearMiss.high + '</span></li>' +
+    '<li><span>Сарын дээд хязгаар</span><span class="badge">' + b.monthlyCap + ' мэдээлэл</span></li></ul></div>';
+
+  // — Албадын оноо (full width) —
+  var depts = deptList().sort(function (a, b2) { return deptScore(b2) - deptScore(a); });
+  var deptRows = depts.map(function (d) {
+    var s = deptScore(d), cov = deptCoverage(d), bn = deptBonusScore(d), fa = deptFirstAid(d), pp = deptPpe(d);
+    function cell(label, val, unit) {
+      return '<div style="min-width:96px"><div style="font-size:11px;color:#8A94A6">' + label + '</div>' +
+        '<div style="font-weight:700;font-size:14px">' + (val == null ? '—' : val + (unit || '')) + '</div></div>';
     }
-    if (ps[i]) ps[i].textContent = 'Жин: ' + w[k] + '%';
-  });
+    return '<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #EEF1F4;flex-wrap:wrap">' +
+      '<div style="width:120px;font-weight:700">' + esc(d) + '</div>' +
+      '<div class="kpi-cat-score' + scoreTone(s) + '" style="font-size:22px;width:54px;text-align:center">' + s + '</div>' +
+      '<div style="flex:1;min-width:140px;display:flex;align-items:center;gap:8px">' + miniBar(s) + '</div>' +
+      cell('Coverage', cov, '%') + cell('Бонус', bn, '') + cell('Анхны тусламж', fa, fa == null ? '' : '%') + cell('PPE', pp, pp == null ? '' : '%') +
+      '</div>';
+  }).join('');
+  html += '<div class="kpi-cat-card" style="grid-column:1/-1"><div class="kpi-cat-head" style="margin-bottom:6px">' +
+    '<div class="kpi-cat-icon" style="background:#F1F5F9;color:#334155"><i class="ti ti-building-community"></i></div>' +
+    '<div><h3>Албадын оноо</h3><p>Coverage % + бонус + анхны тусламж + PPE мөрдөлт</p></div></div>' +
+    '<div style="margin-top:6px">' + (deptRows || '<div class="empty-state" style="padding:18px"><i class="ti ti-info-circle"></i><div>Дата алга</div></div>') + '</div></div>';
+
+  // — Үнэлгээний түвшин (эерэг хүрээ) —
+  html += '<div class="kpi-cat-card threshold-card" style="grid-column:1/-1"><h3>Үнэлгээний түвшин</h3>' +
+    '<div class="threshold-list">' +
+    '<div class="threshold-row threshold-excellent"><div class="threshold-range">90–100</div><div class="threshold-label">Маш сайн</div><div class="threshold-action">Цалингийн урамшуулал</div></div>' +
+    '<div class="threshold-row threshold-good"><div class="threshold-range">75–89</div><div class="threshold-label">Сайн (суурь хангалттай)</div><div class="threshold-action">Тогтмол үргэлжлүүлэх</div></div>' +
+    '<div class="threshold-row threshold-ok"><div class="threshold-range">60–74</div><div class="threshold-label">Дунд</div><div class="threshold-action">Дэмжих, чиглүүлэх</div></div>' +
+    '<div class="threshold-row threshold-low"><div class="threshold-range">&lt;60</div><div class="threshold-label">Эхэлж байгаа</div><div class="threshold-action">Нэмэлт сургалт санал болгох</div></div>' +
+    '</div></div>';
+
+  grid.innerHTML = html;
+}
+
+function kpiMethodologyHtml() {
+  var c = kpiCfg();
+  return '<div style="line-height:1.6;font-size:14px">' +
+    '<p><strong>Зарчим:</strong> Энэ систем "осол болоогүй"-г биш, ажилтан <strong>идэвхтэй оролцож байгааг</strong> хэмжинэ (leading indicator). Бонус зөвхөн <strong>нэмэгдэнэ</strong>, хэзээ ч хасагдахгүй. KPI урамшуулдаг — шийтгэдэггүй.</p>' +
+    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Суурь (видео ' + c.weights.video + '% + шалгалт ' + c.weights.exam + '% + ахиц ' + c.weights.improvement + '% + анх тэнцсэн ' + c.weights.firstTry + '%) + Бонус (' + c.weights.bonus + '%).</p>' +
+    '<p style="margin-top:10px"><strong>Бонус</strong> зөвхөн ХАБ ажилтан <strong>баталгаажуулсны дараа</strong> тооцогдоно. Аюул +' + c.bonus.hazard + '. Near-miss эрсдэлээр: бага ' + c.bonus.nearMiss.low + ', дунд ' + c.bonus.nearMiss.mid + ', өндөр ' + c.bonus.nearMiss.high + '. Нэг хүн сард дээд тал нь ' + c.bonus.monthlyCap + ' мэдээллээр бонус авна (тоо биш чанарыг урамшуулна).</p>' +
+    '<p style="margin-top:10px"><strong>Албаны оноо</strong> = босго (' + c.baseThreshold + ') давсан гишүүдийн хувь (coverage) + албаны бонус + анхны тусламжийн хайрцгийн бүрэн бүтэн байдал + PPE мөрдөлтийн %. <em>Нэг хүний хоцрогдол бүхэл албыг унагаахгүй.</em></p>' +
+    '<p style="margin-top:10px;color:#64748B;font-size:13px">Бүх жин, босго, бонус оноо, cap-ыг <strong>Тохиргоо</strong> хэсгээс өөрчилж болно — кодонд хатуу бичээгүй.</p>' +
+    '</div>';
 }
 
 /* ============ Эрсдэл ============ */
@@ -791,6 +1236,248 @@ function renderIncidents() {
   setStat('.page[data-page="incidents"] .stat-strip', 3, DB.incidents.filter(function (n) { return n.type === 'serious'; }).length);
 }
 
+/* ============ Аюул / Near-miss мэдээлэл → баталгаажуулалт → бонус ============ */
+var REPORT_RISK = [['low', 'Бага', '#16A34A'], ['mid', 'Дунд', '#D97706'], ['high', 'Өндөр', '#DC2626']];
+
+function downscaleImage(file, maxDim, quality, cb) {
+  try {
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var img = new Image();
+      img.onload = function () {
+        var sc = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var c = document.createElement('canvas');
+        c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        try { cb(c.toDataURL('image/jpeg', quality)); } catch (e) { cb(''); }
+      };
+      img.onerror = function () { cb(''); };
+      img.src = ev.target.result;
+    };
+    reader.onerror = function () { cb(''); };
+    reader.readAsDataURL(file);
+  } catch (e) { cb(''); }
+}
+
+function currentReporter() {
+  if (SESSION && (SESSION.uid || SESSION.email)) {
+    var me = (DB.employees || []).filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email); })[0];
+    if (me) return { id: me.id, uid: me.uid || SESSION.uid || '', name: me.name, dept: me.dept || '', email: me.email || SESSION.email || '' };
+    return { id: '', uid: SESSION.uid || '', name: USER.name, dept: '', email: SESSION.email || '' };
+  }
+  var e0 = (DB.employees || [])[0];
+  return e0 ? { id: e0.id, uid: e0.uid || '', name: e0.name, dept: e0.dept || '', email: e0.email || '' } : { id: '', uid: '', name: USER.name, dept: '', email: '' };
+}
+
+function riskTag(r) {
+  var m = { low: ['Бага эрсдэл', 'tag-emerald'], mid: ['Дунд эрсдэл', 'tag-warn'], high: ['Өндөр эрсдэл', 'tag-coral'] };
+  var x = m[r] || m.low; return '<span class="tag ' + x[1] + '">' + x[0] + '</span>';
+}
+function reportTypeLabel(t) { return t === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул/эрсдэл'; }
+function reportStatusTag(s) {
+  if (s === 'verified') return '<span class="tag tag-emerald">Баталгаажсан</span>';
+  if (s === 'rejected') return '<span class="tag tag-coral">Татгалзсан</span>';
+  return '<span class="tag tag-warn">Хүлээгдэж буй</span>';
+}
+function statCard(label, val, icon, color) {
+  return '<div style="flex:1;min-width:128px;background:#fff;border:1px solid #EEF1F4;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px">' +
+    '<div style="width:36px;height:36px;border-radius:9px;background:' + color + '1A;color:' + color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + icon + '"></i></div>' +
+    '<div><div style="font-size:20px;font-weight:700;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.1">' + val + '</div>' +
+    '<div style="font-size:12px;color:#8A94A6">' + label + '</div></div></div>';
+}
+function emptyBox(msg) { return '<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i><div>' + esc(msg) + '</div></div>'; }
+
+function reportCard(r, withActions) {
+  var photo = r.photo ? '<img src="' + r.photo + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
+    '<div style="width:54px;height:54px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#94A3B8;flex-shrink:0"><i class="ti ti-photo"></i></div>';
+  var pts = reportPoints(r), actions = '';
+  if (withActions && r.status === 'reported') {
+    actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
+      '<button class="btn btn-primary btn-sm" data-verify="' + r.id + '"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
+      '<button class="btn btn-secondary btn-sm" data-reject="' + r.id + '">Татгалзах</button></div>';
+  }
+  return '<div class="report-card" data-report="' + r.id + '">' + photo +
+    '<div style="flex:1;min-width:0">' +
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + reportStatusTag(r.status) +
+    '<span class="tag">' + reportTypeLabel(r.type) + '</span>' + riskTag(r.risk_level) +
+    (r.status === 'verified' ? '<span class="tag tag-emerald">+' + pts + ' бонус</span>' : '') + '</div>' +
+    '<div style="font-weight:600;margin-top:5px">' + esc(r.desc) + '</div>' +
+    '<div style="font-size:12px;color:#8A94A6;margin-top:2px">' + esc(r.location) + ' · ' + esc(r.reporterName || '—') + ' · ' + timeAgo(r.createdAt) + '</div>' +
+    actions + '</div></div>';
+}
+
+function actionReportNew(presetType) {
+  var sel = { type: presetType || 'near_miss', risk: 'mid', photo: '' };
+  var node = elc('div', 'report-form');
+  function chips(items, cur, key) {
+    return '<div class="rf-chips" data-chipgroup="' + key + '">' + items.map(function (it) {
+      return '<button type="button" class="rf-chip' + (it[0] === cur ? ' active' : '') + '" data-val="' + it[0] + '"' +
+        (it[2] ? ' style="--c:' + it[2] + '"' : '') + '>' + it[1] + '</button>';
+    }).join('') + '</div>';
+  }
+  node.innerHTML =
+    '<div class="rf-field"><label>1. Зураг (заавал биш)</label>' +
+    '<label class="rf-photo" id="rfPhotoLbl"><input type="file" accept="image/*" id="rfPhoto" hidden>' +
+    '<i class="ti ti-camera"></i><span>Зураг авах / хавсаргах</span></label>' +
+    '<img id="rfPreview" style="display:none;max-width:100%;border-radius:10px;margin-top:8px"></div>' +
+    '<div class="rf-field"><label>2. Төрөл</label>' + chips([['near_miss', 'Осолд дөхсөн (near-miss)'], ['hazard', 'Аюул / эрсдэл']], sel.type, 'type') + '</div>' +
+    '<div class="rf-field"><label>3. Эрсдэлийн зэрэг</label>' + chips(REPORT_RISK, sel.risk, 'risk') + '</div>' +
+    '<div class="rf-field"><label>4. Байршил</label><select id="rfLoc" class="rf-input">' + AREAS.map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('') + '</select></div>' +
+    '<div class="rf-field"><label>5. Нэг өгүүлбэрээр тайлбарла</label><textarea id="rfDesc" class="rf-input" rows="2" placeholder="Юу болсон / болж болзошгүй вэ?"></textarea></div>' +
+    '<div class="rf-hint"><i class="ti ti-clock"></i> 1 минутын дотор. ХАБ ажилтан баталгаажуулсны дараа бонус оноо автоматаар нэмэгдэнэ.</div>' +
+    '<button class="btn btn-primary btn-block" id="rfSubmit"><i class="ti ti-send"></i> Илгээх</button>';
+
+  node.addEventListener('click', function (ev) {
+    var chip = ev.target.closest('.rf-chip');
+    if (chip) {
+      var grp = chip.closest('[data-chipgroup]');
+      $$('.rf-chip', grp).forEach(function (c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      sel[grp.getAttribute('data-chipgroup')] = chip.getAttribute('data-val');
+      return;
+    }
+    if (ev.target.closest('#rfSubmit')) {
+      var desc = $('#rfDesc', node).value.trim();
+      if (!desc) { toast('Тайлбар оруулна уу', 'warn'); return; }
+      createReport(sel.type, sel.risk, $('#rfLoc', node).value, desc, sel.photo);
+      closeModal();
+    }
+  });
+  $('#rfPhoto', node).addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    downscaleImage(f, 240, 0.45, function (durl) {
+      sel.photo = durl || '';
+      if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
+    });
+  });
+  buildModal(presetType === 'hazard' ? 'Аюул / эрсдэл мэдээлэх' : 'Осолд дөхсөн мэдээлэх', node, { width: '440px' });
+}
+
+function createReport(type, risk, location, desc, photo) {
+  var who = currentReporter();
+  var r = {
+    id: nextId('RP', DB.reports), type: type, risk_level: risk, status: 'reported',
+    desc: desc, location: location, dept: who.dept || '',
+    reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '', reporterEmail: who.email || '',
+    photo: photo || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
+  };
+  DB.reports.unshift(r);
+  addNotification((type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + ' мэдээлэл ирлээ — ' + location + ' (' + who.name + ')', 'reportflow');
+  saveDB();
+  renderReportflow(); renderNotifBadge(); renderDashboard();
+  toast('Мэдээлэл илгээгдлээ. Баталгаажсаны дараа бонус нэмэгдэнэ.', 'success');
+}
+
+function verifyReport(id, decision, newRisk) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r || r.status !== 'reported') return;
+  r.verifiedAt = new Date().toISOString();
+  r.verifiedBy = (SESSION && SESSION.email) || USER.name;
+  if (decision === 'verify') {
+    if (newRisk) r.risk_level = newRisk;
+    r.status = 'verified';
+    addNotification('Таны мэдээлэл баталгаажлаа (+' + reportPoints(r) + ' бонус) — ' + r.location, 'reportflow', r.reporterUid);
+    toast('Баталгаажлаа. +' + reportPoints(r) + ' бонус оноо тооцогдлоо.', 'success');
+  } else {
+    r.status = 'rejected';
+    addNotification('Таны мэдээлэл баталгаажсангүй — ' + r.location, 'reportflow', r.reporterUid);
+    toast('Татгалзлаа', 'info');
+  }
+  saveDB();
+  renderReportflow(); renderKpiPage(); renderEmployees(); renderDashboard(); renderNotifBadge();
+}
+
+function openReportDetail(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var admin = isAdmin();
+  var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
+  var html = photo + '<div class="detail-grid">' +
+    '<div class="detail-row"><span>Төрөл</span><b>' + reportTypeLabel(r.type) + '</b></div>' +
+    '<div class="detail-row"><span>Эрсдэл</span><b>' + riskTag(r.risk_level) + '</b></div>' +
+    '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
+    '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(r.reporterName || '—') + '</b></div>' +
+    '<div class="detail-row"><span>Огноо</span><b>' + new Date(r.createdAt).toLocaleString('mn-MN') + '</b></div>' +
+    '<div class="detail-row"><span>Төлөв</span><b>' + reportStatusTag(r.status) + '</b></div>' +
+    (r.verifiedBy ? '<div class="detail-row"><span>Шийдвэрлэсэн</span><b>' + esc(r.verifiedBy) + '</b></div>' : '') + '</div>' +
+    '<p style="margin:12px 2px;font-size:14px;line-height:1.5"><strong>Тайлбар:</strong> ' + esc(r.desc) + '</p>';
+  if (admin && r.status === 'reported') {
+    var nm = kpiCfg().bonus.nearMiss;
+    html += '<div style="margin:12px 0"><label style="font-size:13px;color:#64748B">Эрсдэлийн зэргийг тогтоо (бонус оноо)</label>' +
+      '<div class="rf-chips" id="rdRisk" style="margin-top:6px">' + REPORT_RISK.map(function (x) {
+        return '<button type="button" class="rf-chip' + (x[0] === r.risk_level ? ' active' : '') + '" data-val="' + x[0] + '" style="--c:' + x[2] + '">' + x[1] + ' (+' + (r.type === 'near_miss' ? nm[x[0]] : kpiCfg().bonus.hazard) + ')</button>';
+      }).join('') + '</div></div>' +
+      '<div class="detail-actions"><button class="btn btn-secondary" data-rdreject="1">Татгалзах</button>' +
+      '<button class="btn btn-primary" data-rdverify="1">Баталгаажуулах</button></div>';
+  }
+  var node = elc('div', 'modal-info', html), pickedRisk = r.risk_level;
+  node.addEventListener('click', function (ev) {
+    var chip = ev.target.closest('#rdRisk .rf-chip');
+    if (chip) { $$('#rdRisk .rf-chip', node).forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); pickedRisk = chip.getAttribute('data-val'); return; }
+    if (ev.target.closest('[data-rdverify]')) { closeModal(); verifyReport(r.id, 'verify', pickedRisk); return; }
+    if (ev.target.closest('[data-rdreject]')) { closeModal(); verifyReport(r.id, 'reject'); return; }
+  });
+  buildModal('Мэдээллийн дэлгэрэнгүй', node, { width: '460px' });
+}
+
+function renderReportflow() {
+  var sec = pageEl('reportflow');
+  if (!sec) return;
+  var reports = DB.reports || [];
+  var pending = reports.filter(function (r) { return r.status === 'reported'; });
+  var verified = reports.filter(function (r) { return r.status === 'verified'; });
+  var rejected = reports.filter(function (r) { return r.status === 'rejected'; });
+  var thisMonth = verified.filter(function (r) { return monthKey(r.verifiedAt || r.createdAt) === monthKey(); }).length;
+  var admin = isAdmin();
+  var myBonus = 0;
+  if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
+
+  var html = '<div class="page-header"><div><h1>Аюул / Near-miss мэдээлэл</h1>' +
+    '<p class="page-subtitle">Зураг → байршил → нэг өгүүлбэр → эрсдэл. Баталгаажсаны дараа бонус нэмэгдэнэ.</p></div>' +
+    '<div class="page-actions">' +
+    '<button class="btn btn-secondary" data-newreport="near_miss"><i class="ti ti-alert-hexagon"></i> Осолд дөхсөн</button>' +
+    '<button class="btn btn-primary" data-newreport="hazard"><i class="ti ti-flag-2"></i> Аюул мэдээлэх</button></div></div>';
+
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
+    statCard('Хүлээгдэж буй', pending.length, 'ti-clock', '#D97706') +
+    statCard('Энэ сар баталгаажсан', thisMonth, 'ti-circle-check', '#16A34A') +
+    statCard('Татгалзсан', rejected.length, 'ti-x', '#DC2626') +
+    (admin ? statCard('Нийт мэдээлэл', reports.length, 'ti-flag', '#334155')
+      : isDeptHead() ? statCard('Албаны бонус (дундаж)', deptBonusScore(SESSION.dept), 'ti-gift', '#16A34A')
+        : statCard('Миний бонус', '+' + myBonus, 'ti-gift', '#16A34A')) + '</div>';
+
+  if (admin) {
+    html += '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Баталгаажуулах дараалал <span class="badge badge-warn">' + pending.length + '</span></h3>' +
+      '<p style="font-size:13px;color:#8A94A6;margin:0 0 12px">Тоо биш чанарыг урамшуул — эрсдэлийн зэргийг зөв тогтоо.</p>' +
+      (pending.length ? pending.map(function (r) { return reportCard(r, true); }).join('') : emptyBox('Хүлээгдэж буй мэдээлэл алга')) + '</div>';
+    var hist = verified.concat(rejected).sort(function (a, b) { return new Date(b.verifiedAt || b.createdAt) - new Date(a.verifiedAt || a.createdAt); });
+    html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">Шийдвэрлэсэн түүх</h3>' +
+      (hist.length ? hist.slice(0, 30).map(function (r) { return reportCard(r, false); }).join('') : emptyBox('Түүх алга')) + '</div>';
+  } else {
+    var sorted = reports.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">' + (isDeptHead() ? 'Албаны мэдээлэл' : 'Миний мэдээлэл') + '</h3>' +
+      (sorted.length ? sorted.map(function (r) { return reportCard(r, false); }).join('') : emptyBox(isDeptHead() ? 'Албанд мэдээлэл алга' : 'Та одоогоор мэдээлэл оруулаагүй байна. Дээрх товчоор эхэл!')) + '</div>';
+  }
+
+  sec.innerHTML = html;
+  var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
+  if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
+
+  if (!sec._wired) {
+    sec._wired = true;
+    sec.addEventListener('click', function (ev) {
+      var nb = ev.target.closest('[data-newreport]');
+      if (nb) { actionReportNew(nb.getAttribute('data-newreport')); return; }
+      var vb = ev.target.closest('[data-verify]');
+      if (vb) { ev.stopPropagation(); verifyReport(vb.getAttribute('data-verify'), 'verify'); return; }
+      var rb = ev.target.closest('[data-reject]');
+      if (rb) { ev.stopPropagation(); verifyReport(rb.getAttribute('data-reject'), 'reject'); return; }
+      var card = ev.target.closest('[data-report]');
+      if (card) openReportDetail(card.getAttribute('data-report'));
+    });
+  }
+}
+
 /* ============ Санал ============ */
 function suggestStatusTag(s) {
   if (s === 'done') return '<span class="tag tag-emerald">Хэрэгжүүлсэн</span>';
@@ -820,28 +1507,80 @@ function renderSuggestions() {
 
 /* ============ Тохиргоо ============ */
 function renderSettings() {
-  var o = DB.settings.org;
-  var inputs = $$('.page[data-page="settings"] .settings-body .card:first-child .form input, .page[data-page="settings"] .settings-body .card:first-child .form select');
-  /* Дараалал: нэр, регистр, салбар, ажилтны тоо, эрсдэлийн ангилал */
-  var byOrder = $$('.page[data-page="settings"] .settings-body .form')[0];
-  if (byOrder) {
-    var f = byOrder.querySelectorAll('input,select');
-    if (f[0]) f[0].value = o.name;
-    if (f[1]) f[1].value = o.regNo;
-    if (f[2]) f[2].value = o.sector;
-    if (f[3]) f[3].value = o.headcount;
-    if (f[4]) f[4].value = o.riskClass;
+  var body = $('.page[data-page="settings"] .settings-body');
+  if (!body) return;
+  if (!isAdmin()) { body.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Тохиргоог зөвхөн ХАБЭА ажилтан өөрчилнө.</div></div></div>'; return; }
+  var o = DB.settings.org || {}, c = kpiCfg(), w = c.weights, b = c.bonus, dw = c.dept;
+  function inp(label, id, val, type, attrs) {
+    return '<div class="form-group flex-grow"><label>' + label + '</label><input class="cfg-input" type="' + (type || 'number') + '" id="' + id + '" value="' + esc(val) + '" ' + (attrs || 'min="0" max="100"') + '></div>';
   }
-  var w = DB.settings.weights;
-  var order = ['training', 'participation', 'discipline', 'health', 'leadership'];
-  var rows = $$('.page[data-page="settings"] .weight-row');
-  rows.forEach(function (row, i) {
-    var slider = row.querySelector('input[type="range"]');
-    var val = row.querySelector('.weight-val');
-    if (slider) slider.value = w[order[i]];
-    if (val) val.textContent = w[order[i]] + '%';
+  var wsum = w.video + w.exam + w.improvement + w.firstTry + w.bonus;
+  var dsum = dw.coverage + dw.bonus + dw.firstAid + dw.ppe;
+  function sumBox(id, sum) {
+    return '<div id="' + id + '" class="weight-total" style="background:' + (sum === 100 ? 'var(--emerald-light)' : 'var(--amber-light)') + ';color:' + (sum === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)') + '">Нийт: <strong>' + sum + '%</strong>' + (sum === 100 ? ' ✓' : ' (100 байх ёстой)') + '</div>';
+  }
+  body.innerHTML =
+    '<div class="card"><h3>Байгууллагын мэдээлэл</h3><div class="form">' +
+    '<div class="form-group"><label>Байгууллагын нэр</label><input type="text" id="setOrgName" value="' + esc(o.name || '') + '"></div>' +
+    '<div class="form-row">' + inp('Регистрийн дугаар', 'setOrgReg', o.regNo || '', 'text', '') + inp('Ажилтны тоо', 'setOrgHc', o.headcount || 0, 'number', 'min="0" max="100000"') + '</div>' +
+    '<div class="form-actions"><button class="btn btn-primary" data-saveorg="1">Хадгалах</button></div></div></div>' +
+
+    '<div class="card"><h3>KPI үнэлгээний жин</h3><p class="card-subtitle">Суурь үзүүлэлт + бонусын жин. Нийт 100% байх ёстой. Бонус зөвхөн нэмнэ, хэзээ ч хасахгүй.</p><div class="form">' +
+    '<div class="form-row">' + inp('Видео үзэлт', 'wVideo', w.video) + inp('Шалгалт', 'wExam', w.exam) + inp('Ахиц', 'wImp', w.improvement) + '</div>' +
+    '<div class="form-row">' + inp('Анх тэнцсэн', 'wFt', w.firstTry) + inp('Бонус', 'wBonus', w.bonus) + '</div>' +
+    sumBox('wsum', wsum) +
+    '<div class="form-actions"><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
+
+    '<div class="card"><h3>Босго ба бонус оноо</h3><p class="card-subtitle">Near-miss эрсдэлийн зэргээр өөр оноо. Сарын дээд хязгаар (cap) — тоо биш чанарыг урамшуулна.</p><div class="form">' +
+    '<div class="form-row">' + inp('Албаны coverage босго', 'tBase', c.baseThreshold) + inp('Бонус 100%-ийн оноо', 'tTarget', c.bonusTarget, 'number', 'min="1" max="200"') + '</div>' +
+    '<div class="form-row">' + inp('Аюул мэдээллийн бонус', 'bHaz', b.hazard, 'number', 'min="0" max="50"') + inp('Сарын дээд хязгаар (cap)', 'bCap', b.monthlyCap, 'number', 'min="1" max="20"') + '</div>' +
+    '<div class="form-row">' + inp('Near-miss: бага', 'bLow', b.nearMiss.low, 'number', 'min="0" max="50"') + inp('Near-miss: дунд', 'bMid', b.nearMiss.mid, 'number', 'min="0" max="50"') + inp('Near-miss: өндөр', 'bHigh', b.nearMiss.high, 'number', 'min="0" max="50"') + '</div>' +
+    '<div class="form-actions"><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
+
+    '<div class="card"><h3>Албаны онооны жин</h3><p class="card-subtitle">Coverage % + бонус + анхны тусламж + PPE. Нийт 100%. Нэг хүний хоцрогдол бүхэл албыг унагаахгүй.</p><div class="form">' +
+    '<div class="form-row">' + inp('Coverage (босго давсан %)', 'dCov', dw.coverage) + inp('Албаны бонус', 'dBon', dw.bonus) + '</div>' +
+    '<div class="form-row">' + inp('Анхны тусламжийн хайрцаг', 'dFa', dw.firstAid) + inp('PPE мөрдөлт', 'dPpe', dw.ppe) + '</div>' +
+    sumBox('dsum', dsum) +
+    '<div class="form-actions"><button class="btn btn-secondary" data-resetkpi="1">Анхдагч руу буцаах</button><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>';
+}
+function updateConfigSums() {
+  function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
+  [['wsum', gv('wVideo') + gv('wExam') + gv('wImp') + gv('wFt') + gv('wBonus')], ['dsum', gv('dCov') + gv('dBon') + gv('dFa') + gv('dPpe')]].forEach(function (p) {
+    var el = $('#' + p[0]); if (!el) return; var s = p[1];
+    el.innerHTML = 'Нийт: <strong>' + s + '%</strong>' + (s === 100 ? ' ✓' : ' (100 байх ёстой)');
+    el.style.background = s === 100 ? 'var(--emerald-light)' : 'var(--amber-light)';
+    el.style.color = s === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)';
   });
-  updateWeightTotal();
+}
+function saveOrgConfig() {
+  var o = DB.settings.org || (DB.settings.org = {});
+  function gv(id) { var el = $('#' + id); return el ? el.value : ''; }
+  o.name = gv('setOrgName').trim(); o.regNo = gv('setOrgReg').trim(); o.headcount = num(gv('setOrgHc'), 0);
+  saveDB(); toast('Байгууллагын мэдээлэл хадгалагдлаа');
+}
+function saveKpiConfig() {
+  var c = kpiCfg();
+  function gv(id, d) { var el = $('#' + id); return el ? clamp(num(el.value, d), 0, 100000) : d; }
+  var nw = { video: gv('wVideo', 50), exam: gv('wExam', 22), improvement: gv('wImp', 8), firstTry: gv('wFt', 5), bonus: gv('wBonus', 15) };
+  var wsum = nw.video + nw.exam + nw.improvement + nw.firstTry + nw.bonus;
+  if (wsum !== 100) { toast('KPI жингийн нийлбэр 100% байх ёстой (одоо ' + wsum + '%)', 'warn'); return; }
+  var nd = { coverage: gv('dCov', 55), bonus: gv('dBon', 15), firstAid: gv('dFa', 15), ppe: gv('dPpe', 15) };
+  var dsum = nd.coverage + nd.bonus + nd.firstAid + nd.ppe;
+  if (dsum !== 100) { toast('Албаны жингийн нийлбэр 100% байх ёстой (одоо ' + dsum + '%)', 'warn'); return; }
+  c.weights = nw; c.dept = nd;
+  c.baseThreshold = gv('tBase', 75); c.bonusTarget = Math.max(1, gv('tTarget', 30));
+  c.bonus = { hazard: gv('bHaz', 5), nearMiss: { low: gv('bLow', 3), mid: gv('bMid', 6), high: gv('bHigh', 10) }, monthlyCap: Math.max(1, gv('bCap', 3)) };
+  DB.settings.kpi = c;
+  saveDB();
+  renderSettings(); renderKpiPage(); renderEmployees(); renderDashboard(); renderPpe(); renderReportflow();
+  if (charts.radar) renderCharts();
+  toast('KPI тохиргоо хадгалагдлаа ✓');
+}
+function resetKpiConfig() {
+  DB.settings.kpi = seedDB().settings.kpi;
+  saveDB(); renderSettings(); renderKpiPage(); renderEmployees(); renderDashboard(); renderPpe();
+  if (charts.radar) renderCharts();
+  toast('Анхдагч KPI тохиргоо сэргээгдлээ');
 }
 function updateWeightTotal() {
   var total = 0;
@@ -890,8 +1629,357 @@ function openNotifications(anchor) {
   panel.style.top = (r.bottom + 8 + window.scrollY) + 'px';
   activeMenu = panel;
 }
-function addNotification(text, page) {
-  DB.notifications.push({ id: 'N' + Date.now(), text: text, time: new Date().toISOString(), read: false, page: page });
+function addNotification(text, page, uid) {
+  DB.notifications.push({ id: 'N' + Date.now() + '-' + Math.floor(Math.random() * 1000), text: text, time: new Date().toISOString(), read: false, page: page, uid: uid || '' });
+}
+
+/* ============ PPE мөрдөлт + Анхны тусламжийн хайрцаг (албаны түвшний оноо) ============ */
+var FIRST_AID_ITEMS = ['Боолт', 'Антисептик', 'Наалт', 'Гэмтлийн тэвш', 'Хайч', 'Бээлий', 'Эмийн хавчаар', 'Дулаан хучлага', 'Ариутгагч', 'Гар ариутгагч', 'Өвчин намдаах', 'Заавар хуудас'];
+
+function renderPpe() {
+  var sec = pageEl('ppe');
+  if (!sec) return;
+  var admin = isAdmin(), depts = deptList();
+
+  var html = '<div class="page-header"><div><h1>ХХХ мөрдөлт ба анхны тусламж</h1>' +
+    '<p class="page-subtitle">Албаны түвшний эерэг үзүүлэлт — зөрчлийн тоо биш, мөрдөлтийн %</p></div>';
+  if (admin) html += '<div class="page-actions">' +
+    '<button class="btn btn-secondary" data-addcheck="1"><i class="ti ti-first-aid-kit"></i> Хайрцаг шалгах</button>' +
+    '<button class="btn btn-primary" data-addppe="1"><i class="ti ti-eye-check"></i> PPE ажиглалт нэмэх</button></div>';
+  html += '</div>';
+
+  // PPE мөрдөлтийн хувь
+  html += '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">PPE мөрдөлтийн хувь</h3>' +
+    '<p style="font-size:13px;color:#8A94A6;margin:0 0 14px"><i class="ti ti-info-circle"></i> ХАБ ажилтан ажиглалт хийнэ. 100 ажиглалтаас хэд нь зөв мөрдсөнийг эерэгээр хэмжинэ — зөрчигчийг шийтгэх нотолгоо биш.</p>';
+  html += depts.map(function (d) {
+    var pp = deptPpe(d);
+    var obs = (DB.ppeObservations || []).filter(function (o) { return o.dept === d; });
+    var tot = obs.reduce(function (a, o) { return a + _f(o.total); }, 0), comp = obs.reduce(function (a, o) { return a + _f(o.compliant); }, 0);
+    return '<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid #F1F5F9;flex-wrap:wrap">' +
+      '<div style="width:110px;font-weight:600">' + esc(d) + '</div>' +
+      '<div style="flex:1;min-width:140px">' + miniBar(pp == null ? 0 : pp, pp >= 90 ? '#16A34A' : (pp >= 75 ? '#D97706' : '#DC2626')) + '</div>' +
+      '<div style="width:50px;text-align:right;font-weight:700">' + (pp == null ? '—' : pp + '%') + '</div>' +
+      '<div style="width:118px;font-size:12px;color:#8A94A6;text-align:right">' + (tot ? comp + '/' + tot + ' ажиглалт' : 'дата алга') + '</div></div>';
+  }).join('') + '</div>';
+
+  // Анхны тусламжийн хайрцаг
+  html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 4px">Анхны тусламжийн хайрцаг</h3>' +
+    '<p style="font-size:13px;color:#8A94A6;margin:0 0 14px">Эрүүл ахуйч алба бүрээр шалгана. Хайрцаг бүрэн эсэх + дутууг хэр хурдан нөхсөнийг тооцно.</p>';
+  html += depts.map(function (d) {
+    var fa = deptFirstAid(d);
+    var c = (DB.firstAidChecks || []).filter(function (x) { return x.dept === d; }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })[0];
+    var status = !c ? '<span class="tag">шалгаагүй</span>' : (c.complete ? '<span class="tag tag-emerald">Бүрэн</span>' : '<span class="tag tag-warn">Дутуу: ' + esc((c.missing || []).join(', ')) + '</span>');
+    return '<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid #F1F5F9;flex-wrap:wrap">' +
+      '<div style="width:110px;font-weight:600">' + esc(d) + '</div>' +
+      '<div style="flex:1;min-width:160px">' + status + (c ? ' <span style="font-size:12px;color:#8A94A6">· ' + timeAgo(c.createdAt) + '</span>' : '') + '</div>' +
+      '<div style="width:50px;text-align:right;font-weight:700">' + (fa == null ? '—' : fa + '%') + '</div>' +
+      (admin ? '<button class="btn btn-secondary btn-sm" data-checkdept="' + esc(d) + '">Шалгах</button>' : '') + '</div>';
+  }).join('') + '</div>';
+
+  sec.innerHTML = html;
+
+  if (!sec._wired) {
+    sec._wired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-addppe]')) { actionAddPpe(); return; }
+      if (ev.target.closest('[data-addcheck]')) { actionCheckFirstAid(); return; }
+      var cd = ev.target.closest('[data-checkdept]');
+      if (cd) { actionCheckFirstAid(cd.getAttribute('data-checkdept')); return; }
+    });
+  }
+}
+
+function actionAddPpe() {
+  formModal({
+    title: 'PPE ажиглалт нэмэх',
+    fields: [
+      { name: 'dept', label: 'Алба', type: 'select', options: deptList() },
+      { name: 'total', label: 'Нийт ажиглалт', type: 'number', value: 20, min: 1, max: 100000, hint: 'Хэдэн ажилтныг ажигласан' },
+      { name: 'compliant', label: 'ХХХ зөв мөрдсөн', type: 'number', value: 18, min: 0, max: 100000 }
+    ],
+    submitLabel: 'Хадгалах',
+    onSubmit: function (v) {
+      var tot = clamp(num(v.total), 1, 100000), comp = clamp(num(v.compliant), 0, tot);
+      DB.ppeObservations.unshift({ id: nextId('PP', DB.ppeObservations), dept: v.dept, total: tot, compliant: comp, observedBy: (SESSION && SESSION.email) || USER.name, photo: '', createdAt: new Date().toISOString() });
+      saveDB(); renderPpe(); renderKpiPage(); renderDashboard();
+      toast('PPE ажиглалт нэмэгдлээ — ' + Math.round(comp / tot * 100) + '% мөрдөлт');
+    }
+  });
+}
+
+function actionCheckFirstAid(presetDept) {
+  formModal({
+    title: 'Анхны тусламжийн хайрцаг шалгах',
+    fields: [
+      { name: 'dept', label: 'Алба', type: 'select', value: presetDept || '', options: deptList() },
+      { name: 'complete', label: 'Бүрэн бүтэн эсэх', type: 'select', value: 'yes', options: [{ value: 'yes', label: 'Бүрэн — бүх зүйл байгаа' }, { value: 'no', label: 'Дутуу зүйл байна' }] },
+      { name: 'missing', label: 'Дутуу зүйлс (таслалаар)', type: 'text', placeholder: 'ж: Боолт, Антисептик', hint: 'Зөвхөн дутуу үед бөглөнө' }
+    ],
+    submitLabel: 'Бүртгэх',
+    onSubmit: function (v) {
+      var complete = v.complete === 'yes';
+      var missing = complete ? [] : (v.missing || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      DB.firstAidChecks.unshift({ id: nextId('FA', DB.firstAidChecks), dept: v.dept, totalItems: FIRST_AID_ITEMS.length, complete: complete, missing: missing, checkedBy: (SESSION && SESSION.email) || USER.name, restockedAt: complete ? new Date().toISOString() : '', createdAt: new Date().toISOString() });
+      saveDB(); renderPpe(); renderKpiPage(); renderDashboard();
+      toast('Хайрцгийн шалгалт бүртгэгдлээ');
+    }
+  });
+}
+
+/* ============ QR шалгалт (прототип) ============ */
+var EXAMS = [
+  { id: 'EX-FIRE', title: 'Гал түймрийн аюулгүй байдал', pass: 60, questions: [
+    { q: 'Гал гарвал юуны өмнө юу хийх вэ?', opts: ['Үнэт зүйлсээ цуглуулах', 'Дохио өгч, хүмүүсийг сэрэмжлүүлэх', 'Зураг авах'], a: 1 },
+    { q: 'Гар гал унтраагуурыг хаанаас барих вэ?', opts: ['Дээд үзүүрээс', 'Хоолойн доод бариулаас', 'Дунд хэсгээс'], a: 1 },
+    { q: 'Утаа дунд хэрхэн нүүлгэх вэ?', opts: ['Гүйх', 'Бөхийж, доогуур явах', 'Зогсож хүлээх'], a: 1 },
+    { q: 'Цахилгааны гал дээр юу цацаж болохгүй вэ?', opts: ['Хуурай нунтаг', 'Ус', 'CO2'], a: 1 }
+  ] },
+  { id: 'EX-PPE', title: 'Хувийн хамгаалах хэрэгсэл (ХХХ)', pass: 60, questions: [
+    { q: 'ХХХ-ийг хэзээ өмсөх вэ?', opts: ['Зөвхөн шалгалт ирэхэд', 'Эрсдэлтэй ажил эхлэхээс өмнө', 'Хүсвэл'], a: 1 },
+    { q: 'Дуу шуугиантай бүсэд юу хэрэглэх вэ?', opts: ['Бээлий', 'Чихэвч/бэтэг', 'Малгай'], a: 1 },
+    { q: 'Гэмтэлтэй ХХХ-ийг яах вэ?', opts: ['Үргэлжлүүлэн хэрэглэх', 'Солиулах хүсэлт гаргах', 'Засаад хэрэглэх'], a: 1 }
+  ] },
+  { id: 'EX-ELEC', title: 'Цахилгааны аюулгүй ажиллагаа', pass: 60, questions: [
+    { q: 'Ил гарсан кабель харвал?', opts: ['Гараар хүрч шалгах', 'Хүрэлгүй, ХАБ-д мэдэгдэх', 'Орхих'], a: 1 },
+    { q: 'Чийгтэй гараар цахилгаан тоног барьж болох уу?', opts: ['Болно', 'Болохгүй', 'Заримдаа'], a: 1 },
+    { q: 'Засвар хийхээс өмнө юу хийх вэ?', opts: ['Тэжээлийг таслах, түгжих', 'Шууд эхлэх', 'Гэрэл асаах'], a: 0 }
+  ] }
+];
+
+function examById(id) { return EXAMS.filter(function (e) { return e.id === id; })[0]; }
+function examResultFor(examId, who) {
+  return (DB.examResults || []).filter(function (r) {
+    return r.examId === examId && ((who.uid && r.uid === who.uid) || (who.id && r.empId === who.id) || _sameEmail(r.email, who.email));
+  })[0];
+}
+
+function takeExam(examId) {
+  var ex = examById(examId); if (!ex) { toast('Шалгалт олдсонгүй', 'error'); return; }
+  var who = currentReporter();
+  var prev = examResultFor(examId, who);
+  if (prev) { infoModal('Шалгалт өгсөн', '<p>Та «' + esc(ex.title) + '» шалгалтыг аль хэдийн өгсөн байна.</p><p style="margin-top:8px"><strong>Дүн: ' + prev.score + '</strong> (' + (prev.passed ? 'тэнцсэн' : 'тэнцээгүй') + ') · ' + new Date(prev.createdAt).toLocaleDateString('mn-MN') + '</p><p style="margin-top:8px;color:#64748B;font-size:13px">Нэг ажилтан нэг шалгалтыг зөвхөн нэг удаа өгнө (давхар бүртгэлээс хамгаална).</p>'); return; }
+
+  var answers = {};
+  var node = elc('div', 'exam-runner');
+  node.innerHTML = '<p style="font-size:13px;color:#64748B;margin:0 0 14px">' + ex.questions.length + ' асуулт · тэнцэх босго ' + ex.pass + '. Нэг л удаа өгнө.</p>' +
+    ex.questions.map(function (q, qi) {
+      return '<div class="exam-q" style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:8px">' + (qi + 1) + '. ' + esc(q.q) + '</div>' +
+        q.opts.map(function (o, oi) {
+          return '<label class="exam-opt"><input type="radio" name="q' + qi + '" value="' + oi + '"> <span>' + esc(o) + '</span></label>';
+        }).join('') + '</div>';
+    }).join('') + '<button class="btn btn-primary btn-block" id="examSubmit"><i class="ti ti-check"></i> Шалгалт дуусгах</button>';
+  node.addEventListener('change', function (ev) {
+    var r = ev.target.closest('input[type=radio]'); if (r) answers[r.name] = parseInt(r.value, 10);
+  });
+  node.addEventListener('click', function (ev) {
+    if (!ev.target.closest('#examSubmit')) return;
+    if (Object.keys(answers).length < ex.questions.length) { toast('Бүх асуултад хариулна уу', 'warn'); return; }
+    var correct = 0;
+    ex.questions.forEach(function (q, qi) { if (answers['q' + qi] === q.a) correct++; });
+    var score = Math.round(correct / ex.questions.length * 100);
+    recordExamResult(ex, who, score);
+    closeModal();
+    infoModal(score >= ex.pass ? '🎉 Тэнцлээ!' : 'Дахин оролдоорой', '<p style="font-size:15px">Таны дүн: <strong style="font-size:22px;color:' + (score >= ex.pass ? '#16A34A' : '#D97706') + '">' + score + '</strong> / 100</p><p style="margin-top:8px;color:#64748B">' + (score >= ex.pass ? 'Баяр хүргэе! Энэ дүн таны KPI-д тооцогдлоо.' : 'Босго (' + ex.pass + ') хүрсэнгүй ч KPI-д тооцогдлоо. Дараагийн улиралд ахихыг зорь!') + '</p>');
+  });
+  buildModal('Шалгалт: ' + ex.title, node, { width: '500px' });
+}
+
+function recordExamResult(ex, who, score) {
+  var passed = score >= ex.pass;
+  DB.examResults.unshift({ id: nextId('ER', DB.examResults), examId: ex.id, examTitle: ex.title, uid: who.uid || '', empId: who.id || '', email: who.email || '', name: who.name || '', score: score, passed: passed, attempt: 1, createdAt: new Date().toISOString() });
+  // Холбогдох ажилтны шалгалтын дүнг шинэчилнэ (ахиц бодоход өмнөхийг хадгална)
+  var emp = (DB.employees || []).filter(function (e) { return (who.uid && e.uid === who.uid) || (who.id && e.id === who.id) || _sameEmail(e.email, who.email); })[0];
+  if (emp) {
+    if (emp.examScore != null) emp.examPrev = emp.examScore;
+    emp.examScore = score;
+    if (emp.firstTry == null || emp.firstTry === '') emp.firstTry = passed ? 1 : 0;
+  }
+  addNotification('Шалгалт өглөө: ' + ex.title + ' — ' + score + ' оноо', 'inspections', who.uid);
+  saveDB();
+  renderInspections(); renderEmployees(); renderKpiPage(); renderDashboard();
+  toast('Шалгалтын дүн бүртгэгдлээ: ' + score);
+}
+
+function showExamQR(examId) {
+  var ex = examById(examId); if (!ex) return;
+  var base = '';
+  try { base = location.origin + location.pathname; } catch (e) { base = ''; }
+  var url = base + '?qrexam=' + encodeURIComponent(examId);
+  var qrSrc = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=' + encodeURIComponent(url);
+  var html = '<div style="text-align:center">' +
+    '<img src="' + qrSrc + '" alt="QR" style="width:240px;height:240px;border:1px solid #EEF1F4;border-radius:12px" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">' +
+    '<div style="display:none;padding:20px;color:#64748B">QR зураг ачаалж чадсангүй (интернэт шаардлагатай). Доорх кодыг ашиглана уу.</div>' +
+    '<p style="margin-top:12px;font-weight:600">' + esc(ex.title) + '</p>' +
+    '<p style="font-size:13px;color:#64748B">Ажилтан гар утсаараа уншуулж шалгалтаа өгнө. Дүн автоматаар бүртгэгдэнэ.</p>' +
+    '<div style="margin-top:10px;font-size:11px;color:#94A3B8;word-break:break-all;background:#F8FAFC;padding:8px;border-radius:8px">' + esc(url) + '</div>' +
+    '<button class="btn btn-secondary btn-sm" data-copyqr="' + esc(url) + '" style="margin-top:10px"><i class="ti ti-copy"></i> Холбоос хуулах</button></div>';
+  var node = elc('div', 'modal-info', html);
+  node.addEventListener('click', function (ev) {
+    var c = ev.target.closest('[data-copyqr]'); if (!c) return;
+    try { navigator.clipboard.writeText(c.getAttribute('data-copyqr')); toast('Холбоос хуулагдлаа'); } catch (e) { toast('Хуулж чадсангүй', 'warn'); }
+  });
+  buildModal('QR — Шалгалт өгөх', node, { width: '340px' });
+}
+
+function renderInspections() {
+  var sec = pageEl('inspections'); if (!sec) return;
+  var admin = isAdmin(), who = currentReporter();
+  var results = DB.examResults || [];
+
+  var html = '<div class="page-header"><div><h1>Танхим шалгалт — QR</h1>' +
+    '<p class="page-subtitle">QR кодоор шалгалт өгнө — дүн автоматаар, гараар оруулахгүй. Нэг хүн нэг удаа.</p></div></div>';
+
+  html += '<div class="kpi-cat-grid">' + EXAMS.map(function (ex) {
+    var taken = examResultFor(ex.id, who);
+    var cnt = results.filter(function (r) { return r.examId === ex.id; }).length;
+    return '<div class="kpi-cat-card"><div class="kpi-cat-head">' +
+      '<div class="kpi-cat-icon" style="background:#D1FAE5;color:#065F46"><i class="ti ti-clipboard-check"></i></div>' +
+      '<div><h3>' + esc(ex.title) + '</h3><p>' + ex.questions.length + ' асуулт · босго ' + ex.pass + '</p></div></div>' +
+      '<div style="font-size:12px;color:#8A94A6;margin:8px 0">' + cnt + ' ажилтан өгсөн</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      (taken ? '<span class="tag tag-emerald">✓ Та өгсөн: ' + taken.score + '</span>' :
+        '<button class="btn btn-primary btn-sm" data-take="' + ex.id + '"><i class="ti ti-pencil"></i> Шалгалт өгөх</button>') +
+      (admin ? '<button class="btn btn-secondary btn-sm" data-qr="' + ex.id + '"><i class="ti ti-qrcode"></i> QR үүсгэх</button>' : '') +
+      '</div></div>';
+  }).join('') + '</div>';
+
+  if (admin) {
+    var recent = results.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }).slice(0, 40);
+    html += '<div class="card" style="padding:18px;margin-top:18px"><h3 style="margin:0 0 12px">Шалгалтын дүнгийн бүртгэл <span class="badge">' + results.length + '</span></h3>' +
+      (recent.length ? '<table class="data-table" style="width:100%"><thead><tr><th>Огноо</th><th>Ажилтан</th><th>Шалгалт</th><th>Дүн</th><th>Төлөв</th></tr></thead><tbody>' +
+        recent.map(function (r) {
+          return '<tr><td>' + new Date(r.createdAt).toLocaleDateString('mn-MN') + '</td><td>' + esc(r.name || '—') + '</td><td>' + esc(r.examTitle) + '</td>' +
+            '<td><span class="score-pill ' + scoreClass(r.score) + '">' + r.score + '</span></td><td>' + (r.passed ? '<span class="tag tag-emerald">Тэнцсэн</span>' : '<span class="tag tag-warn">Тэнцээгүй</span>') + '</td></tr>';
+        }).join('') + '</tbody></table>' : emptyBox('Одоогоор шалгалтын дүн алга')) + '</div>';
+  }
+
+  sec.innerHTML = html;
+  if (!sec._wired) {
+    sec._wired = true;
+    sec.addEventListener('click', function (ev) {
+      var t = ev.target.closest('[data-take]'); if (t) { takeExam(t.getAttribute('data-take')); return; }
+      var q = ev.target.closest('[data-qr]'); if (q) { showExamQR(q.getAttribute('data-qr')); return; }
+    });
+  }
+}
+
+/* ============ CSV видео үзэлт импорт ============ */
+function parseCSV(text) {
+  text = String(text).replace(/^﻿/, '');
+  var rows = [], row = [], cur = '', inQ = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (inQ) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+    else { if (c === '"') inQ = true; else if (c === ',') { row.push(cur); cur = ''; } else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; } else if (c !== '\r') cur += c; }
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.filter(function (r) { return r.some(function (x) { return String(x).trim(); }); });
+}
+
+function matchVideoEmp(key) {
+  key = String(key || '').trim().toLowerCase(); if (!key) return null;
+  return (DB.employees || []).filter(function (e) {
+    return _sameEmail(e.email, key) || String(e.id).toLowerCase() === key || (e.uid && String(e.uid).toLowerCase() === key) || String(e.name).toLowerCase() === key;
+  })[0];
+}
+function recomputeVideoFromImports(emp) {
+  var vs = (DB.videoViews || []).filter(function (v) { return v.empId === emp.id || (emp.uid && v.uid === emp.uid) || _sameEmail(v.email, emp.email); });
+  if (vs.length) emp.video = clamp(Math.round(avg(vs.map(function (v) { return num(v.percent); }))), 0, 100);
+}
+
+function applyVideoImport(rows) {
+  // Толгой мөр илрүүлэх
+  var header = rows[0].map(function (x) { return String(x).toLowerCase(); });
+  var hasHeader = header.some(function (h) { return /имэйл|email|код|code|видео|video|нэр|title|үзэлт|percent|%|огноо|date/.test(h); });
+  var idxKey = 0, idxTitle = 1, idxPct = 2, idxDate = 3;
+  if (hasHeader) {
+    header.forEach(function (h, i) {
+      if (/имэйл|email|код|code|нэр\b/.test(h)) idxKey = i;
+      else if (/видео|title|сэдэв/.test(h)) idxTitle = i;
+      else if (/үзэлт|percent|%|progress/.test(h)) idxPct = i;
+      else if (/огноо|date/.test(h)) idxDate = i;
+    });
+  }
+  var data = hasHeader ? rows.slice(1) : rows;
+  var imported = 0, dups = 0, unmatched = [], affected = {};
+  data.forEach(function (r) {
+    var key = (r[idxKey] || '').trim(), title = (r[idxTitle] || '').trim();
+    var pct = clamp(num(r[idxPct]), 0, 100), date = (r[idxDate] || todayISO()).trim();
+    if (!key) return;
+    var emp = matchVideoEmp(key);
+    if (!emp) { unmatched.push(key); return; }
+    var dkey = (emp.id || emp.uid || emp.email) + '|' + title + '|' + date;
+    var exists = (DB.videoViews || []).some(function (v) { return ((v.empId || v.uid || v.email) + '|' + v.title + '|' + v.date) === dkey; });
+    if (exists) { dups++; return; }
+    DB.videoViews.push({ id: nextId('VV', DB.videoViews), empId: emp.id || '', uid: emp.uid || '', email: emp.email || '', title: title, percent: pct, date: date, batch: todayISO() });
+    affected[emp.id] = emp; imported++;
+  });
+  Object.keys(affected).forEach(function (k) { recomputeVideoFromImports(affected[k]); });
+  if (imported) { saveDB(); renderEmployees(); renderKpiPage(); renderDashboard(); renderDataflow(); }
+  return { imported: imported, dups: dups, unmatched: unmatched, total: data.length };
+}
+
+function importVideoCSV() {
+  var node = elc('div', 'modal-info');
+  node.innerHTML = '<p style="font-size:14px;line-height:1.5">Гадаад видео платформоос татсан <strong>CSV</strong> файлыг оруулна. Баганууд: <code>имэйл/код, видео нэр, үзэлт %, огноо</code>.</p>' +
+    '<label class="rf-photo" id="vcsvLbl" style="margin-top:10px"><input type="file" accept=".csv,text/csv" id="vcsv" hidden><i class="ti ti-file-spreadsheet"></i><span>CSV файл сонгох</span></label>' +
+    '<div class="rf-hint" style="margin-top:10px"><i class="ti ti-shield-check"></i> Давхар бичилт автоматаар шүүгдэнэ. Тохирохгүй мөрийг анхааруулна.</div>' +
+    '<button class="btn btn-secondary btn-sm" id="vcsvTemplate" style="margin-top:6px"><i class="ti ti-download"></i> Загвар татах</button>';
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#vcsvTemplate')) {
+      var tpl = '﻿имэйл/код,видео нэр,үзэлт %,огноо\nEMP-002,Галын аюулгүй байдал,95,2026-06-01\nEMP-003,ХХХ сургалт,80,2026-06-02\n';
+      download('video-import-zagvar.csv', tpl, 'text/csv;charset=utf-8'); return;
+    }
+  });
+  $('#vcsv', node).addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function (ev) {
+      try {
+        var rows = parseCSV(ev.target.result);
+        if (!rows.length) { toast('Файл хоосон байна', 'warn'); return; }
+        var res = applyVideoImport(rows);
+        closeModal();
+        infoModal('Импортын дүн', '<div style="font-size:14px;line-height:1.7">' +
+          '<div>✅ Шинээр орсон: <strong>' + res.imported + '</strong></div>' +
+          '<div>🔁 Давхардсан (алгассан): <strong>' + res.dups + '</strong></div>' +
+          '<div>⚠️ Тохирохгүй (ажилтан олдоогүй): <strong>' + res.unmatched.length + '</strong>' + (res.unmatched.length ? ' <span style="color:#94A3B8;font-size:12px">(' + esc(res.unmatched.slice(0, 8).join(', ')) + (res.unmatched.length > 8 ? '…' : '') + ')</span>' : '') + '</div>' +
+          '<div style="margin-top:8px;color:#64748B;font-size:13px">Нийт ' + res.total + ' мөр боловсруулагдлаа. Видео оноо автоматаар шинэчлэгдсэн.</div></div>');
+      } catch (e) { toast('Файл уншихад алдаа: ' + e.message, 'error'); }
+    };
+    rd.readAsText(f, 'UTF-8');
+  });
+  buildModal('Видео үзэлт импорт (CSV)', node, { width: '440px' });
+}
+
+function renderDataflow() {
+  var sec = pageEl('dataflow'); if (!sec) return;
+  var vv = DB.videoViews || [], er = DB.examResults || [], rp = DB.reports || [];
+  var lastImport = vv.length ? vv.map(function (v) { return v.batch; }).sort().pop() : null;
+  var html = '<div class="page-header"><div><h1>Дата урсгал ба импорт</h1>' +
+    '<p class="page-subtitle">Эх үүсвэр бүр: импорт (видео) · QR (шалгалт) · ажилтан (мэдээлэл) · ХАБ (баталгаажуулалт)</p></div>' +
+    '<div class="page-actions"><button class="btn btn-primary" data-import="1"><i class="ti ti-upload"></i> Видео үзэлт импорт</button></div></div>';
+
+  var sources = [
+    ['Видео сургалт (импорт)', 'ti-player-play', vv.length + ' бичлэг', lastImport ? 'Сүүлд: ' + lastImport : 'Импорт хийгээгүй', '#92400E', '#FEF3C7'],
+    ['QR шалгалт (автомат)', 'ti-qrcode', er.length + ' дүн', 'Гараар оруулдаггүй', '#065F46', '#D1FAE5'],
+    ['Ажилтны мэдээлэл', 'ti-flag-2', rp.length + ' мэдээлэл', rp.filter(function (r) { return r.status === 'reported'; }).length + ' хүлээгдэж буй', '#1E40AF', '#DBEAFE'],
+    ['ХАБ баталгаажуулалт', 'ti-shield-check', rp.filter(function (r) { return r.status === 'verified'; }).length + ' баталгаажсан', 'Бонус автомат', '#3730A3', '#E0E7FF']
+  ];
+  html += '<div class="kpi-cat-grid">' + sources.map(function (s) {
+    return '<div class="kpi-cat-card"><div class="kpi-cat-head"><div class="kpi-cat-icon" style="background:' + s[5] + ';color:' + s[4] + '"><i class="ti ' + s[1] + '"></i></div>' +
+      '<div><h3>' + s[0] + '</h3><p>' + s[2] + '</p></div></div><div style="font-size:13px;color:#8A94A6;margin-top:6px">' + s[3] + '</div></div>';
+  }).join('') + '</div>';
+
+  html += '<div class="card" style="padding:18px;margin-top:18px"><h3 style="margin:0 0 6px">Импортын зарчим</h3>' +
+    '<ul style="font-size:13.5px;line-height:1.8;color:#475569;margin:0;padding-left:18px">' +
+    '<li>Ажилтныг <strong>имэйл эсвэл код</strong>-оор тааруулна.</li>' +
+    '<li>Давхар бичилт (нэг ажилтан+видео+огноо) автоматаар <strong>шүүгдэнэ</strong>.</li>' +
+    '<li>Тохирох ажилтан олдоогүй мөрийг <strong>анхааруулна</strong>.</li>' +
+    '<li>Импортын дараа видео оноо <strong>автоматаар</strong> шинэчлэгдэнэ.</li></ul></div>';
+
+  sec.innerHTML = html;
+  if (!sec._wired) { sec._wired = true; sec.addEventListener('click', function (ev) { if (ev.target.closest('[data-import]')) importVideoCSV(); }); }
 }
 
 /* ============ Графикууд ============ */
@@ -911,12 +1999,12 @@ function renderCharts() {
   if (radarEl) {
     if (charts.radar) charts.radar.destroy();
     var cat = categoryAverages();
-    var cur = [cat.training, cat.participation, cat.discipline, cat.health, cat.leadership];
+    var cur = [cat.video, cat.exam, cat.improvement, cat.firstTry, cat.bonus];
     var prev = cur.map(function (v) { return Math.max(0, v - 3 - Math.round(Math.random() * 2)); });
     charts.radar = new Chart(radarEl.getContext('2d'), {
       type: 'radar',
       data: {
-        labels: [['Сургалт'], ['Идэвхтэй', 'оролцоо'], ['Дүрэм', 'сахилт'], ['Эрүүл мэнд'], ['Манлайлал']],
+        labels: [['Видео'], ['Шалгалт'], ['Ахиц'], ['Анх', 'тэнцсэн'], ['Бонус']],
         datasets: [
           { label: 'Энэ сар', data: cur, backgroundColor: 'rgba(4,120,87,0.15)', borderColor: 'rgba(4,120,87,1)',
             borderWidth: 2, pointBackgroundColor: 'rgba(4,120,87,1)', pointRadius: 4, pointHoverRadius: 6 },
@@ -984,9 +2072,13 @@ function renderAll() {
   renderKpiPage();
   renderHazards();
   renderIncidents();
+  renderReportflow();
   renderSuggestions();
   renderSettings();
   renderNotifBadge();
+  renderPpe();
+  renderInspections();
+  renderDataflow();
 }
 
 /* ============ Үйлдлүүд: Эрсдэл мэдээлэх ============ */
@@ -1157,29 +2249,35 @@ function actionAddEmployee() {
 function openEmployeeDetail(id) {
   var e = DB.employees.filter(function (x) { return x.id === id; })[0];
   if (!e) return;
-  var w = DB.settings.weights;
+  var w = kpiCfg().weights;
   var cats = [
-    ['Сургалт, мэдлэг', e.training, w.training],
-    ['Идэвхтэй оролцоо', e.participation, w.participation],
-    ['Дүрэм сахилт', e.discipline, w.discipline],
-    ['Эрүүл мэнд, осол', e.health, w.health],
-    ['Манлайлал', e.leadership, w.leadership]
+    ['Видео сургалтын үзэлт', kpiVideo(e), w.video],
+    ['Танхим шалгалтын дүн', kpiExam(e), w.exam],
+    ['Шалгалтын ахиц', kpiImprovement(e), w.improvement],
+    ['Дахин шалгалтгүй тэнцсэн', kpiFirstTry(e), w.firstTry]
   ];
+  var bp = empBonusPoints(e);
   var html = '<div class="detail-grid">' +
     '<div class="detail-row"><span>Албан тушаал</span><b>' + esc(e.role) + '</b></div>' +
-    '<div class="detail-row"><span>Хэлтэс</span><b>' + esc(e.dept) + '</b></div>' +
+    '<div class="detail-row"><span>Алба</span><b>' + esc(e.dept) + '</b></div>' +
     '<div class="detail-row"><span>Код</span><b>' + esc(e.id) + '</b></div>' +
     '<div class="detail-row"><span>Төлөв</span><b>' + (e.onLeave ? 'Чөлөөтэй' : 'Идэвхтэй') + '</b></div></div>' +
+    '<div style="font-size:12px;color:#8A94A6;margin:12px 2px 4px;font-weight:600">СУУРЬ ҮЗҮҮЛЭЛТ · ' + empBase(e) + '/100</div>' +
     '<div class="kpi-breakdown">' + cats.map(function (c) {
       return '<div class="kb-row"><div class="kb-name">' + esc(c[0]) + ' <small>· жин ' + c[2] + '%</small></div>' +
         '<div class="kb-bar"><div class="kb-fill" style="width:' + c[1] + '%"></div></div>' +
         '<div class="kb-val">' + c[1] + '</div></div>';
     }).join('') + '</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:#F0FDF4;border-radius:10px">' +
+    '<i class="ti ti-gift" style="color:#16A34A;font-size:18px"></i>' +
+    '<div style="flex:1"><div style="font-weight:600">Нэмэгдэх бонус</div>' +
+    '<div style="font-size:12px;color:#64748B">Баталгаажсан аюул / near-miss мэдээллээс</div></div>' +
+    '<div style="font-weight:700;color:#16A34A;font-size:18px">+' + bp + '</div></div>' +
     '<div class="kb-total">Нийт KPI оноо: <strong>' + empTotal(e) + ' / 100</strong></div>' +
     '<div class="detail-actions">' +
     '<button class="btn btn-secondary" data-emp-leave="' + e.id + '">' +
     (e.onLeave ? 'Идэвхтэй болгох' : 'Чөлөө олгох') + '</button>' +
-    '<button class="btn btn-primary" data-emp-edit="' + e.id + '">Оноо засах</button></div>';
+    '<button class="btn btn-primary" data-emp-edit="' + e.id + '">Суурь дата засах</button></div>';
   var node = elc('div', 'modal-info', html);
   node.addEventListener('click', function (ev) {
     var lv = ev.target.closest('[data-emp-leave]');
@@ -1193,25 +2291,24 @@ function editEmployeeScores(id) {
   var e = DB.employees.filter(function (x) { return x.id === id; })[0];
   if (!e) return;
   formModal({
-    title: 'Оноо засах — ' + e.name,
+    title: 'Суурь дата засах — ' + e.name,
     fields: [
-      { name: 'training', label: 'Сургалт', type: 'number', value: e.training, min: 0, max: 100 },
-      { name: 'participation', label: 'Идэвхтэй оролцоо', type: 'number', value: e.participation, min: 0, max: 100 },
-      { name: 'discipline', label: 'Дүрэм сахилт', type: 'number', value: e.discipline, min: 0, max: 100 },
-      { name: 'health', label: 'Эрүүл мэнд', type: 'number', value: e.health, min: 0, max: 100 },
-      { name: 'leadership', label: 'Манлайлал', type: 'number', value: e.leadership, min: 0, max: 100 }
+      { name: 'video', label: 'Видео сургалтын үзэлт %', type: 'number', value: _f(e.video, e.training), min: 0, max: 100, hint: 'Ердийн нөхцөлд гадаад платформоос автоматаар импортолно' },
+      { name: 'examScore', label: 'Танхим шалгалтын дүн (сүүлийн)', type: 'number', value: _f(e.examScore, e.training), min: 0, max: 100, hint: 'Ердийн нөхцөлд QR шалгалтаас автоматаар орно' },
+      { name: 'examPrev', label: 'Өмнөх улирлын дүн (ахиц бодоход)', type: 'number', value: (e.examPrev == null ? '' : e.examPrev), min: 0, max: 100 },
+      { name: 'firstTry', label: 'Дахин шалгалтгүй тэнцсэн эсэх', type: 'select', value: (e.firstTry ? '1' : '0'),
+        options: [{ value: '1', label: 'Тийм — анхны удаа тэнцсэн' }, { value: '0', label: 'Үгүй' }] }
     ],
     submitLabel: 'Хадгалах',
     onSubmit: function (v) {
-      e.training = clamp(num(v.training), 0, 100);
-      e.participation = clamp(num(v.participation), 0, 100);
-      e.discipline = clamp(num(v.discipline), 0, 100);
-      e.health = clamp(num(v.health), 0, 100);
-      e.leadership = clamp(num(v.leadership), 0, 100);
+      e.video = clamp(num(v.video), 0, 100);
+      e.examScore = clamp(num(v.examScore), 0, 100);
+      e.examPrev = (v.examPrev === '' || v.examPrev == null) ? null : clamp(num(v.examPrev), 0, 100);
+      e.firstTry = v.firstTry === '1' ? 1 : 0;
       saveDB();
       renderEmployees(); renderDashboard(); renderKpiPage();
       if (charts.radar) renderCharts();
-      toast('Ажилтны оноо шинэчлэгдлээ');
+      toast('Ажилтны суурь дата шинэчлэгдлээ');
     }
   });
 }
@@ -1315,10 +2412,10 @@ function download(filename, content, mime) {
   setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
 function exportEmployeesCSV() {
-  var head = ['Код', 'Нэр', 'Албан тушаал', 'Хэлтэс', 'Сургалт', 'Оролцоо', 'Дүрэм', 'Эрүүл мэнд', 'Манлайлал', 'Нийт оноо'];
+  var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Видео %', 'Шалгалт', 'Ахиц', 'Анх тэнцсэн', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
   var lines = [head];
   filteredEmployees().forEach(function (e) {
-    lines.push([e.id, e.name, e.role, e.dept, e.training, e.participation, e.discipline, e.health, e.leadership, empTotal(e)]);
+    lines.push([e.id, e.name, e.role, e.dept, kpiVideo(e), kpiExam(e), kpiImprovement(e), kpiFirstTry(e), empBase(e), empBonusPoints(e), empTotal(e)]);
   });
   var csv = '﻿' + lines.map(function (r) {
     return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
@@ -1328,9 +2425,9 @@ function exportEmployeesCSV() {
 }
 function downloadReport() {
   var a = avgKpi(), cat = categoryAverages();
-  var deptRows = DEPTS.map(function (d) {
+  var deptRows = deptList().map(function (d) {
     var emps = DB.employees.filter(function (e) { return e.dept === d; });
-    return { d: d, n: emps.length, s: emps.length ? Math.round(avg(emps.map(empTotal))) : 0 };
+    return { d: d, n: emps.length, s: deptScore(d), cov: deptCoverage(d) };
   }).filter(function (r) { return r.n; }).sort(function (x, y) { return y.s - x.s; });
   var html = '<!DOCTYPE html><html lang="mn"><head><meta charset="UTF-8">' +
     '<title>SafeWork ХАБЭА тайлан</title><style>' +
@@ -1350,14 +2447,14 @@ function downloadReport() {
     DB.hazards.filter(function (h) { return h.status !== 'resolved'; }).length + ' шийдвэрлэгдээгүй)</td></tr>' +
     '<tr><td>Осолгүй өдөр</td><td>' + dayCounter() + '</td></tr>' +
     '<tr><td>Сайжруулалтын санал</td><td>' + DB.suggestions.length + '</td></tr></table>' +
-    '<h2>KPI ангиллын дундаж</h2><table><tr><th>Ангилал</th><th>Оноо</th></tr>' +
-    '<tr><td>Сургалт, мэдлэг</td><td>' + cat.training + '</td></tr>' +
-    '<tr><td>Идэвхтэй оролцоо</td><td>' + cat.participation + '</td></tr>' +
-    '<tr><td>Дүрэм сахилт</td><td>' + cat.discipline + '</td></tr>' +
-    '<tr><td>Эрүүл мэнд, осол</td><td>' + cat.health + '</td></tr>' +
-    '<tr><td>Манлайлал</td><td>' + cat.leadership + '</td></tr></table>' +
-    '<h2>Хэлтсийн KPI</h2><table><tr><th>Хэлтэс</th><th>Ажилтан</th><th>Дундаж оноо</th></tr>' +
-    deptRows.map(function (r) { return '<tr><td>' + esc(r.d) + '</td><td>' + r.n + '</td><td>' + r.s + '</td></tr>'; }).join('') +
+    '<h2>Суурь үзүүлэлтийн дундаж</h2><table><tr><th>Үзүүлэлт</th><th>Оноо</th></tr>' +
+    '<tr><td>Видео сургалтын үзэлт</td><td>' + cat.video + '</td></tr>' +
+    '<tr><td>Танхим шалгалтын дүн</td><td>' + cat.exam + '</td></tr>' +
+    '<tr><td>Шалгалтын ахиц</td><td>' + cat.improvement + '</td></tr>' +
+    '<tr><td>Дахин шалгалтгүй тэнцсэн</td><td>' + cat.firstTry + '</td></tr>' +
+    '<tr><td>Нэмэгдэх бонус (дундаж)</td><td>' + cat.bonus + '</td></tr></table>' +
+    '<h2>Албадын оноо</h2><table><tr><th>Алба</th><th>Ажилтан</th><th>Coverage %</th><th>Нийт оноо</th></tr>' +
+    deptRows.map(function (r) { return '<tr><td>' + esc(r.d) + '</td><td>' + r.n + '</td><td>' + r.cov + '%</td><td>' + r.s + '</td></tr>'; }).join('') +
     '</table><p class="muted" style="margin-top:30px">Энэхүү тайланг SafeWork ХАБЭА систем автоматаар үүсгэв.</p>' +
     '</body></html>';
   download('SafeWork-tailan-' + todayISO() + '.html', html, 'text/html;charset=utf-8');
@@ -1732,8 +2829,9 @@ function handleClick(e) {
   if (t.indexOf('Шинэ ажилтан') > -1) { actionAddEmployee(); return; }
   if (t.indexOf('осол бүртгэх') > -1 || t.indexOf('Осол бүртгэх') > -1) { actionReportIncident(); return; }
   if (t.indexOf('Жин засах') > -1) { switchPage('settings'); toast('KPI-ийн жинг доороос тохируулна уу', 'info'); return; }
-  if (t === 'Жин хадгалах' || el.id === 'saveWeights') { saveWeights(); return; }
-  if (t === 'Хадгалах' && pageId === 'settings') { saveOrgSettings(); return; }
+  if (el.hasAttribute('data-saveorg')) { saveOrgConfig(); return; }
+  if (el.hasAttribute('data-savekpi')) { saveKpiConfig(); return; }
+  if (el.hasAttribute('data-resetkpi')) { resetKpiConfig(); return; }
   if (t === 'Цуцлах' && pageId === 'settings') { renderSettings(); toast('Өөрчлөлт цуцлагдлаа', 'info'); return; }
   if (t.indexOf('Excel') > -1) { exportEmployeesCSV(); return; }
   if (t.indexOf('Тайлан татах') > -1) { downloadReport(); return; }
@@ -1789,7 +2887,7 @@ function handleInput(e) {
     renderEmployees();
     return;
   }
-  /* Жингийн слайдер */
+  /* Жингийн слайдер (хуучин) */
   if (el.matches('.page[data-page="settings"] .weight-row input[type="range"]')) {
     var row = el.closest('.weight-row');
     var v = row.querySelector('.weight-val');
@@ -1797,6 +2895,8 @@ function handleInput(e) {
     updateWeightTotal();
     return;
   }
+  /* KPI тохиргооны жингийн нийлбэрийг шууд шинэчлэх */
+  if (el.classList && el.classList.contains('cfg-input')) { updateConfigSums(); return; }
 }
 
 /* ============ Эхлүүлэх ============ */
@@ -1814,32 +2914,49 @@ function injectControls() {
 /* ============ Нэвтрэлт + эрх (үндсэн системтэй нэгдсэн) ============ */
 function establishSession() {
   return new Promise(function (resolve) {
+    if (DEMO) {
+      var dr = 'admin', dd = 'Цех №1', dEmp = null;
+      try { var dsp = new URLSearchParams(location.search); dr = dsp.get('demorole') || 'admin'; dd = dsp.get('demodept') || 'Цех №1'; } catch (e) {}
+      if (dr === 'employee') dEmp = 'EMP-004'; // жишээ ажилтан (О. Бат — баталгаажсан мэдээлэлтэй)
+      SESSION = { role: dr, email: 'demo@local', uid: 'demo', dept: dd, empId: dEmp };
+      resolve(); return;
+    }
     var u = null;
     try { u = JSON.parse(localStorage.getItem('monos_user') || 'null'); } catch (e) {}
-    if (!u || !u.uid) { location.replace('/index.html'); return; } // нэвтрээгүй → нэвтрэх хуудас
-    if (!fbReady) { SESSION = { role: 'admin', email: u.email, uid: u.uid }; resolve(); return; }
 
     function proceed(uid, email) {
+      try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: uid })); } catch (e) {}
+      if (!fbReady) { SESSION = { role: 'admin', email: email, uid: uid, dept: '' }; resolve(); return; }
       fdb.collection('users').doc(uid).get().then(function (snap) {
-        var role = (snap.exists && snap.data() && snap.data().role === 'admin') ? 'admin' : 'employee';
-        SESSION = { role: role, email: email, uid: uid, empId: null };
+        var data = (snap.exists && snap.data()) || {};
+        var role = data.role === 'admin' ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
+        SESSION = { role: role, email: email, uid: uid, empId: null, dept: data.department || '' };
         resolve();
       }).catch(function () {
-        SESSION = { role: 'employee', email: email, uid: uid, empId: null };
+        SESSION = { role: 'employee', email: email, uid: uid, empId: null, dept: '' };
         resolve();
       });
     }
 
-    // Firebase auth сессийг сэргээхийг хүлээнэ (эс бөгөөс Firestore хүсэлт эрхгүй болж унана)
+    // Firebase бэлэн биш — monos_user-т түшиглэнэ
+    if (!fbReady) {
+      if (u && u.uid) { proceed(u.uid, u.email); } else { location.replace('/index.html'); }
+      return;
+    }
+
+    // Firebase auth сесси-г ХАМГИЙН ТҮРҮҮНД шалгана (localStorage түр хоосон байсан ч loop болохгүй)
     var settled = false;
     var unsub = fauth.onAuthStateChanged(function (fbUser) {
       if (settled) return; settled = true;
       try { unsub(); } catch (e) {}
-      if (fbUser) { proceed(fbUser.uid, fbUser.email || u.email); }
-      else { proceed(u.uid, u.email); } // auth удаан/хуваалцаагүй ч monos_user-т итгэж үргэлжлүүлнэ (давталтаас сэргийлнэ)
+      if (fbUser) { proceed(fbUser.uid, fbUser.email || (u && u.email) || ''); }
+      else if (u && u.uid) { proceed(u.uid, u.email); }
+      else { location.replace('/index.html'); } // үнэхээр нэвтрээгүй
     });
-    // Найдваргүй тохиолдолд 5 сек дараа үргэлжлүүлнэ
-    setTimeout(function () { if (!settled) { settled = true; proceed(u.uid, u.email); } }, 5000);
+    setTimeout(function () {
+      if (settled) { return; } settled = true;
+      if (u && u.uid) { proceed(u.uid, u.email); } else { location.replace('/index.html'); }
+    }, 6000);
   });
 }
 
@@ -1848,7 +2965,8 @@ function applyRole() {
     if (SESSION) {
       USER.name = (SESSION.email || '').split('@')[0] || USER.name;
       USER.initials = makeInitials(USER.name);
-      USER.role = isAdmin() ? 'ХАБЭА-н мэргэжилтэн' : 'Ажилтан';
+      USER.role = isAdmin() ? 'ХАБЭА-н мэргэжилтэн'
+        : (isDeptHead() ? ('Албаны дарга' + (SESSION.dept ? ' · ' + SESSION.dept : '')) : 'Ажилтан');
     }
     var nmeEl = document.querySelector('.user-name');
     var roleEl = document.querySelector('.user-role');
@@ -1857,17 +2975,17 @@ function applyRole() {
     if (roleEl) roleEl.textContent = USER.role;
     if (avEl) avEl.textContent = USER.initials;
   } catch (e) {}
-  if (isAdmin()) return; // админд бүх хэсэг харагдана
-  ADMIN_ONLY_PAGES.forEach(function (pg) {
+  if (isAdmin()) return; // ХАБЭА ажилтанд бүх хэсэг харагдана
+  blockedPages().forEach(function (pg) {
     var nav = document.querySelector('.nav-item[data-page="' + pg + '"]');
     if (nav) nav.style.display = 'none';
     var pe = document.querySelector('.page[data-page="' + pg + '"]');
     if (pe) pe.setAttribute('data-locked', '1');
   });
-  // Зөвхөн админд зориулсан холбоосуудыг (Контент удирдлага г.м) ажилтанд нуух
+  // Зөвхөн админд зориулсан холбоосуудыг нуух
   $$('.nav-item[data-admin]').forEach(function (el) { el.style.display = 'none'; });
   var active = document.querySelector('.nav-item.active');
-  if (active && ADMIN_ONLY_PAGES.indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
+  if (active && blockedPages().indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
 
 async function init() {
@@ -1879,12 +2997,40 @@ async function init() {
 
   // URL-аас тодорхой хэсэг нээх (жишээ: /kpi/?page=hazards)
   try {
-    var qp = new URLSearchParams(location.search).get('page');
+    var sp = new URLSearchParams(location.search);
+    var qp = sp.get('page');
     if (qp) switchPage(qp);
+    // QR кодоор шалгалт нээх (?qrexam=EX-FIRE)
+    var qx = sp.get('qrexam');
+    if (qx) { switchPage('inspections'); setTimeout(function () { takeExam(qx); }, 300); }
   } catch (e) {}
 
   document.addEventListener('click', handleClick, true);
   document.addEventListener('input', handleInput);
+
+  /* Сургалтын ангилал (мод цэс) дээр дарахад тухайн хуудсыг харуулна */
+  document.addEventListener('click', function (e) {
+    var leaf = e.target.closest('.nav-item.leaf[data-cat]');
+    if (!leaf) return;
+    e.preventDefault();
+    var cat = leaf.getAttribute('data-cat');
+    $$('[data-cat-title]').forEach(function (el) { el.textContent = cat; });
+    $$('[data-cat-title2]').forEach(function (el) { el.textContent = cat; });
+    $$('.nav-item.leaf').forEach(function (el) { el.classList.remove('active'); });
+    leaf.classList.add('active');
+    switchPage('trn-cat');
+    try { closeMenu(); } catch (e2) {}
+  });
+
+  /* Гарах товч */
+  var _logoutBtn = document.getElementById('kpiLogoutBtn');
+  if (_logoutBtn) {
+    _logoutBtn.addEventListener('click', function () {
+      try { if (fauth) fauth.signOut(); } catch (e) {}
+      try { localStorage.removeItem('monos_user'); } catch (e) {}
+      location.replace('/index.html');
+    });
+  }
 
   /* Топ баарын хайлт */
   var topSearch = $('.topbar .search-box input');
