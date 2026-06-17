@@ -1541,7 +1541,10 @@ function renderSettings() {
     '<div class="form-row">' + inp('Coverage (босго давсан %)', 'dCov', dw.coverage) + inp('Албаны бонус', 'dBon', dw.bonus) + '</div>' +
     '<div class="form-row">' + inp('Анхны тусламжийн хайрцаг', 'dFa', dw.firstAid) + inp('PPE мөрдөлт', 'dPpe', dw.ppe) + '</div>' +
     sumBox('dsum', dsum) +
-    '<div class="form-actions"><button class="btn btn-secondary" data-resetkpi="1">Анхдагч руу буцаах</button><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>';
+    '<div class="form-actions"><button class="btn btn-secondary" data-resetkpi="1">Анхдагч руу буцаах</button><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
+
+    '<div class="card"><h3>Дата импорт</h3><p class="card-subtitle">Гадаад платформоос видео сургалтын үзэлтийг CSV файлаар оруулна. Ажилтныг имэйл/кодоор тааруулж, давхар бичилтийг автоматаар шүүнэ.</p>' +
+    '<div class="form-actions"><button class="btn btn-primary" data-import="1"><i class="ti ti-upload"></i> Видео үзэлт импорт</button></div></div>';
 }
 function updateConfigSums() {
   function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
@@ -2832,6 +2835,7 @@ function handleClick(e) {
   if (el.hasAttribute('data-saveorg')) { saveOrgConfig(); return; }
   if (el.hasAttribute('data-savekpi')) { saveKpiConfig(); return; }
   if (el.hasAttribute('data-resetkpi')) { resetKpiConfig(); return; }
+  if (el.hasAttribute('data-import')) { importVideoCSV(); return; }
   if (t === 'Цуцлах' && pageId === 'settings') { renderSettings(); toast('Өөрчлөлт цуцлагдлаа', 'info'); return; }
   if (t.indexOf('Excel') > -1) { exportEmployeesCSV(); return; }
   if (t.indexOf('Тайлан татах') > -1) { downloadReport(); return; }
