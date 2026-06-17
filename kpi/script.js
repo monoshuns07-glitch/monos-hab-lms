@@ -805,6 +805,7 @@ function switchPage(pageId) {
   if (pageId === 'dashboard') setTimeout(renderCharts, 60);
   // Динамикаар зурагддаг хуудсуудыг шинэчилнэ
   if (pageId === 'reportflow') renderReportflow();
+  else if (pageId === 'myresults') renderMyResults();
   else if (pageId === 'kpi') renderKpiPage();
   else if (pageId === 'ppe') renderPpe();
   else if (pageId === 'inspections') renderInspections();
@@ -1985,6 +1986,102 @@ function renderDataflow() {
   if (!sec._wired) { sec._wired = true; sec.addEventListener('click', function (ev) { if (ev.target.closest('[data-import]')) importVideoCSV(); }); }
 }
 
+/* ============ Миний сургалт + Шалгалтын дүн (апп дотор — нэг код) ============ */
+function renderMyResults() {
+  var sec = pageEl('myresults'); if (!sec) return;
+  sec.innerHTML = '<div class="page-header"><div><h1>Миний сургалт ба шалгалтын дүн</h1>' +
+    '<p class="page-subtitle">Таны сургалтын явц болон шалгалтын түүх — нэг апп дотор</p></div></div>' +
+    '<div id="mrStats" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px"></div>' +
+    '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 12px">Сургалтын явц</h3><div id="mrProgress">' + emptyBox('Ачаалж байна…') + '</div></div>' +
+    '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">Шалгалтын түүх</h3><div id="mrResults"></div></div>';
+  loadMyResults();
+}
+function mrFmt(ts) {
+  try { if (ts && ts.toDate) { var d = ts.toDate(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); } } catch (e) {}
+  if (ts) { try { var d2 = new Date(ts); if (!isNaN(d2.getTime())) return d2.toLocaleDateString('mn-MN'); } catch (e) {} }
+  return '—';
+}
+function sampleMyResults() {
+  return {
+    progress: [
+      { trainingTitle: 'Гал түймрийн аюулгүй байдал', watchProgress: 1, score: 90, status: 'passed' },
+      { trainingTitle: 'Хувийн хамгаалах хэрэгсэл', watchProgress: 1, score: 80, status: 'passed' },
+      { trainingTitle: 'Цахилгааны аюулгүй ажиллагаа', watchProgress: 0.6, score: null, status: 'in_progress' }
+    ],
+    results: [
+      { trainingTitle: 'Гал түймрийн аюулгүй байдал', score: 90, passed: true, correct: 9, total: 10, passingScore: 60, timestamp: null },
+      { trainingTitle: 'Хувийн хамгаалах хэрэгсэл', score: 80, passed: true, correct: 8, total: 10, passingScore: 60, timestamp: null }
+    ]
+  };
+}
+async function loadMyResults() {
+  var statsEl = $('#mrStats'), progEl = $('#mrProgress'), resEl = $('#mrResults');
+  if (DEMO || !fbReady || !SESSION || !SESSION.uid || SESSION.uid === 'demo') {
+    renderMyResultsData(sampleMyResults(), statsEl, progEl, resEl, true); return;
+  }
+  try {
+    var uid = SESSION.uid;
+    var rSnap = await fdb.collection('exam_results').where('userId', '==', uid).get();
+    var results = rSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+    var pSnap = await fdb.collection('training_progress').where('userId', '==', uid).get();
+    var progress = pSnap.docs.map(function (d) { return d.data(); });
+    var ids = {}; results.forEach(function (r) { if (r.trainingId) ids[r.trainingId] = 1; });
+    progress.forEach(function (p) { if (p.trainingId) ids[p.trainingId] = 1; });
+    var idList = Object.keys(ids), tMap = {};
+    for (var i = 0; i < idList.length; i += 30) {
+      var chunk = idList.slice(i, i + 30);
+      try { var tSnap = await fdb.collection('trainings').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get(); tSnap.forEach(function (d) { tMap[d.id] = d.data(); }); } catch (e) {}
+    }
+    results.forEach(function (r) { r.trainingTitle = (tMap[r.trainingId] && tMap[r.trainingId].title) || 'Сургалт'; r.passingScore = (tMap[r.trainingId] && tMap[r.trainingId].passingScore) || 70; });
+    progress.forEach(function (p) { p.trainingTitle = (tMap[p.trainingId] && tMap[p.trainingId].title) || 'Сургалт'; });
+    results.sort(function (a, b) { var ta = (a.timestamp && a.timestamp.toMillis && a.timestamp.toMillis()) || 0, tb = (b.timestamp && b.timestamp.toMillis && b.timestamp.toMillis()) || 0; return tb - ta; });
+    renderMyResultsData({ results: results, progress: progress }, statsEl, progEl, resEl, false);
+  } catch (e) {
+    if (resEl) resEl.innerHTML = emptyBox('Дата ачаалахад алдаа гарлаа');
+    if (progEl) progEl.innerHTML = '';
+  }
+}
+function renderMyResultsData(data, statsEl, progEl, resEl, isDemo) {
+  var results = data.results || [], progress = data.progress || [];
+  var total = results.length, passed = results.filter(function (r) { return r.passed; }).length;
+  var scores = results.map(function (r) { return r.score; }).filter(function (s) { return s != null; });
+  var avg = scores.length ? Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scores.length) : null;
+  var completed = progress.filter(function (p) { return p.status === 'passed'; }).length;
+  if (statsEl) statsEl.innerHTML =
+    statCard('Өгсөн шалгалт', total, 'ti-clipboard-check', '#0EA5E9') +
+    statCard('Тэнцсэн' + (total ? ' (' + Math.round(passed / total * 100) + '%)' : ''), passed, 'ti-circle-check', '#16A34A') +
+    statCard('Дундаж оноо', avg != null ? avg + '%' : '—', 'ti-chart-bar', '#D97706') +
+    statCard('Дүүргэсэн сургалт' + (progress.length ? ' /' + progress.length : ''), completed, 'ti-school', '#7C3AED');
+  if (progEl) {
+    if (!progress.length) progEl.innerHTML = emptyBox('Одоогоор сургалтын явц алга');
+    else {
+      var order = { passed: 0, failed: 1, in_progress: 2 };
+      var rows = progress.slice().sort(function (a, b) { return (order[a.status] || 3) - (order[b.status] || 3); });
+      var stLabel = { passed: 'Тэнцсэн', failed: 'Тэнцсэнгүй', in_progress: 'Явцтай' }, stTag = { passed: 'tag-emerald', failed: 'tag-coral', in_progress: 'tag-warn' };
+      progEl.innerHTML = '<table class="data-table" style="width:100%"><thead><tr><th>Сургалт</th><th>Явц</th><th>Оноо</th><th>Төлөв</th></tr></thead><tbody>' +
+        rows.map(function (p) {
+          var wpct = Math.round((p.watchProgress || 0) * 100), st = p.status || 'in_progress';
+          return '<tr><td style="font-weight:600">' + esc(p.trainingTitle || 'Сургалт') + '</td>' +
+            '<td><div style="display:flex;align-items:center;gap:8px;min-width:120px">' + miniBar(wpct, st === 'passed' ? '#16A34A' : '#0EA5E9') + '<span style="font-size:12px;color:#8A94A6">' + wpct + '%</span></div></td>' +
+            '<td style="font-weight:700">' + (p.score != null ? p.score + '%' : '—') + '</td>' +
+            '<td><span class="tag ' + (stTag[st] || 'tag-warn') + '">' + (stLabel[st] || 'Явцтай') + '</span></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+  }
+  if (resEl) {
+    if (!results.length) resEl.innerHTML = emptyBox('Одоохондоо шалгалт өгөөгүй байна');
+    else resEl.innerHTML = results.map(function (r) {
+      var sc = r.score != null ? r.score : 0, ps = r.passed;
+      return '<div style="display:flex;align-items:center;gap:14px;padding:12px;border:1px solid #EEF1F4;border-radius:12px;margin-bottom:10px">' +
+        '<div style="width:52px;height:52px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;flex-shrink:0;background:' + (ps ? '#DCFCE7' : '#FEE2E2') + ';color:' + (ps ? '#166534' : '#991B1B') + '"><span style="font-size:18px;line-height:1">' + sc + '</span><span style="font-size:10px">%</span></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(r.trainingTitle || 'Шалгалт') + '</div>' +
+        '<div style="font-size:12px;color:#8A94A6;margin-top:2px">' + mrFmt(r.timestamp) + ' · ' + (r.correct != null ? r.correct : '—') + '/' + (r.total != null ? r.total : '—') + ' зөв · тэнцэх ' + (r.passingScore || 70) + '%</div></div>' +
+        '<span class="tag ' + (ps ? 'tag-emerald' : 'tag-coral') + '">' + (ps ? '✓ Тэнцсэн' : '✗ Тэнцсэнгүй') + '</span></div>';
+    }).join('');
+  }
+  if (isDemo && resEl) resEl.insertAdjacentHTML('afterbegin', '<div class="rf-hint" style="margin-bottom:10px"><i class="ti ti-info-circle"></i> DEMO жишээ дата. Жинхэнэ системд таны бодит шалгалтын дүн гарна.</div>');
+}
+
 /* ============ Графикууд ============ */
 var charts = { radar: null, trend: null };
 function renderCharts() {
@@ -2915,6 +3012,47 @@ function injectControls() {
   }
 }
 
+/* ============ Апп доторх нэвтрэх дэлгэц ============ */
+function showLoginScreen() {
+  var s = document.getElementById('loginScreen');
+  if (!s) { try { location.replace('/index.html'); } catch (e) {} return; } // fallback
+  s.style.display = 'flex';
+  var btn = document.getElementById('loginBtn'),
+      em = document.getElementById('loginEmail'),
+      pw = document.getElementById('loginPass'),
+      err = document.getElementById('loginErr');
+  function fail(m) { if (err) err.textContent = m; if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-login"></i> Нэвтрэх'; } }
+  function doLogin() {
+    var email = ((em && em.value) || '').trim().toLowerCase(), pass = (pw && pw.value) || '';
+    if (!email || !pass) { fail('Gmail хаяг болон нууц үгээ оруулна уу'); return; }
+    if (!fbReady) { fail('Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.'); return; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Нэвтэрч байна...'; }
+    if (err) err.textContent = '';
+    fauth.signInWithEmailAndPassword(email, pass).then(function (cred) {
+      // Бүртгэлтэй эсэхийг шалгана (Firestore). Алдвал гаргахгүй — үргэлжлүүлнэ.
+      function go() { try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: cred.user.uid })); } catch (e) {} location.reload(); }
+      fdb.collection('users').doc(cred.user.uid).get().then(function (snap) {
+        if (!snap.exists) { fauth.signOut(); fail('Та бүртгэлгүй байна. Админтай холбоо барина уу.'); return; }
+        go();
+      }).catch(go);
+    }).catch(function (e) {
+      var code = (e && e.code) || '';
+      if (code.indexOf('wrong-password') > -1 || code.indexOf('invalid-credential') > -1 || code.indexOf('invalid-login') > -1) fail('Нууц үг буруу байна.');
+      else if (code.indexOf('user-not-found') > -1) fail('Ийм бүртгэлтэй хэрэглэгч олдсонгүй.');
+      else if (code.indexOf('invalid-email') > -1) fail('Gmail хаяг буруу байна.');
+      else if (code.indexOf('too-many-requests') > -1) fail('Хэт олон оролдлого. Түр хүлээгээд дахин оролдоно уу.');
+      else fail('Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.');
+    });
+  }
+  if (btn && !btn._wired) {
+    btn._wired = true;
+    btn.addEventListener('click', doLogin);
+    if (pw) pw.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+    if (em) em.addEventListener('keydown', function (e) { if (e.key === 'Enter' && pw) pw.focus(); });
+  }
+  if (em) setTimeout(function () { em.focus(); }, 60);
+}
+
 /* ============ Нэвтрэлт + эрх (үндсэн системтэй нэгдсэн) ============ */
 function establishSession() {
   return new Promise(function (resolve) {
@@ -2944,7 +3082,7 @@ function establishSession() {
 
     // Firebase бэлэн биш — monos_user-т түшиглэнэ
     if (!fbReady) {
-      if (u && u.uid) { proceed(u.uid, u.email); } else { location.replace('/index.html'); }
+      if (u && u.uid) { proceed(u.uid, u.email); } else { SESSION = null; resolve(); }
       return;
     }
 
@@ -2955,11 +3093,11 @@ function establishSession() {
       try { unsub(); } catch (e) {}
       if (fbUser) { proceed(fbUser.uid, fbUser.email || (u && u.email) || ''); }
       else if (u && u.uid) { proceed(u.uid, u.email); }
-      else { location.replace('/index.html'); } // үнэхээр нэвтрээгүй
+      else { SESSION = null; resolve(); } // нэвтрээгүй — апп доторх login гарна
     });
     setTimeout(function () {
       if (settled) { return; } settled = true;
-      if (u && u.uid) { proceed(u.uid, u.email); } else { location.replace('/index.html'); }
+      if (u && u.uid) { proceed(u.uid, u.email); } else { SESSION = null; resolve(); }
     }, 6000);
   });
 }
@@ -2994,6 +3132,9 @@ function applyRole() {
 
 async function init() {
   await establishSession();
+  // Нэвтрээгүй бол апп доторх нэвтрэх дэлгэцийг гаргана (тусдаа хуудас руу үсрэхгүй)
+  if (!SESSION) { showLoginScreen(); return; }
+  var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   var fresh = await loadDB();
   injectControls();
   applyRole();
@@ -3032,7 +3173,7 @@ async function init() {
     _logoutBtn.addEventListener('click', function () {
       try { if (fauth) fauth.signOut(); } catch (e) {}
       try { localStorage.removeItem('monos_user'); } catch (e) {}
-      location.replace('/index.html');
+      location.reload(); // апп доторх нэвтрэх дэлгэц рүү буцна
     });
   }
 
