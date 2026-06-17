@@ -232,12 +232,15 @@ function seedDB() {
     ['near_miss', 'low', 'reported', 'Гарцад хайрцаг тавьсан, замыг хааж байна', 'Агуулах', 'Цех №1', 'EMP-002', 'Б. Туяа', 2],
     ['near_miss', 'mid', 'rejected', 'Давхардсан мэдээлэл', 'Цех №2', 'Цех №2', 'EMP-006', 'Б. Энхбат', 200]
   ];
+  function _seedPts(type, risk) { return type === 'near_miss' ? ({ low: 3, mid: 6, high: 10 }[risk] || 3) : 5; }
   var reports = rp.map(function (r, i) {
+    var verified = r[2] === 'verified';
     return {
       id: 'RP-' + pad(i + 1), type: r[0], risk_level: r[1], status: r[2], desc: r[3],
       location: r[4], dept: r[5], reporterId: r[6], reporterName: r[7], reporterUid: '',
-      photo: '', verifiedBy: (r[2] === 'verified' ? 'Д. Ариунаа' : ''),
-      createdAt: hoursAgoISO(r[8]), verifiedAt: (r[2] === 'verified' ? hoursAgoISO(r[8] - 4) : '')
+      photo: '', verifiedBy: (verified ? 'Д. Ариунаа' : ''), verified_by: (verified ? 'Д. Ариунаа' : ''),
+      points_awarded: (verified ? _seedPts(r[0], r[1]) : null),
+      createdAt: hoursAgoISO(r[8]), verifiedAt: (verified ? hoursAgoISO(r[8] - 4) : '')
     };
   });
 
@@ -526,6 +529,7 @@ function empBase(e) {
 
 /* — Бонус (нэмэгдэх, зөвхөн баталгаажсан мэдээллээс, сарын cap-тай) — */
 function reportPoints(r) {
+  if (r.points_awarded != null) return r.points_awarded; // баталгаажихад түгжсэн оноо (тохиргоо дараа өөрчлөгдөхөд хуучин оноо хэвээр)
   var b = kpiCfg().bonus;
   if (r.type === 'near_miss') return (b.nearMiss && b.nearMiss[r.risk_level]) || (b.nearMiss && b.nearMiss.low) || 3;
   return b.hazard;
@@ -1376,11 +1380,13 @@ function verifyReport(id, decision, newRisk) {
   if (!r || r.status !== 'reported') return;
   r.verifiedAt = new Date().toISOString();
   r.verifiedBy = (SESSION && SESSION.email) || USER.name;
+  r.verified_by = r.verifiedBy; // спекийн талбарын нэр
   if (decision === 'verify') {
     if (newRisk) r.risk_level = newRisk;
     r.status = 'verified';
-    addNotification('Таны мэдээлэл баталгаажлаа (+' + reportPoints(r) + ' бонус) — ' + r.location, 'reportflow', r.reporterUid);
-    toast('Баталгаажлаа. +' + reportPoints(r) + ' бонус оноо тооцогдлоо.', 'success');
+    r.points_awarded = reportPoints(r); // баталгаажихад оноог түгжиж хадгална
+    addNotification('Таны мэдээлэл баталгаажлаа (+' + r.points_awarded + ' бонус) — ' + r.location, 'reportflow', r.reporterUid);
+    toast('Баталгаажлаа. +' + r.points_awarded + ' бонус оноо тооцогдлоо.', 'success');
   } else {
     r.status = 'rejected';
     addNotification('Таны мэдээлэл баталгаажсангүй — ' + r.location, 'reportflow', r.reporterUid);
