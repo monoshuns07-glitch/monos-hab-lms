@@ -806,6 +806,7 @@ function switchPage(pageId) {
   // Динамикаар зурагддаг хуудсуудыг шинэчилнэ
   if (pageId === 'reportflow') renderReportflow();
   else if (pageId === 'myresults') renderMyResults();
+  else if (pageId === 'daatgal') renderDaatgal();
   else if (pageId === 'kpi') renderKpiPage();
   else if (pageId === 'ppe') renderPpe();
   else if (pageId === 'inspections') renderInspections();
@@ -2080,6 +2081,24 @@ function renderMyResultsData(data, statsEl, progEl, resEl, isDemo) {
     }).join('');
   }
   if (isDemo && resEl) resEl.insertAdjacentHTML('afterbegin', '<div class="rf-hint" style="margin-bottom:10px"><i class="ti ti-info-circle"></i> DEMO жишээ дата. Жинхэнэ системд таны бодит шалгалтын дүн гарна.</div>');
+}
+
+/* ============ Даатгал (Нөхөн төлбөрийн гарын авлага — апп дотор) ============ */
+function renderDaatgal() {
+  var sec = pageEl('daatgal'); if (!sec) return;
+  if (DEMO) {
+    sec.style.padding = '';
+    sec.innerHTML = '<div class="page-header"><div><h1>Даатгал — Нөхөн төлбөрийн гарын авлага</h1>' +
+      '<p class="page-subtitle">AI туслахтай даатгалын гарын авлага</p></div></div>' +
+      '<div class="card" style="padding:34px"><div class="empty-state" style="padding:30px"><i class="ti ti-shield-heart"></i>' +
+      '<div>Даатгалын хэсэг амьд систем дээр (Netlify/Vercel) ажиллана. Локал DEMO дээр харагдахгүй.</div></div></div>';
+    return;
+  }
+  if (sec._loaded) return;
+  sec._loaded = true;
+  sec.style.padding = '0';
+  sec.innerHTML = '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
+    'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 
 /* ============ Графикууд ============ */
