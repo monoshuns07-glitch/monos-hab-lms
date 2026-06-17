@@ -514,7 +514,8 @@ function _f(v, fb) { var n = parseFloat(v); return isNaN(n) ? (fb || 0) : n; }
 function kpiVideo(e) { return clamp(Math.round(_f(e.video, e.training)), 0, 100); }
 function kpiExam(e) { return clamp(Math.round(_f(e.examScore, e.training)), 0, 100); }
 function kpiImprovement(e) {
-  if (e.examPrev == null || e.examScore == null) return 60; // дата дутуу — саармаг
+  if (!e.examScore) return 0;                 // шалгалт өгөөгүй — ахиц хэмжих юм алга → 0
+  if (e.examPrev == null) return 50;          // эхний шалгалт — суурь (өсөлт/бууралтыг хэмжих өмнөх дата алга)
   return clamp(Math.round(50 + (_f(e.examScore) - _f(e.examPrev)) * 4), 0, 100); // эерэг ахиц → өндөр оноо
 }
 function kpiFirstTry(e) { return e.firstTry ? 100 : 0; }
