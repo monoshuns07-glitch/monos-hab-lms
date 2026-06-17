@@ -298,7 +298,8 @@ function seedDB() {
     firstAidChecks: firstAidChecks,
     ppeObservations: ppeObservations,
     videoViews: [],
-    examResults: []
+    examResults: [],
+    externalTrainings: []
   };
 }
 
@@ -427,7 +428,7 @@ async function loadDB() {
 function migrateDB() {
   if (!DB) return;
   ['employees', 'hazards', 'suggestions', 'incidents', 'notifications',
-   'reports', 'firstAidChecks', 'ppeObservations', 'videoViews', 'examResults'].forEach(function (k) {
+   'reports', 'firstAidChecks', 'ppeObservations', 'videoViews', 'examResults', 'externalTrainings'].forEach(function (k) {
     if (!Array.isArray(DB[k])) DB[k] = [];
   });
   if (!DB.settings) DB.settings = seedDB().settings;
@@ -510,8 +511,28 @@ function avg(arr) { return arr.length ? arr.reduce(function (a, b) { return a + 
 function kpiCfg() { return (DB.settings && DB.settings.kpi) || seedDB().settings.kpi; }
 function _f(v, fb) { var n = parseFloat(v); return isNaN(n) ? (fb || 0) : n; }
 
+/* — Гадны (бүлэг) сургалт: ажилтан өөрийн хамрагдсан сургалтын тоогоор оноо авна — */
+function etHasAttendee(t, e) {
+  return (t.attendees || []).some(function (a) {
+    return (a.uid && e.uid && a.uid === e.uid) || (a.id && e.id && a.id === e.id) ||
+      _sameEmail(a.email, e.email) || (a.name && e.name && String(a.name).toLowerCase() === String(e.name).toLowerCase());
+  });
+}
+/* Тухайн ажилтны гадны сургалтын хамрах % (зөвхөн өөрийнх нь хамрагдсанаар). Сургалт алга бол null */
+function empTrainingCoverage(e) {
+  var all = DB.externalTrainings || [];
+  if (!all.length) return null;
+  var done = all.filter(function (t) { return etHasAttendee(t, e); }).length;
+  return Math.round(done / all.length * 100);
+}
+
 /* — Суурь үзүүлэлтүүд (хувь хүн, 0–100). Юу ч хасахгүй — — */
-function kpiVideo(e) { return clamp(Math.round(_f(e.video, e.training)), 0, 100); }
+function kpiVideo(e) {
+  var cov = empTrainingCoverage(e);                          // гадны сургалтын хамрах %
+  var vid = clamp(Math.round(_f(e.video, e.training)), 0, 100); // видео үзэлтийн импорт / fallback
+  if (cov == null) return vid;                                // гадны сургалт алга → видео импорт
+  return Math.max(cov, vid);                                  // хоёулаа сургалтын дүн — өндрийг нь авна
+}
 function kpiExam(e) { return clamp(Math.round(_f(e.examScore, e.training)), 0, 100); }
 function kpiImprovement(e) {
   if (!e.examScore) return 0;                 // шалгалт өгөөгүй — ахиц хэмжих юм алга → 0
@@ -2126,6 +2147,121 @@ function renderAdminPanel() {
     'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 
+/* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
+function loadSheetJS(cb) {
+  if (typeof XLSX !== 'undefined') { cb(true); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload = function () { cb(true); };
+  s.onerror = function () { cb(false); };
+  document.head.appendChild(s);
+}
+function parseSpreadsheet(file, cb) {
+  var name = (file.name || '').toLowerCase();
+  if (/\.csv$/.test(name) || file.type === 'text/csv') {
+    var rd = new FileReader();
+    rd.onload = function (ev) { try { cb(parseCSV(ev.target.result)); } catch (e) { cb(null); } };
+    rd.onerror = function () { cb(null); };
+    rd.readAsText(file, 'UTF-8'); return;
+  }
+  loadSheetJS(function (ok) {
+    if (!ok) { cb(null, 'Excel уншигч ачаалж чадсангүй (интернэт шалгана уу). Файлаа CSV болгож оруулж болно.'); return; }
+    var rd = new FileReader();
+    rd.onload = function (ev) {
+      try {
+        var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+        cb(rows.map(function (r) { return (r || []).map(function (c) { return c == null ? '' : String(c); }); }));
+      } catch (e) { cb(null, e.message); }
+    };
+    rd.onerror = function () { cb(null); };
+    rd.readAsArrayBuffer(file);
+  });
+}
+function etSameAttendee(a, b) {
+  return (a.uid && b.uid && a.uid === b.uid) || (a.id && b.id && a.id === b.id) || _sameEmail(a.email, b.email) ||
+    (a.name && b.name && String(a.name).toLowerCase() === String(b.name).toLowerCase());
+}
+function applyBatchTraining(rows, fallbackTitle) {
+  var res = { trainings: 0, mergedTo: 0, enrolled: 0, unmatched: [] };
+  if (!rows || !rows.length) return res;
+  var header = (rows[0] || []).map(function (x) { return String(x).toLowerCase().trim(); });
+  var hasHeader = header.some(function (h) { return /сургалт|training|курс|ажилтан|нэр|имэйл|email|код|code|name/.test(h); });
+  var iTitle = -1, iEmp = -1;
+  if (hasHeader) {
+    header.forEach(function (h, i) {
+      if (iTitle < 0 && /сургалт|training|курс/.test(h)) iTitle = i;
+      else if (iEmp < 0 && /ажилтан|нэр|имэйл|email|код|code|name/.test(h)) iEmp = i;
+    });
+  }
+  if (iEmp < 0) iEmp = (iTitle === 0 ? 1 : 0);
+  var data = hasHeader ? rows.slice(1) : rows;
+  var groups = {};
+  data.forEach(function (r) {
+    if (!r || !r.length) return;
+    var title = (iTitle >= 0 ? String(r[iTitle] || '').trim() : '') || (fallbackTitle || '').trim() || 'Гадны сургалт';
+    var key = String(r[iEmp] != null ? r[iEmp] : '').trim();
+    if (!key) return;
+    (groups[title] = groups[title] || []).push(key);
+  });
+  Object.keys(groups).forEach(function (title) {
+    var attendees = [];
+    groups[title].forEach(function (k) {
+      var emp = matchVideoEmp(k);
+      if (emp) {
+        var a = { id: emp.id || '', uid: emp.uid || '', email: emp.email || '', name: emp.name };
+        if (!attendees.some(function (x) { return etSameAttendee(x, a); })) attendees.push(a);
+      } else res.unmatched.push(k);
+    });
+    var existing = (DB.externalTrainings || []).filter(function (t) { return String(t.title).toLowerCase() === title.toLowerCase(); })[0];
+    if (existing) {
+      attendees.forEach(function (a) { if (!existing.attendees.some(function (x) { return etSameAttendee(x, a); })) existing.attendees.push(a); });
+      res.mergedTo++;
+    } else {
+      DB.externalTrainings.push({ id: nextId('ET', DB.externalTrainings), title: title, date: todayISO(), attendees: attendees });
+      res.trainings++;
+    }
+    res.enrolled += attendees.length;
+  });
+  if (res.trainings || res.mergedTo) { saveDB(); renderEmployees(); renderKpiPage(); renderDashboard(); }
+  return res;
+}
+function actionBatchTraining() {
+  if (!isAdmin()) { toast('Зөвхөн ХАБЭА ажилтан энэ үйлдэл хийнэ', 'warn'); return; }
+  var node = elc('div', 'modal-info');
+  var existing = DB.externalTrainings || [];
+  node.innerHTML =
+    '<p style="font-size:14px;line-height:1.5">Гадны (бүлэг) сургалтад хамрагдсан ажилтнуудыг <strong>Excel/CSV</strong>-ээр оруулна. Файл доторх ажилтнууд тухайн сургалтад автоматаар хамрагдсан болж, KPI-ийн сургалтын оноо нь нэмэгдэнэ.</p>' +
+    '<div class="rf-field" style="margin-top:10px"><label>Сургалтын нэр (файлд багана байхгүй бол)</label><input type="text" id="btTitle" class="rf-input" placeholder="ж: Галын аюулгүй байдлын сургалт"></div>' +
+    '<label class="rf-photo" id="btLbl" style="margin-top:6px"><input type="file" accept=".csv,.xlsx,.xls" id="btFile" hidden><i class="ti ti-file-spreadsheet"></i><span>Excel/CSV файл сонгох</span></label>' +
+    '<div class="rf-hint" style="margin-top:10px"><i class="ti ti-info-circle"></i> Багана: <strong>ажилтан</strong> (нэр/имэйл/код). Олон сургалт бол <strong>сургалт, ажилтан</strong> гэсэн 2 баганатай байж болно.</div>' +
+    '<button class="btn btn-secondary btn-sm" id="btTpl" style="margin-top:4px"><i class="ti ti-download"></i> Загвар татах</button>' +
+    (existing.length ? '<div style="margin-top:14px;border-top:1px solid #EEF1F4;padding-top:10px"><div style="font-size:12px;color:#8A94A6;margin-bottom:6px">Нэмэгдсэн сургалтууд (' + existing.length + ')</div>' +
+      existing.slice(0, 10).map(function (t) { return '<div style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0"><span>' + esc(t.title) + '</span><span style="color:#8A94A6">' + (t.attendees || []).length + ' ажилтан</span></div>'; }).join('') + '</div>' : '');
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#btTpl')) {
+      var tpl = '﻿сургалт,ажилтан\nГалын аюулгүй байдлын сургалт,EMP-002\nГалын аюулгүй байдлын сургалт,tuya@mn\nӨндөрт ажиллах сургалт,EMP-004\n';
+      download('buleg-surgalt-zagvar.csv', tpl, 'text/csv;charset=utf-8');
+    }
+  });
+  $('#btFile', node).addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var lbl = $('#btLbl span', node); if (lbl) lbl.textContent = f.name + ' — боловсруулж байна…';
+    parseSpreadsheet(f, function (rows, err) {
+      if (!rows) { toast(err || 'Файл уншиж чадсангүй', 'error'); if (lbl) lbl.textContent = 'Excel/CSV файл сонгох'; return; }
+      var res = applyBatchTraining(rows, $('#btTitle', node).value);
+      closeModal();
+      infoModal('Бүлэг сургалт нэмэгдлээ', '<div style="font-size:14px;line-height:1.7">' +
+        '<div>📚 Шинэ сургалт: <strong>' + res.trainings + '</strong>' + (res.mergedTo ? ' · нэмж нэгтгэсэн: ' + res.mergedTo : '') + '</div>' +
+        '<div>✅ Хамрагдсан гэж тэмдэглэсэн: <strong>' + res.enrolled + '</strong> ажилтан</div>' +
+        '<div>⚠️ Тохирохгүй (ажилтан олдоогүй): <strong>' + res.unmatched.length + '</strong>' + (res.unmatched.length ? ' <span style="color:#94A3B8;font-size:12px">(' + esc(res.unmatched.slice(0, 8).join(', ')) + (res.unmatched.length > 8 ? '…' : '') + ')</span>' : '') + '</div>' +
+        '<div style="margin-top:8px;color:#64748B;font-size:13px">Эдгээр ажилтны KPI-ийн сургалтын оноо автоматаар шинэчлэгдлээ.</div></div>');
+    });
+  });
+  buildModal('Бүлэг сургалт нэмэх (Excel/CSV)', node, { width: '470px' });
+}
+
 /* ============ Графикууд ============ */
 var charts = { radar: null, trend: null };
 function renderCharts() {
@@ -2830,6 +2966,7 @@ function handleClick(e) {
 
   /* --- Навигаци --- */
   if (el.classList.contains('nav-item')) {
+    if (el.hasAttribute('data-batch-training')) { e.preventDefault(); actionBatchTraining(); return; }
     var pg = el.getAttribute('data-page');
     if (pg) { e.preventDefault(); switchPage(pg); }
     return;
