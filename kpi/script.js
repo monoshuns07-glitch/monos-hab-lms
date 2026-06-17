@@ -47,8 +47,8 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
    - depthead (Албаны дарга): зөвхөн өөрийн алба
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
-var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings'];
-var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow'];
+var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel'];
+var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -807,6 +807,7 @@ function switchPage(pageId) {
   if (pageId === 'reportflow') renderReportflow();
   else if (pageId === 'myresults') renderMyResults();
   else if (pageId === 'daatgal') renderDaatgal();
+  else if (pageId === 'adminpanel') renderAdminPanel();
   else if (pageId === 'kpi') renderKpiPage();
   else if (pageId === 'ppe') renderPpe();
   else if (pageId === 'inspections') renderInspections();
@@ -2098,6 +2099,23 @@ function renderDaatgal() {
   sec._loaded = true;
   sec.style.padding = '0';
   sec.innerHTML = '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
+    'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
+}
+
+/* ============ Контент удирдлага (admin.html — апп дотор шингээсэн) ============ */
+function renderAdminPanel() {
+  var sec = pageEl('adminpanel'); if (!sec) return;
+  if (!isAdmin()) { sec.style.padding = ''; sec.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Зөвхөн ХАБЭА ажилтан хандана.</div></div></div>'; return; }
+  if (DEMO) {
+    sec.style.padding = '';
+    sec.innerHTML = '<div class="page-header"><div><h1>Контент удирдлага</h1><p class="page-subtitle">Сургалт, хэрэглэгч, контент удирдах</p></div></div>' +
+      '<div class="card" style="padding:34px"><div class="empty-state" style="padding:30px"><i class="ti ti-settings-cog"></i><div>Контент удирдлагын хэсэг амьд систем дээр ажиллана. Локал DEMO дээр харагдахгүй.</div></div></div>';
+    return;
+  }
+  if (sec._loaded) return;
+  sec._loaded = true;
+  sec.style.padding = '0';
+  sec.innerHTML = '<iframe src="/admin.html" title="Контент удирдлага" ' +
     'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 
