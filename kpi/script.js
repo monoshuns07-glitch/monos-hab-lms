@@ -47,8 +47,8 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
    - depthead (Албаны дарга): зөвхөн өөрийн алба
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
-var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel'];
-var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel'];
+var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin'];
+var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -834,6 +834,7 @@ function switchPage(pageId) {
   else if (pageId === 'myresults') renderMyResults();
   else if (pageId === 'daatgal') renderDaatgal();
   else if (pageId === 'adminpanel') renderAdminPanel();
+  else if (pageId === 'examadmin') renderExamAdmin();
   else if (pageId === 'kpi') renderKpiPage();
   else if (pageId === 'ppe') renderPpe();
   else if (pageId === 'inspections') renderInspections();
@@ -2145,6 +2146,17 @@ function renderAdminPanel() {
   sec.style.padding = '0';
   sec.innerHTML = '<iframe src="/admin.html" title="Контент удирдлага" ' +
     'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
+}
+
+/* ============ Шалгалтын админ (habea-admin — апп дотор шингээсэн) ============ */
+function renderExamAdmin() {
+  var sec = pageEl('examadmin'); if (!sec) return;
+  if (!isAdmin()) { sec.style.padding = ''; sec.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Зөвхөн ХАБЭА ажилтан хандана.</div></div></div>'; return; }
+  if (sec._loaded) return;
+  sec._loaded = true;
+  sec.style.padding = '0';
+  sec.innerHTML = '<iframe src="https://habea-deploy.vercel.app/habea-admin.html" title="Шалгалтын удирдлага" ' +
+    'allow="clipboard-write" style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
