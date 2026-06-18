@@ -904,7 +904,7 @@ function selectRight(id, qid){
 
 function setAnswer(val){
   const q=QUESTIONS[state.currentQ];
-  state.answers[q.id]=val;
+  state.answers[q.id]=val; renderQuestion(q);
   renderDots();
 }
 
