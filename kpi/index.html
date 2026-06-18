@@ -236,19 +236,12 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h3>KPI ангиллын дүн</h3>
-            <p class="card-subtitle">5 ангиллын дундаж жинтэй оноо</p>
+            <h3>Хэлтсүүдийн KPI</h3>
+            <p class="card-subtitle">Алба тус бүрийн дундаж оноо</p>
           </div>
-          <button class="link-btn">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
+          <button class="link-btn" data-goemp="1">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
         </div>
-        <canvas id="kpiRadar" height="280"></canvas>
-        <div class="legend-row">
-          <div class="legend-item"><span class="dot dot-amber"></span>Сургалт <strong>92</strong></div>
-          <div class="legend-item"><span class="dot dot-teal"></span>Оролцоо <strong>78</strong></div>
-          <div class="legend-item"><span class="dot dot-emerald"></span>Дүрэм <strong>89</strong></div>
-          <div class="legend-item"><span class="dot dot-blue"></span>Эрүүл мэнд <strong>95</strong></div>
-          <div class="legend-item"><span class="dot dot-coral"></span>Манлайлал <strong>73</strong></div>
-        </div>
+        <div id="dashDeptBreak" style="max-height:330px;overflow:auto"></div>
       </div>
 
       <div class="card">
@@ -1916,6 +1909,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js?v=15"></script>
+<script src="script.js?v=16"></script>
 </body>
 </html>
