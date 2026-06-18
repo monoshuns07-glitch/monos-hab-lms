@@ -3230,12 +3230,10 @@ function showLoginScreen() {
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Нэвтэрч байна...'; }
     if (err) err.textContent = '';
     fauth.signInWithEmailAndPassword(email, pass).then(function (cred) {
-      // Бүртгэлтэй эсэхийг шалгана (Firestore). Алдвал гаргахгүй — үргэлжлүүлнэ.
-      function go() { try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: cred.user.uid })); } catch (e) {} location.reload(); }
-      fdb.collection('users').doc(cred.user.uid).get().then(function (snap) {
-        if (!snap.exists) { fauth.signOut(); fail('Та бүртгэлгүй байна. Админтай холбоо барина уу.'); return; }
-        go();
-      }).catch(go);
+      // Имэйл+нууц үг зөв бол ОРУУЛНА. Эрх (admin/depthead/employee)-ийг establishSession
+      // нь users/{uid}-ээс уншиж тодорхойлно (баримт байхгүй бол ажилтан). Хатуу хааж гаргахгүй.
+      try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: cred.user.uid })); } catch (e) {}
+      location.reload();
     }).catch(function (e) {
       var code = (e && e.code) || '';
       if (code.indexOf('wrong-password') > -1 || code.indexOf('invalid-credential') > -1 || code.indexOf('invalid-login') > -1) fail('Нууц үг буруу байна.');
