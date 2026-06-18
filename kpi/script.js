@@ -2019,12 +2019,12 @@ function renderDataflow() {
 /* ============ Миний сургалт + Шалгалтын дүн (апп дотор — нэг код) ============ */
 function renderMyResults() {
   var sec = pageEl('myresults'); if (!sec) return;
-  sec.innerHTML = '<div class="page-header"><div><h1>Миний сургалт ба шалгалтын дүн</h1>' +
-    '<p class="page-subtitle">Таны сургалтын явц болон шалгалтын түүх — нэг апп дотор</p></div></div>' +
-    '<div id="mrStats" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px"></div>' +
-    '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 12px">Сургалтын явц</h3><div id="mrProgress">' + emptyBox('Ачаалж байна…') + '</div></div>' +
-    '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">Шалгалтын түүх</h3><div id="mrResults"></div></div>';
-  loadMyResults();
+  sec.style.padding = '0';
+  if (sec._loaded) return;
+  sec._loaded = true;
+  // ХАБЭА Шалгалтын вэб сайтыг (habea-deploy.vercel.app) апп дотор шингээж харуулна
+  sec.innerHTML = '<iframe src="https://habea-deploy.vercel.app/habea-shalgalt.html" title="Дотоод сургалтын шалгалт" ' +
+    'allow="camera; microphone; clipboard-write" style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 function mrFmt(ts) {
   try { if (ts && ts.toDate) { var d = ts.toDate(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); } } catch (e) {}
