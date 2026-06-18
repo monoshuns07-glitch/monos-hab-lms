@@ -1,0 +1,1305 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ХАБЭА Шалгалт — МОНОС ХҮНС ХК</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+@property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#E30613;--red2:#FF2040;--red-dark:#B00510;
+  --ink:#EEF3FF;--ink2:rgba(200,215,255,.8);--muted:rgba(170,195,255,.55);
+  --line:rgba(255,255,255,.07);--paper:rgba(255,255,255,.05);
+  --bg:#030511;--bg2:#060B1C;--bg3:#0A1020;
+  --white:#EEF3FF;--green:#10C97A;--amber:#F59E0B;--gold:#FFB400;
+  --blue:#4F8EF7;--radius:16px;
+}
+html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);overflow-x:hidden}
+
+/* ── BACKGROUND ── */
+#bgCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+.bg-orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0;animation:orbFloat 12s ease-in-out infinite}
+.bg-orb1{width:700px;height:700px;top:-200px;left:-150px;background:radial-gradient(circle,rgba(227,6,19,.13) 0%,transparent 65%);filter:blur(80px)}
+.bg-orb2{width:600px;height:600px;bottom:-150px;right:-100px;background:radial-gradient(circle,rgba(79,142,247,.10) 0%,transparent 65%);filter:blur(80px);animation-delay:-5s}
+.bg-orb3{width:400px;height:400px;top:40%;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(227,6,19,.07) 0%,transparent 65%);filter:blur(60px);animation-delay:-8s}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}33%{transform:translate(30px,-20px)}66%{transform:translate(-20px,30px)}}
+
+/* ── LAYOUT ── */
+#app{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
+.screen{display:none;flex:1;flex-direction:column;animation:fadeUp .4s ease both}
+.screen.active{display:flex}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.container{max-width:800px;width:100%;margin:0 auto;padding:0 20px}
+.container-wide{max-width:1200px;width:100%;margin:0 auto;padding:0 20px}
+
+/* ── HEADER ── */
+.header{border-bottom:1px solid var(--line);background:rgba(3,5,17,.8);backdrop-filter:blur(20px);padding:16px 24px;position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between}
+.header-brand{display:flex;align-items:center;gap:12px;cursor:pointer}
+.header-icon{width:44px;height:44px;background:var(--red);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.header-title{font-weight:800;font-size:18px;letter-spacing:-.5px}
+.header-sub{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.5px;text-transform:uppercase}
+
+/* ── GLASS CARD ── */
+.card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);backdrop-filter:blur(20px);padding:32px}
+.card-sm{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px}
+.card-ring{border:1.5px solid transparent;border-radius:var(--radius);background:linear-gradient(var(--bg2),var(--bg2)) padding-box,
+  conic-gradient(from var(--angle),#E3060300,#E30613 20%,#E3060300 40%) border-box;
+  animation:brandRing 4s linear infinite}
+@keyframes brandRing{to{--angle:360deg}}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 28px;border-radius:12px;font-weight:700;font-size:15px;border:none;cursor:pointer;transition:all .2s;text-decoration:none;white-space:nowrap}
+.btn-primary{background:linear-gradient(135deg,var(--red),var(--red-dark));color:#fff;box-shadow:0 4px 20px rgba(227,6,19,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(227,6,19,.4)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-ghost{background:rgba(255,255,255,.06);color:var(--ink2);border:1px solid rgba(255,255,255,.12)}
+.btn-ghost:hover{background:rgba(255,255,255,.1)}
+.btn-green{background:linear-gradient(135deg,#10C97A,#0da86a);color:#fff;box-shadow:0 4px 20px rgba(16,201,122,.25)}
+.btn-green:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(16,201,122,.35)}
+.btn-amber{background:linear-gradient(135deg,#F59E0B,#d97706);color:#fff}
+.btn-sm{padding:9px 18px;font-size:13px;border-radius:9px}
+.btn-icon{width:40px;height:40px;padding:0;border-radius:10px}
+
+/* ── FORM ── */
+.field{display:flex;flex-direction:column;gap:8px}
+.field label{font-size:13px;font-weight:600;color:var(--ink2)}
+.field-icon{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink2)}
+.input{width:100%;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.12);border-radius:10px;padding:14px 16px;color:var(--ink);font-size:15px;font-family:inherit;transition:all .2s;outline:none}
+.input:focus{border-color:var(--red);background:rgba(227,6,19,.06);box-shadow:0 0 0 4px rgba(227,6,19,.1)}
+.input::placeholder{color:var(--muted)}
+textarea.input{resize:none}
+
+/* ── PROGRESS ── */
+.progress-bar{height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--red),#FF6B35);border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+/* ── QUESTION NAV DOTS ── */
+.q-nav{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.q-dot{width:32px;height:32px;border-radius:8px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit}
+.q-dot.answered{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.3);color:var(--ink)}
+.q-dot.current{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 0 12px rgba(227,6,19,.5)}
+.q-dot.correct{background:rgba(16,201,122,.2);border-color:#10C97A;color:#10C97A}
+.q-dot.wrong{background:rgba(255,50,64,.2);border-color:#FF2040;color:#FF2040}
+
+/* ── OPTION ── */
+.option{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:10px;border:1.5px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);cursor:pointer;transition:all .2s;text-align:left;width:100%;font-family:inherit}
+.option:hover{border-color:rgba(227,6,19,.4);background:rgba(227,6,19,.06)}
+.option.selected{border-color:var(--red);background:rgba(227,6,19,.12)}
+.option-badge{min-width:28px;height:28px;border-radius:7px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;margin-top:1px;transition:all .2s}
+.option.selected .option-badge{background:var(--red);color:#fff}
+.option-text{font-size:14px;line-height:1.5;color:var(--ink2)}
+
+/* ── MATCHING ── */
+.matching-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.matching-grid{grid-template-columns:1fr}}
+.match-item{padding:12px 14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);cursor:pointer;font-size:13px;line-height:1.4;color:var(--ink2);transition:all .2s;text-align:left;width:100%;font-family:inherit}
+.match-item.active{border-color:var(--amber);background:rgba(245,158,11,.1);color:#F59E0B}
+.match-item.matched{border-color:var(--green);background:rgba(16,201,122,.1);color:var(--green)}
+.match-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.match-pair{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.06);font-size:12px;font-weight:600;color:var(--ink2)}
+
+/* ── RESULT ── */
+.result-ring{width:180px;height:180px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;position:relative;margin:0 auto}
+.result-ring canvas{position:absolute;inset:0}
+.result-ring-inner{position:relative;z-index:1;text-align:center}
+.result-percent{font-size:52px;font-weight:900;line-height:1}
+.result-label{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.breakdown-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);font-size:13px}
+.breakdown-score{font-weight:700;font-size:13px}
+.score-full{color:var(--green)}
+.score-partial{color:var(--amber)}
+.score-zero{color:var(--red2)}
+
+/* ── ADMIN DASHBOARD ── */
+.stat-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px;text-align:center}
+.stat-val{font-size:36px;font-weight:900;letter-spacing:-1px}
+.stat-lbl{font-size:12px;color:var(--muted);font-weight:600;margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:rgba(255,255,255,.06)}
+th{padding:12px 16px;text-align:left;font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,.08)}
+td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--ink2)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.03)}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700}
+.badge-pass{background:rgba(16,201,122,.15);color:#10C97A}
+.badge-fail{background:rgba(255,50,64,.15);color:#FF2040}
+.badge-pre{background:rgba(79,142,247,.15);color:#4F8EF7}
+.badge-post{background:rgba(245,158,11,.15);color:#F59E0B}
+
+/* ── QR SCREEN ── */
+.qr-box{background:#fff;border-radius:16px;padding:16px;display:inline-block;box-shadow:0 0 60px rgba(227,6,19,.2)}
+.qr-box img{display:block;border-radius:8px}
+
+/* ── TOAST ── */
+.toast-container{position:fixed;top:80px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{background:rgba(10,16,32,.95);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px);border-radius:10px;padding:12px 16px;font-size:13px;font-weight:600;color:var(--ink);min-width:240px;animation:toastIn .3s ease;display:flex;align-items:center;gap:8px}
+.toast.success{border-color:rgba(16,201,122,.3)}
+.toast.error{border-color:rgba(255,50,64,.3)}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:#090F1F;border:1px solid rgba(255,255,255,.12);border-radius:20px;max-width:700px;width:100%;max-height:90vh;overflow-y:auto;padding:32px}
+
+/* ── CONFETTI ── */
+.confetti-wrap{position:fixed;inset:0;pointer-events:none;z-index:50;overflow:hidden}
+.c-piece{position:absolute;top:-20px;width:10px;height:14px;border-radius:2px;animation:cFall linear forwards}
+@keyframes cFall{to{transform:translateY(110vh) rotate(720deg);opacity:.3}}
+
+/* ── RESPONSIVE ── */
+@media(max-width:600px){
+  .card{padding:20px}
+  .btn{padding:12px 20px;font-size:14px}
+  .result-percent{font-size:40px}
+  .matching-grid{grid-template-columns:1fr}
+}
+
+/* ── CHIP / TAG ── */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;background:rgba(227,6,19,.12);color:var(--red2);font-size:12px;font-weight:700;border:1px solid rgba(227,6,19,.2)}
+.chip-blue{background:rgba(79,142,247,.12);color:#4F8EF7;border-color:rgba(79,142,247,.2)}
+.chip-green{background:rgba(16,201,122,.12);color:#10C97A;border-color:rgba(16,201,122,.2)}
+
+/* ── DIVIDER ── */
+.divider{height:1px;background:rgba(255,255,255,.06);margin:24px 0}
+
+/* ── FILTER TABS ── */
+.tabs{display:flex;gap:4px;background:rgba(255,255,255,.04);border-radius:10px;padding:4px}
+.tab{padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;color:var(--muted);border:none;background:transparent;font-family:inherit}
+.tab.active{background:rgba(255,255,255,.1);color:var(--ink)}
+
+/* ── SECTION TITLE ── */
+.section-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.section-title::before{content:'';display:inline-block;width:3px;height:14px;background:var(--red);border-radius:2px}
+
+/* ── SPINNER ── */
+.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── LOGIN PIN ── */
+.pin-wrap{display:flex;gap:12px;justify-content:center;margin:24px 0}
+.pin-input{width:56px;height:68px;background:rgba(255,255,255,.06);border:2px solid rgba(255,255,255,.15);border-radius:12px;color:var(--ink);font-size:28px;font-weight:900;text-align:center;font-family:inherit;outline:none;transition:all .2s;caret-color:var(--red)}
+.pin-input:focus{border-color:var(--red);background:rgba(227,6,19,.08);box-shadow:0 0 0 4px rgba(227,6,19,.12)}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+<div class="bg-orb bg-orb1"></div>
+<div class="bg-orb bg-orb2"></div>
+<div class="bg-orb bg-orb3"></div>
+
+<div id="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-brand" onclick="goHome()">
+      <div class="header-icon">🦺</div>
+      <div>
+        <div class="header-title">ХАБЭА</div>
+        <div class="header-sub" id="headerSub">Аюулгүй ажиллагааны шалгалт</div>
+      </div>
+    </div>
+    <div id="headerRight"></div>
+  </div>
+
+  <!-- ══════════ SCREEN: WELCOME ══════════ -->
+  <div class="screen active" id="screen-welcome" style="align-items:center;justify-content:center;padding:40px 20px">
+    <div class="container">
+      <div style="text-align:center;margin-bottom:40px">
+        <div class="chip" style="margin-bottom:20px">✦ МОНОС ХҮНС ХК — ХАБЭА Сургалт</div>
+        <h1 style="font-size:clamp(32px,6vw,52px);font-weight:900;letter-spacing:-1.5px;line-height:1.05;margin-bottom:16px">
+          Хөдөлмөрийн<br>
+          <span style="color:var(--red)">аюулгүй байдлын</span><br>
+          шалгалт
+        </h1>
+        <p style="color:var(--muted);font-size:15px;max-width:480px;margin:0 auto;line-height:1.6">
+          Шалгалтын төрлөө сонгоно уу. <strong style="color:var(--ink2)">11 асуулт</strong>-д хариулж, дүнгээ шууд харна.
+        </p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+        <!-- PRE EXAM -->
+        <button class="card card-ring" style="cursor:pointer;text-align:left;border:none;width:100%;transition:all .2s" onclick="chooseExam('pre')">
+          <div style="font-size:36px;margin-bottom:16px">📋</div>
+          <div class="chip chip-blue" style="margin-bottom:12px">Сонголт 1</div>
+          <div style="font-size:22px;font-weight:800;margin-bottom:8px;color:var(--ink)">Урьдчилсан шалгалт</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px">Сургалтаас өмнөх мэдлэгийн үнэлгээ. Бүртгэлийн QR уншуулж шалгалт өгнө.</div>
+          <div style="display:flex;align-items:center;gap:6px;color:var(--blue);font-weight:700;font-size:13px">Эхлэх →</div>
+        </button>
+        <!-- POST EXAM -->
+        <button class="card" style="cursor:pointer;text-align:left;border:1px solid rgba(255,255,255,.1);width:100%;transition:all .2s;background:rgba(255,255,255,.04)" onclick="chooseExam('post')">
+          <div style="font-size:36px;margin-bottom:16px">🎓</div>
+          <div class="chip" style="margin-bottom:12px">Сонголт 2</div>
+          <div style="font-size:22px;font-weight:800;margin-bottom:8px;color:var(--ink)">Сургалтын дараах шалгалт</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px">Сургалтад оролцсоны дараах мэдлэгийн үнэлгээ. Үнэлгээний QR уншуулж шалгалт өгнө.</div>
+          <div style="display:flex;align-items:center;gap:6px;color:var(--red2);font-weight:700;font-size:13px">Эхлэх →</div>
+        </button>
+      </div>
+
+      <div style="margin-top:20px;padding:14px 20px;background:rgba(16,201,122,.06);border:1px solid rgba(16,201,122,.15);border-radius:10px;font-size:13px;color:var(--muted);text-align:center">
+        ✅ Тэнцэх босго: <strong style="color:var(--green)">60%</strong> — Амжилттай гүйцэтгэвэл дүн шууд харагдана
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: QR ══════════ -->
+  <div class="screen" id="screen-qr" style="align-items:center;justify-content:center;padding:40px 20px">
+    <div class="container" style="max-width:560px">
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" onclick="showScreen('welcome')">← Буцах</button>
+      <div class="card" style="text-align:center">
+        <div id="qrChip" class="chip" style="margin-bottom:16px"></div>
+        <h2 style="font-size:26px;font-weight:800;margin-bottom:10px" id="qrTitle"></h2>
+        <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:28px" id="qrDesc"></p>
+        <div style="display:flex;justify-content:center;margin-bottom:24px">
+          <div class="qr-box"><img id="qrImg" width="220" height="220" alt="QR Code"></div>
+        </div>
+        <div style="color:var(--muted);font-size:12px;margin-bottom:20px">📱 Утасны камераар QR уншуулна уу</div>
+        <div class="divider"></div>
+        <div style="color:var(--muted);font-size:12px;font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">— эсвэл —</div>
+        <button class="btn btn-primary" id="qrActionBtn" style="width:100%"></button>
+        <div style="margin-top:12px;font-size:12px;color:var(--muted)">Товч дарахад форм шинэ цонхонд нээгдэж, та шалгалтын мэдээлэл бөглөх рүү шилжинэ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: INFO ══════════ -->
+  <div class="screen" id="screen-info" style="align-items:center;justify-content:center;padding:40px 20px">
+    <div class="container" style="max-width:520px">
+      <button class="btn btn-ghost btn-sm" style="margin-bottom:24px" onclick="showScreen('qr')">← Буцах</button>
+      <div class="card">
+        <div class="chip chip-green" style="margin-bottom:16px">✓ Бүртгэл амжилттай</div>
+        <h2 style="font-size:24px;font-weight:800;margin-bottom:8px">Мэдээлэлээ оруулна уу</h2>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:28px">Шалгалтад орохын өмнө таны бүртгэлийн мэдээллийг оруулна уу.</p>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:28px">
+          <div class="field">
+            <div class="field-icon">👤 Овог нэр</div>
+            <input class="input" id="infoName" type="text" placeholder="Жишээ нь: Б. Бат-Эрдэнэ">
+          </div>
+          <div class="field">
+            <div class="field-icon">🏢 Хэлтэс / Нэгж</div>
+            <input class="input" id="infoDept" type="text" placeholder="Жишээ нь: Үйлдвэрлэлийн хэлтэс">
+          </div>
+          <div class="field">
+            <div class="field-icon">💼 Албан тушаал</div>
+            <input class="input" id="infoPos" type="text" placeholder="Жишээ нь: Цахилгаанчин">
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="startExam()">
+          Шалгалт эхлүүлэх →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: EXAM ══════════ -->
+  <div class="screen" id="screen-exam" style="padding:32px 20px 60px">
+    <div class="container">
+      <!-- Top bar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;color:var(--muted);font-weight:600">
+          Асуулт <span id="qNum" style="color:var(--ink);font-weight:800">1</span> / 11
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--amber)" id="qPoints"></div>
+      </div>
+      <div class="progress-bar" style="margin-bottom:24px">
+        <div class="progress-fill" id="progressFill" style="width:9%"></div>
+      </div>
+
+      <!-- Question card -->
+      <div class="card" id="questionCard" style="margin-bottom:20px">
+        <div id="questionContent"></div>
+      </div>
+
+      <!-- Nav buttons -->
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px">
+        <button class="btn btn-ghost" id="btnPrev" onclick="prevQ()">← Өмнөх</button>
+        <div style="font-size:12px;color:var(--muted);text-align:center" id="exameeLabel"></div>
+        <button class="btn btn-primary" id="btnNext" onclick="nextQ()">Дараах →</button>
+      </div>
+
+      <!-- Dot navigation -->
+      <div class="q-nav" id="qNav"></div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: RESULT ══════════ -->
+  <div class="screen" id="screen-result" style="padding:40px 20px 60px">
+    <div class="container">
+      <div class="card" style="text-align:center;margin-bottom:24px" id="resultHero">
+        <div class="confetti-wrap" id="confettiWrap"></div>
+        <div style="font-size:48px;margin-bottom:16px" id="resultEmoji"></div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px" id="resultExamType"></div>
+        <canvas id="resultDonut" width="160" height="160" style="display:block;margin:0 auto 16px"></canvas>
+        <div class="result-percent" id="resultPct" style="letter-spacing:-2px"></div>
+        <div style="font-size:14px;color:var(--muted);margin:8px 0 16px">
+          <span id="resultScore"></span> / <span id="resultTotal"></span> оноо
+        </div>
+        <div id="resultBadge" class="badge" style="font-size:16px;padding:10px 24px;border-radius:10px;margin:0 auto"></div>
+        <div style="margin-top:16px;font-size:13px;color:var(--muted)" id="resultMsg"></div>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div class="section-title">Асуулт бүрийн дүн</div>
+        <div id="breakdownList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <button class="btn btn-ghost" style="width:100%" onclick="goHome()">🏠 Эхлэл рүү буцах</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: ADMIN LOGIN ══════════ -->
+  <div class="screen" id="screen-admin-login" style="align-items:center;justify-content:center;padding:40px 20px">
+    <div class="container" style="max-width:420px">
+      <div class="card" style="text-align:center">
+        <div style="font-size:40px;margin-bottom:16px">🔐</div>
+        <h2 style="font-size:22px;font-weight:800;margin-bottom:8px">Админ нэвтрэх</h2>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:8px">4 оронтой PIN кодоо оруулна уу</p>
+        <div class="pin-wrap" id="pinWrap">
+          <input class="pin-input" type="password" maxlength="1" inputmode="numeric" id="p0">
+          <input class="pin-input" type="password" maxlength="1" inputmode="numeric" id="p1">
+          <input class="pin-input" type="password" maxlength="1" inputmode="numeric" id="p2">
+          <input class="pin-input" type="password" maxlength="1" inputmode="numeric" id="p3">
+        </div>
+        <div id="pinError" style="color:var(--red2);font-size:13px;margin-bottom:16px;min-height:20px"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="checkPin()">Нэвтрэх</button>
+        <button class="btn btn-ghost" style="width:100%;margin-top:10px" onclick="goHome()">Буцах</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ SCREEN: ADMIN DASHBOARD ══════════ -->
+  <div class="screen" id="screen-admin" style="padding:32px 20px 80px">
+    <div class="container-wide">
+      <!-- KPI -->
+      <div style="margin-bottom:28px">
+        <div class="section-title">Нийт статистик</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+          <div class="stat-card"><div class="stat-val" id="stTotal">—</div><div class="stat-lbl">Нийт</div></div>
+          <div class="stat-card"><div class="stat-val" id="stPass" style="color:var(--green)">—</div><div class="stat-lbl">Тэнцсэн</div></div>
+          <div class="stat-card"><div class="stat-val" id="stFail" style="color:var(--red2)">—</div><div class="stat-lbl">Тэнцээгүй</div></div>
+          <div class="stat-card"><div class="stat-val" id="stAvg" style="color:var(--amber)">—</div><div class="stat-lbl">Голч %</div></div>
+          <div class="stat-card"><div class="stat-val" id="stPre" style="color:var(--blue)">—</div><div class="stat-lbl">Урьдчилсан</div></div>
+          <div class="stat-card"><div class="stat-val" id="stPost" style="color:var(--amber)">—</div><div class="stat-lbl">Дараах</div></div>
+        </div>
+      </div>
+
+      <!-- Charts row -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:28px">
+        <div class="card-sm">
+          <div class="section-title">Дүнгийн тархалт</div>
+          <canvas id="chartDist" height="200"></canvas>
+        </div>
+        <div class="card-sm">
+          <div class="section-title">Тэнцсэн / Тэнцээгүй</div>
+          <canvas id="chartPie" height="200"></canvas>
+        </div>
+        <div class="card-sm" style="grid-column:1/-1">
+          <div class="section-title">Асуулт бүрийн голч оноо (%)</div>
+          <canvas id="chartQ" height="200"></canvas>
+        </div>
+      </div>
+
+      <!-- Filter + export -->
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px;justify-content:space-between">
+        <div class="tabs" id="filterTabs">
+          <button class="tab active" onclick="filterResults('all',this)">Бүгд</button>
+          <button class="tab" onclick="filterResults('pre',this)">Урьдчилсан</button>
+          <button class="tab" onclick="filterResults('post',this)">Дараах</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-green btn-sm" onclick="exportCSV()">⬇ CSV татах</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red2)" onclick="clearAllData()">🗑 Устгах</button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Овог нэр</th>
+              <th>Хэлтэс</th>
+              <th>Тушаал</th>
+              <th>Төрөл</th>
+              <th>Огноо</th>
+              <th>%</th>
+              <th>Оноо</th>
+              <th>Дүн</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div id="emptyMsg" style="text-align:center;padding:60px;color:var(--muted);font-size:15px;display:none">
+        📭 Одоогоор шалгалтын мэдээлэл байхгүй байна
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Detail -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+      <h3 style="font-size:18px;font-weight:800" id="modalTitle">Дэлгэрэнгүй</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ═══════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════
+const REGISTRATION_URL = "https://docs.google.com/forms/d/e/YOUR_REGISTRATION_FORM_ID/viewform";
+const EVALUATION_URL   = "https://docs.google.com/forms/d/e/YOUR_EVALUATION_FORM_ID/viewform";
+const ADMIN_PIN = "1234";
+const PASS_PERCENT = 60;
+
+// ═══════════════════════════════════════════
+// FIREBASE
+// ═══════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCXodBPWqm3TTZuJieHkkcu2lLtH5l7IJ0",
+  authDomain: "monos-hk-alba-1b774.firebaseapp.com",
+  projectId: "monos-hk-alba-1b774",
+  storageBucket: "monos-hk-alba-1b774.firebasestorage.app",
+  messagingSenderId: "562718693736",
+  appId: "1:562718693736:web:0fd550284fb40973d41edd"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const COLLECTION = "habea_exam_results";
+
+// ═══════════════════════════════════════════
+// QUESTIONS
+// ═══════════════════════════════════════════
+const QUESTIONS = [
+  {
+    id:1, type:"open", points:8,
+    question:"Таны бодлоор ХАБЭА гэж юу вэ?",
+    keywords:["аюулгүй","эрүүл","хөдөлмөр","ахуй"],
+    placeholder:"Жишээ нь: Хөдөлмөрийн аюулгүй байдал, эрүүл ахуй гэдэг нь..."
+  },
+  {
+    id:2, type:"single", points:8,
+    question:"Аюулгүй ажиллагааг хангаж ажиллах нь ...... үүрэг хариуцлага юм.",
+    options:[
+      {id:"a", text:"Удирдах ажилтны"},
+      {id:"b", text:"ХАБЭА-н ажилтны"},
+      {id:"c", text:"Ажилтан бүрийн"},
+      {id:"d", text:"Үйлдвэрийн тоног төхөөрөмжтэй харьцаж ажилладаг ажилтан"}
+    ],
+    correct:"c"
+  },
+  {
+    id:3, type:"matching", points:12,
+    question:"Дараах зааварчилгаануудын төрлийг тохирох тодорхойлолттой нь холбоно уу!",
+    leftItems:[
+      {id:"a", text:"Урьдчилсан зааварчилгаа"},
+      {id:"b", text:"Анхан шатны зааварчилгаа"},
+      {id:"c", text:"Өдөр тутмын зааварчилгаа"}
+    ],
+    rightItems:[
+      {id:"1", text:"Өглөө ажил эхлэхээс өмнө ажилчдад тухайн ажлын байрны онцлогт тохирсон зааварчилгааг удирдах ажилтан өдөр бүр өгнө."},
+      {id:"2", text:"Шинээр ажилд орсон ажилтан, үйлдвэрлэлийн сургалт, дадлага хийхээр ирсэн оюутанд өгнө."},
+      {id:"3", text:"Ажилтны ажилладаг хэсэг, цех өөрчлөгдөх үед болон шинэ ажилтанд аюул эрсдэлийн талаар өгнө."}
+    ],
+    correct:{a:"2", b:"3", c:"1"}
+  },
+  {
+    id:4, type:"single", points:8,
+    question:"Аюулыг дараах арга замаар илрүүлнэ.",
+    options:[
+      {id:"a", text:"Ажил эхлэхийн өмнө ажлын байрны үзлэг"},
+      {id:"b", text:"Багаж хэрэгслийн үзлэг"},
+      {id:"c", text:"Тоног төхөөрөмжийн үзлэг"},
+      {id:"d", text:"Ажиглалт"},
+      {id:"e", text:"Мэдээлэл цуглуулах / Аюулыг мэдээлэх"},
+      {id:"f", text:"Дээрх бүгд"}
+    ],
+    correct:"f"
+  },
+  {
+    id:5, type:"single", points:8,
+    question:"Нийт ослын 90% нь хандлагаас үүсдэг бол дараахаас зөв хандлагыг олно уу.",
+    options:[
+      {id:"a", text:"Би чинь гэр бүлийнхээ өмнө хариуцлага хүлээж ажиллаж байгаа болохоор аюулгүй ажиллаж сурья."},
+      {id:"b", text:"Өмнө нь ингэж хийгээд болсон юм чинь зүгээр байлгүйдээ."},
+      {id:"c", text:"Аюулгүй ажиллагааны зааварчилгааг ажилд гарахын тулд гарын үсэг зурах төдий үзэх."},
+      {id:"d", text:"Аюулгүй ажиллагааны талаар мэдэх шаардлагагүй."}
+    ],
+    correct:"a"
+  },
+  {
+    id:6, type:"matching", points:12,
+    question:"Дараах тэмдэгүүдийн төрлийг тохирох өнгөтэй нь холбоно уу.",
+    leftItems:[
+      {id:"a", text:"Анхааруулах тэмдэг"},
+      {id:"b", text:"Хориглох тэмдэг"},
+      {id:"c", text:"Сануулах тэмдэг"}
+    ],
+    rightItems:[
+      {id:"1", text:"Улаан дээр хар", color:"#C73B3B"},
+      {id:"2", text:"Шар дээр хар", color:"#D4A017"},
+      {id:"3", text:"Цэнхэр дээр цагаан", color:"#2563B5"}
+    ],
+    correct:{a:"2", b:"1", c:"3"}
+  },
+  {
+    id:7, type:"single", points:8,
+    question:"Дараах хариултуудаас аль нь ажилтны үүрэг хариуцлага вэ?",
+    options:[
+      {id:"a", text:"Зааварчилгаа авч ажиллах"},
+      {id:"b", text:"Ажлын хувцас, хамгаалах хэрэгслээ зориулалтын дагуу бүрэн бүтэн өмсөж хэрэглэх"},
+      {id:"c", text:"Ажлаа эхлүүлэхээс өмнө ажлын байрны үзлэг шалгалт хийж болзошгүй аюулаас урьдчилан сэргийлж ажиллах"},
+      {id:"d", text:"Аливаа аюул болон ослын тохиолдолд удирдлага болон ХАБЭА-н ажилтанд нэн даруй мэдэгдэх"},
+      {id:"e", text:"Дээрх бүгд зөв"}
+    ],
+    correct:"e"
+  },
+  {
+    id:8, type:"three-words", points:12,
+    question:"Биед, хувцасанд тань гал гарвал та ямар дүрмийг баримтлах вэ?",
+    hint:"Гурван үг бичнэ үү (жишээ нь: Зогс — Хэвт — Эргэлд)",
+    keywords:[
+      ["зогс","зогсох"],
+      ["хэвт","унаж","уна"],
+      ["эргэлд","эргэх","өнхрөх","өнхөр"]
+    ]
+  },
+  {
+    id:9, type:"multi", points:12,
+    question:"Та газар хөдлөх үед байшин дотор байвал авах арга хэмжээнүүдээс зөвийг сонгоно уу.",
+    options:[
+      {id:"a", text:"Тайван бай, үймж сандрахгүй байх"},
+      {id:"b", text:"Аюулгүй газар хорогдох (дотор хана, булан, даацын багана)"},
+      {id:"c", text:"Газар хөдлөлт эхлэх үед яаралтай гадагш гарах"},
+      {id:"d", text:"Цонхонд ойр очиж тусламж дуудах"},
+      {id:"e", text:"Цонхноос хол байх"},
+      {id:"f", text:"Цаг, таазны гэрэл зэрэг дээрээс унах зүйлсийн доор зогсохгүй байх"},
+      {id:"g", text:"Хаалга онгойлгоод доор нь зогсох"}
+    ],
+    correct:["a","b","e","f"]
+  },
+  {
+    id:10, type:"multi", points:4,
+    question:"Дараахаас ажлын тусгай хувцас, хамгаалах хэрэгслийг сонгоно уу.",
+    options:[
+      {id:"a", text:"Маск"},
+      {id:"b", text:"Ажлын гутал"},
+      {id:"c", text:"Комбинзон"},
+      {id:"d", text:"Чихэвч"},
+      {id:"e", text:"Өндрийн бүс"},
+      {id:"f", text:"Нүдний шил"}
+    ],
+    correct:["a","b","c","d","e","f"]
+  },
+  {
+    id:11, type:"three-mistakes", points:8,
+    question:"Ажилтнуудын гаргадаг алдааг 3-г бичнэ үү.",
+  }
+];
+
+const TOTAL_POINTS = QUESTIONS.reduce((s,q)=>s+q.points,0);
+
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+let state = {
+  examType: null,
+  employee: null,
+  answers: {},
+  currentQ: 0,
+  allResults: [],
+  filterType: "all",
+  adminCharts: {}
+};
+
+// ═══════════════════════════════════════════
+// GRADING
+// ═══════════════════════════════════════════
+function gradeAnswer(q, ans){
+  if(ans===undefined||ans===null) return 0;
+  switch(q.type){
+    case "single": return ans===q.correct?q.points:0;
+    case "multi":{
+      if(!Array.isArray(ans)) return 0;
+      const correct=new Set(q.correct), given=new Set(ans);
+      let hits=0,wrongs=0;
+      for(const c of correct) if(given.has(c)) hits++;
+      for(const g of given) if(!correct.has(g)) wrongs++;
+      return Math.max(0,Math.round(((hits-wrongs)/correct.size)*q.points));
+    }
+    case "matching":{
+      if(!ans||typeof ans!=="object") return 0;
+      const keys=Object.keys(q.correct);
+      const ok=keys.filter(k=>ans[k]===q.correct[k]).length;
+      return Math.round((ok/keys.length)*q.points);
+    }
+    case "open":{
+      const txt=String(ans||"").toLowerCase().trim();
+      if(txt.length<8) return 0;
+      const m=q.keywords.filter(kw=>txt.includes(kw)).length;
+      return Math.round(Math.min(1,m/2)*q.points);
+    }
+    case "three-words":{
+      if(!Array.isArray(ans)) return 0;
+      let cnt=0;
+      for(let i=0;i<q.keywords.length;i++){
+        const w=String(ans[i]||"").toLowerCase().trim();
+        if(w&&q.keywords[i].some(kw=>w.includes(kw))) cnt++;
+      }
+      return Math.round((cnt/q.keywords.length)*q.points);
+    }
+    case "three-mistakes":{
+      if(!Array.isArray(ans)) return 0;
+      const filled=ans.filter(a=>String(a||"").trim().length>=5).length;
+      return Math.round((filled/3)*q.points);
+    }
+    default: return 0;
+  }
+}
+
+function gradeAll(answers){
+  const breakdown=QUESTIONS.map(q=>({id:q.id,points:q.points,earned:gradeAnswer(q,answers[q.id])}));
+  const total=breakdown.reduce((s,b)=>s+b.earned,0);
+  const percent=Math.round((total/TOTAL_POINTS)*100);
+  return{breakdown,total,percent,passed:percent>=PASS_PERCENT};
+}
+
+// ═══════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ═══════════════════════════════════════════
+function showScreen(name){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById("screen-"+name).classList.add("active");
+  const hr=document.getElementById("headerRight");
+  const hs=document.getElementById("headerSub");
+  if(name==="admin"){
+    hs.textContent="Удирдлагын самбар";
+    hr.innerHTML=`<button class="btn btn-ghost btn-sm" onclick="adminLogout()">↩ Гарах</button>`;
+  } else {
+    hs.textContent="Аюулгүй ажиллагааны шалгалт";
+    hr.innerHTML=`<button class="btn btn-ghost btn-sm" style="font-size:12px;opacity:.5" onclick="goAdmin()">Админ</button>`;
+  }
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function goHome(){
+  state.examType=null; state.employee=null; state.answers={}; state.currentQ=0;
+  showScreen("welcome");
+}
+function goAdmin(){
+  clearPinInputs();
+  showScreen("admin-login");
+  setTimeout(()=>document.getElementById("p0").focus(),100);
+}
+
+// ═══════════════════════════════════════════
+// EXAM FLOW
+// ═══════════════════════════════════════════
+function chooseExam(type){
+  state.examType=type;
+  const isPre=type==="pre";
+  const url=isPre?REGISTRATION_URL:EVALUATION_URL;
+  document.getElementById("qrChip").textContent=isPre?"📋 Урьдчилсан шалгалт":"🎓 Сургалтын дараах шалгалт";
+  document.getElementById("qrTitle").textContent=isPre?"Бүртгэлийн QR код":"Үнэлгээний QR код";
+  document.getElementById("qrDesc").textContent=isPre
+    ?"Доорх QR кодыг утсаараа уншуулж бүртгэлээ хийнэ үү. Эсвэл доор байрлах товчоор шааруд бүртгэлийн форм руу орно."
+    :"Доорх QR кодыг утсаараа уншуулж сургалтын үнэлгээгээ өгнө үү. Эсвэл доор байрлах товчоор шууд форм руу орно.";
+  document.getElementById("qrActionBtn").textContent=isPre?"📝 Бүртгүүлэх →":"📝 Үнэлгээ өгөх →";
+  document.getElementById("qrActionBtn").onclick=()=>{
+    try{window.open(url,"_blank","noopener,noreferrer")}catch(e){}
+    setTimeout(()=>showScreen("info"),300);
+  };
+  const qrApi=`https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=${encodeURIComponent(url)}`;
+  document.getElementById("qrImg").src=qrApi;
+  showScreen("qr");
+}
+
+function startExam(){
+  const name=document.getElementById("infoName").value.trim();
+  const dept=document.getElementById("infoDept").value.trim();
+  const pos=document.getElementById("infoPos").value.trim();
+  if(name.length<2||dept.length<2||pos.length<2){
+    toast("Бүх талбарыг бөглөнө үү","error"); return;
+  }
+  state.employee={name,department:dept,position:pos};
+  state.answers={}; state.currentQ=0;
+  renderExam();
+  showScreen("exam");
+}
+
+// ═══════════════════════════════════════════
+// EXAM RENDER
+// ═══════════════════════════════════════════
+function renderExam(){
+  const q=QUESTIONS[state.currentQ];
+  const idx=state.currentQ;
+  document.getElementById("qNum").textContent=idx+1;
+  document.getElementById("qPoints").textContent=q.points+" оноо";
+  document.getElementById("progressFill").style.width=((idx+1)/QUESTIONS.length*100)+"%";
+  document.getElementById("exameeLabel").textContent=state.employee.name;
+  document.getElementById("btnPrev").disabled=idx===0;
+  const isLast=idx===QUESTIONS.length-1;
+  const btn=document.getElementById("btnNext");
+  btn.textContent=isLast?"✅ Дуусгах →":"Дараах →";
+  btn.onclick=isLast?submitExam:nextQ;
+  renderQuestion(q);
+  renderDots();
+}
+
+function renderQuestion(q){
+  const card=document.getElementById("questionCard");
+  let html=`<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px">Асуулт ${q.id}</div>
+  <h2 style="font-size:18px;font-weight:700;line-height:1.5;margin-bottom:24px;color:var(--ink)">${q.question}</h2>`;
+
+  const ans=state.answers[q.id];
+
+  if(q.type==="open"){
+    html+=`<textarea class="input" rows="5" placeholder="${q.placeholder||''}" id="qa-open" style="width:100%">${ans||""}</textarea>`;
+  }
+  else if(q.type==="single"){
+    html+=`<div style="display:flex;flex-direction:column;gap:8px">`;
+    q.options.forEach(o=>{
+      const sel=ans===o.id;
+      html+=`<button class="option${sel?" selected":""}" onclick='setAnswer(${JSON.stringify(o.id)})'>
+        <div class="option-badge">${o.id.toUpperCase()}</div>
+        <div class="option-text">${o.text}</div>
+      </button>`;
+    });
+    html+=`</div>`;
+  }
+  else if(q.type==="multi"){
+    html+=`<div style="padding:8px 12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;font-size:12px;color:var(--amber);margin-bottom:16px;font-weight:600">⚠️ Хэд хэдийг сонгож болно</div>
+    <div style="display:flex;flex-direction:column;gap:8px">`;
+    const arr=Array.isArray(ans)?ans:[];
+    q.options.forEach(o=>{
+      const sel=arr.includes(o.id);
+      html+=`<button class="option${sel?" selected":""}" onclick='toggleMulti(${JSON.stringify(o.id)})'>
+        <div class="option-badge">${sel?"✓":o.id.toUpperCase()}</div>
+        <div class="option-text">${o.text}</div>
+      </button>`;
+    });
+    html+=`</div>`;
+  }
+  else if(q.type==="matching"){
+    html+=renderMatching(q, ans);
+  }
+  else if(q.type==="three-words"){
+    const arr=Array.isArray(ans)?ans:["","",""];
+    html+=`<div style="padding:8px 12px;background:rgba(227,6,19,.06);border:1px solid rgba(227,6,19,.2);border-radius:8px;font-size:12px;color:var(--red2);margin-bottom:16px;font-weight:600">🔥 ${q.hint}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    ${[0,1,2].map(i=>`<input class="input" style="text-align:center;font-size:20px;font-weight:800" type="text" placeholder="${i+1}-р үг" value="${arr[i]||""}" id="tw-${i}" oninput="setThreeWords()">`).join("")}
+    </div>`;
+  }
+  else if(q.type==="three-mistakes"){
+    const arr=Array.isArray(ans)?ans:["","",""];
+    html+=`<div style="display:flex;flex-direction:column;gap:12px">
+    ${[0,1,2].map(i=>`
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;border-radius:9px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:900;flex-shrink:0">${i+1}</div>
+        <input class="input" type="text" placeholder="${i+1}-р алдаа" value="${arr[i]||""}" id="tm-${i}" oninput="setThreeMistakes()">
+      </div>`).join("")}
+    </div>`;
+  }
+
+  card.innerHTML=html;
+
+  // attach open textarea listener
+  if(q.type==="open"){
+    const ta=document.getElementById("qa-open");
+    ta&&ta.addEventListener("input",()=>setAnswer(ta.value));
+  }
+}
+
+function renderMatching(q, ans){
+  const cur=ans||{};
+  // which right items are already used
+  const used=new Set(Object.values(cur));
+  const sel=matchState;
+
+  let html=`<div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">👉 Зүүн талаас нэг дороос баруун тал дээр нь дар — холбоход тэмдэглэгдэнэ. Дахин дарахад цуцлагдана.</div>`;
+
+  // Show current pairs
+  if(Object.keys(cur).length>0){
+    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">`;
+    q.leftItems.forEach(l=>{
+      if(cur[l.id]){
+        const r=q.rightItems.find(x=>x.id===cur[l.id]);
+        html+=`<div class="match-pair"><span style="color:var(--amber)">${l.text}</span> ↔ <span style="color:var(--green)">${r?r.text.substring(0,30)+"…":cur[l.id]}</span></div>`;
+      }
+    });
+    html+=`</div>`;
+  }
+
+  html+=`<div class="matching-grid">
+  <div>
+    <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Зүүн тал</div>
+    <div style="display:flex;flex-direction:column;gap:8px">`;
+  q.leftItems.forEach(l=>{
+    const isMatched=!!cur[l.id];
+    const isActive=sel.left===l.id;
+    html+=`<button class="match-item${isMatched?" matched":isActive?" active":""}" onclick='selectLeft(${JSON.stringify(l.id)},${JSON.stringify(q.id)})'>
+      ${isMatched?"✓ ":isActive?"→ ":""}${l.text}
+    </button>`;
+  });
+  html+=`</div></div>
+  <div>
+    <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Баруун тал</div>
+    <div style="display:flex;flex-direction:column;gap:8px">`;
+  q.rightItems.forEach(r=>{
+    const isMatched=used.has(r.id);
+    const isActive=sel.right===r.id;
+    const colStyle=r.color?`border-left:3px solid ${r.color};`:"";
+    html+=`<button class="match-item${isMatched?" matched":""}" style="${colStyle}" onclick='selectRight(${JSON.stringify(r.id)},${JSON.stringify(q.id)})'>
+      ${r.color?`<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${r.color};margin-right:6px;vertical-align:middle"></span>`:""}
+      ${isMatched?"✓ ":""}${r.text}
+    </button>`;
+  });
+  html+=`</div></div></div>`;
+  return html;
+}
+
+// Matching state
+let matchState={left:null, right:null};
+
+function selectLeft(id, qid){
+  matchState.left=id; matchState.right=null;
+  renderQuestion(QUESTIONS.find(q=>q.id===qid));
+}
+
+function selectRight(id, qid){
+  if(!matchState.left) return;
+  const q=QUESTIONS.find(qq=>qq.id===qid);
+  const cur=state.answers[q.id]||{};
+  // if already matched to this right, remove
+  const existingLeft=Object.keys(cur).find(k=>cur[k]===id);
+  if(existingLeft) delete cur[existingLeft];
+  if(cur[matchState.left]===id){
+    delete cur[matchState.left];
+  } else {
+    cur[matchState.left]=id;
+  }
+  state.answers[q.id]={...cur};
+  matchState.left=null; matchState.right=null;
+  renderQuestion(q);
+  renderDots();
+}
+
+function setAnswer(val){
+  const q=QUESTIONS[state.currentQ];
+  state.answers[q.id]=val;
+  renderDots();
+}
+
+function toggleMulti(id){
+  const q=QUESTIONS[state.currentQ];
+  const arr=Array.isArray(state.answers[q.id])?[...state.answers[q.id]]:[];
+  const i=arr.indexOf(id);
+  if(i>=0) arr.splice(i,1); else arr.push(id);
+  state.answers[q.id]=arr;
+  renderQuestion(q);
+  renderDots();
+}
+
+function setThreeWords(){
+  const arr=[0,1,2].map(i=>{const el=document.getElementById(`tw-${i}`);return el?el.value:""});
+  state.answers[QUESTIONS[state.currentQ].id]=arr;
+  renderDots();
+}
+
+function setThreeMistakes(){
+  const arr=[0,1,2].map(i=>{const el=document.getElementById(`tm-${i}`);return el?el.value:""});
+  state.answers[QUESTIONS[state.currentQ].id]=arr;
+  renderDots();
+}
+
+function prevQ(){
+  if(state.currentQ>0){state.currentQ--;renderExam();}
+}
+function nextQ(){
+  if(state.currentQ<QUESTIONS.length-1){state.currentQ++;renderExam();}
+}
+
+function renderDots(){
+  const nav=document.getElementById("qNav");
+  nav.innerHTML=QUESTIONS.map((q,i)=>{
+    const a=state.answers[q.id];
+    const filled=a!==undefined&&a!==null&&(Array.isArray(a)?a.some(x=>x!==undefined&&x!==""):typeof a==="object"?Object.keys(a).length>0:String(a).trim().length>0);
+    const cur=i===state.currentQ;
+    return `<button class="q-dot${cur?" current":filled?" answered":""}" onclick="jumpTo(${i})">${i+1}</button>`;
+  }).join("");
+}
+
+function jumpTo(i){state.currentQ=i;renderExam();}
+
+// ═══════════════════════════════════════════
+// SUBMIT
+// ═══════════════════════════════════════════
+async function submitExam(){
+  const unanswered=QUESTIONS.filter(q=>{
+    const a=state.answers[q.id];
+    return a===undefined||a===null||(Array.isArray(a)?!a.some(x=>String(x||"").trim()):String(a||"").trim().length===0);
+  });
+  if(unanswered.length>0){
+    const ok=confirm(`${unanswered.length} асуулт хариулагдаагүй байна. Гэсэн ч дуусгах уу?`);
+    if(!ok) return;
+  }
+  const result=gradeAll(state.answers);
+  const record={
+    name:state.employee.name,
+    department:state.employee.department,
+    position:state.employee.position,
+    examType:state.examType,
+    answers:state.answers,
+    breakdown:result.breakdown,
+    total:result.total,
+    percent:result.percent,
+    passed:result.passed,
+    timestamp:firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try{
+    await db.collection(COLLECTION).add(record);
+  }catch(e){console.warn("Save error",e);}
+  showResult(result, record);
+}
+
+// ═══════════════════════════════════════════
+// RESULT SCREEN
+// ═══════════════════════════════════════════
+let donutChart=null;
+function showResult(result, record){
+  showScreen("result");
+  if(result.passed) confetti();
+  document.getElementById("resultEmoji").textContent=result.passed?"🏆":"📚";
+  document.getElementById("resultExamType").textContent=record.examType==="pre"?"Урьдчилсан шалгалт":"Сургалтын дараах шалгалт";
+  document.getElementById("resultPct").textContent=result.percent+"%";
+  document.getElementById("resultScore").textContent=result.total;
+  document.getElementById("resultTotal").textContent=TOTAL_POINTS;
+  const badge=document.getElementById("resultBadge");
+  if(result.passed){
+    badge.className="badge badge-pass";
+    badge.textContent="✅ Тэнцлэ — Амжилттай!";
+    document.getElementById("resultMsg").textContent="Та ХАБЭА-ийн шалгалтыг амжилттай давлаа. Аюулгүй ажиллагааны мэдлэг таны хамгийн чухал хамгаалагч.";
+  } else {
+    badge.className="badge badge-fail";
+    badge.textContent="❌ Тэнцээгүй — Дахин давтан суралцана уу";
+    document.getElementById("resultMsg").textContent="Тэнцэх босго 60%. Та дахин давтан суралцаж шалгалт өгнө үү. Ямар асуулт дээр алдсанаа доороос харна уу.";
+  }
+
+  // Donut chart
+  const ctx=document.getElementById("resultDonut").getContext("2d");
+  if(donutChart) donutChart.destroy();
+  donutChart=new Chart(ctx,{
+    type:"doughnut",
+    data:{datasets:[{data:[result.percent,100-result.percent],backgroundColor:[result.passed?"#10C97A":"#E30613","rgba(255,255,255,.06)"],borderWidth:0,hoverBorderWidth:0}]},
+    options:{cutout:"78%",plugins:{legend:{display:false},tooltip:{enabled:false}},animation:{animateRotate:true,duration:1000}}
+  });
+
+  // Breakdown
+  const bl=document.getElementById("breakdownList");
+  bl.innerHTML=result.breakdown.map((b,i)=>{
+    const q=QUESTIONS[i];
+    const ratio=b.points>0?b.earned/b.points:0;
+    const cls=ratio===1?"score-full":ratio===0?"score-zero":"score-partial";
+    const icon=ratio===1?"✅":ratio===0?"❌":"⚡";
+    return `<div class="breakdown-row">
+      <div style="display:flex;align-items:center;gap:10px;flex:1">
+        <div style="width:26px;height:26px;border-radius:6px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">${b.id}</div>
+        <div style="font-size:13px;color:var(--ink2);line-height:1.3">${q.question.substring(0,60)}${q.question.length>60?"…":""}</div>
+      </div>
+      <div class="breakdown-score ${cls}">${icon} ${b.earned}/${b.points}</div>
+    </div>`;
+  }).join("");
+}
+
+// ═══════════════════════════════════════════
+// ADMIN PIN
+// ═══════════════════════════════════════════
+function setupPinInputs(){
+  for(let i=0;i<4;i++){
+    const el=document.getElementById("p"+i);
+    el.addEventListener("input",()=>{
+      el.value=el.value.replace(/\D/,"");
+      if(el.value&&i<3) document.getElementById("p"+(i+1)).focus();
+      if(collectPin().length===4) checkPin();
+    });
+    el.addEventListener("keydown",e=>{
+      if(e.key==="Backspace"&&!el.value&&i>0) document.getElementById("p"+(i-1)).focus();
+    });
+  }
+}
+function collectPin(){return[0,1,2,3].map(i=>document.getElementById("p"+i).value).join("");}
+function clearPinInputs(){for(let i=0;i<4;i++){const el=document.getElementById("p"+i);if(el)el.value="";} document.getElementById("pinError").textContent="";}
+function checkPin(){
+  if(collectPin()===ADMIN_PIN){
+    showScreen("admin");
+    loadAdminData();
+  } else {
+    document.getElementById("pinError").textContent="PIN код буруу байна. Дахин оруулна уу.";
+    clearPinInputs();
+    setTimeout(()=>document.getElementById("p0").focus(),100);
+  }
+}
+function adminLogout(){goHome();}
+
+// ═══════════════════════════════════════════
+// ADMIN DATA
+// ═══════════════════════════════════════════
+async function loadAdminData(){
+  try{
+    const snap=await db.collection(COLLECTION).orderBy("timestamp","desc").get();
+    state.allResults=snap.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+    renderAdmin();
+  }catch(e){toast("Мэдээлэл татахад алдаа гарлаа","error");}
+}
+
+function filterResults(type, btn){
+  state.filterType=type;
+  document.querySelectorAll(".tabs .tab").forEach(t=>t.classList.remove("active"));
+  btn.classList.add("active");
+  renderAdminTable();
+}
+
+function getFiltered(){
+  if(state.filterType==="all") return state.allResults;
+  return state.allResults.filter(r=>r.examType===state.filterType);
+}
+
+function renderAdmin(){
+  const all=state.allResults;
+  const pass=all.filter(r=>r.passed);
+  const avgPct=all.length?Math.round(all.reduce((s,r)=>s+r.percent,0)/all.length):0;
+  document.getElementById("stTotal").textContent=all.length;
+  document.getElementById("stPass").textContent=pass.length;
+  document.getElementById("stFail").textContent=all.length-pass.length;
+  document.getElementById("stAvg").textContent=avgPct+"%";
+  document.getElementById("stPre").textContent=all.filter(r=>r.examType==="pre").length;
+  document.getElementById("stPost").textContent=all.filter(r=>r.examType==="post").length;
+  renderCharts(all);
+  renderAdminTable();
+}
+
+function renderAdminTable(){
+  const data=getFiltered();
+  const tbody=document.getElementById("resultsBody");
+  const empty=document.getElementById("emptyMsg");
+  if(data.length===0){tbody.innerHTML="";empty.style.display="block";return;}
+  empty.style.display="none";
+  tbody.innerHTML=data.map((r,i)=>{
+    const dt=r.timestamp instanceof Date?r.timestamp.toLocaleString("mn-MN"):"—";
+    return`<tr>
+      <td style="font-weight:700;color:var(--muted)">${i+1}</td>
+      <td style="font-weight:700;color:var(--ink)">${esc(r.name)}</td>
+      <td>${esc(r.department||"—")}</td>
+      <td>${esc(r.position||"—")}</td>
+      <td><span class="badge ${r.examType==="pre"?"badge-pre":"badge-post"}">${r.examType==="pre"?"Урьдчилсан":"Дараах"}</span></td>
+      <td style="font-size:12px">${dt}</td>
+      <td style="font-weight:800;color:${r.passed?"var(--green)":"var(--red2)"}">${r.percent}%</td>
+      <td>${r.total}/${TOTAL_POINTS}</td>
+      <td><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openDetail('${r.id}')">👁</button></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderCharts(all){
+  destroyChart("chartDist"); destroyChart("chartPie"); destroyChart("chartQ");
+
+  // Distribution
+  const bands=["0-20","21-40","41-60","61-80","81-100"];
+  const counts=[0,0,0,0,0];
+  all.forEach(r=>{
+    const i=Math.min(4,Math.floor(r.percent/20));
+    counts[i]++;
+  });
+  state.adminCharts.dist=new Chart(document.getElementById("chartDist"),{
+    type:"bar",
+    data:{labels:bands,datasets:[{data:counts,backgroundColor:["#FF2040","#FF6B35","#F59E0B","#10C97A","#10C97A"],borderRadius:6,borderWidth:0}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:"rgba(170,195,255,.5)"},grid:{display:false}},y:{ticks:{color:"rgba(170,195,255,.5)"},grid:{color:"rgba(255,255,255,.05)"}}}}
+  });
+
+  // Pie
+  const pass=all.filter(r=>r.passed).length;
+  state.adminCharts.pie=new Chart(document.getElementById("chartPie"),{
+    type:"doughnut",
+    data:{labels:["Тэнцсэн","Тэнцээгүй"],datasets:[{data:[pass,all.length-pass],backgroundColor:["#10C97A","#FF2040"],borderWidth:0}]},
+    options:{responsive:true,cutout:"65%",plugins:{legend:{labels:{color:"rgba(170,195,255,.7)"}}}},
+  });
+
+  // Per-question avg
+  const qAvg=QUESTIONS.map(q=>{
+    if(all.length===0) return 0;
+    const avg=all.reduce((s,r)=>{
+      const b=r.breakdown?.find(b=>b.id===q.id);
+      return s+(b?b.earned/b.points*100:0);
+    },0)/all.length;
+    return Math.round(avg);
+  });
+  state.adminCharts.q=new Chart(document.getElementById("chartQ"),{
+    type:"bar",
+    data:{labels:QUESTIONS.map(q=>`А${q.id}`),datasets:[{data:qAvg,backgroundColor:qAvg.map(v=>v>=60?"rgba(16,201,122,.6)":"rgba(227,6,19,.6)"),borderRadius:4,borderWidth:0}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:"rgba(170,195,255,.5)"},grid:{display:false}},y:{min:0,max:100,ticks:{color:"rgba(170,195,255,.5)"},grid:{color:"rgba(255,255,255,.05)"}}}}
+  });
+}
+
+function destroyChart(id){
+  const c=state.adminCharts[id.replace("chart","").toLowerCase()];
+  if(c){c.destroy();delete state.adminCharts[id.replace("chart","").toLowerCase()];}
+}
+
+// ═══════════════════════════════════════════
+// DETAIL MODAL
+// ═══════════════════════════════════════════
+function openDetail(id){
+  const r=state.allResults.find(x=>x.id===id);
+  if(!r) return;
+  document.getElementById("modalTitle").textContent=r.name+" — Дэлгэрэнгүй";
+  const dt=r.timestamp instanceof Date?r.timestamp.toLocaleString("mn-MN"):"—";
+  let html=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+    <div class="card-sm"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Хэлтэс</div><div style="font-weight:700">${esc(r.department||"—")}</div></div>
+    <div class="card-sm"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Тушаал</div><div style="font-weight:700">${esc(r.position||"—")}</div></div>
+    <div class="card-sm"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Дүн</div><div style="font-size:24px;font-weight:900;color:${r.passed?"var(--green)":"var(--red2)"}">${r.percent}%</div></div>
+    <div class="card-sm"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Огноо</div><div style="font-size:13px;font-weight:600">${dt}</div></div>
+  </div>
+  <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px">Асуулт бүрийн задаргаа</div>
+  <div style="display:flex;flex-direction:column;gap:8px">`;
+  (r.breakdown||[]).forEach((b,i)=>{
+    const q=QUESTIONS[i];
+    const ratio=b.points>0?b.earned/b.points:0;
+    const icon=ratio===1?"✅":ratio===0?"❌":"⚡";
+    const bar=Math.round(ratio*100);
+    html+=`<div class="card-sm">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:600;color:var(--ink2);line-height:1.4;flex:1">${icon} ${q.question.substring(0,80)}${q.question.length>80?"…":""}</div>
+        <div style="font-weight:800;font-size:14px;flex-shrink:0;color:${ratio===1?"var(--green)":ratio===0?"var(--red2)":"var(--amber)"}">${b.earned}/${b.points}</div>
+      </div>
+      <div style="height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${bar}%;background:${ratio===1?"var(--green)":ratio===0?"var(--red2)":"var(--amber)"};border-radius:2px;transition:width 1s"></div>
+      </div>
+    </div>`;
+  });
+  html+=`</div>`;
+  document.getElementById("modalContent").innerHTML=html;
+  document.getElementById("detailModal").classList.add("show");
+}
+function closeModal(){document.getElementById("detailModal").classList.remove("show");}
+document.getElementById("detailModal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeModal();});
+
+// ═══════════════════════════════════════════
+// CSV EXPORT
+// ═══════════════════════════════════════════
+function exportCSV(){
+  const data=getFiltered();
+  if(data.length===0){toast("Татах өгөгдөл байхгүй","error");return;}
+  const headers=["№","Овог нэр","Хэлтэс","Тушаал","Шалгалтын төрөл","Огноо","Хувь","Оноо","Нийт","Дүн"];
+  const rows=data.map((r,i)=>{
+    const dt=r.timestamp instanceof Date?r.timestamp.toLocaleString("mn-MN"):"—";
+    return[i+1,r.name,r.department||"",r.position||"",r.examType==="pre"?"Урьдчилсан":"Дараах",dt,r.percent+"%",r.total,TOTAL_POINTS,r.passed?"Тэнцсэн":"Тэнцээгүй"];
+  });
+  const csv="﻿"+[headers,...rows].map(row=>row.map(c=>{const s=String(c??"");return s.includes(",")||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;}).join(",")).join("\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"}));
+  a.download=`HABEA_shalgalt_${new Date().toISOString().split("T")[0]}.csv`;
+  a.click();
+  toast("CSV файл татагдлаа ✅","success");
+}
+
+async function clearAllData(){
+  if(!confirm("Бүх шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\n\nЭнэ үйлдлийг буцаах боломжгүй.")) return;
+  try{
+    const snap=await db.collection(COLLECTION).get();
+    const batch=db.batch();
+    snap.docs.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+    state.allResults=[];
+    renderAdmin();
+    toast("Бүх мэдээлэл устгагдлаа","success");
+  }catch(e){toast("Устгахад алдаа гарлаа","error");}
+}
+
+// ═══════════════════════════════════════════
+// CONFETTI
+// ═══════════════════════════════════════════
+function confetti(){
+  const wrap=document.getElementById("confettiWrap");
+  wrap.innerHTML="";
+  const colors=["#E30613","#FFB400","#10C97A","#4F8EF7","#FF6B35"];
+  for(let i=0;i<60;i++){
+    const d=document.createElement("div");
+    d.className="c-piece";
+    d.style.cssText=`left:${Math.random()*100}%;background:${colors[i%colors.length]};animation-duration:${2+Math.random()*2}s;animation-delay:${Math.random()*1.5}s;transform:rotate(${Math.random()*360}deg)`;
+    wrap.appendChild(d);
+  }
+}
+
+// ═══════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════
+function toast(msg, type="success"){
+  const wrap=document.getElementById("toastContainer");
+  const t=document.createElement("div");
+  t.className=`toast ${type}`;
+  t.innerHTML=`${type==="success"?"✅":"❌"} ${msg}`;
+  wrap.appendChild(t);
+  setTimeout(()=>t.remove(),3500);
+}
+
+// ═══════════════════════════════════════════
+// BACKGROUND CANVAS
+// ═══════════════════════════════════════════
+(function(){
+  const canvas=document.getElementById("bgCanvas");
+  const ctx=canvas.getContext("2d");
+  let particles=[];
+  function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
+  resize(); window.addEventListener("resize",resize);
+  for(let i=0;i<40;i++) particles.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.5+.5,a:Math.random()});
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    particles.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.a+=.005;
+      if(p.x<0)p.x=canvas.width; if(p.x>canvas.width)p.x=0;
+      if(p.y<0)p.y=canvas.height; if(p.y>canvas.height)p.y=0;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(100,150,255,${.1+.05*Math.sin(p.a)})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function esc(str){return String(str||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+setupPinInputs();
+showScreen("welcome");
+
+// Admin via URL hash
+if(window.location.hash==="#admin") goAdmin();
+window.addEventListener("hashchange",()=>{if(window.location.hash==="#admin") goAdmin();});
+</script>
+</body>
+</html>
