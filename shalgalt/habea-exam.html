@@ -713,6 +713,7 @@ async function finalSubmit(){
   const doc={
     name:emp.name,department:emp.dept,position:emp.pos,
     email:(QP.email||"").toLowerCase(),eid:QP.eid||"",
+    examTitle:(CFG&&CFG.examTitle)||"",
     examType,answers,breakdown:bd,
     total:tot,percent:pct,passed,
     timestamp:firebase.firestore.FieldValue.serverTimestamp()
