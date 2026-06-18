@@ -2163,7 +2163,7 @@ function renderExamAdmin() {
     '<div style="width:74px;height:74px;border-radius:20px;background:#E0E7FF;color:#3730A3;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px"><i class="ti ti-clipboard-text"></i></div>' +
     '<h2 style="margin:0 0 8px;font-family:\'Bricolage Grotesque\',sans-serif">ХАБЭА Шалгалтын админ</h2>' +
     '<p style="color:#64748B;margin:0 0 22px;line-height:1.55">Шалгалт үүсгэх, дүн харах зэрэг удирдлагыг шинэ цонхонд нээж хийнэ (бүрэн ажиллана).</p>' +
-    '<button class="btn btn-primary" onclick="window.open(\'https://habea-deploy.vercel.app/habea-admin.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалтын админ нээх</button>' +
+    '<button class="btn btn-primary" onclick="window.open(\'/shalgalt/habea-admin.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалтын админ нээх</button>' +
     '</div>';
 }
 
