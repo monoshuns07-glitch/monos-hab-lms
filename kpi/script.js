@@ -303,6 +303,37 @@ function seedDB() {
   };
 }
 
+/* ===== ХАБЭА шалгалтын систем (habea-shalgalt project) — cross-project унших ===== */
+var _habeaDb = null;
+function getHabeaDb() {
+  if (_habeaDb !== null) return _habeaDb;
+  try {
+    var cfg = { apiKey: "AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E", authDomain: "habea-shalgalt.firebaseapp.com", projectId: "habea-shalgalt", storageBucket: "habea-shalgalt.firebasestorage.app", messagingSenderId: "910170773266", appId: "1:910170773266:web:38c7af5f7d0c352a5bc5cb" };
+    var app = (firebase.apps || []).filter(function (a) { return a.name === 'habea'; })[0] || firebase.initializeApp(cfg, 'habea');
+    _habeaDb = app.firestore();
+  } catch (e) { _habeaDb = false; }
+  return _habeaDb;
+}
+/* ХАБЭА шалгалтын дүнг имэйлээр индекслэнэ: { email: {pre, post, anyPassed} } */
+async function readHabeaExamsByEmail() {
+  var map = {};
+  try {
+    var hdb = getHabeaDb(); if (!hdb) return map;
+    var snap = await hdb.collection('habea_exam_results').get();
+    snap.forEach(function (d) {
+      var x = d.data() || {};
+      var email = String(x.email || '').toLowerCase().trim();
+      if (!email) return;
+      var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false });
+      var pct = num(x.percent);
+      if (x.examType === 'pre') { if (rec.pre == null) rec.pre = pct; }
+      else { if (rec.post == null) rec.post = pct; }
+      if (x.passed) rec.anyPassed = true;
+    });
+  } catch (e) {}
+  return map;
+}
+
 /* ===== Жинхэнэ ажилчид + сургалт/шалгалтаас KPI автоматаар бодох ===== */
 async function buildEmployeesFromRealData() {
   if (!fbReady) return null;
@@ -317,6 +348,7 @@ async function buildEmployeesFromRealData() {
       var progSnap = await fdb.collection('training_progress').get();
       progSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
     } catch (e) {}
+    var habeaByEmail = await readHabeaExamsByEmail(); // ХАБЭА шалгалтын дүн (имэйлээр)
 
     // Эрсдэл/санал тоо (KPI системд тухайн ажилтны оруулсан) — оролцоонд нэмнэ
     var reportByUid = {};
@@ -351,6 +383,14 @@ async function buildEmployeesFromRealData() {
         var half = Math.floor(examsSorted.length / 2);
         examPrev = Math.round(avg(examsSorted.slice(0, half).map(function (e) { return num(e.score); })));
         examScore = Math.round(avg(examsSorted.slice(half).map(function (e) { return num(e.score); })));
+      }
+      // ХАБЭА шалгалтын систем (имэйлээр тааруулж) — байвал давамгайлна
+      var hx = habeaByEmail[String(u.email || '').toLowerCase().trim()];
+      if (hx) {
+        if (hx.post != null && hx.pre != null) { examPrev = hx.pre; examScore = hx.post; }
+        else if (hx.post != null) { examScore = hx.post; }
+        else if (hx.pre != null) { examScore = hx.pre; examPrev = null; }
+        if (hx.anyPassed) firstTry = 1;
       }
       out.push({
         id: uid, uid: uid, initials: makeInitials(name), name: name,
@@ -3315,6 +3355,11 @@ function applyRole() {
     if (nmeEl) nmeEl.textContent = USER.name;
     if (roleEl) roleEl.textContent = USER.role;
     if (avEl) avEl.textContent = USER.initials;
+  } catch (e) {}
+  // Шалгалтын холбоост нэвтэрсэн ажилтны имэйл/нэрийг дамжуулна (дүнг буцааж тааруулна)
+  try {
+    var exLink = document.querySelector('a[data-exam-link]');
+    if (exLink && SESSION) exLink.href = '/shalgalt/habea-exam.html?email=' + encodeURIComponent(SESSION.email || '') + '&name=' + encodeURIComponent(USER.name || '') + (SESSION.empId ? '&eid=' + encodeURIComponent(SESSION.empId) : '');
   } catch (e) {}
   if (isAdmin()) return; // ХАБЭА ажилтанд бүх хэсэг харагдана
   blockedPages().forEach(function (pg) {
