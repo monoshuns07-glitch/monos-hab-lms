@@ -2020,12 +2020,16 @@ function renderDataflow() {
 /* ============ Миний сургалт + Шалгалтын дүн (апп дотор — нэг код) ============ */
 function renderMyResults() {
   var sec = pageEl('myresults'); if (!sec) return;
-  sec.style.padding = '0';
-  if (sec._loaded) return;
-  sec._loaded = true;
-  // ХАБЭА Шалгалтын вэб сайтыг (habea-deploy.vercel.app) апп дотор шингээж харуулна
-  sec.innerHTML = '<iframe src="https://habea-deploy.vercel.app/habea-shalgalt.html" title="Дотоод сургалтын шалгалт" ' +
-    'allow="camera; microphone; clipboard-write" style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
+  sec.style.padding = '';
+  // Шалгалтын сайт Firebase-тэй тул iframe дотор нэвтрэлт ажиллахгүй → шинэ цонхонд нээнэ
+  sec.innerHTML = '<div class="page-header"><div><h1>Дотоод сургалтын шалгалт</h1>' +
+    '<p class="page-subtitle">ХАБЭА онлайн шалгалт</p></div></div>' +
+    '<div class="card" style="padding:40px;text-align:center;max-width:560px;margin:24px auto 0">' +
+    '<div style="width:74px;height:74px;border-radius:20px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px"><i class="ti ti-clipboard-check"></i></div>' +
+    '<h2 style="margin:0 0 8px;font-family:\'Bricolage Grotesque\',sans-serif">ХАБЭА Шалгалт</h2>' +
+    '<p style="color:#64748B;margin:0 0 22px;line-height:1.55">Шалгалт өгөхийн тулд доорх товчийг дарна уу. Шалгалт шинэ цонхонд нээгдэж, бүрэн ажиллана.</p>' +
+    '<button class="btn btn-primary" onclick="window.open(\'https://habea-deploy.vercel.app/habea-shalgalt.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт эхлүүлэх</button>' +
+    '</div>';
 }
 function mrFmt(ts) {
   try { if (ts && ts.toDate) { var d = ts.toDate(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); } } catch (e) {}
@@ -2152,11 +2156,15 @@ function renderAdminPanel() {
 function renderExamAdmin() {
   var sec = pageEl('examadmin'); if (!sec) return;
   if (!isAdmin()) { sec.style.padding = ''; sec.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Зөвхөн ХАБЭА ажилтан хандана.</div></div></div>'; return; }
-  if (sec._loaded) return;
-  sec._loaded = true;
-  sec.style.padding = '0';
-  sec.innerHTML = '<iframe src="https://habea-deploy.vercel.app/habea-admin.html" title="Шалгалтын удирдлага" ' +
-    'allow="clipboard-write" style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
+  sec.style.padding = '';
+  sec.innerHTML = '<div class="page-header"><div><h1>Шалгалтын удирдлага</h1>' +
+    '<p class="page-subtitle">ХАБЭА шалгалтын админ — асуулт, дүн, тохиргоо</p></div></div>' +
+    '<div class="card" style="padding:40px;text-align:center;max-width:560px;margin:24px auto 0">' +
+    '<div style="width:74px;height:74px;border-radius:20px;background:#E0E7FF;color:#3730A3;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px"><i class="ti ti-clipboard-text"></i></div>' +
+    '<h2 style="margin:0 0 8px;font-family:\'Bricolage Grotesque\',sans-serif">ХАБЭА Шалгалтын админ</h2>' +
+    '<p style="color:#64748B;margin:0 0 22px;line-height:1.55">Шалгалт үүсгэх, дүн харах зэрэг удирдлагыг шинэ цонхонд нээж хийнэ (бүрэн ажиллана).</p>' +
+    '<button class="btn btn-primary" onclick="window.open(\'https://habea-deploy.vercel.app/habea-admin.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалтын админ нээх</button>' +
+    '</div>';
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
