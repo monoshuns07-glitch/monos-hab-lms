@@ -724,12 +724,12 @@ function chooseExam(type){
     :"Доорх QR кодыг утсаараа уншуулж сургалтын үнэлгээгээ өгнө үү. Эсвэл доор байрлах товчоор шууд форм руу орно.";
   document.getElementById("qrActionBtn").textContent=isPre?"📝 Бүртгүүлэх →":"📝 Үнэлгээ өгөх →";
   document.getElementById("qrActionBtn").onclick=()=>{
-    try{window.open(url,"_blank","noopener,noreferrer")}catch(e){}
-    setTimeout(()=>showScreen("info"),300);
+    
+    showScreen("info");
   };
   const qrApi=`https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=${encodeURIComponent(url)}`;
   document.getElementById("qrImg").src=qrApi;
-  showScreen("qr");
+  showScreen("info");
 }
 
 function startExam(){
