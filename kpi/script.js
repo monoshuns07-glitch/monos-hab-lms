@@ -1018,6 +1018,25 @@ function renderDashboard() {
     li.innerHTML = dot + legLabels[i] + ' <strong>' + legVals[i] + '</strong>';
   });
 
+  /* Хэлтсүүдийн KPI breakdown — дашбоардын карт (алба тус бүрээр) */
+  var ddb = document.getElementById('dashDeptBreak');
+  if (ddb) {
+    var drows = deptList().map(function (d) {
+      var mem = DB.employees.filter(function (e) { return e.dept === d; });
+      return { dept: d, score: mem.length ? Math.round(avg(mem.map(empTotal))) : 0, n: mem.length };
+    }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.score - a.score; });
+    ddb.innerHTML = drows.length ? drows.map(function (r) {
+      var color = r.score >= 85 ? '#16A34A' : (r.score >= 70 ? '#D97706' : '#DC2626');
+      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #F1F5F9">' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(r.dept) + '</div>' +
+        '<div style="font-size:11px;color:#8A94A6">' + r.n + ' ажилтан</div></div>' +
+        '<div style="width:110px">' + miniBar(r.score, color) + '</div>' +
+        '<div style="width:30px;text-align:right;font-weight:700">' + r.score + '</div></div>';
+    }).join('') : '<div class="empty-state" style="padding:24px"><i class="ti ti-building"></i><div>Алба олдсонгүй</div></div>';
+  }
+  var _dgo = document.querySelector('.page[data-page="dashboard"] [data-goemp]');
+  if (_dgo) _dgo.onclick = function () { switchPage('employees'); };
+
   /* Албадын оноо (coverage + бонус + анхны тусламж + PPE) */
   var deptListEl = $('.page[data-page="dashboard"] .dept-list');
   if (deptListEl) {
@@ -1088,50 +1107,43 @@ function renderEmployees() {
   if (!tbody) return;
   var list = filteredEmployees();
   var total = list.length;
-  var pages = Math.max(1, Math.ceil(total / empState.perPage));
-  if (empState.page > pages) empState.page = pages;
-  var start = (empState.page - 1) * empState.perPage;
-  var rows = list.slice(start, start + empState.perPage);
-
-  if (!rows.length) {
+  // — Алба тус бүрээр бүлэглэнэ (алба бүрд тухайн албаны ажилчид) —
+  var groups = {};
+  list.forEach(function (e) { var d = e.dept || 'Тодорхойгүй'; (groups[d] = groups[d] || []).push(e); });
+  var deptNames = Object.keys(groups).sort(function (a, b) { return deptScore(b) - deptScore(a); });
+  function rowHTML(e) {
+    var tot = empTotal(e);
+    return '<tr data-emp="' + e.id + '">' +
+      '<td><input type="checkbox"></td>' +
+      '<td><div class="emp-cell"><div class="avatar avatar-sm">' + esc(e.initials) + '</div>' +
+      '<div class="emp-info"><div class="emp-name">' + esc(e.name) +
+      (e.onLeave ? ' <span class="tag tag-warn">Чөлөөтэй</span>' : '') +
+      '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
+      '<td>' + esc(e.dept) + '</td>' +
+      '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '</span></td>' +
+      '<td><span class="score-pill ' + scoreClass(kpiExam(e)) + '">' + kpiExam(e) + '</span></td>' +
+      '<td><span class="score-pill ' + scoreClass(kpiImprovement(e)) + '">' + kpiImprovement(e) + '</span></td>' +
+      '<td><span class="score-pill score-bonus" title="' + empBonusPoints(e) + ' оноо">+' + empBonusPoints(e) + '</span></td>' +
+      '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
+      '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
+      '</tr>';
+  }
+  if (!total) {
     tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">' +
       '<i class="ti ti-search-off"></i><div>Илэрц олдсонгүй</div></div></td></tr>';
   } else {
-    tbody.innerHTML = rows.map(function (e) {
-      var tot = empTotal(e);
-      return '<tr data-emp="' + e.id + '">' +
-        '<td><input type="checkbox"></td>' +
-        '<td><div class="emp-cell"><div class="avatar avatar-sm">' + esc(e.initials) + '</div>' +
-        '<div class="emp-info"><div class="emp-name">' + esc(e.name) +
-        (e.onLeave ? ' <span class="tag tag-warn">Чөлөөтэй</span>' : '') +
-        '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
-        '<td>' + esc(e.dept) + '</td>' +
-        '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '</span></td>' +
-        '<td><span class="score-pill ' + scoreClass(kpiExam(e)) + '">' + kpiExam(e) + '</span></td>' +
-        '<td><span class="score-pill ' + scoreClass(kpiImprovement(e)) + '">' + kpiImprovement(e) + '</span></td>' +
-        '<td><span class="score-pill score-bonus" title="' + empBonusPoints(e) + ' оноо">+' + empBonusPoints(e) + '</span></td>' +
-        '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
-        '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
-        '</tr>';
+    tbody.innerHTML = deptNames.map(function (d) {
+      var members = groups[d];
+      var avgT = Math.round(avg(members.map(empTotal)));
+      var head = '<tr class="dept-group-row"><td colspan="9" style="background:#F0FDF4;padding:11px 14px;font-weight:700;color:#065F46;border-top:2px solid #BBF7D0">' +
+        '<i class="ti ti-building" style="margin-right:6px"></i>' + esc(d) +
+        '<span style="font-weight:500;color:#16A34A;font-size:12px;margin-left:8px">· ' + members.length + ' ажилтан · дундаж KPI ' + avgT + '</span></td></tr>';
+      return head + members.map(rowHTML).join('');
     }).join('');
   }
 
   var footer = $('.page[data-page="employees"] .table-footer');
-  if (footer) {
-    var from = total ? start + 1 : 0;
-    var to = Math.min(start + empState.perPage, total);
-    var btns = '';
-    for (var p = 1; p <= pages; p++) {
-      if (pages > 7 && p > 2 && p < pages - 1 && Math.abs(p - empState.page) > 1) {
-        if (p === 3 || p === pages - 2) btns += '<button class="page-btn" disabled>…</button>';
-        continue;
-      }
-      btns += '<button class="page-btn' + (p === empState.page ? ' active' : '') + '" data-pnum="' + p + '">' + p + '</button>';
-    }
-    footer.innerHTML = '<div>' + from + '-' + to + ' / ' + total + ' ажилтан</div>' +
-      '<div class="pagination"><button class="page-btn" data-pnum="prev"><i class="ti ti-chevron-left"></i></button>' +
-      btns + '<button class="page-btn" data-pnum="next"><i class="ti ti-chevron-right"></i></button></div>';
-  }
+  if (footer) footer.innerHTML = '<div>' + total + ' ажилтан · ' + deptNames.length + ' алба</div>';
 
   setStat('.page[data-page="employees"] .stat-strip', 0, DB.employees.length);
   setStat('.page[data-page="employees"] .stat-strip', 1, DB.employees.filter(function (e) { return !e.onLeave; }).length);
@@ -2911,9 +2923,10 @@ function openUserMenu(anchor) {
 function openEmpFilterMenu(pill, kind) {
   var items;
   if (kind === 'dept') {
-    items = [{ label: 'Бүх хэлтэс', value: '' }].concat(DEPTS.map(function (d) { return { label: d, value: d }; }));
+    items = [{ label: 'Бүх хэлтэс', value: '' }].concat(deptList().slice().sort().map(function (d) { return { label: d, value: d }; }));
   } else if (kind === 'role') {
-    items = [{ label: 'Бүх албан тушаал', value: '' }].concat(ROLES.map(function (r) { return { label: r, value: r }; }));
+    var _rs = {}; (DB.employees || []).forEach(function (e) { if (e.role) _rs[e.role] = 1; });
+    items = [{ label: 'Бүх албан тушаал', value: '' }].concat(Object.keys(_rs).sort().map(function (r) { return { label: r, value: r }; }));
   } else {
     items = [
       { label: 'KPI оноо (өндөр → бага)', value: 'total-desc' },
