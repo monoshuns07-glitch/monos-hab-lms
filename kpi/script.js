@@ -324,12 +324,14 @@ async function readHabeaExamsByEmail() {
       var x = d.data() || {};
       var email = String(x.email || '').toLowerCase().trim();
       if (!email) return;
-      var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false });
+      var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
       var pct = num(x.percent);
       if (x.examType === 'pre') { if (rec.pre == null) rec.pre = pct; }
       else { if (rec.post == null) rec.post = pct; }
       if (x.passed) rec.anyPassed = true;
+      rec.list.push({ title: x.examTitle || 'ХАБЭА шалгалт', type: x.examType || '', percent: pct, passed: !!x.passed, ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0 });
     });
+    Object.keys(map).forEach(function (k) { map[k].list.sort(function (a, b) { return b.ts - a.ts; }); });
   } catch (e) {}
   return map;
 }
@@ -397,6 +399,7 @@ async function buildEmployeesFromRealData() {
         role: u.position || 'Ажилтан', dept: u.department || 'Тодорхойгүй', email: u.email || '',
         training: training, participation: participation,
         video: video, examScore: examScore, examPrev: examPrev, firstTry: firstTry,
+        habeaExams: (hx && hx.list) ? hx.list : [],
         discipline: 100, health: 75, leadership: 60, // хуучин үзүүлэлт — нийцлийн төлөө хадгална
         onLeave: u.isActive === false
       });
@@ -417,7 +420,7 @@ async function syncEmployeesWithRealData() {
       return Object.assign({}, prev, {
         name: r.name, dept: r.dept, role: r.role, email: r.email, initials: r.initials,
         training: r.training, participation: r.participation, onLeave: r.onLeave,
-        video: r.video, examScore: r.examScore, examPrev: r.examPrev, firstTry: r.firstTry
+        video: r.video, examScore: r.examScore, examPrev: r.examPrev, firstTry: r.firstTry, habeaExams: r.habeaExams
       });
     }
     return r;
@@ -909,6 +912,21 @@ function kpiLevel(total) {
   return { name: 'Эхлэгч', icon: 'ti-seedling', color: '#16A34A', next: 60, min: 0 };
 }
 
+/* Шалгалт тус бүрийн дүнг (нэр + Урьдчилсан/Дараах) тусад нь харуулах HTML */
+function habeaExamsHTML(e) {
+  var list = (e && e.habeaExams) || [];
+  if (!list.length) return '';
+  function tl(t) { return t === 'pre' ? 'Урьдчилсан' : (t === 'post' ? 'Сургалтын дараах' : 'Шалгалт'); }
+  return '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Шалгалтын дүнгүүд</h3>' +
+    '<div style="font-size:12px;color:#8A94A6;margin-bottom:6px">Өгсөн шалгалт тус бүрийн дүн</div>' +
+    list.map(function (x) {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #F1F5F9">' +
+        '<div style="min-width:0"><div style="font-weight:600;font-size:14px">' + esc(x.title) + '</div>' +
+        '<div style="font-size:12px;color:#8A94A6">' + tl(x.type) + ' · ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + '</div></div>' +
+        '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
+    }).join('') + '</div>';
+}
+
 /* Эерэг ажилтны дашбоард — "би өсч байна", бусадтай харьцуулахгүй */
 function renderEmployeeDashboard() {
   var sec = pageEl('dashboard'); if (!sec) return;
@@ -939,6 +957,7 @@ function renderEmployeeDashboard() {
       return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:13px"><i class="ti ' + b[2] + '" style="color:#64748B;width:20px;text-align:center"></i>' +
         '<div style="width:180px;font-size:13px">' + b[0] + '</div>' + miniBar(b[1]) + '<div style="width:36px;text-align:right;font-weight:700">' + b[1] + '</div></div>';
     }).join('') + '</div>' +
+    habeaExamsHTML(e) +
     '<div style="display:flex;gap:18px;flex-wrap:wrap">' +
     '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
     '<div style="display:flex;align-items:center;gap:10px"><i class="ti ti-gift" style="font-size:28px;color:#16A34A"></i>' +
@@ -2613,6 +2632,7 @@ function openEmployeeDetail(id) {
     '<div style="flex:1"><div style="font-weight:600">Нэмэгдэх бонус</div>' +
     '<div style="font-size:12px;color:#64748B">Баталгаажсан аюул / near-miss мэдээллээс</div></div>' +
     '<div style="font-weight:700;color:#16A34A;font-size:18px">+' + bp + '</div></div>' +
+    habeaExamsHTML(e) +
     '<div class="kb-total">Нийт KPI оноо: <strong>' + empTotal(e) + ' / 100</strong></div>' +
     '<div class="detail-actions">' +
     '<button class="btn btn-secondary" data-emp-leave="' + e.id + '">' +
