@@ -315,6 +315,7 @@ textarea.inp{resize:none;min-height:120px}
 <script>
 firebase.initializeApp({apiKey:"AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",authDomain:"habea-shalgalt.firebaseapp.com",projectId:"habea-shalgalt",storageBucket:"habea-shalgalt.firebasestorage.app",messagingSenderId:"910170773266",appId:"1:910170773266:web:38c7af5f7d0c352a5bc5cb"});
 const db=firebase.firestore();
+var QP={}; try{ new URLSearchParams(location.search).forEach(function(v,k){ QP[k]=v; }); }catch(e){}
 
 const DEF_S={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60};
 const DEF_Q=[
@@ -345,6 +346,7 @@ async function init(){
     }
   }catch(e){}
   document.getElementById("hdrTitle").textContent=CFG.examTitle||"ХАБЭА";
+  try{ if(QP.name){var _n=document.getElementById("iName"); if(_n&&!_n.value)_n.value=QP.name;} if(QP.dept){var _d=document.getElementById("iDept"); if(_d&&!_d.value)_d.value=QP.dept;} }catch(e){}
   document.getElementById("hdrOrg").textContent=CFG.orgName||"МОНОС ХҮНС ХК";
   document.getElementById("welcomeTitle").innerHTML=(CFG.examTitle||"ХАБЭА Сургалтын")+'<span style="background:linear-gradient(135deg,#4F46E5,#7C3AED);-webkit-background-clip:text;-webkit-text-fill-color:transparent"> шалгалт</span>';
   document.getElementById("passPct").textContent=(CFG.passPercent||60)+"%";
@@ -710,6 +712,7 @@ async function finalSubmit(){
 
   const doc={
     name:emp.name,department:emp.dept,position:emp.pos,
+    email:(QP.email||"").toLowerCase(),eid:QP.eid||"",
     examType,answers,breakdown:bd,
     total:tot,percent:pct,passed,
     timestamp:firebase.firestore.FieldValue.serverTimestamp()
