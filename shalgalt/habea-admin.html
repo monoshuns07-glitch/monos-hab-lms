@@ -432,6 +432,8 @@ const db=firebase.firestore();
 let CFG={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60,adminPin:"1234"};
 let QS=[],allResults=[],editingQIdx=null,charts={};
 const COLLECTION="habea_exam_results";
+const EXKEY=(function(){try{return new URLSearchParams(location.search).get('exam')||'';}catch(e){return '';}})();
+const QSUF=EXKEY?('_'+EXKEY):'';
 
 const DEFAULT_QS=[
   {id:1,type:"open",points:8,question:"Таны бодлоор ХАБЭА гэж юу вэ?",keywords:["аюулгүй","эрүүл","хөдөлмөр","ахуй"],placeholder:"Жишээ нь: Хөдөлмөрийн аюулгүй байдал, эрүүл ахуй гэдэг нь..."},
@@ -483,7 +485,7 @@ async function loadAll(){
   try{
     const[sS,qS,rS]=await Promise.all([
       db.collection("habea_config").doc("settings").get(),
-      db.collection("habea_config").doc("questions").get(),
+      db.collection("habea_config").doc("questions"+QSUF).get(),
       db.collection(COLLECTION).orderBy("timestamp","desc").get()
     ]);
     if(sS.exists)CFG={...CFG,...sS.data()};
@@ -1330,12 +1332,12 @@ async function saveQuestion(){
     q.keywords=[0,1,2].map(i=>(document.getElementById("etw_"+i)?.value||"").trim().toLowerCase());
   }
   if(editingQIdx===null)QS.push(q);else QS[editingQIdx]=q;
-  try{await db.collection("habea_config").doc("questions").set({list:QS});toast("Хадгалагдлаа ✅");closeQModal();renderQuestionList();renderDashboard()}catch(e){console.error("saveQuestion:",e);toast("Алдаа: "+e.message,"err")}
+  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Хадгалагдлаа ✅");closeQModal();renderQuestionList();renderDashboard()}catch(e){console.error("saveQuestion:",e);toast("Алдаа: "+e.message,"err")}
 }
 async function deleteQ(i){
   if(!confirm(`${i+1}-р асуултыг устгахдаа итгэлтэй байна уу?`))return;
   QS.splice(i,1);
-  try{await db.collection("habea_config").doc("questions").set({list:QS});toast("Устгагдлаа ✅");renderQuestionList()}catch(e){toast("Алдаа гарлаа","err")}
+  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Устгагдлаа ✅");renderQuestionList()}catch(e){toast("Алдаа гарлаа","err")}
 }
 
 // ── Settings ──
@@ -1477,7 +1479,7 @@ async function refreshData(){
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
   try{
     const[qS,rS]=await Promise.all([
-      db.collection("habea_config").doc("questions").get(),
+      db.collection("habea_config").doc("questions"+QSUF).get(),
       db.collection(COLLECTION).orderBy("timestamp","desc").get()
     ]);
     if(qS.exists&&qS.data().list?.length>0)QS=qS.data().list;
