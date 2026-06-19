@@ -579,8 +579,8 @@ function kpiVideo(e) {
 function kpiExam(e) { return clamp(Math.round(_f(e.examScore, e.training)), 0, 100); }
 function kpiImprovement(e) {
   if (!e.examScore) return 0;                 // шалгалт өгөөгүй — ахиц хэмжих юм алга → 0
-  if (e.examPrev == null) return 50;          // эхний шалгалт — суурь (өсөлт/бууралтыг хэмжих өмнөх дата алга)
-  return clamp(Math.round(50 + (_f(e.examScore) - _f(e.examPrev)) * 4), 0, 100); // эерэг ахиц → өндөр оноо
+  if (e.examPrev == null) return 0;           // ганц шалгалт — өмнөх дата алга, ахиц хэмжихгүй → 0
+  return clamp(Math.round(50 + (_f(e.examScore) - _f(e.examPrev)) * 4), 0, 100); // Урьдчилсан→Дараах өссөн нь өндөр, буурсан нь бага
 }
 function kpiFirstTry(e) { return e.firstTry ? 100 : 0; }
 
