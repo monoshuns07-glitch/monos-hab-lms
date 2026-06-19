@@ -492,7 +492,8 @@ async function loadAll(){
     const rawQS=qS.exists&&qS.data().list?.length>0?qS.data().list:JSON.parse(JSON.stringify(DEFAULT_QS));
     QS=rawQS.map(q=>q.type==="three-words"&&Array.isArray(q.keywords)?{...q,keywords:q.keywords.map(k=>Array.isArray(k)?k.join(","):String(k||""))}:q);
     allResults=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
-    console.log("[loadAll] OK, results:",allResults.length);
+    if(EXKEY) allResults=allResults.filter(r=>r.examKey===EXKEY); // зөвхөн энэ сургалтын шалгалтын дүн
+    console.log("[loadAll] OK, results:",allResults.length,"exam:",EXKEY||"(бүгд)");
   }catch(e){
     console.error("[loadAll] Firestore error:",e);
     const msg=(e&&e.message)?e.message:String(e);
