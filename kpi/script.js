@@ -2289,14 +2289,26 @@ function renderExamAdmin() {
   var sec = pageEl('examadmin'); if (!sec) return;
   if (!isAdmin()) { sec.style.padding = ''; sec.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Зөвхөн ХАБЭА ажилтан хандана.</div></div></div>'; return; }
   sec.style.padding = '';
+  // Дотоод сургалтын ангиллууд (нав цэснээс автоматаар)
+  var cats = [];
+  $$('.nav-item.leaf[data-cat]').forEach(function (el) { var c = el.getAttribute('data-cat'); if (c && cats.indexOf(c) < 0) cats.push(c); });
+  var cardsHtml = cats.map(function (cat) {
+    var key = courseKey(cat);
+    return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px">' +
+      '<div style="width:46px;height:46px;border-radius:12px;background:#E0E7FF;color:#3730A3;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-clipboard-text"></i></div>' +
+      '<div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(cat) + '</div>' +
+      '<div style="font-size:12px;color:#8A94A6">Энэ сургалтын шалгалтын асуулт + дүнг удирдах</div></div>' +
+      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="ti ti-external-link"></i> Админ нээх</a></div>';
+  }).join('');
   sec.innerHTML = '<div class="page-header"><div><h1>Шалгалтын удирдлага</h1>' +
-    '<p class="page-subtitle">ХАБЭА шалгалтын админ — асуулт, дүн, тохиргоо</p></div></div>' +
-    '<div class="card" style="padding:40px;text-align:center;max-width:560px;margin:24px auto 0">' +
-    '<div style="width:74px;height:74px;border-radius:20px;background:#E0E7FF;color:#3730A3;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px"><i class="ti ti-clipboard-text"></i></div>' +
-    '<h2 style="margin:0 0 8px;font-family:\'Bricolage Grotesque\',sans-serif">ХАБЭА Шалгалтын админ</h2>' +
-    '<p style="color:#64748B;margin:0 0 22px;line-height:1.55">Шалгалт үүсгэх, дүн харах зэрэг удирдлагыг шинэ цонхонд нээж хийнэ (бүрэн ажиллана).</p>' +
-    '<button class="btn btn-primary" onclick="window.open(\'https://habea-deploy.vercel.app/habea-admin.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалтын админ нээх</button>' +
-    '</div>';
+    '<p class="page-subtitle">Сургалт бүрийн шалгалтын асуулт, дүнг тусад нь удирдана</p></div></div>' +
+    '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:18px;border:1.5px solid #C7D2FE">' +
+    '<div style="width:46px;height:46px;border-radius:12px;background:#4338CA;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-layout-dashboard"></i></div>' +
+    '<div style="flex:1"><div style="font-weight:700">Ерөнхий админ (бүх шалгалтын дүн)</div>' +
+    '<div style="font-size:12px;color:#8A94A6">Бүх дүн, статистик, тохиргоо · PIN 1234</div></div>' +
+    '<a href="/shalgalt/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
+    '<h3 style="margin:0 0 12px">Сургалт бүрийн шалгалтын админ</h3>' +
+    (cardsHtml || '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Сургалт олдсонгүй</div></div>');
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
