@@ -337,14 +337,22 @@ let examType=null, emp=null, answers={}, curQ=0, pickLeft=null, donutCh=null;
 let signaturePad=null;
 
 async function init(){
+  var KEY = (QP.exam ? "_"+QP.exam : ""); // тухайн сургалтын шалгалтын түлхүүр
   try{
-    const[ss,qs]=await Promise.all([db.collection("habea_config").doc("settings").get(),db.collection("habea_config").doc("questions").get()]);
-    if(ss.exists)CFG={...DEF_S,...ss.data()};
-    if(qs.exists&&qs.data().list?.length){
+    const[ss,qs]=await Promise.all([db.collection("habea_config").doc("settings"+KEY).get(),db.collection("habea_config").doc("questions"+KEY).get()]);
+    let ssData=ss.exists?ss.data():null, qsData=(qs.exists&&qs.data().list?.length)?qs.data():null;
+    if(KEY && (!ssData||!qsData)){ // тухайн шалгалтынх байхгүй бол үндсэн тохиргоо/асуултыг авна
+      const[ss0,qs0]=await Promise.all([db.collection("habea_config").doc("settings").get(),db.collection("habea_config").doc("questions").get()]);
+      if(!ssData&&ss0.exists)ssData=ss0.data();
+      if(!qsData&&qs0.exists&&qs0.data().list?.length)qsData=qs0.data();
+    }
+    if(ssData)CFG={...DEF_S,...ssData};
+    if(qsData){
       const TMAP={matching:"match","three-words":"words3","three-mistakes":"mistakes3"};
-      QS=qs.data().list.map(q=>({...q,type:TMAP[q.type]||q.type}));
+      QS=qsData.list.map(q=>({...q,type:TMAP[q.type]||q.type}));
     }
   }catch(e){}
+  if(QP.title) CFG.examTitle = QP.title; // SafeWork-оос дамжуулсан сургалтын гарчиг
   document.getElementById("hdrTitle").textContent=CFG.examTitle||"ХАБЭА";
   try{ if(QP.name){var _n=document.getElementById("iName"); if(_n&&!_n.value)_n.value=QP.name;} if(QP.dept){var _d=document.getElementById("iDept"); if(_d&&!_d.value)_d.value=QP.dept;} }catch(e){}
   document.getElementById("hdrOrg").textContent=CFG.orgName||"МОНОС ХҮНС ХК";
@@ -713,7 +721,8 @@ async function finalSubmit(){
   const doc={
     name:emp.name,department:emp.dept,position:emp.pos,
     email:(QP.email||"").toLowerCase(),eid:QP.eid||"",
-    examTitle:(CFG&&CFG.examTitle)||"",
+    examTitle:(QP.title||(CFG&&CFG.examTitle))||"",
+    examKey:(QP.exam||""),
     examType,answers,breakdown:bd,
     total:tot,percent:pct,passed,
     timestamp:firebase.firestore.FieldValue.serverTimestamp()
