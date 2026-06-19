@@ -329,11 +329,31 @@ async function readHabeaExamsByEmail() {
       if (x.examType === 'pre') { if (rec.pre == null) rec.pre = pct; }
       else { if (rec.post == null) rec.post = pct; }
       if (x.passed) rec.anyPassed = true;
-      rec.list.push({ title: x.examTitle || 'ХАБЭА шалгалт', type: x.examType || '', percent: pct, passed: !!x.passed, ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0 });
+      rec.list.push({ title: x.examTitle || 'ХАБЭА шалгалт', key: x.examKey || '', type: x.examType || '', percent: pct, passed: !!x.passed, ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0 });
     });
     Object.keys(map).forEach(function (k) { map[k].list.sort(function (a, b) { return b.ts - a.ts; }); });
   } catch (e) {}
   return map;
+}
+
+/* Нэвтэрсэн ажилтны шалгалтын дүнг шинээр татаж, өөрийнх нь KPI-г шинэчилнэ (шалгалт өгөөд буцахад) */
+async function refreshMyExams() {
+  try {
+    if (!fbReady || isAdmin() || !SESSION) return false;
+    var me = (DB.employees || []).filter(function (e) {
+      return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email) || (SESSION.empId && e.id === SESSION.empId);
+    })[0];
+    if (!me || !me.email) return false;
+    var map = await readHabeaExamsByEmail();
+    var hx = map[String(me.email).toLowerCase().trim()];
+    if (!hx) { me.habeaExams = []; return true; }
+    if (hx.post != null && hx.pre != null) { me.examPrev = hx.pre; me.examScore = hx.post; }
+    else if (hx.post != null) { me.examScore = hx.post; }
+    else if (hx.pre != null) { me.examScore = hx.pre; me.examPrev = null; }
+    if (hx.anyPassed) me.firstTry = 1;
+    me.habeaExams = hx.list || [];
+    return true;
+  } catch (e) { return false; }
 }
 
 /* ===== Жинхэнэ ажилчид + сургалт/шалгалтаас KPI автоматаар бодох ===== */
@@ -921,11 +941,16 @@ function toEmbed(url) {
   if (m) return 'https://www.youtube.com/embed/' + m[1];
   return '';
 }
-function renderCourse(cat) {
+function renderCourse(cat, skipRefresh) {
   CURRENT_CAT = cat;
   var sec = pageEl('trn-cat'); if (!sec) return;
   sec.style.padding = '';
   var c = getCourse(cat), key = courseKey(cat), admin = isAdmin(), s = SESSION || {};
+  var myResults = [];
+  if (isEmp()) {
+    var meRec = (DB.employees || []).filter(function (e) { return (s.uid && e.uid === s.uid) || _sameEmail(e.email, s.email) || (s.empId && e.id === s.empId); })[0];
+    if (meRec) myResults = (meRec.habeaExams || []).filter(function (x) { return x.title === cat || x.key === key; });
+  }
   var examUrl = '/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
     '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || '');
   var videoHtml = '';
@@ -945,6 +970,12 @@ function renderCourse(cat) {
         : '<div style="color:#8A94A6;padding:8px">Сургалтын агуулга удахгүй нэмэгдэнэ.</div>')) +
     videoHtml +
     '</div>' +
+    (myResults.length ? '<div class="card" style="padding:18px;margin-top:16px"><h3 style="margin:0 0 8px">Таны шалгалтын дүн</h3>' +
+      myResults.map(function (x) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid #F1F5F9">' +
+          '<span style="font-size:14px">' + (x.type === 'pre' ? 'Урьдчилсан шалгалт' : (x.type === 'post' ? 'Сургалтын дараах шалгалт' : 'Шалгалт')) + ' · ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + '</span>' +
+          '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
+      }).join('') + '</div>' : '') +
     '<div class="card" style="padding:24px;text-align:center;margin-top:16px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
     '<div style="width:60px;height:60px;border-radius:16px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px"><i class="ti ti-clipboard-check"></i></div>' +
     '<h3 style="margin:0 0 6px">' + esc(cat) + 'ын шалгалт өгөх</h3>' +
@@ -954,6 +985,10 @@ function renderCourse(cat) {
       '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
       '<div style="font-size:11px;color:#94A3B8;margin-top:4px">Энэ сургалтын түлхүүр: <code>' + key + '</code></div></div>' : '') +
     '</div>';
+  // Ажилтан шалгалт өгөөд буцахад дүнг шинээр татаж, хуудас + нийт KPI-г шинэчилнэ
+  if (isEmp() && !skipRefresh && fbReady) {
+    refreshMyExams().then(function () { if (CURRENT_CAT === cat) renderCourse(cat, true); try { renderDashboard(); } catch (e) {} });
+  }
 }
 function actionEditCourse(cat) {
   if (!isAdmin()) return;
@@ -993,6 +1028,10 @@ function renderEmployeeDashboard() {
   var sec = pageEl('dashboard'); if (!sec) return;
   var e = myEmployeeRecord();
   if (!e) { sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-user-question"></i><div>Таны мэдээлэл олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.</div></div>'; return; }
+  if (fbReady && (Date.now() - (renderEmployeeDashboard._lastRefresh || 0) > 8000)) {
+    renderEmployeeDashboard._lastRefresh = Date.now();
+    refreshMyExams().then(function (ch) { if (ch) renderEmployeeDashboard(); });
+  }
   var total = empTotal(e), bonus = empBonusPoints(e), lvl = kpiLevel(total);
   var toNext = lvl.next != null ? Math.max(0, lvl.next - total) : 0;
   var progPct = lvl.next != null ? clamp(Math.round((total - lvl.min) / (lvl.next - lvl.min) * 100), 0, 100) : 100;
