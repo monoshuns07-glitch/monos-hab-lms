@@ -3121,6 +3121,10 @@ function handleClick(e) {
   /* Сургалтын агуулга засах (админ) */
   if (el.hasAttribute && el.hasAttribute('data-editcourse')) { actionEditCourse(CURRENT_CAT); return; }
 
+  /* Аюул/Near-miss баталгаажуулах / татгалзах (глобалаар — найдвартай) */
+  if (el.hasAttribute && el.hasAttribute('data-verify')) { e.preventDefault(); e.stopPropagation(); verifyReport(el.getAttribute('data-verify'), 'verify'); return; }
+  if (el.hasAttribute && el.hasAttribute('data-reject')) { e.preventDefault(); e.stopPropagation(); verifyReport(el.getAttribute('data-reject'), 'reject'); return; }
+
   /* --- Навигаци --- */
   if (el.classList.contains('nav-item')) {
     if (el.hasAttribute('data-batch-training')) { e.preventDefault(); actionBatchTraining(); return; }
