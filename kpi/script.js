@@ -912,6 +912,67 @@ function kpiLevel(total) {
   return { name: 'Эхлэгч', icon: 'ti-seedling', color: '#16A34A', next: 60, min: 0 };
 }
 
+/* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
+var CURRENT_CAT = '';
+function courseKey(cat) { var h = 0; for (var i = 0; i < cat.length; i++) { h = (h * 31 + cat.charCodeAt(i)) >>> 0; } return 'c' + h.toString(36); }
+function getCourse(cat) { DB.courses = DB.courses || {}; return DB.courses[cat] || {}; }
+function toEmbed(url) {
+  var m = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]+)/.exec(url || '');
+  if (m) return 'https://www.youtube.com/embed/' + m[1];
+  return '';
+}
+function renderCourse(cat) {
+  CURRENT_CAT = cat;
+  var sec = pageEl('trn-cat'); if (!sec) return;
+  sec.style.padding = '';
+  var c = getCourse(cat), key = courseKey(cat), admin = isAdmin(), s = SESSION || {};
+  var examUrl = '/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
+    '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || '');
+  var videoHtml = '';
+  if (c.video) {
+    var emb = toEmbed(c.video);
+    videoHtml = emb
+      ? '<div style="position:relative;padding-top:56.25%;margin:14px 0;border-radius:14px;overflow:hidden;background:#000"><iframe src="' + emb + '" style="position:absolute;inset:0;width:100%;height:100%;border:0" allowfullscreen></iframe></div>'
+      : '<a href="' + esc(c.video) + '" target="_blank" rel="noopener" class="btn btn-secondary" style="margin:12px 0"><i class="ti ti-player-play"></i> Видео үзэх</a>';
+  }
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>' + esc(cat) + '</h1><p class="page-subtitle">Дотоод сургалт</p></div>' +
+    (admin ? '<div class="page-actions"><button class="btn btn-secondary" data-editcourse="1"><i class="ti ti-edit"></i> Агуулга засах</button></div>' : '') +
+    '</div>' +
+    '<div class="card" style="padding:20px">' +
+    (c.desc ? '<div style="font-size:14px;line-height:1.7;white-space:pre-wrap">' + esc(c.desc) + '</div>'
+      : (admin ? '<div class="empty-state" style="padding:24px"><i class="ti ti-file-text"></i><div>Агуулга оруулаагүй. "Агуулга засах" дарж видео/тайлбар нэмнэ үү.</div></div>'
+        : '<div style="color:#8A94A6;padding:8px">Сургалтын агуулга удахгүй нэмэгдэнэ.</div>')) +
+    videoHtml +
+    '</div>' +
+    '<div class="card" style="padding:24px;text-align:center;margin-top:16px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
+    '<div style="width:60px;height:60px;border-radius:16px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px"><i class="ti ti-clipboard-check"></i></div>' +
+    '<h3 style="margin:0 0 6px">' + esc(cat) + 'ын шалгалт өгөх</h3>' +
+    '<p style="color:#64748B;margin:0 0 16px;font-size:14px">Сургалтаа үзсэний дараа шалгалтаа өгнө үү. Дүн автоматаар KPI-д тооцогдоно.</p>' +
+    '<a href="' + examUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="padding:12px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт өгөх</a>' +
+    (admin ? '<div style="margin-top:14px;border-top:1px solid #E2E8F0;padding-top:12px;font-size:13px;color:#64748B">Энэ сургалтын шалгалтын асуултыг удирдах: ' +
+      '<a href="https://habea-deploy.vercel.app/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
+      '<div style="font-size:11px;color:#94A3B8;margin-top:4px">Энэ сургалтын түлхүүр: <code>' + key + '</code></div></div>' : '') +
+    '</div>';
+}
+function actionEditCourse(cat) {
+  if (!isAdmin()) return;
+  var c = getCourse(cat);
+  var node = elc('div', 'modal-info');
+  node.innerHTML =
+    '<div class="rf-field"><label>Видео холбоос (YouTube эсвэл бусад)</label><input type="text" id="cvVideo" class="rf-input" placeholder="https://youtu.be/... эсвэл https://..." value="' + esc(c.video || '') + '"></div>' +
+    '<div class="rf-field" style="margin-top:10px"><label>Сургалтын тайлбар / агуулга</label><textarea id="cvDesc" class="rf-input" rows="6" placeholder="Сургалтын тухай тайлбар, заавар...">' + esc(c.desc || '') + '</textarea></div>' +
+    '<button class="btn btn-primary btn-block" id="cvSave" style="margin-top:14px"><i class="ti ti-device-floppy"></i> Хадгалах</button>';
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#cvSave')) {
+      DB.courses = DB.courses || {};
+      DB.courses[cat] = { video: ($('#cvVideo', node).value || '').trim(), desc: ($('#cvDesc', node).value || '').trim() };
+      saveDB(); closeModal(); renderCourse(cat); toast('Сургалтын агуулга хадгалагдлаа', 'success');
+    }
+  });
+  buildModal(cat + ' — агуулга засах', node, { width: '480px' });
+}
+
 /* Шалгалт тус бүрийн дүнг (нэр + Урьдчилсан/Дараах) тусад нь харуулах HTML */
 function habeaExamsHTML(e) {
   var list = (e && e.habeaExams) || [];
@@ -3057,6 +3118,9 @@ function handleClick(e) {
   /* Inline onclick-тэй элементүүдийг алгасах (HTML дотор аль хэдийн заасан) */
   if (el.hasAttribute && el.hasAttribute('onclick')) return;
 
+  /* Сургалтын агуулга засах (админ) */
+  if (el.hasAttribute && el.hasAttribute('data-editcourse')) { actionEditCourse(CURRENT_CAT); return; }
+
   /* --- Навигаци --- */
   if (el.classList.contains('nav-item')) {
     if (el.hasAttribute('data-batch-training')) { e.preventDefault(); actionBatchTraining(); return; }
@@ -3441,6 +3505,7 @@ async function init() {
     $$('.nav-item.leaf').forEach(function (el) { el.classList.remove('active'); });
     leaf.classList.add('active');
     switchPage('trn-cat');
+    try { renderCourse(cat); } catch (e2) {}
     try { closeMenu(); } catch (e2) {}
   });
 
