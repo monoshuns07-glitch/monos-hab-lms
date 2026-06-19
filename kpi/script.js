@@ -951,7 +951,7 @@ function renderCourse(cat) {
     '<p style="color:#64748B;margin:0 0 16px;font-size:14px">Сургалтаа үзсэний дараа шалгалтаа өгнө үү. Дүн автоматаар KPI-д тооцогдоно.</p>' +
     '<a href="' + examUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="padding:12px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт өгөх</a>' +
     (admin ? '<div style="margin-top:14px;border-top:1px solid #E2E8F0;padding-top:12px;font-size:13px;color:#64748B">Энэ сургалтын шалгалтын асуултыг удирдах: ' +
-      '<a href="https://habea-deploy.vercel.app/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
+      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
       '<div style="font-size:11px;color:#94A3B8;margin-top:4px">Энэ сургалтын түлхүүр: <code>' + key + '</code></div></div>' : '') +
     '</div>';
 }
