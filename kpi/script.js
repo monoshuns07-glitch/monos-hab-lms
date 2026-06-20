@@ -4377,10 +4377,11 @@ function applyRole() {
     var key = courseKey(el.getAttribute('data-cat') || '');
     if (examOpen[key] === false) el.style.display = 'none';
   });
-  // Дотоод хэсгийн бүх leaf нуугдсан бол тухайн details хэсгийг нуух
+  // Бүх leaf нуугдсан бол details хэсгийг нуух (data-cat болон data-page аль аль нь)
   $$('details').forEach(function (det) {
-    var hasVisible = $$('.nav-item.leaf[data-cat]', det).some(function (el) { return el.style.display !== 'none'; });
-    if (!hasVisible && $$('.nav-item.leaf[data-cat]', det).length) det.style.display = 'none';
+    var allLeaves = $$('.nav-item.leaf', det);
+    var hasVisible = allLeaves.some(function (el) { return el.style.display !== 'none'; });
+    if (!hasVisible && allLeaves.length) det.style.display = 'none';
   });
   if (isEmp()) {
     // Ажилтны хувьд цэсийг хялбаршуулах
