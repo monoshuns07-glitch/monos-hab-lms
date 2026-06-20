@@ -2469,7 +2469,13 @@ function renderSettings() {
     '<div class="form-actions"><button class="btn btn-secondary" data-resetkpi="1">Анхдагч руу буцаах</button><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
 
     '<div class="card"><h3>Дата импорт</h3><p class="card-subtitle">Гадаад платформоос видео сургалтын үзэлтийг CSV файлаар оруулна. Ажилтныг имэйл/кодоор тааруулж, давхар бичилтийг автоматаар шүүнэ.</p>' +
-    '<div class="form-actions"><button class="btn btn-primary" data-import="1"><i class="ti ti-upload"></i> Видео үзэлт импорт</button></div></div>';
+    '<div class="form-actions"><button class="btn btn-primary" data-import="1"><i class="ti ti-upload"></i> Видео үзэлт импорт</button></div></div>' +
+
+    '<div class="card" id="subadminCard"><h3><i class="ti ti-user-shield" style="color:#8B5CF6;margin-right:6px"></i>Туслах Админ удирдлага</h3>' +
+    '<p class="card-subtitle">Бүртгэлтэй хэрэглэгчдээс туслах админ (цех дарга) сонгоно. Туслах админ өөрийн хэлтсийн сургалт/шалгалтыг нэмж хаах боломжтой болно.</p>' +
+    '<div id="subadminList" style="min-height:40px"><div style="color:#94A3B8;font-size:13px;padding:8px 0">Ачаалж байна...</div></div>' +
+    '<div class="form-actions" style="margin-top:14px"><button class="btn btn-primary" data-addsubadmin="1"><i class="ti ti-user-plus"></i> Туслах Админ нэмэх</button></div></div>';
+  setTimeout(loadSubadmins, 0);
 }
 function updateConfigSums() {
   function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
@@ -2510,6 +2516,108 @@ function resetKpiConfig() {
   if (charts.radar) renderCharts();
   toast('Анхдагч KPI тохиргоо сэргээгдлээ');
 }
+/* ---- Туслах Админ удирдлага ---- */
+function loadSubadmins() {
+  var listEl = document.getElementById('subadminList');
+  if (!listEl) return;
+  if (DEMO || !fbReady) {
+    listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px">Demo горимд байна — амьд сайт дээр харагдана.</div>';
+    return;
+  }
+  listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px;padding:8px 0">Ачаалж байна...</div>';
+  fdb.collection('user_roles').get().then(function (snap) {
+    var admins = [];
+    snap.forEach(function (doc) {
+      var d = doc.data() || {};
+      if (d.role === 'depthead') admins.push({ email: doc.id, dept: d.department || '', updatedAt: d.updatedAt || '' });
+    });
+    if (!admins.length) {
+      listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px;padding:8px 0">Туслах Админ байхгүй байна.</div>';
+      return;
+    }
+    listEl.innerHTML = admins.map(function (a) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #F1F5F9">' +
+        '<div style="width:36px;height:36px;border-radius:10px;background:#EDE9FE;color:#7C3AED;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ti ti-user-shield"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1E293B">' + esc(a.email) + '</div>' +
+        '<div style="font-size:12px;color:#64748B">' + esc(a.dept || 'Алба тогтоогүй') + (a.updatedAt ? ' · ' + timeAgo(a.updatedAt) : '') + '</div></div>' +
+        '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA;flex-shrink:0" data-rmsubadmin="' + esc(a.email) + '"><i class="ti ti-user-minus"></i> Хасах</button>' +
+        '</div>';
+    }).join('');
+    listEl.querySelectorAll('[data-rmsubadmin]').forEach(function (btn) {
+      btn.addEventListener('click', function () { removeSubadmin(btn.getAttribute('data-rmsubadmin')); });
+    });
+  }).catch(function (err) {
+    listEl.innerHTML = '<div style="color:#DC2626;font-size:13px">Алдаа: ' + esc(err.message || String(err)) + '</div>';
+  });
+}
+
+function removeSubadmin(email) {
+  if (!fbReady || !email) return;
+  fdb.collection('user_roles').doc(email).set({
+    role: 'employee', department: '',
+    updatedBy: (SESSION && SESSION.email) || 'admin',
+    updatedAt: new Date().toISOString()
+  }).then(function () {
+    toast(esc(email) + ' — Туслах Админ эрх хасагдлаа', 'warn');
+    loadSubadmins();
+  }).catch(function (err) { toast('Алдаа: ' + (err.message || String(err)), 'error'); });
+}
+
+function actionAddSubadmin() {
+  if (!isAdmin()) return;
+  if (DEMO || !fbReady) { toast('Амьд систем дээр ажиллана', 'warn'); return; }
+  var node = elc('div', 'modal-info');
+  node.innerHTML = '<div style="color:#94A3B8;font-size:13px">Бүртгэлтэй хэрэглэгчдийг татаж байна...</div>';
+  buildModal('Туслах Админ нэмэх', node, { width: '440px' });
+
+  fdb.collection('users').get().then(function (snap) {
+    var users = [];
+    snap.forEach(function (doc) {
+      var d = doc.data() || {};
+      var email = d.email || doc.id;
+      if (email && email.indexOf('@') > -1) {
+        users.push({ email: email, name: d.displayName || d.name || '' });
+      }
+    });
+    users.sort(function (a, b) { return a.email < b.email ? -1 : 1; });
+
+    var deptOpts = DEPTS.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
+    var userOpts = users.length
+      ? users.map(function (u) {
+          var lbl = u.name && u.name !== u.email ? u.name + ' — ' + u.email : u.email;
+          return '<option value="' + esc(u.email) + '">' + esc(lbl) + '</option>';
+        }).join('')
+      : '<option value="">Хэрэглэгч байхгүй</option>';
+
+    node.innerHTML =
+      '<div class="rf-field"><label style="font-weight:600;font-size:13px">Хэрэглэгч сонгох</label>' +
+      '<select id="saEmail" class="rf-input" style="height:auto;padding:9px 12px">' + userOpts + '</select></div>' +
+      '<div class="rf-field" style="margin-top:12px"><label style="font-weight:600;font-size:13px">Харъяа хэлтэс</label>' +
+      '<select id="saDept" class="rf-input" style="height:auto;padding:9px 12px">' + deptOpts + '</select></div>' +
+      '<div style="margin-top:6px;font-size:11px;color:#94A3B8">Сонгосон хэрэглэгч нэвтрэх дараа дараагийн хуудасны ачааллаас эхлэн туслах админы эрхтэй болно.</div>' +
+      '<button class="btn btn-primary btn-block" id="saSubmit" style="margin-top:14px"><i class="ti ti-check"></i> Туслах Админ болгох</button>';
+
+    node.querySelector('#saSubmit').addEventListener('click', function () {
+      var emailEl = node.querySelector('#saEmail');
+      var deptEl = node.querySelector('#saDept');
+      var email = (emailEl ? emailEl.value : '').trim();
+      var dept = deptEl ? deptEl.value : '';
+      if (!email) { toast('Хэрэглэгч сонгоно уу', 'warn'); return; }
+      fdb.collection('user_roles').doc(email).set({
+        role: 'depthead', department: dept,
+        updatedBy: (SESSION && SESSION.email) || 'admin',
+        updatedAt: new Date().toISOString()
+      }).then(function () {
+        closeModal();
+        toast(esc(email) + ' → Туслах Админ болгогдлоо (' + esc(dept) + ')', 'success');
+        loadSubadmins();
+      }).catch(function (err) { toast('Алдаа: ' + (err.message || String(err)), 'error'); });
+    });
+  }).catch(function (err) {
+    node.innerHTML = '<div style="color:#DC2626;font-size:13px">Хэрэглэгчдийг ачаалж чадсангүй: ' + esc(err.message || String(err)) + '</div>';
+  });
+}
+
 function updateWeightTotal() {
   var total = 0;
   $$('.page[data-page="settings"] .weight-row input[type="range"]').forEach(function (s) { total += parseInt(s.value, 10); });
@@ -4623,6 +4731,7 @@ function handleClick(e) {
   if (el.hasAttribute('data-savekpi')) { saveKpiConfig(); return; }
   if (el.hasAttribute('data-resetkpi')) { resetKpiConfig(); return; }
   if (el.hasAttribute('data-import')) { importVideoCSV(); return; }
+  if (el.hasAttribute('data-addsubadmin')) { actionAddSubadmin(); return; }
   if (t === 'Цуцлах' && pageId === 'settings') { renderSettings(); toast('Өөрчлөлт цуцлагдлаа', 'info'); return; }
   if (t.indexOf('Excel') > -1) { exportEmployeesCSV(); return; }
   if (t.indexOf('Тайлан татах') > -1) { downloadReport(); return; }
