@@ -1051,27 +1051,82 @@ function renderEmployeeDashboard() {
   var improved = (e.examPrev != null && e.examScore != null) ? (num(e.examScore) - num(e.examPrev)) : null;
   var myReports = (DB.reports || []).filter(function (r) { return reportBelongsTo(r, e); });
   var verifiedCnt = myReports.filter(function (r) { return r.status === 'verified'; }).length;
-  var bars = [
-    ['Видео сургалтын үзэлт', kpiVideo(e), 'ti-player-play'], ['Шалгалтын дүн', kpiExam(e), 'ti-clipboard-check'],
-    ['Шалгалтын ахиц', kpiImprovement(e), 'ti-trending-up'], ['Дахин шалгалтгүй тэнцсэн', kpiFirstTry(e), 'ti-medal']
+
+  /* ---- Байр эзлэлт тооцох ---- */
+  var allEmps = DB.employees.slice().sort(function (a, b) { return empTotal(b) - empTotal(a); });
+  var overallRank = allEmps.findIndex(function (x) { return x.id === e.id; }) + 1;
+  var overallTotal = allEmps.length;
+
+  var deptEmps = allEmps.filter(function (x) { return x.dept === e.dept; });
+  var deptRank = deptEmps.findIndex(function (x) { return x.id === e.id; }) + 1;
+  var deptTotal = deptEmps.length;
+
+  var depts = deptList();
+  var deptScores = depts.map(function (d) { return { dept: d, score: deptScore(d) }; }).filter(function (r) { return r.score > 0 || r.dept === e.dept; }).sort(function (a, b) { return b.score - a.score; });
+  var deptRankAmongAll = deptScores.findIndex(function (r) { return r.dept === e.dept; }) + 1;
+  var deptCountAll = deptScores.length;
+
+  function rankBadge(rank, total, label) {
+    var color = rank === 1 ? '#D97706' : (rank <= Math.ceil(total * 0.3) ? '#16A34A' : (rank <= Math.ceil(total * 0.6) ? '#0891B2' : '#64748B'));
+    var bg = rank === 1 ? '#FEF3C7' : (rank <= Math.ceil(total * 0.3) ? '#D1FAE5' : (rank <= Math.ceil(total * 0.6) ? '#E0F2FE' : '#F1F5F9'));
+    var medal = rank === 1 ? '🥇' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : ''));
+    return '<div style="flex:1;min-width:140px;background:' + bg + ';border-radius:14px;padding:16px 14px;text-align:center">' +
+      '<div style="font-size:30px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + color + '">' + medal + rank + '<span style="font-size:16px;font-weight:600;color:' + color + '">-р</span></div>' +
+      '<div style="font-size:12px;color:' + color + ';font-weight:600;margin-top:2px">' + label + '</div>' +
+      '<div style="font-size:11px;color:#94A3B8;margin-top:2px">нийт ' + total + '</div></div>';
+  }
+
+  /* ---- KPI задаргаа ---- */
+  var w = kpiCfg().weights;
+  var bw = w.video + w.exam + w.improvement + w.firstTry;
+  var bonusW = w.bonus;
+  var totalW = bw + bonusW;
+  var components = [
+    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: w.video, color: '#3730A3' },
+    { label: 'Шалгалтын дүн', icon: 'ti-clipboard-check', score: kpiExam(e), weight: w.exam, color: '#0891B2' },
+    { label: 'Шалгалтын ахиц', icon: 'ti-trending-up', score: kpiImprovement(e), weight: w.improvement, color: '#16A34A' },
+    { label: 'Анх тэнцсэн', icon: 'ti-medal', score: kpiFirstTry(e), weight: w.firstTry, color: '#D97706' },
+    { label: 'Бонус оноо', icon: 'ti-gift', score: empBonusScore(e), weight: bonusW, color: '#DC2626' }
   ];
   var firstName = (e.name || '').split(/\s+/).pop();
+
   sec.innerHTML =
     '<div style="margin-bottom:18px"><h1 style="margin:0">Сайн байна уу, ' + esc(firstName) + '! 👋</h1>' +
-    '<p class="page-subtitle" style="margin-top:4px">Энэ бол зөвхөн таны өөрийн ахиц — бусадтай харьцуулахгүй, өөртэйгөө л өрсөлдөнө.</p></div>' +
-    '<div class="card" style="padding:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:18px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
+    '<p class="page-subtitle" style="margin-top:4px">' + esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : '') + '</p></div>' +
+
+    /* Түвшин + нийт оноо */
+    '<div class="card" style="padding:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:14px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
     '<div style="width:78px;height:78px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';display:flex;align-items:center;justify-content:center;font-size:38px"><i class="ti ' + lvl.icon + '"></i></div>' +
-    '<div style="flex:1;min-width:200px"><div style="font-size:13px;color:#64748B">Таны түвшин</div>' +
-    '<div style="font-size:26px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif">' + lvl.name + ' · ' + total + '/100</div>' +
-    (lvl.next != null ? '<div style="margin-top:8px;display:flex;align-items:center;gap:10px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12px;color:#64748B;margin-top:4px">Дараагийн түвшин хүртэл <strong>' + toNext + '</strong> оноо</div>' : '<div style="color:#16A34A;font-weight:600;margin-top:6px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
+    '<div style="flex:1;min-width:200px"><div style="font-size:13px;color:#64748B">Таны KPI түвшин</div>' +
+    '<div style="font-size:28px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif">' + lvl.name + ' · ' + total + '<span style="font-size:16px;font-weight:500;color:#94A3B8">/100</span></div>' +
+    (lvl.next != null ? '<div style="margin-top:8px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12px;color:#64748B;margin-top:4px">Дараагийн түвшин хүртэл <strong>' + toNext + '</strong> оноо</div>' : '<div style="color:#16A34A;font-weight:600;margin-top:6px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
     '</div></div>' +
-    '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 14px">Миний суурь үзүүлэлт</h3>' +
-    bars.map(function (b) {
-      return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:13px"><i class="ti ' + b[2] + '" style="color:#64748B;width:20px;text-align:center"></i>' +
-        '<div style="width:180px;font-size:13px">' + b[0] + '</div>' + miniBar(b[1]) + '<div style="width:36px;text-align:right;font-weight:700">' + b[1] + '</div></div>';
-    }).join('') + '</div>' +
+
+    /* Байр эзлэлт */
+    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 12px;font-size:14px;color:#64748B;text-transform:uppercase;letter-spacing:.5px">Байр эзлэлт</h3>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    rankBadge(overallRank, overallTotal, 'Нийт ажилтнуудаас') +
+    rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх') +
+    rankBadge(deptRankAmongAll, deptCountAll, 'Алба хоорондын') +
+    '</div></div>' +
+
+    /* KPI задаргаа */
+    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 14px">KPI оноо хэрхэн бүрдсэн</h3>' +
+    components.map(function (c) {
+      var contrib = totalW > 0 ? (c.score * c.weight / 100).toFixed(1) : '0';
+      var pct = totalW > 0 ? Math.round(c.weight / totalW * 100) : 0;
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">' +
+        '<div style="width:28px;height:28px;border-radius:7px;background:' + c.color + '1A;color:' + c.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + c.icon + '" style="font-size:14px"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px">' + c.label + '</span>' +
+        '<span style="font-size:12px;color:#94A3B8">дүн: <strong style="color:#334155">' + c.score + '</strong> × жин ' + pct + '% = <strong style="color:' + c.color + '">' + contrib + '</strong></span></div>' +
+        miniBar(c.score, c.color) + '</div></div>';
+    }).join('') +
+    '<div style="border-top:2px solid #F1F5F9;margin-top:10px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">' +
+    '<span style="font-weight:700;font-size:14px">Нийт KPI оноо</span>' +
+    '<span style="font-size:22px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span></div></div>' +
+
     habeaExamsHTML(e) +
-    '<div style="display:flex;gap:18px;flex-wrap:wrap">' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
     '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
     '<div style="display:flex;align-items:center;gap:10px"><i class="ti ti-gift" style="font-size:28px;color:#16A34A"></i>' +
     '<div><div style="font-size:26px;font-weight:800;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif">+' + bonus + '</div><div style="font-size:13px;color:#64748B">Нэмэгдэх бонус оноо</div></div></div>' +
