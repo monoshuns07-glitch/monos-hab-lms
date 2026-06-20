@@ -3846,6 +3846,17 @@ function applyRole() {
   });
   // Зөвхөн админд зориулсан холбоосуудыг нуух
   $$('.nav-item[data-admin]').forEach(function (el) { el.style.display = 'none'; });
+  // Хаалттай шалгалтын сургалт цэсийг нуух (ажилтан болон дарга аль аль нь)
+  var examOpen = (DB.settings && DB.settings.examOpen) || {};
+  $$('.nav-item.leaf[data-cat]').forEach(function (el) {
+    var key = courseKey(el.getAttribute('data-cat') || '');
+    if (examOpen[key] === false) el.style.display = 'none';
+  });
+  // Дотоод хэсгийн бүх leaf нуугдсан бол тухайн details хэсгийг нуух
+  $$('details').forEach(function (det) {
+    var hasVisible = $$('.nav-item.leaf[data-cat]', det).some(function (el) { return el.style.display !== 'none'; });
+    if (!hasVisible && $$('.nav-item.leaf[data-cat]', det).length) det.style.display = 'none';
+  });
   if (isEmp()) {
     // Ажилтны хувьд цэсийг хялбаршуулах
     // "Хяналтын самбар" → "Миний гүйцэтгэл"
