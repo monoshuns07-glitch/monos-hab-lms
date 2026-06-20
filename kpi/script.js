@@ -909,6 +909,9 @@ function switchPage(pageId) {
   else if (pageId === 'inspections') renderInspections();
   else if (pageId === 'dataflow') renderDataflow();
   else if (pageId === 'settings') renderSettings();
+  else if (pageId === 'video-track') renderVideoTracking();
+  else if (pageId === 'hazards') renderHazards();
+  else if (pageId === 'tasks') renderTasks();
 }
 
 /* ============ Sidebar badge-ууд ============ */
