@@ -49,7 +49,7 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
 var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin'];
 var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
-var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'hazards', 'inspections', 'suggestions', 'health', 'ppe'];
+var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -304,7 +304,8 @@ function seedDB() {
     videoViews: [],
     examResults: [],
     externalTrainings: [],
-    tasks: []
+    tasks: [],
+    miskillStats: []
   };
 }
 
@@ -496,7 +497,7 @@ async function loadDB() {
 function migrateDB() {
   if (!DB) return;
   ['employees', 'hazards', 'suggestions', 'incidents', 'notifications',
-   'reports', 'firstAidChecks', 'ppeObservations', 'videoViews', 'examResults', 'externalTrainings'].forEach(function (k) {
+   'reports', 'firstAidChecks', 'ppeObservations', 'videoViews', 'examResults', 'externalTrainings', 'miskillStats'].forEach(function (k) {
     if (!Array.isArray(DB[k])) DB[k] = [];
   });
   if (!DB.settings) DB.settings = seedDB().settings;
@@ -2902,73 +2903,310 @@ function renderCharts() {
 
 /* ============ Бүгдийг дахин зурах ============ */
 /* ============ Видео сургалт (MiSkill) — тусдаа цэс ============ */
+/* ============ MiSkill дата оноо тооцоолол ============ */
+function miskillScore(r) {
+  var tPct = r.trainReq > 0 ? Math.min(1, r.trainDone / r.trainReq) : (r.trainDone > 0 ? 1 : 0);
+  var ePct = r.examReq > 0 ? Math.min(1, r.examDone / r.examReq) : (r.examDone > 0 ? 1 : 0);
+  return Math.round((tPct * 70 + ePct * 30) * 100);
+}
+function miskillFindMyRow() {
+  var me = myEmp();
+  var stats = DB.miskillStats || [];
+  if (!me) return null;
+  return stats.find(function (r) {
+    return r.empId === me.id || _sameEmail(r.empEmail, me.email) || r.empName === me.name;
+  }) || null;
+}
+function msPct(done, req) { return req > 0 ? Math.min(100, Math.round(done / req * 100)) : (done > 0 ? 100 : 0); }
+function msColor(pct) { return pct >= 90 ? '#16A34A' : pct >= 60 ? '#D97706' : '#DC2626'; }
+function msBg(pct) { return pct >= 90 ? '#D1FAE5' : pct >= 60 ? '#FEF3C7' : '#FEE2E2'; }
+function msLabel(pct) { return pct >= 90 ? 'Маш сайн' : pct >= 60 ? 'Хангалттай' : 'Анхаарал шаардлагатай'; }
+
+function msProgressRing(pct, color, size) {
+  size = size || 80;
+  var r = (size - 10) / 2, circ = 2 * Math.PI * r;
+  var dash = circ * Math.min(pct, 100) / 100;
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+    '<circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + r + '" fill="none" stroke="#E2E8F0" stroke-width="8"/>' +
+    '<circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="8" stroke-dasharray="' + dash + ' ' + circ + '" stroke-dashoffset="' + (circ * 0.25) + '" stroke-linecap="round" transform="rotate(-90 ' + (size/2) + ' ' + (size/2) + ')"/>' +
+    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="' + color + '" font-size="' + Math.round(size*0.22) + '" font-weight="700">' + pct + '%</text>' +
+    '</svg>';
+}
+
 function renderVideoTracking() {
   var sec = pageEl('video-track'); if (!sec) return;
-  sec.style.padding = '';
-  var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
-  var vv = DB.videoViews || [];
+  sec.style.padding = '0';
+  var admin = isAdmin(), dh = isDeptHead();
 
-  /* Role-д тохирох ажилтнуудын жагсаалт */
-  var emps = (DB.employees || []).filter(function (e) {
-    if (emp) { var me = myEmp(); return me && e.id === me.id; }
-    if (dh && SESSION && SESSION.dept) return e.dept === SESSION.dept;
+  if (admin || dh) {
+    renderVtAdmin(sec);
+  } else {
+    renderVtEmployee(sec);
+  }
+}
+
+function renderVtAdmin(sec) {
+  var stats = DB.miskillStats || [];
+  var emps = dh ? (DB.employees || []).filter(function (e) { return SESSION && e.dept === SESSION.dept; }) : (DB.employees || []);
+  var rows = stats.filter(function (r) {
+    if (isDeptHead() && SESSION && SESSION.dept) {
+      var e = emps.find(function (e) { return e.id === r.empId || _sameEmail(e.email, r.empEmail) || e.name === r.empName; });
+      return !!e;
+    }
     return true;
-  });
+  }).sort(function (a, b) { return miskillScore(b) - miskillScore(a); });
 
-  /* Ажилтан бүрт сүүлийн 30 хоногийн видео дүгнэлт */
-  var rows = emps.map(function (e) {
-    var myVv = vv.filter(function (v) {
-      return v.empId === e.id || (e.uid && v.uid === e.uid) || _sameEmail(v.email, e.email);
-    });
-    var avgPct = myVv.length ? Math.round(myVv.reduce(function (s, v) { return s + num(v.percent); }, 0) / myVv.length) : (e.video || 0);
-    return { e: e, cnt: myVv.length, avg: avgPct, last: myVv.length ? myVv.map(function (v) { return v.date; }).sort().pop() : null };
-  }).sort(function (a, b) { return b.avg - a.avg; });
-
-  var totalEmps = rows.length;
-  var watched = rows.filter(function (r) { return r.avg >= 70; }).length;
-  var avgAll = totalEmps ? Math.round(rows.reduce(function (s, r) { return s + r.avg; }, 0) / totalEmps) : 0;
-  var totalVv = vv.length;
-
-  var html = '<div class="page-header"><div><h1>Видео сургалт (MiSkill)</h1>' +
-    '<p class="page-subtitle">MiSkill платформоос импорт хийсэн видео үзэлтийн тайлан</p></div>' +
-    (admin ? '<div class="page-actions"><button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV импорт</button></div>' : '') +
-    '</div>';
-
-  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
-    statCard('Нийт ажилтан', totalEmps, 'ti-users', '#3730A3') +
-    statCard('70%+ үзэлттэй', watched, 'ti-player-play', '#16A34A') +
-    statCard('Дундаж үзэлт', avgAll + '%', 'ti-chart-bar', '#D97706') +
-    statCard('Нийт бичлэг', totalVv, 'ti-database', '#0891B2') +
+  var weekLabel = rows.length && rows[0].weekStart ? rows[0].weekStart + ' — долоо хоног' : '';
+  var html = '<div style="padding:22px 28px 0">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">' +
+    '<div><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
+    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">MiSkill платформоос экспортолсон сургалт ба шалгалтын тайлан</p></div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button class="btn btn-secondary btn-sm" id="vtTpl"><i class="ti ti-download"></i> Загвар татах</button>' +
+    '<button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV байршуулах</button></div></div>' +
+    (weekLabel ? '<div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1D4ED8;margin-bottom:12px"><i class="ti ti-calendar-week"></i> Тайлангийн долоо хоног: <strong>' + esc(rows[0].weekStart) + '</strong></div>' : '') +
     '</div>';
 
   if (!rows.length) {
-    html += emptyBox('Ажилтан олдсонгүй');
+    html += '<div style="padding:24px">' + emptyBox('MiSkill датагүй байна. CSV байршуулна уу.') + '</div>';
   } else {
-    html += '<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="width:100%">' +
-      '<thead><tr><th>Ажилтан</th><th>Алба</th><th>Бичлэг тоо</th><th>Дундаж үзэлт</th><th>Сүүлийн огноо</th><th>Байдал</th></tr></thead><tbody>' +
-      rows.map(function (r) {
-        var badgeColor = r.avg >= 90 ? '#16A34A' : r.avg >= 70 ? '#D97706' : '#DC2626';
-        var badgeBg = r.avg >= 90 ? '#D1FAE5' : r.avg >= 70 ? '#FEF3C7' : '#FEE2E2';
-        var statusLabel = r.avg >= 90 ? 'Маш сайн' : r.avg >= 70 ? 'Хангалттай' : r.cnt ? 'Дутуу' : 'Импортгүй';
+    var totalEmps = rows.length;
+    var fine = rows.filter(function (r) { return miskillScore(r) >= 70; }).length;
+    var avgScore = Math.round(rows.reduce(function (s, r) { return s + miskillScore(r); }, 0) / totalEmps);
+    var avgTP = Math.round(rows.reduce(function (s, r) { return s + msPct(r.trainDone, r.trainReq); }, 0) / totalEmps);
+    var avgEP = Math.round(rows.reduce(function (s, r) { return s + msPct(r.examDone, r.examReq); }, 0) / totalEmps);
+
+    html += '<div style="padding:0 28px;display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">' +
+      statCard('Нийт ажилтан', totalEmps, 'ti-users', '#3730A3') +
+      statCard('Норм биелүүлсэн', fine, 'ti-circle-check', '#16A34A') +
+      statCard('Дундаж оноо', avgScore, 'ti-chart-radar', '#D97706') +
+      statCard('Сургалт биелэлт', avgTP + '%', 'ti-player-play', '#0891B2') +
+      '</div>';
+
+    html += '<div style="padding:0 28px 28px"><div class="card" style="padding:0;overflow:hidden">' +
+      '<table class="data-table" style="width:100%">' +
+      '<thead><tr><th style="width:36px">#</th><th>Ажилтан</th><th>Алба</th>' +
+      '<th style="text-align:center">Сургалт</th><th style="text-align:center">Шалгалт</th>' +
+      '<th style="text-align:center">Нийт оноо</th><th>Байдал</th><th style="text-align:center">7 хоног</th></tr></thead><tbody>' +
+      rows.map(function (r, i) {
+        var sc = miskillScore(r), tp = msPct(r.trainDone, r.trainReq), ep = msPct(r.examDone, r.examReq);
+        var weekSum = (r.weekDays || []).reduce(function (s, d) { return s + (d.train || 0) + (d.exam || 0); }, 0);
+        var empObj = (DB.employees || []).find(function (e) { return e.id === r.empId || e.name === r.empName; });
+        var dept = empObj ? empObj.dept : (r.dept || '—');
+        var pos = empObj ? (empObj.pos || '') : '';
+        var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
         return '<tr>' +
-          '<td><div style="font-weight:600;font-size:13px">' + esc(r.e.name) + '</div><div style="font-size:11px;color:#8A94A6">' + esc(r.e.pos || '') + '</div></td>' +
-          '<td style="font-size:13px">' + esc(r.e.dept || '') + '</td>' +
-          '<td style="text-align:center">' + (r.cnt || '<span style="color:#CBD5E1">—</span>') + '</td>' +
-          '<td style="text-align:center"><span class="score-pill ' + scoreClass(r.avg) + '">' + r.avg + '%</span></td>' +
-          '<td style="font-size:12px;color:#64748B">' + (r.last || '—') + '</td>' +
-          '<td><span style="background:' + badgeBg + ';color:' + badgeColor + ';font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px">' + statusLabel + '</span></td>' +
+          '<td style="text-align:center;color:#94A3B8;font-size:12px">' + medal + (medal ? '' : (i + 1)) + '</td>' +
+          '<td><div style="font-weight:600;font-size:13px">' + esc(r.empName || r.empId) + '</div>' +
+          (pos ? '<div style="font-size:11px;color:#8A94A6">' + esc(pos) + '</div>' : '') + '</td>' +
+          '<td style="font-size:13px;color:#64748B">' + esc(dept) + '</td>' +
+          '<td style="text-align:center">' +
+          '<div style="font-size:12px;color:#1E293B;font-weight:600">' + r.trainDone + '/' + r.trainReq + '</div>' +
+          '<div style="height:4px;background:#E2E8F0;border-radius:4px;margin-top:3px;overflow:hidden"><div style="height:100%;width:' + tp + '%;background:' + msColor(tp) + ';border-radius:4px"></div></div></td>' +
+          '<td style="text-align:center">' +
+          '<div style="font-size:12px;color:#1E293B;font-weight:600">' + r.examDone + '/' + r.examReq + '</div>' +
+          '<div style="height:4px;background:#E2E8F0;border-radius:4px;margin-top:3px;overflow:hidden"><div style="height:100%;width:' + ep + '%;background:' + msColor(ep) + ';border-radius:4px"></div></div></td>' +
+          '<td style="text-align:center"><span class="score-pill ' + scoreClass(sc) + '">' + sc + '</span></td>' +
+          '<td><span style="background:' + msBg(sc) + ';color:' + msColor(sc) + ';font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px">' + msLabel(sc) + '</span></td>' +
+          '<td style="text-align:center;font-size:13px;font-weight:600;color:' + (weekSum > 0 ? '#1D4ED8' : '#CBD5E1') + '">' + (weekSum > 0 ? weekSum : '—') + '</td>' +
           '</tr>';
-      }).join('') +
-      '</tbody></table></div>';
+      }).join('') + '</tbody></table></div></div>';
   }
 
   sec.innerHTML = html;
   if (!sec._vtWired) {
     sec._vtWired = true;
     sec.addEventListener('click', function (ev) {
-      if (ev.target.closest('#vtImport')) importVideoCSV();
+      if (ev.target.closest('#vtImport')) importMiskillCSV();
+      if (ev.target.closest('#vtTpl')) downloadMiskillTemplate();
     });
   }
+}
+
+function renderVtEmployee(sec) {
+  var row = miskillFindMyRow();
+  var me = myEmp();
+  var name = (me && me.name) || (SESSION && SESSION.email) || 'Ажилтан';
+  var allStats = DB.miskillStats || [];
+  var html = '<div style="background:linear-gradient(135deg,#1D4ED8 0%,#3730A3 100%);padding:22px 24px 36px;color:#fff;position:relative;overflow:hidden">' +
+    '<div style="position:absolute;right:-20px;top:-20px;width:140px;height:140px;background:rgba(255,255,255,.06);border-radius:50%"></div>' +
+    '<div style="position:absolute;right:30px;bottom:-30px;width:90px;height:90px;background:rgba(255,255,255,.06);border-radius:50%"></div>' +
+    '<div style="position:relative"><div style="font-size:12px;opacity:.7;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px">Видео сургалт (MiSkill)</div>' +
+    '<div style="font-size:22px;font-weight:700;margin-bottom:2px">' + esc(name) + '</div>' +
+    '<div style="font-size:13px;opacity:.7">' + ((me && me.dept) || '') + (me && me.pos ? ' · ' + me.pos : '') + '</div></div></div>';
+
+  if (!row) {
+    html += '<div style="margin-top:-16px;padding:0 20px 24px"><div class="card" style="padding:28px;text-align:center">' +
+      '<i class="ti ti-cloud-off" style="font-size:40px;color:#CBD5E1;display:block;margin-bottom:10px"></i>' +
+      '<div style="font-weight:600;color:#475569;margin-bottom:4px">Мэдээлэл байхгүй</div>' +
+      '<div style="font-size:13px;color:#94A3B8">Таны MiSkill сургалтын тайлан ХАБЭА ажилтанд байршуулаагүй байна.</div></div></div>';
+    sec.innerHTML = html;
+    return;
+  }
+
+  var tp = msPct(row.trainDone, row.trainReq);
+  var ep = msPct(row.examDone, row.examReq);
+  var sc = miskillScore(row);
+  var allSorted = allStats.slice().sort(function (a, b) { return miskillScore(b) - miskillScore(a); });
+  var rank = allSorted.findIndex(function (r) { return r.empId === row.empId || r.empName === row.empName; }) + 1;
+  var total = allSorted.length;
+  var medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+  var rankColor = rank <= 3 ? '#D97706' : rank <= Math.ceil(total * 0.25) ? '#16A34A' : rank <= Math.ceil(total * 0.5) ? '#0891B2' : '#64748B';
+
+  var MON_NAMES = ['Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан'];
+  var weekDays = row.weekDays || [{train:0,exam:0},{train:0,exam:0},{train:0,exam:0},{train:0,exam:0},{train:0,exam:0}];
+  var maxDayVal = Math.max(1, weekDays.reduce(function (mx, d) { return Math.max(mx, (d.train||0) + (d.exam||0)); }, 0));
+
+  function weekDateStr(start, offset) {
+    if (!start) return '';
+    try { var d = new Date(start); d.setDate(d.getDate() + offset); return (d.getMonth()+1) + '/' + d.getDate(); } catch(e) { return ''; }
+  }
+
+  html += '<div style="margin-top:-16px;padding:0 16px 24px">';
+
+  // Нийт биелэлт хэсэг
+  html += '<div class="card" style="padding:20px;margin-bottom:12px">' +
+    '<div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px"><i class="ti ti-chart-pie-2"></i> Нийт биелэлт (бүх цаг хугацаа)</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">' +
+    // Сургалт
+    '<div style="text-align:center">' +
+    msProgressRing(tp, msColor(tp), 90) +
+    '<div style="font-weight:700;color:#1E293B;margin:6px 0 2px;font-size:15px">' + row.trainDone + ' / ' + row.trainReq + '</div>' +
+    '<div style="font-size:11px;color:#64748B">Сургалт дууссан</div>' +
+    '<div style="margin-top:6px;display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:' + msBg(tp) + ';color:' + msColor(tp) + '">' + msLabel(tp) + '</div></div>' +
+    // Шалгалт
+    '<div style="text-align:center">' +
+    msProgressRing(ep, msColor(ep), 90) +
+    '<div style="font-weight:700;color:#1E293B;margin:6px 0 2px;font-size:15px">' + row.examDone + ' / ' + row.examReq + '</div>' +
+    '<div style="font-size:11px;color:#64748B">Шалгалт дууссан</div>' +
+    '<div style="margin-top:6px;display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600;background:' + msBg(ep) + ';color:' + msColor(ep) + '">' + msLabel(ep) + '</div></div>' +
+    '</div>' +
+    // Нийт оноо
+    '<div style="margin-top:14px;padding:10px 14px;background:#F8FAFC;border-radius:10px;display:flex;align-items:center;gap:10px">' +
+    '<div style="font-size:11px;color:#64748B;flex:1">Нийт MiSkill оноо (сургалт 70% + шалгалт 30%)</div>' +
+    '<span class="score-pill ' + scoreClass(sc) + '" style="font-size:16px;padding:4px 14px">' + sc + '</span></div>' +
+    '</div>';
+
+  // Өнгөрсөн долоо хоногийн breakdown
+  html += '<div class="card" style="padding:20px;margin-bottom:12px">' +
+    '<div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px">' +
+    '<i class="ti ti-calendar-week"></i> Өнгөрсөн долоо хоног' + (row.weekStart ? ' <span style="font-weight:400;color:#94A3B8;font-size:11px">(' + row.weekStart + ')</span>' : '') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">' +
+    weekDays.slice(0, 5).map(function (d, i) {
+      var dayTotal = (d.train || 0) + (d.exam || 0);
+      var barH = dayTotal > 0 ? Math.max(16, Math.round(dayTotal / maxDayVal * 60)) : 0;
+      var dateStr = weekDateStr(row.weekStart, i);
+      var hasTrain = (d.train || 0) > 0, hasExam = (d.exam || 0) > 0;
+      return '<div style="text-align:center">' +
+        '<div style="font-size:10px;font-weight:700;color:#475569">' + MON_NAMES[i] + '</div>' +
+        '<div style="font-size:10px;color:#94A3B8;margin-bottom:6px">' + dateStr + '</div>' +
+        '<div style="min-height:70px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px">' +
+        (hasTrain ? '<div style="width:28px;background:#3B82F6;border-radius:4px 4px 0 0;height:' + Math.max(8, Math.round((d.train||0)/maxDayVal*60)) + 'px;position:relative" title="Сургалт: ' + (d.train||0) + '">' +
+          '<div style="position:absolute;top:-16px;width:100%;text-align:center;font-size:10px;font-weight:700;color:#1D4ED8">' + d.train + '</div></div>' : '<div style="width:28px;height:8px;background:#F1F5F9;border-radius:4px"></div>') +
+        (hasExam ? '<div style="width:28px;background:#10B981;border-radius:0 0 4px 4px;height:' + Math.max(8, Math.round((d.exam||0)/maxDayVal*60)) + 'px;position:relative" title="Шалгалт: ' + (d.exam||0) + '">' +
+          '</div>' : '<div style="width:28px;height:8px;background:#F1F5F9;border-radius:4px"></div>') +
+        '</div>' +
+        '<div style="margin-top:6px;font-size:11px;color:' + (dayTotal > 0 ? '#1E293B' : '#CBD5E1') + ';font-weight:' + (dayTotal > 0 ? '600' : '400') + '">' + (dayTotal > 0 ? dayTotal : '—') + '</div>' +
+        '</div>';
+    }).join('') + '</div>' +
+    '<div style="margin-top:12px;display:flex;gap:14px;font-size:11px;color:#64748B">' +
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#3B82F6;border-radius:2px;margin-right:4px"></span>Сургалт</span>' +
+    '<span><span style="display:inline-block;width:10px;height:10px;background:#10B981;border-radius:2px;margin-right:4px"></span>Шалгалт</span>' +
+    '<span style="margin-left:auto;color:#94A3B8">7 хоногийн нийт: <strong style="color:#1E293B">' + weekDays.reduce(function (s, d) { return s + (d.train||0) + (d.exam||0); }, 0) + '</strong></span>' +
+    '</div></div>';
+
+  // Байр эзлэлт
+  html += '<div class="card" style="padding:20px;background:linear-gradient(135deg,' + (rank <= 3 ? '#FEF3C7,#FDE68A' : rank <= Math.ceil(total*0.25) ? '#D1FAE5,#A7F3D0' : '#EFF6FF,#DBEAFE') + ')">' +
+    '<div style="font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px"><i class="ti ti-trophy"></i> Байр эзлэлт (MiSkill оноогоор)</div>' +
+    '<div style="display:flex;align-items:center;gap:16px">' +
+    '<div style="font-size:52px;line-height:1">' + (medal || '🎯') + '</div>' +
+    '<div style="flex:1">' +
+    '<div style="font-size:32px;font-weight:800;color:' + rankColor + ';line-height:1">' + rank + '<span style="font-size:16px;font-weight:500;color:#94A3B8">-р байр</span></div>' +
+    '<div style="font-size:13px;color:#475569;margin-top:3px">Нийт <strong>' + total + '</strong> ажилтнаас</div>' +
+    '<div style="margin-top:8px;height:6px;background:rgba(0,0,0,.08);border-radius:6px;overflow:hidden">' +
+    '<div style="height:100%;width:' + Math.round((1 - (rank-1)/Math.max(1,total-1)) * 100) + '%;background:' + rankColor + ';border-radius:6px"></div></div>' +
+    '<div style="font-size:11px;color:#64748B;margin-top:3px">Дээд ' + Math.round(rank/total*100) + '% дотор</div>' +
+    '</div>' +
+    '<div style="text-align:center;padding:12px 16px;background:rgba(255,255,255,.7);border-radius:12px">' +
+    '<div style="font-size:11px;color:#64748B;margin-bottom:2px">Миний оноо</div>' +
+    '<div style="font-size:28px;font-weight:800;color:' + rankColor + '">' + sc + '</div>' +
+    '<div style="font-size:11px;color:#94A3B8">/ 100</div></div>' +
+    '</div></div>';
+
+  html += '</div>';
+  sec.innerHTML = html;
+}
+
+function downloadMiskillTemplate() {
+  var header = 'empid,empname,train_req,train_done,exam_req,exam_done,week_start,mon_train,mon_exam,tue_train,tue_exam,wed_train,wed_exam,thu_train,thu_exam,fri_train,fri_exam';
+  var rows = [
+    'EMP-001,Болд Баатар,20,15,10,8,2026-06-09,3,1,2,0,3,2,2,1,1,0',
+    'EMP-002,Сарнай Ганбаатар,20,18,10,9,2026-06-09,4,2,3,1,4,2,3,1,2,1',
+    'EMP-003,Энхбат Лхагва,20,10,10,5,2026-06-09,2,0,1,0,2,1,1,0,0,0'
+  ];
+  download('miskill-zagvar.csv', '﻿' + header + '\n' + rows.join('\n'), 'text/csv;charset=utf-8');
+}
+
+function importMiskillCSV() {
+  var node = elc('div', 'modal-info');
+  node.innerHTML = '<div style="font-size:13.5px;line-height:1.6;color:#475569;margin-bottom:14px">' +
+    '<p style="margin:0 0 8px">MiSkill платформоос татсан <strong>CSV файл</strong> байршуулна. Баганууд:</p>' +
+    '<div style="background:#F8FAFC;border-radius:8px;padding:10px 12px;font-family:monospace;font-size:12px;color:#1D4ED8;border:1px solid #E2E8F0">' +
+    'empid, empname, train_req, train_done, exam_req, exam_done, week_start,<br>' +
+    'mon_train, mon_exam, tue_train, tue_exam, wed_train, wed_exam,<br>' +
+    'thu_train, thu_exam, fri_train, fri_exam</div></div>' +
+    '<label class="rf-photo" id="msLbl" style="margin-bottom:10px"><input type="file" accept=".csv,text/csv" id="msCsv" hidden><i class="ti ti-file-spreadsheet"></i><span>CSV файл сонгох</span></label>' +
+    '<button class="btn btn-secondary btn-sm" id="msTpl"><i class="ti ti-download"></i> Загвар татах</button>';
+
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#msTpl')) { downloadMiskillTemplate(); return; }
+  });
+
+  node.querySelector('#msCsv').addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function (ev) {
+      try {
+        var parsed = parseCSV(ev.target.result);
+        if (!parsed.length) { toast('Файл хоосон байна', 'warn'); return; }
+        var imported = 0, skipped = 0;
+        DB.miskillStats = DB.miskillStats || [];
+        parsed.forEach(function (row) {
+          var empid = (row['empid'] || row['EmployeeID'] || row[Object.keys(row)[0]] || '').trim();
+          var empname = (row['empname'] || row['EmployeeName'] || row[Object.keys(row)[1]] || '').trim();
+          if (!empid && !empname) { skipped++; return; }
+          var r = {
+            empId: empid, empName: empname,
+            trainReq: num(row['train_req'] || row['TrainRequired'] || 0),
+            trainDone: num(row['train_done'] || row['TrainDone'] || 0),
+            examReq: num(row['exam_req'] || row['ExamRequired'] || 0),
+            examDone: num(row['exam_done'] || row['ExamDone'] || 0),
+            weekStart: (row['week_start'] || row['WeekStart'] || '').trim(),
+            weekDays: [
+              { train: num(row['mon_train']||0), exam: num(row['mon_exam']||0) },
+              { train: num(row['tue_train']||0), exam: num(row['tue_exam']||0) },
+              { train: num(row['wed_train']||0), exam: num(row['wed_exam']||0) },
+              { train: num(row['thu_train']||0), exam: num(row['thu_exam']||0) },
+              { train: num(row['fri_train']||0), exam: num(row['fri_exam']||0) }
+            ],
+            updatedAt: todayISO()
+          };
+          var idx = DB.miskillStats.findIndex(function (x) { return x.empId === empid || x.empName === empname; });
+          if (idx >= 0) { DB.miskillStats[idx] = r; } else { DB.miskillStats.push(r); }
+          imported++;
+        });
+        saveDB();
+        closeModal();
+        renderVideoTracking();
+        infoModal('MiSkill импортын дүн', '<div style="font-size:14px;line-height:1.8">' +
+          '<div>✅ Шинэчлэгдсэн/нэмэгдсэн: <strong>' + imported + '</strong> ажилтан</div>' +
+          (skipped ? '<div>⚠️ Алгассан мөр: <strong>' + skipped + '</strong></div>' : '') +
+          '<div style="margin-top:8px;font-size:13px;color:#64748B">Ажилтнуудад шинэ тайлан нь автоматаар харагдана.</div></div>');
+      } catch (e) { toast('Файл уншихад алдаа: ' + e.message, 'error'); }
+    };
+    rd.readAsText(f, 'UTF-8');
+  });
+  buildModal('MiSkill CSV байршуулах', node, { width: '480px' });
 }
 
 /* ============ Даалгавар ============ */
