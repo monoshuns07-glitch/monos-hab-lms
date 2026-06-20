@@ -4401,6 +4401,13 @@ function applyRole() {
       if (!visible.length && !details.length) sec.style.display = 'none';
     });
   }
+  // "Видео сургалт (MiSkill)" цэс шалгалтаас үл хамааран ажилтанд ҮРГЭЛЖ харагдана
+  var vtNav = document.querySelector('.nav-item[data-page="video-track"]');
+  if (vtNav && !isAdmin()) {
+    vtNav.style.display = '';
+    var vtDet = vtNav.closest('details');
+    if (vtDet) vtDet.style.display = '';
+  }
   var active = document.querySelector('.nav-item.active');
   if (active && blockedPages().indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
