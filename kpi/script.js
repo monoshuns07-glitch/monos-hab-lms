@@ -3340,21 +3340,12 @@ function actionAddTask() {
 }
 
 function renderAll() {
-  renderSidebar();
-  renderDashboard();
-  renderEmployees();
-  renderKpiPage();
-  renderHazards();
-  renderIncidents();
-  renderReportflow();
-  renderSuggestions();
-  renderSettings();
-  renderNotifBadge();
-  renderPpe();
-  renderInspections();
-  renderDataflow();
-  renderVideoTracking();
-  renderTasks();
+  [renderSidebar, renderDashboard, renderEmployees, renderKpiPage,
+   renderHazards, renderIncidents, renderReportflow, renderSuggestions,
+   renderSettings, renderNotifBadge, renderPpe, renderInspections,
+   renderDataflow, renderVideoTracking, renderTasks].forEach(function (fn) {
+    try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
+  });
 }
 
 /* ============ Үйлдлүүд: Эрсдэл мэдээлэх ============ */
@@ -4418,7 +4409,7 @@ async function init() {
   var fresh = await loadDB();
   injectControls();
   applyRole();
-  renderAll();
+  try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
 
   // URL-аас тодорхой хэсэг нээх (жишээ: /kpi/?page=hazards)
   try {
