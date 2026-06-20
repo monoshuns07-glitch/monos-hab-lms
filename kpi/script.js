@@ -1710,7 +1710,8 @@ function openReportDetail(id) {
   if (!r) return;
   var admin = isAdmin();
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
-  var html = photo + '<div class="detail-grid">' +
+  var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
+  var html = photo + sig + '<div class="detail-grid">' +
     '<div class="detail-row"><span>Төрөл</span><b>' + reportTypeLabel(r.type) + '</b></div>' +
     '<div class="detail-row"><span>Эрсдэл</span><b>' + riskTag(r.risk_level) + '</b></div>' +
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
@@ -2002,6 +2003,27 @@ function renderPpe() {
       '<div style="width:50px;text-align:right;font-weight:700">' + (fa == null ? '—' : fa + '%') + '</div>' +
       (admin ? '<button class="btn btn-secondary btn-sm" data-checkdept="' + esc(d) + '">Шалгах</button>' : '') + '</div>';
   }).join('') + '</div>';
+
+  // Анхны тусламжийн хайрцгийн шалгалтын бүрэн түүх (зөвхөн admin харна)
+  if (admin) {
+    var allChecks = (DB.firstAidChecks || []).slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+    html += '<div class="card" style="padding:18px;margin-top:14px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Шалгалтын бүрэн түүх <span class="badge">' + allChecks.length + '</span></h3></div>';
+    if (!allChecks.length) {
+      html += emptyBox('Шалгалт бүртгэгдээгүй');
+    } else {
+      html += allChecks.slice(0, 50).map(function (c) {
+        var isDone = c.complete || c.restocked;
+        var usedHtml = c.usedItems ? '<span style="font-size:11px;color:#D97706"> · Зарцуулсан: ' + esc(c.usedItems) + '</span>' : '';
+        var restockHtml = c.restocked ? '<span style="font-size:11px;color:#16A34A"> · Нөхөн дүүргэсэн ✓</span>' : '';
+        return '<div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid #F8FAFC">' +
+          '<div style="width:32px;height:32px;border-radius:8px;background:' + (isDone ? '#D1FAE5' : '#FEF3C7') + ';color:' + (isDone ? '#065F46' : '#92400E') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px"><i class="ti ti-first-aid-kit"></i></div>' +
+          '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">' + esc(c.dept) + ' · ' +
+          (isDone ? '<span style="color:#16A34A">Бүрэн</span>' : '<span style="color:#D97706">Дутуу: ' + esc((c.missing || []).join(', ')) + '</span>') + usedHtml + restockHtml + '</div>' +
+          '<div style="font-size:11px;color:#94A3B8;margin-top:2px">Шалгасан: ' + esc(c.checkedBy || '—') + ' · ' + (c.createdAt ? new Date(c.createdAt).toLocaleString('mn-MN') : '—') + '</div></div></div>';
+      }).join('');
+    }
+    html += '</div>';
+  }
 
   sec.innerHTML = html;
 
@@ -2895,23 +2917,30 @@ function renderTasks() {
 }
 function actionAddTask() {
   var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(DEPTS.map(function (d) { return { value: d, label: d }; }));
+  var empOpts = [{ value: '', label: '— Тодорхой ажилтан биш (алба бүхэлдээ харна) —' }].concat(
+    (DB.employees || []).slice().sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
+      .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; })
+  );
   formModal({
     title: 'Шинэ даалгавар',
+    width: '520px',
     fields: [
       { name: 'title', label: 'Даалгаврын гарчиг', type: 'text', required: true, placeholder: 'Юу хийх ёстой...' },
       { name: 'desc', label: 'Тайлбар (заавал биш)', type: 'textarea', placeholder: 'Дэлгэрэнгүй...' },
-      { name: 'dept', label: 'Хаана өгөх', type: 'select', options: deptOpts, value: 'all' },
+      { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: 'all' },
+      { name: 'empId', label: 'Тодорхой ажилтанд (заавал биш)', type: 'select', options: empOpts, value: '' },
       { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' }
     ],
     submitLabel: 'Нэмэх',
     onSubmit: function (v) {
       DB.tasks = DB.tasks || [];
+      var assignedEmp = v.empId ? DB.employees.filter(function (e) { return e.id === v.empId; })[0] : null;
       DB.tasks.unshift({
         id: nextId('TSK', DB.tasks),
         title: v.title,
         desc: v.desc || '',
-        dept: v.dept || 'all',
-        empId: '',
+        dept: assignedEmp ? assignedEmp.dept : (v.dept || 'all'),
+        empId: v.empId || '',
         dueDate: v.dueDate || '',
         status: 'open',
         createdBy: USER.name,
@@ -3123,6 +3152,7 @@ function openEmployeeDetail(id) {
     '<div class="detail-row"><span>Албан тушаал</span><b>' + esc(e.role) + '</b></div>' +
     '<div class="detail-row"><span>Алба</span><b>' + esc(e.dept) + '</b></div>' +
     '<div class="detail-row"><span>Код</span><b>' + esc(e.id) + '</b></div>' +
+    '<div class="detail-row"><span>Имэйл</span><b>' + esc(e.email || '—') + '</b></div>' +
     '<div class="detail-row"><span>Төлөв</span><b>' + (e.onLeave ? 'Чөлөөтэй' : 'Идэвхтэй') + '</b></div></div>' +
     '<div style="font-size:12px;color:#8A94A6;margin:12px 2px 4px;font-weight:600">СУУРЬ ҮЗҮҮЛЭЛТ · ' + empBase(e) + '/100</div>' +
     '<div class="kpi-breakdown">' + cats.map(function (c) {
@@ -3140,13 +3170,16 @@ function openEmployeeDetail(id) {
     '<div class="detail-actions">' +
     '<button class="btn btn-secondary" data-emp-leave="' + e.id + '">' +
     (e.onLeave ? 'Идэвхтэй болгох' : 'Чөлөө олгох') + '</button>' +
+    '<button class="btn btn-secondary" data-emp-role="' + e.id + '"><i class="ti ti-shield-cog"></i> Системийн эрх</button>' +
     '<button class="btn btn-primary" data-emp-edit="' + e.id + '">Суурь дата засах</button></div>';
   var node = elc('div', 'modal-info', html);
   node.addEventListener('click', function (ev) {
     var lv = ev.target.closest('[data-emp-leave]');
     if (lv) { e.onLeave = !e.onLeave; saveDB(); renderEmployees(); closeModal(); toast('Ажилтны төлөв шинэчлэгдлээ'); return; }
     var ed = ev.target.closest('[data-emp-edit]');
-    if (ed) { closeModal(); editEmployeeScores(e.id); }
+    if (ed) { closeModal(); editEmployeeScores(e.id); return; }
+    var er = ev.target.closest('[data-emp-role]');
+    if (er) { closeModal(); actionSetEmpRole(e.id); }
   });
   buildModal(esc(e.name), node, { width: '480px' });
 }
@@ -3155,15 +3188,18 @@ function editEmployeeScores(id) {
   if (!e) return;
   formModal({
     title: 'Суурь дата засах — ' + e.name,
+    width: '520px',
     fields: [
-      { name: 'video', label: 'Видео сургалтын үзэлт %', type: 'number', value: _f(e.video, e.training), min: 0, max: 100, hint: 'Ердийн нөхцөлд гадаад платформоос автоматаар импортолно' },
-      { name: 'examScore', label: 'Танхим шалгалтын дүн (сүүлийн)', type: 'number', value: _f(e.examScore, e.training), min: 0, max: 100, hint: 'Ердийн нөхцөлд QR шалгалтаас автоматаар орно' },
-      { name: 'examPrev', label: 'Өмнөх улирлын дүн (ахиц бодоход)', type: 'number', value: (e.examPrev == null ? '' : e.examPrev), min: 0, max: 100 },
+      { name: 'email', label: 'Имэйл (нэвтрэхэд хэрэглэнэ)', type: 'text', value: e.email || '', placeholder: 'user@monos.mn', hint: 'Ажилтан энэ имэйлээр нэвтэрч системтэй холбогдоно' },
+      { name: 'video', label: 'Видео сургалтын үзэлт %', type: 'number', value: _f(e.video, e.training), min: 0, max: 100, hint: 'MiSkill CSV-ээс автоматаар орно — гараар засч болно' },
+      { name: 'examScore', label: 'Шалгалтын дүн (сүүлийн)', type: 'number', value: _f(e.examScore, e.training), min: 0, max: 100, hint: 'MiSkill шалгалтаас автоматаар орно' },
+      { name: 'examPrev', label: 'Урьдчилсан шалгалтын дүн (ахиц бодоход)', type: 'number', value: (e.examPrev == null ? '' : e.examPrev), min: 0, max: 100 },
       { name: 'firstTry', label: 'Дахин шалгалтгүй тэнцсэн эсэх', type: 'select', value: (e.firstTry ? '1' : '0'),
         options: [{ value: '1', label: 'Тийм — анхны удаа тэнцсэн' }, { value: '0', label: 'Үгүй' }] }
     ],
     submitLabel: 'Хадгалах',
     onSubmit: function (v) {
+      if (v.email && v.email.trim()) e.email = v.email.trim().toLowerCase();
       e.video = clamp(num(v.video), 0, 100);
       e.examScore = clamp(num(v.examScore), 0, 100);
       e.examPrev = (v.examPrev === '' || v.examPrev == null) ? null : clamp(num(v.examPrev), 0, 100);
@@ -3172,6 +3208,37 @@ function editEmployeeScores(id) {
       renderEmployees(); renderDashboard(); renderKpiPage();
       if (charts.radar) renderCharts();
       toast('Ажилтны суурь дата шинэчлэгдлээ');
+    }
+  });
+}
+
+function actionSetEmpRole(id) {
+  var e = DB.employees.filter(function (x) { return x.id === id; })[0];
+  if (!e) return;
+  var roleOpts = [
+    { value: 'employee', label: 'Ажилтан (энгийн)' },
+    { value: 'depthead', label: 'Албаны дарга (зөвхөн өөрийн алба харна)' },
+    { value: 'admin', label: 'ХАБЭА Админ (бүгдийг харна)' }
+  ];
+  formModal({
+    title: 'Системийн эрх тохируулах — ' + e.name,
+    width: '480px',
+    fields: [
+      { name: 'email', label: 'Нэвтрэх имэйл', type: 'text', value: e.email || '', required: true, placeholder: 'user@monos.mn', hint: 'Энэ имэйлээр нэвтрэх ажилтны системийн эрхийг тохируулна' },
+      { name: 'role', label: 'Системийн эрх', type: 'select', options: roleOpts, value: 'employee' },
+      { name: 'dept', label: 'Харъяа алба (Дарга үед)', type: 'select', options: deptList(), value: e.dept || deptList()[0] }
+    ],
+    submitLabel: 'Хадгалах',
+    onSubmit: function (v) {
+      var email = (v.email || '').trim().toLowerCase();
+      if (!email) { toast('Имэйл заавал бөглөнө', 'warn'); return false; }
+      if (email !== e.email) { e.email = email; saveDB(); }
+      if (!fbReady || DEMO) {
+        toast('Demo горим — Firebase-д бичихгүй. Амьд систем дээр ажиллана.', 'warn'); return;
+      }
+      fdb.collection('user_roles').doc(email).set({ role: v.role, department: v.role === 'depthead' ? v.dept : '', updatedBy: SESSION.email || 'admin', updatedAt: new Date().toISOString() })
+        .then(function () { toast(esc(e.name) + ' → ' + v.role + ' эрх олгогдлоо', 'success'); renderEmployees(); })
+        .catch(function (err) { toast('Алдаа: ' + (err.message || err), 'error'); });
     }
   });
 }
@@ -3842,8 +3909,25 @@ function establishSession() {
       fdb.collection('users').doc(uid).get().then(function (snap) {
         var data = (snap.exists && snap.data()) || {};
         var role = data.role === 'admin' ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
-        SESSION = { role: role, email: email, uid: uid, empId: null, dept: data.department || '' };
-        resolve();
+        var dept = data.department || '';
+        // Админ олгосон user_roles/{email} override шалгана
+        if (email) {
+          fdb.collection('user_roles').doc(email).get().then(function (rSnap) {
+            if (rSnap.exists) {
+              var rd = rSnap.data() || {};
+              if (rd.role) role = rd.role;
+              if (rd.department) dept = rd.department;
+            }
+            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+            resolve();
+          }).catch(function () {
+            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+            resolve();
+          });
+        } else {
+          SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+          resolve();
+        }
       }).catch(function () {
         SESSION = { role: 'employee', email: email, uid: uid, empId: null, dept: '' };
         resolve();
