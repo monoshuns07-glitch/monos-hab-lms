@@ -2946,6 +2946,7 @@ function renderVideoTracking() {
 }
 
 function renderVtAdmin(sec) {
+  var dh = isDeptHead();
   var stats = DB.miskillStats || [];
   var emps = dh ? (DB.employees || []).filter(function (e) { return SESSION && e.dept === SESSION.dept; }) : (DB.employees || []);
   var rows = stats.filter(function (r) {
