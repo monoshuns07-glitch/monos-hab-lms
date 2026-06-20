@@ -49,10 +49,11 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
 var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin'];
 var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
+var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'hazards', 'inspections', 'suggestions', 'health', 'ppe'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
-  return ADMIN_ONLY_PAGES;
+  return EMPLOYEE_HIDDEN_PAGES;
 }
 function rand4() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
@@ -61,7 +62,8 @@ var pageLabels = {
   reportflow: 'Аюул/Near-miss мэдээлэл', hazards: 'Эрсдэлийн бүртгэл', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', council: 'ХАБЭА-н зөвлөл', teams: 'Teams интеграц',
-  chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо'
+  chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
+  'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар'
 };
 
 var DEPTS = ['Цех №1', 'Цех №2', 'Цех №3', 'Захиргаа', 'Тээвэр', 'Үйлчилгээ'];
@@ -287,7 +289,9 @@ function seedDB() {
           monthlyCap: 3                               // нэг хүн нэг сард авах дээд тоо
         },
         dept: { coverage: 55, bonus: 15, firstAid: 15, ppe: 15 } // албаны онооны жин, нийлбэр = 100
-      }
+      },
+      examOpen: {}, // { [courseKey]: false } = хаалттай. Missing/true = нээлттэй
+      firstAidBoxCounts: {} // { dept: N } — алба тус бүрийн хайрцгийн тоо (admin тохируулна)
     },
     employees: [],
     hazards: [],
@@ -299,7 +303,8 @@ function seedDB() {
     ppeObservations: ppeObservations,
     videoViews: [],
     examResults: [],
-    externalTrainings: []
+    externalTrainings: [],
+    tasks: []
   };
 }
 
@@ -951,6 +956,7 @@ function renderCourse(cat, skipRefresh) {
     var meRec = (DB.employees || []).filter(function (e) { return (s.uid && e.uid === s.uid) || _sameEmail(e.email, s.email) || (s.empId && e.id === s.empId); })[0];
     if (meRec) myResults = (meRec.habeaExams || []).filter(function (x) { return x.title === cat || x.key === key; });
   }
+  var examOpen = DB.settings && DB.settings.examOpen ? DB.settings.examOpen[key] !== false : true;
   var examUrl = '/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
     '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || '');
   var videoHtml = '';
@@ -976,15 +982,22 @@ function renderCourse(cat, skipRefresh) {
           '<span style="font-size:14px">' + (x.type === 'pre' ? 'Урьдчилсан шалгалт' : (x.type === 'post' ? 'Сургалтын дараах шалгалт' : 'Шалгалт')) + ' · ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + '</span>' +
           '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
       }).join('') + '</div>' : '') +
-    '<div class="card" style="padding:24px;text-align:center;margin-top:16px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
-    '<div style="width:60px;height:60px;border-radius:16px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px"><i class="ti ti-clipboard-check"></i></div>' +
-    '<h3 style="margin:0 0 6px">' + esc(cat) + 'ын шалгалт өгөх</h3>' +
-    '<p style="color:#64748B;margin:0 0 16px;font-size:14px">Сургалтаа үзсэний дараа шалгалтаа өгнө үү. Дүн автоматаар KPI-д тооцогдоно.</p>' +
-    '<a href="' + examUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="padding:12px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт өгөх</a>' +
-    (admin ? '<div style="margin-top:14px;border-top:1px solid #E2E8F0;padding-top:12px;font-size:13px;color:#64748B">Энэ сургалтын шалгалтын асуултыг удирдах: ' +
-      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
-      '<div style="font-size:11px;color:#94A3B8;margin-top:4px">Энэ сургалтын түлхүүр: <code>' + key + '</code></div></div>' : '') +
-    '</div>';
+    (examOpen
+      ? '<div class="card" style="padding:24px;text-align:center;margin-top:16px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
+        '<div style="width:60px;height:60px;border-radius:16px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px"><i class="ti ti-clipboard-check"></i></div>' +
+        '<h3 style="margin:0 0 6px">' + esc(cat) + 'ын шалгалт өгөх</h3>' +
+        '<p style="color:#64748B;margin:0 0 16px;font-size:14px">Сургалтаа үзсэний дараа шалгалтаа өгнө үү. Дүн автоматаар KPI-д тооцогдоно.</p>' +
+        '<a href="' + examUrl + '" target="_blank" rel="noopener" class="btn btn-primary" style="padding:12px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт өгөх</a>' +
+        (admin ? '<div style="margin-top:14px;border-top:1px solid #E2E8F0;padding-top:12px;font-size:13px;color:#64748B">Энэ сургалтын шалгалтын асуултыг удирдах: ' +
+          '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" style="color:var(--emerald,#0e8e59);font-weight:600">Асуулт оруулах →</a>' +
+          '<div style="font-size:11px;color:#94A3B8;margin-top:4px">Энэ сургалтын түлхүүр: <code>' + key + '</code></div></div>' : '') +
+        '</div>'
+      : '<div class="card" style="padding:24px;text-align:center;margin-top:16px;background:#FEF2F2;border:1.5px solid #FECACA">' +
+        '<div style="width:60px;height:60px;border-radius:16px;background:#FEE2E2;color:#991B1B;display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 12px"><i class="ti ti-lock"></i></div>' +
+        '<h3 style="margin:0 0 6px;color:#991B1B">Шалгалт түр хаалттай байна</h3>' +
+        '<p style="color:#64748B;margin:0;font-size:14px">ХАБЭА мэргэжилтэн шалгалтыг нээх хүртэл хүлээнэ үү.</p>' +
+        (admin ? '<div style="margin-top:14px;font-size:13px;color:#64748B"><button class="btn btn-secondary btn-sm" onclick="switchPage(\'examadmin\')"><i class="ti ti-lock-open"></i> Шалгалтын удирдлагад нээх</button></div>' : '') +
+        '</div>');
   // Ажилтан шалгалт өгөөд буцахад дүнг шинээр татаж, хуудас + нийт KPI-г шинэчилнэ
   if (isEmp() && !skipRefresh && fbReady) {
     refreshMyExams().then(function () { if (CURRENT_CAT === cat) renderCourse(cat, true); try { renderDashboard(); } catch (e) {} });
@@ -1186,6 +1199,7 @@ var empState = { q: '', dept: '', role: '', sort: 'total-desc', page: 1, perPage
 function filteredEmployees() {
   var q = empState.q.toLowerCase().trim();
   var list = DB.employees.filter(function (e) {
+    if (isDeptHead() && SESSION && SESSION.dept && e.dept !== SESSION.dept) return false;
     if (empState.dept && e.dept !== empState.dept) return false;
     if (empState.role && e.role !== empState.role) return false;
     if (q) {
@@ -1213,6 +1227,14 @@ function renderEmployees() {
   var deptNames = Object.keys(groups).sort(function (a, b) { return deptScore(b) - deptScore(a); });
   function rowHTML(e) {
     var tot = empTotal(e);
+    var habeaCnt = (e.habeaExams || []).length;
+    var preScore = e.examPrev != null ? e.examPrev : '—';
+    var postScore = kpiExam(e);
+    var preCell = preScore === '—'
+      ? '<span style="color:#94A3B8;font-size:12px">—</span>'
+      : '<span class="score-pill ' + scoreClass(num(preScore)) + '" style="font-size:11px">' + preScore + '</span>';
+    var postCell = '<span class="score-pill ' + scoreClass(postScore) + '">' + postScore + '</span>' +
+      (habeaCnt ? '<div style="font-size:10px;color:#94A3B8;margin-top:2px">MiSkill: ' + habeaCnt + 'ш</div>' : '');
     return '<tr data-emp="' + e.id + '">' +
       '<td><input type="checkbox"></td>' +
       '<td><div class="emp-cell"><div class="avatar avatar-sm">' + esc(e.initials) + '</div>' +
@@ -1220,8 +1242,9 @@ function renderEmployees() {
       (e.onLeave ? ' <span class="tag tag-warn">Чөлөөтэй</span>' : '') +
       '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
       '<td>' + esc(e.dept) + '</td>' +
-      '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '</span></td>' +
-      '<td><span class="score-pill ' + scoreClass(kpiExam(e)) + '">' + kpiExam(e) + '</span></td>' +
+      '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '%</span></td>' +
+      '<td>' + preCell + '</td>' +
+      '<td>' + postCell + '</td>' +
       '<td><span class="score-pill ' + scoreClass(kpiImprovement(e)) + '">' + kpiImprovement(e) + '</span></td>' +
       '<td><span class="score-pill score-bonus" title="' + empBonusPoints(e) + ' оноо">+' + empBonusPoints(e) + '</span></td>' +
       '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
@@ -1229,13 +1252,13 @@ function renderEmployees() {
       '</tr>';
   }
   if (!total) {
-    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">' +
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">' +
       '<i class="ti ti-search-off"></i><div>Илэрц олдсонгүй</div></div></td></tr>';
   } else {
     tbody.innerHTML = deptNames.map(function (d) {
       var members = groups[d];
       var avgT = Math.round(avg(members.map(empTotal)));
-      var head = '<tr class="dept-group-row"><td colspan="9" style="background:#F0FDF4;padding:11px 14px;font-weight:700;color:#065F46;border-top:2px solid #BBF7D0">' +
+      var head = '<tr class="dept-group-row"><td colspan="10" style="background:#F0FDF4;padding:11px 14px;font-weight:700;color:#065F46;border-top:2px solid #BBF7D0">' +
         '<i class="ti ti-building" style="margin-right:6px"></i>' + esc(d) +
         '<span style="font-weight:500;color:#16A34A;font-size:12px;margin-left:8px">· ' + members.length + ' ажилтан · дундаж KPI ' + avgT + '</span></td></tr>';
       return head + members.map(rowHTML).join('');
@@ -1523,8 +1546,13 @@ function actionReportNew(presetType) {
     '<img id="rfPreview" style="display:none;max-width:100%;border-radius:10px;margin-top:8px"></div>' +
     '<div class="rf-field"><label>2. Төрөл</label>' + chips([['near_miss', 'Осолд дөхсөн (near-miss)'], ['hazard', 'Аюул / эрсдэл']], sel.type, 'type') + '</div>' +
     '<div class="rf-field"><label>3. Эрсдэлийн зэрэг</label>' + chips(REPORT_RISK, sel.risk, 'risk') + '</div>' +
-    '<div class="rf-field"><label>4. Байршил</label><select id="rfLoc" class="rf-input">' + AREAS.map(function (a) { return '<option>' + esc(a) + '</option>'; }).join('') + '</select></div>' +
+    '<div class="rf-field"><label>4. Байршил</label><input type="text" id="rfLoc" class="rf-input" placeholder="Байршлаа гараар бичнэ үү (ж: Цех №2, 3-р машины ард)"></div>' +
     '<div class="rf-field"><label>5. Нэг өгүүлбэрээр тайлбарла</label><textarea id="rfDesc" class="rf-input" rows="2" placeholder="Юу болсон / болж болзошгүй вэ?"></textarea></div>' +
+    '<div class="rf-field"><label>6. Баталгааны гарын үсэг</label>' +
+    '<div style="border:1.5px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#fff;cursor:crosshair">' +
+    '<canvas id="rfSigCanvas" width="380" height="100" style="display:block;width:100%;height:100px;touch-action:none"></canvas></div>' +
+    '<button type="button" id="rfSigClear" style="margin-top:5px;font-size:12px;background:none;border:1px solid #E2E8F0;border-radius:7px;padding:4px 10px;cursor:pointer;color:#64748B">Арилгах</button>' +
+    '<div style="font-size:11px;color:#94A3B8;margin-top:3px"><i class="ti ti-lock"></i> Гарын үсэг зурж мэдээлэлээ баталгаажуулна</div></div>' +
     '<div class="rf-hint"><i class="ti ti-clock"></i> 1 минутын дотор. ХАБ ажилтан баталгаажуулсны дараа бонус оноо автоматаар нэмэгдэнэ.</div>' +
     '<button class="btn btn-primary btn-block" id="rfSubmit"><i class="ti ti-send"></i> Илгээх</button>';
 
@@ -1540,7 +1568,9 @@ function actionReportNew(presetType) {
     if (ev.target.closest('#rfSubmit')) {
       var desc = $('#rfDesc', node).value.trim();
       if (!desc) { toast('Тайлбар оруулна уу', 'warn'); return; }
-      createReport(sel.type, sel.risk, $('#rfLoc', node).value, desc, sel.photo);
+      var locVal = ($('#rfLoc', node).value || '').trim() || 'Тодорхойгүй';
+      if (!sel.signature) { toast('Гарын үсэг зурна уу', 'warn'); return; }
+      createReport(sel.type, sel.risk, locVal, desc, sel.photo, sel.signature);
       closeModal();
     }
   });
@@ -1551,16 +1581,46 @@ function actionReportNew(presetType) {
       if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
     });
   });
+  // Гарын үсгийн canvas — touch + mouse зурах
+  setTimeout(function () {
+    var cv = $('#rfSigCanvas', node); if (!cv) return;
+    var ctx = cv.getContext('2d');
+    var drawing = false, lastX = 0, lastY = 0;
+    function getPos(e) {
+      var r = cv.getBoundingClientRect();
+      var src = e.touches ? e.touches[0] : e;
+      return { x: (src.clientX - r.left) * (cv.width / r.width), y: (src.clientY - r.top) * (cv.height / r.height) };
+    }
+    function startDraw(e) { e.preventDefault(); drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; }
+    function moveDraw(e) {
+      if (!drawing) return; e.preventDefault();
+      var p = getPos(e);
+      ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.stroke();
+      lastX = p.x; lastY = p.y;
+      sel.signature = cv.toDataURL('image/png');
+    }
+    function endDraw() { drawing = false; }
+    cv.addEventListener('mousedown', startDraw); cv.addEventListener('mousemove', moveDraw);
+    cv.addEventListener('mouseup', endDraw); cv.addEventListener('mouseleave', endDraw);
+    cv.addEventListener('touchstart', startDraw, { passive: false });
+    cv.addEventListener('touchmove', moveDraw, { passive: false });
+    cv.addEventListener('touchend', endDraw);
+    var clrBtn = $('#rfSigClear', node);
+    if (clrBtn) clrBtn.addEventListener('click', function () {
+      ctx.clearRect(0, 0, cv.width, cv.height); sel.signature = '';
+    });
+  }, 80);
   buildModal(presetType === 'hazard' ? 'Аюул / эрсдэл мэдээлэх' : 'Осолд дөхсөн мэдээлэх', node, { width: '440px' });
 }
 
-function createReport(type, risk, location, desc, photo) {
+function createReport(type, risk, location, desc, photo, signature) {
   var who = currentReporter();
   var r = {
     id: nextId('RP', DB.reports), type: type, risk_level: risk, status: 'reported',
     desc: desc, location: location, dept: who.dept || '',
     reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '', reporterEmail: who.email || '',
-    photo: photo || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
+    photo: photo || '', signature: signature || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
   };
   DB.reports.unshift(r);
   addNotification((type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + ' мэдээлэл ирлээ — ' + location + ' (' + who.name + ')', 'reportflow');
@@ -1869,15 +1929,21 @@ function renderPpe() {
   }).join('') + '</div>';
 
   // Анхны тусламжийн хайрцаг
-  html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 4px">Анхны тусламжийн хайрцаг</h3>' +
-    '<p style="font-size:13px;color:#8A94A6;margin:0 0 14px">Эрүүл ахуйч алба бүрээр шалгана. Хайрцаг бүрэн эсэх + дутууг хэр хурдан нөхсөнийг тооцно.</p>';
+  var boxCounts = (DB.settings && DB.settings.firstAidBoxCounts) || {};
+  html += '<div class="card" style="padding:18px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><h3 style="margin:0">Анхны тусламжийн хайрцаг</h3>' +
+    (admin ? '<button class="btn btn-secondary btn-sm" id="setBoxCounts"><i class="ti ti-settings"></i> Хайрцгийн тоо тохируулах</button>' : '') + '</div>' +
+    '<p style="font-size:13px;color:#8A94A6;margin:0 0 14px">Алба бүрт хэдэн хайрцаг байгаагаас шалгах давтамж хамаарна. Зарцуулалт + нөхөн дүүргэлтийг мөрдөнө.</p>';
   html += depts.map(function (d) {
     var fa = deptFirstAid(d);
     var c = (DB.firstAidChecks || []).filter(function (x) { return x.dept === d; }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); })[0];
+    var boxCnt = boxCounts[d] || 0;
     var status = !c ? '<span class="tag">шалгаагүй</span>' : (c.complete ? '<span class="tag tag-emerald">Бүрэн</span>' : '<span class="tag tag-warn">Дутуу: ' + esc((c.missing || []).join(', ')) + '</span>');
+    var usedHtml = (c && c.usedItems) ? ' <span style="font-size:11px;color:#D97706">⬇ Зарцуулсан: ' + esc(c.usedItems) + '</span>' : '';
+    var restockHtml = (c && c.restocked) ? ' <span style="font-size:11px;color:#16A34A">✓ Нөхсөн</span>' : '';
     return '<div style="display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid #F1F5F9;flex-wrap:wrap">' +
-      '<div style="width:110px;font-weight:600">' + esc(d) + '</div>' +
-      '<div style="flex:1;min-width:160px">' + status + (c ? ' <span style="font-size:12px;color:#8A94A6">· ' + timeAgo(c.createdAt) + '</span>' : '') + '</div>' +
+      '<div style="min-width:110px;font-weight:600">' + esc(d) + '</div>' +
+      '<div style="width:80px;font-size:12px;color:#64748B"><i class="ti ti-first-aid-kit"></i> ' + (boxCnt ? boxCnt + ' хайрцаг' : '<span style="color:#CBD5E1">тохируулаагүй</span>') + '</div>' +
+      '<div style="flex:1;min-width:160px">' + status + usedHtml + restockHtml + (c ? ' <span style="font-size:12px;color:#8A94A6">· ' + timeAgo(c.createdAt) + '</span>' : '') + '</div>' +
       '<div style="width:50px;text-align:right;font-weight:700">' + (fa == null ? '—' : fa + '%') + '</div>' +
       (admin ? '<button class="btn btn-secondary btn-sm" data-checkdept="' + esc(d) + '">Шалгах</button>' : '') + '</div>';
   }).join('') + '</div>';
@@ -1889,6 +1955,7 @@ function renderPpe() {
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('[data-addppe]')) { actionAddPpe(); return; }
       if (ev.target.closest('[data-addcheck]')) { actionCheckFirstAid(); return; }
+      if (ev.target.closest('#setBoxCounts')) { actionSetBoxCounts(); return; }
       var cd = ev.target.closest('[data-checkdept]');
       if (cd) { actionCheckFirstAid(cd.getAttribute('data-checkdept')); return; }
     });
@@ -1918,16 +1985,59 @@ function actionCheckFirstAid(presetDept) {
     title: 'Анхны тусламжийн хайрцаг шалгах',
     fields: [
       { name: 'dept', label: 'Алба', type: 'select', value: presetDept || '', options: deptList() },
-      { name: 'complete', label: 'Бүрэн бүтэн эсэх', type: 'select', value: 'yes', options: [{ value: 'yes', label: 'Бүрэн — бүх зүйл байгаа' }, { value: 'no', label: 'Дутуу зүйл байна' }] },
-      { name: 'missing', label: 'Дутуу зүйлс (таслалаар)', type: 'text', placeholder: 'ж: Боолт, Антисептик', hint: 'Зөвхөн дутуу үед бөглөнө' }
+      { name: 'complete', label: 'Хайрцгийн байдал', type: 'select', value: 'yes', options: [{ value: 'yes', label: 'Бүрэн — бүх зүйл байгаа' }, { value: 'no', label: 'Дутуу зүйл байна' }] },
+      { name: 'missing', label: 'Дутуу зүйлс (таслалаар)', type: 'text', placeholder: 'ж: Боолт, Антисептик', hint: 'Зөвхөн дутуу үед бөглөнө' },
+      { name: 'usedItems', label: 'Зарцуулагдсан зүйл (таслалаар)', type: 'text', placeholder: 'ж: Боолт x2, Бугуйвч x1', hint: 'Энэ хугацаанд юу зарцуулагдсан' },
+      { name: 'restocked', label: 'Нөхөн дүүргэлт', type: 'select', value: 'no', options: [{ value: 'no', label: 'Нөхөөгүй' }, { value: 'yes', label: 'Нөхсэн — дүүрэн болсон' }] }
     ],
     submitLabel: 'Бүртгэх',
     onSubmit: function (v) {
       var complete = v.complete === 'yes';
+      var restocked = v.restocked === 'yes';
       var missing = complete ? [] : (v.missing || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-      DB.firstAidChecks.unshift({ id: nextId('FA', DB.firstAidChecks), dept: v.dept, totalItems: FIRST_AID_ITEMS.length, complete: complete, missing: missing, checkedBy: (SESSION && SESSION.email) || USER.name, restockedAt: complete ? new Date().toISOString() : '', createdAt: new Date().toISOString() });
+      DB.firstAidChecks.unshift({
+        id: nextId('FA', DB.firstAidChecks), dept: v.dept,
+        totalItems: FIRST_AID_ITEMS.length, complete: complete || restocked,
+        missing: restocked ? [] : missing,
+        usedItems: (v.usedItems || '').trim(),
+        restocked: restocked,
+        checkedBy: (SESSION && SESSION.email) || USER.name,
+        restockedAt: restocked ? new Date().toISOString() : '',
+        createdAt: new Date().toISOString()
+      });
       saveDB(); renderPpe(); renderKpiPage(); renderDashboard();
       toast('Хайрцгийн шалгалт бүртгэгдлээ');
+    }
+  });
+}
+function actionSetBoxCounts() {
+  var boxCounts = (DB.settings && DB.settings.firstAidBoxCounts) || {};
+  var depts = deptList();
+  var node = elc('div', 'modal-info');
+  node.innerHTML = '<p style="font-size:13px;color:#64748B;margin:0 0 14px">Алба бүрт хэдэн анхны тусламжийн хайрцаг байгааг тохируулна. Энэ тоо нь шалгах давтамж, KPI-д нөлөөлнө.</p>' +
+    depts.map(function (d) {
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' +
+        '<label style="min-width:100px;font-weight:600;font-size:13px">' + esc(d) + '</label>' +
+        '<input type="number" min="0" max="99" value="' + (boxCounts[d] || 0) + '" data-box-dept="' + esc(d) + '" style="width:70px;padding:6px 10px;border:1px solid #E2E8F0;border-radius:8px;font-size:14px"> хайрцаг</div>';
+    }).join('') +
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+    '<button class="btn btn-secondary" id="boxCancel">Цуцлах</button>' +
+    '<button class="btn btn-primary" id="boxSave"><i class="ti ti-check"></i> Хадгалах</button></div>';
+
+  var m = buildModal('Хайрцгийн тоо тохируулах', node, { width: '420px' });
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#boxCancel')) { closeModal(); return; }
+    if (ev.target.closest('#boxSave')) {
+      DB.settings = DB.settings || {};
+      DB.settings.firstAidBoxCounts = DB.settings.firstAidBoxCounts || {};
+      node.querySelectorAll('[data-box-dept]').forEach(function (inp) {
+        var d = inp.getAttribute('data-box-dept');
+        var v = clamp(parseInt(inp.value, 10) || 0, 0, 99);
+        DB.settings.firstAidBoxCounts[d] = v;
+      });
+      saveDB(); renderPpe();
+      closeModal();
+      toast('Хайрцгийн тоо хадгалагдлаа', 'success');
     }
   });
 }
@@ -2331,13 +2441,18 @@ function renderExamAdmin() {
   // Дотоод сургалтын ангиллууд (нав цэснээс автоматаар)
   var cats = [];
   $$('.nav-item.leaf[data-cat]').forEach(function (el) { var c = el.getAttribute('data-cat'); if (c && cats.indexOf(c) < 0) cats.push(c); });
+  var examOpen = (DB.settings && DB.settings.examOpen) || {};
   var cardsHtml = cats.map(function (cat) {
     var key = courseKey(cat);
-    return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px">' +
-      '<div style="width:46px;height:46px;border-radius:12px;background:#E0E7FF;color:#3730A3;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-clipboard-text"></i></div>' +
+    var isOpen = examOpen[key] !== false;
+    return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px;' + (isOpen ? '' : 'opacity:.7;border-left:4px solid #DC2626') + '">' +
+      '<div style="width:46px;height:46px;border-radius:12px;background:' + (isOpen ? '#E0E7FF' : '#FEE2E2') + ';color:' + (isOpen ? '#3730A3' : '#991B1B') + ';display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-clipboard-text"></i></div>' +
       '<div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(cat) + '</div>' +
-      '<div style="font-size:12px;color:#8A94A6">Энэ сургалтын шалгалтын асуулт + дүнг удирдах</div></div>' +
-      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="ti ti-external-link"></i> Админ нээх</a></div>';
+      '<div style="font-size:12px;color:#8A94A6">Шалгалтын асуулт + дүн · Ажилтнуудад ' + (isOpen ? '<span style="color:#16A34A;font-weight:600">нээлттэй ✓</span>' : '<span style="color:#DC2626;font-weight:600">хаалттай ✗</span>') + '</div></div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+      '<button class="btn btn-sm" style="' + (isOpen ? 'background:#FEE2E2;color:#991B1B;border-color:#FECACA' : 'background:#D1FAE5;color:#065F46;border-color:#A7F3D0') + '" data-exam-toggle="' + esc(key) + '" data-exam-cat="' + esc(cat) + '">' +
+      '<i class="ti ti-' + (isOpen ? 'lock' : 'lock-open') + '"></i> ' + (isOpen ? 'Хаах' : 'Нээх') + '</button>' +
+      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="ti ti-external-link"></i> Дүн</a></div></div>';
   }).join('');
   sec.innerHTML = '<div class="page-header"><div><h1>Шалгалтын удирдлага</h1>' +
     '<p class="page-subtitle">Сургалт бүрийн шалгалтын асуулт, дүнг тусад нь удирдана</p></div></div>' +
@@ -2348,6 +2463,21 @@ function renderExamAdmin() {
     '<a href="/shalgalt/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
     '<h3 style="margin:0 0 12px">Сургалт бүрийн шалгалтын админ</h3>' +
     (cardsHtml || '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Сургалт олдсонгүй</div></div>');
+  if (!sec._examAdminWired) {
+    sec._examAdminWired = true;
+    sec.addEventListener('click', function (ev) {
+      var tb = ev.target.closest('[data-exam-toggle]');
+      if (!tb) return;
+      var key = tb.getAttribute('data-exam-toggle');
+      var cat = tb.getAttribute('data-exam-cat');
+      DB.settings.examOpen = DB.settings.examOpen || {};
+      var wasOpen = DB.settings.examOpen[key] !== false;
+      DB.settings.examOpen[key] = !wasOpen;
+      saveDB();
+      renderExamAdmin();
+      toast((wasOpen ? '🔒 ' : '🔓 ') + esc(cat) + ' шалгалт ' + (wasOpen ? 'хаагдлаа' : 'нээгдлээ'), wasOpen ? 'warn' : 'success');
+    });
+  }
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
@@ -2548,6 +2678,198 @@ function renderCharts() {
 }
 
 /* ============ Бүгдийг дахин зурах ============ */
+/* ============ Видео сургалт (MiSkill) — тусдаа цэс ============ */
+function renderVideoTracking() {
+  var sec = pageEl('video-track'); if (!sec) return;
+  sec.style.padding = '';
+  var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
+  var vv = DB.videoViews || [];
+
+  /* Role-д тохирох ажилтнуудын жагсаалт */
+  var emps = (DB.employees || []).filter(function (e) {
+    if (emp) { var me = myEmp(); return me && e.id === me.id; }
+    if (dh && SESSION && SESSION.dept) return e.dept === SESSION.dept;
+    return true;
+  });
+
+  /* Ажилтан бүрт сүүлийн 30 хоногийн видео дүгнэлт */
+  var rows = emps.map(function (e) {
+    var myVv = vv.filter(function (v) {
+      return v.empId === e.id || (e.uid && v.uid === e.uid) || _sameEmail(v.email, e.email);
+    });
+    var avgPct = myVv.length ? Math.round(myVv.reduce(function (s, v) { return s + num(v.percent); }, 0) / myVv.length) : (e.video || 0);
+    return { e: e, cnt: myVv.length, avg: avgPct, last: myVv.length ? myVv.map(function (v) { return v.date; }).sort().pop() : null };
+  }).sort(function (a, b) { return b.avg - a.avg; });
+
+  var totalEmps = rows.length;
+  var watched = rows.filter(function (r) { return r.avg >= 70; }).length;
+  var avgAll = totalEmps ? Math.round(rows.reduce(function (s, r) { return s + r.avg; }, 0) / totalEmps) : 0;
+  var totalVv = vv.length;
+
+  var html = '<div class="page-header"><div><h1>Видео сургалт (MiSkill)</h1>' +
+    '<p class="page-subtitle">MiSkill платформоос импорт хийсэн видео үзэлтийн тайлан</p></div>' +
+    (admin ? '<div class="page-actions"><button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV импорт</button></div>' : '') +
+    '</div>';
+
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
+    statCard('Нийт ажилтан', totalEmps, 'ti-users', '#3730A3') +
+    statCard('70%+ үзэлттэй', watched, 'ti-player-play', '#16A34A') +
+    statCard('Дундаж үзэлт', avgAll + '%', 'ti-chart-bar', '#D97706') +
+    statCard('Нийт бичлэг', totalVv, 'ti-database', '#0891B2') +
+    '</div>';
+
+  if (!rows.length) {
+    html += emptyBox('Ажилтан олдсонгүй');
+  } else {
+    html += '<div class="card" style="padding:0;overflow:hidden"><table class="data-table" style="width:100%">' +
+      '<thead><tr><th>Ажилтан</th><th>Алба</th><th>Бичлэг тоо</th><th>Дундаж үзэлт</th><th>Сүүлийн огноо</th><th>Байдал</th></tr></thead><tbody>' +
+      rows.map(function (r) {
+        var badgeColor = r.avg >= 90 ? '#16A34A' : r.avg >= 70 ? '#D97706' : '#DC2626';
+        var badgeBg = r.avg >= 90 ? '#D1FAE5' : r.avg >= 70 ? '#FEF3C7' : '#FEE2E2';
+        var statusLabel = r.avg >= 90 ? 'Маш сайн' : r.avg >= 70 ? 'Хангалттай' : r.cnt ? 'Дутуу' : 'Импортгүй';
+        return '<tr>' +
+          '<td><div style="font-weight:600;font-size:13px">' + esc(r.e.name) + '</div><div style="font-size:11px;color:#8A94A6">' + esc(r.e.pos || '') + '</div></td>' +
+          '<td style="font-size:13px">' + esc(r.e.dept || '') + '</td>' +
+          '<td style="text-align:center">' + (r.cnt || '<span style="color:#CBD5E1">—</span>') + '</td>' +
+          '<td style="text-align:center"><span class="score-pill ' + scoreClass(r.avg) + '">' + r.avg + '%</span></td>' +
+          '<td style="font-size:12px;color:#64748B">' + (r.last || '—') + '</td>' +
+          '<td><span style="background:' + badgeBg + ';color:' + badgeColor + ';font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px">' + statusLabel + '</span></td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  }
+
+  sec.innerHTML = html;
+  if (!sec._vtWired) {
+    sec._vtWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('#vtImport')) importVideoCSV();
+    });
+  }
+}
+
+/* ============ Даалгавар ============ */
+function renderTasks() {
+  var sec = pageEl('tasks'); if (!sec) return;
+  sec.style.padding = '';
+  DB.tasks = DB.tasks || [];
+  var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
+
+  /* Role-д тохирсон даалгаврыг шүүх */
+  var tasks = DB.tasks.filter(function (t) {
+    if (admin) return true;
+    if (dh && SESSION && SESSION.dept) return t.dept === SESSION.dept || t.dept === 'all';
+    if (emp) { var me = myEmp(); return me && (t.empId === me.id || t.dept === me.dept || t.dept === 'all'); }
+    return false;
+  }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+
+  var open = tasks.filter(function (t) { return t.status !== 'done'; });
+  var done = tasks.filter(function (t) { return t.status === 'done'; });
+
+  /* Badge шинэчлэлт */
+  var badge = document.getElementById('taskBadge');
+  if (badge) { badge.textContent = open.length; badge.style.display = open.length ? 'inline-block' : 'none'; }
+
+  var html = '<div class="page-header"><div><h1>Даалгавар</h1>' +
+    '<p class="page-subtitle">Алба, ажилтнуудад өгсөн даалгавар ба биелэлт</p></div>' +
+    (admin ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
+    '</div>';
+
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
+    statCard('Нийт даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
+    statCard('Хийгдэх', open.length, 'ti-clock', '#D97706') +
+    statCard('Биелсэн', done.length, 'ti-circle-check', '#16A34A') +
+    '</div>';
+
+  function taskCard(t) {
+    var isDone = t.status === 'done';
+    var deptLabel = t.dept === 'all' ? 'Бүх алба' : esc(t.dept || '');
+    var empLabel = t.empId ? esc((DB.employees.filter(function (e) { return e.id === t.empId; })[0] || {}).name || t.empId) : '';
+    var targetLabel = empLabel ? (deptLabel + ' · ' + empLabel) : deptLabel;
+    var canComplete = !isDone && (admin || dh || emp);
+    return '<div style="background:#fff;border:1px solid ' + (isDone ? '#D1FAE5' : '#EEF1F4') + ';border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px">' +
+      '<div style="width:36px;height:36px;border-radius:9px;background:' + (isDone ? '#D1FAE5' : '#EFF6FF') + ';color:' + (isDone ? '#065F46' : '#1D4ED8') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"><i class="ti ti-' + (isDone ? 'circle-check' : 'checkbox') + '"></i></div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;font-size:14px' + (isDone ? ';color:#94A3B8;text-decoration:line-through' : '') + '">' + esc(t.title) + '</div>' +
+        (t.desc ? '<div style="font-size:13px;color:#64748B;margin-top:2px">' + esc(t.desc) + '</div>' : '') +
+        '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
+        '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
+        (t.dueDate ? '<span><i class="ti ti-calendar"></i> ' + esc(t.dueDate) + '</span>' : '') +
+        '<span><i class="ti ti-user"></i> ' + esc(t.createdBy || 'Админ') + '</span>' +
+        (isDone ? '<span style="color:#16A34A"><i class="ti ti-circle-check"></i> ' + esc(t.completedBy || '') + ' ' + esc((t.completedAt || '').slice(0, 10)) + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-shrink:0">' +
+      (canComplete ? '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border-color:#A7F3D0" data-task-done="' + esc(t.id) + '"><i class="ti ti-check"></i> Биелсэн</button>' : '') +
+      (admin ? '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA" data-task-del="' + esc(t.id) + '"><i class="ti ti-trash"></i></button>' : '') +
+      '</div></div>';
+  }
+
+  html += '<h3 style="margin:0 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
+    (open.length ? open.map(taskCard).join('') : emptyBox('Хийгдэх даалгавар алга')) +
+    (done.length ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Биелсэн ' + done.length + '</h3>' + done.map(taskCard).join('') : '');
+
+  sec.innerHTML = html;
+
+  if (!sec._taskWired) {
+    sec._taskWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('#taskAdd')) { actionAddTask(); return; }
+      var db = ev.target.closest('[data-task-done]');
+      if (db) {
+        var tid = db.getAttribute('data-task-done');
+        var t = DB.tasks.filter(function (x) { return x.id === tid; })[0];
+        if (t) {
+          t.status = 'done';
+          t.completedBy = USER.name;
+          t.completedAt = new Date().toISOString();
+          saveDB(); renderTasks();
+          toast('Даалгавар биелсэн гэж тэмдэглэлээ', 'success');
+        }
+        return;
+      }
+      var dl = ev.target.closest('[data-task-del]');
+      if (dl) {
+        var tid2 = dl.getAttribute('data-task-del');
+        DB.tasks = DB.tasks.filter(function (x) { return x.id !== tid2; });
+        saveDB(); renderTasks();
+        toast('Даалгавар устгагдлаа', 'warn');
+      }
+    });
+  }
+}
+function actionAddTask() {
+  var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(DEPTS.map(function (d) { return { value: d, label: d }; }));
+  formModal({
+    title: 'Шинэ даалгавар',
+    fields: [
+      { name: 'title', label: 'Даалгаврын гарчиг', type: 'text', required: true, placeholder: 'Юу хийх ёстой...' },
+      { name: 'desc', label: 'Тайлбар (заавал биш)', type: 'textarea', placeholder: 'Дэлгэрэнгүй...' },
+      { name: 'dept', label: 'Хаана өгөх', type: 'select', options: deptOpts, value: 'all' },
+      { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' }
+    ],
+    submitLabel: 'Нэмэх',
+    onSubmit: function (v) {
+      DB.tasks = DB.tasks || [];
+      DB.tasks.unshift({
+        id: nextId('TSK', DB.tasks),
+        title: v.title,
+        desc: v.desc || '',
+        dept: v.dept || 'all',
+        empId: '',
+        dueDate: v.dueDate || '',
+        status: 'open',
+        createdBy: USER.name,
+        createdAt: new Date().toISOString(),
+        completedBy: '',
+        completedAt: ''
+      });
+      saveDB(); renderTasks();
+      toast('Даалгавар нэмэгдлээ', 'success');
+    }
+  });
+}
+
 function renderAll() {
   renderSidebar();
   renderDashboard();
@@ -2562,6 +2884,8 @@ function renderAll() {
   renderPpe();
   renderInspections();
   renderDataflow();
+  renderVideoTracking();
+  renderTasks();
 }
 
 /* ============ Үйлдлүүд: Эрсдэл мэдээлэх ============ */
@@ -3522,6 +3846,24 @@ function applyRole() {
   });
   // Зөвхөн админд зориулсан холбоосуудыг нуух
   $$('.nav-item[data-admin]').forEach(function (el) { el.style.display = 'none'; });
+  if (isEmp()) {
+    // Ажилтны хувьд цэсийг хялбаршуулах
+    // "Хяналтын самбар" → "Миний гүйцэтгэл"
+    var dashNav = document.querySelector('.nav-item[data-page="dashboard"] span');
+    if (dashNav) dashNav.textContent = 'Миний гүйцэтгэл';
+    // "Аюул/Near-miss мэдээлэл" → "Аюул мэдээллэх"
+    var rfNav = document.querySelector('.nav-item[data-page="reportflow"] span');
+    if (rfNav) rfNav.textContent = 'Аюул мэдээллэх';
+    // chatbot хуудсыг нуух
+    var cbNav = document.querySelector('.nav-item[data-page="chatbot"]');
+    if (cbNav) cbNav.style.display = 'none';
+    // Харагдаж байгаа nav section title-уудыг шалгаж, бүх item нь нуугдсан бол section-ыг нуух
+    $$('.nav-section').forEach(function (sec) {
+      var visible = $$('.nav-item', sec).filter(function (el) { return el.style.display !== 'none'; });
+      var details = $$('details', sec);
+      if (!visible.length && !details.length) sec.style.display = 'none';
+    });
+  }
   var active = document.querySelector('.nav-item.active');
   if (active && blockedPages().indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
