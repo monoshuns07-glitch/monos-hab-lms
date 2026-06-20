@@ -1781,7 +1781,17 @@ function renderEmployees() {
   }
 
   var footer = $('.page[data-page="employees"] .table-footer');
-  if (footer) footer.innerHTML = '<div>' + total + ' ажилтан · ' + deptNames.length + ' алба</div>';
+  if (footer) footer.innerHTML = '<div>' + total + ' ажилтан · ' + deptNames.length + ' алба' + (isDeptHead() && SESSION && SESSION.dept ? ' · <span style="color:#8B5CF6;font-weight:600">' + esc(SESSION.dept) + '</span>' : '') + '</div>';
+
+  // Туслах админ үед page subtitle-г шинэчлэх
+  var psub = $('.page[data-page="employees"] .page-subtitle');
+  if (psub) {
+    if (isDeptHead() && SESSION && SESSION.dept) {
+      psub.textContent = esc(SESSION.dept) + ' · ' + total + ' ажилтан (зөвхөн харах эрхтэй)';
+    } else if (isAdmin()) {
+      psub.textContent = 'Нийт ' + total + ' ажилтан';
+    }
+  }
 
   setStat('.page[data-page="employees"] .stat-strip', 0, DB.employees.length);
   setStat('.page[data-page="employees"] .stat-strip', 1, DB.employees.filter(function (e) { return !e.onLeave; }).length);
@@ -4110,11 +4120,11 @@ function openEmployeeDetail(id) {
     '<div style="font-weight:700;color:#16A34A;font-size:18px">+' + bp + '</div></div>' +
     habeaExamsHTML(e) +
     '<div class="kb-total">Нийт KPI оноо: <strong>' + empTotal(e) + ' / 100</strong></div>' +
-    '<div class="detail-actions">' +
+    (isAdmin() ? '<div class="detail-actions">' +
     '<button class="btn btn-secondary" data-emp-leave="' + e.id + '">' +
     (e.onLeave ? 'Идэвхтэй болгох' : 'Чөлөө олгох') + '</button>' +
     '<button class="btn btn-secondary" data-emp-role="' + e.id + '"><i class="ti ti-shield-cog"></i> Системийн эрх</button>' +
-    '<button class="btn btn-primary" data-emp-edit="' + e.id + '">Суурь дата засах</button></div>';
+    '<button class="btn btn-primary" data-emp-edit="' + e.id + '">Суурь дата засах</button></div>' : '');
   var node = elc('div', 'modal-info', html);
   node.addEventListener('click', function (ev) {
     var lv = ev.target.closest('[data-emp-leave]');
@@ -4952,6 +4962,7 @@ function applyRole() {
   });
   // Зөвхөн админд зориулсан холбоосуудыг нуух
   $$('.nav-item[data-admin]').forEach(function (el) { el.style.display = 'none'; });
+  $$('[data-admin-only]').forEach(function (el) { el.style.display = 'none'; });
   // Хаалттай шалгалтын сургалт цэсийг нуух (ажилтан болон дарга аль аль нь)
   var examOpen = (DB.settings && DB.settings.examOpen) || {};
   $$('.nav-item.leaf[data-cat]').forEach(function (el) {
