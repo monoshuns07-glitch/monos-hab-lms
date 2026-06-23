@@ -5156,4 +5156,9 @@ if (document.readyState === 'loading') {
   init();
 }
 
+/* IIFE-с global scope-д export хийх — inline onclick-аас дуудагдах шаардлагатай функцүүд */
+window.verifyReport = verifyReport;
+window.deleteHabeaResult = deleteHabeaResult;
+window.loadHabeaResultsPanel = loadHabeaResultsPanel;
+
 })();
