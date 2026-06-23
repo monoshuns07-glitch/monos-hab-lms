@@ -3263,7 +3263,10 @@ function renderExamAdmin() {
     '<div style="font-size:12px;color:#8A94A6">Бүх дүн, статистик, тохиргоо · PIN 1234</div></div>' +
     '<a href="/shalgalt/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
     '<h3 style="margin:0 0 12px">Сургалт бүрийн шалгалтын админ</h3>' +
-    (cardsHtml || '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Сургалт олдсонгүй</div></div>');
+    (cardsHtml || '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Сургалт олдсонгүй</div></div>') +
+    '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px"><h3 style="margin:0">Шалгалтын бүртгэл</h3><button onclick="loadHabeaResultsPanel()" class="btn btn-sm btn-ghost" style="font-size:12px;padding:4px 10px"><i class="ti ti-refresh"></i> Шинэчлэх</button></div>' +
+    '<div id="habeaResultsPanel"><div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div></div>';
+  setTimeout(function(){ loadHabeaResultsPanel(); }, 0);
   if (!sec._examAdminWired) {
     sec._examAdminWired = true;
     sec.addEventListener('click', function (ev) {
@@ -3279,6 +3282,59 @@ function renderExamAdmin() {
       toast((wasOpen ? '🔒 ' : '🔓 ') + esc(cat) + ' шалгалт ' + (wasOpen ? 'хаагдлаа' : 'нээгдлээ'), wasOpen ? 'warn' : 'success');
     });
   }
+}
+
+async function loadHabeaResultsPanel() {
+  var panel = document.getElementById('habeaResultsPanel');
+  if (!panel) return;
+  panel.innerHTML = '<div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div>';
+  try {
+    var hdb = getHabeaDb();
+    if (!hdb) throw new Error('Firebase холбогдсонгүй');
+    var snap = await hdb.collection('habea_exam_results').get();
+    var rows = [];
+    snap.forEach(function (d) {
+      var x = d.data() || {};
+      var ts = x.timestamp;
+      var tsMs = ts ? (ts.seconds ? ts.seconds * 1000 : (typeof ts === 'number' ? ts : 0)) : 0;
+      rows.push({ id: d.id, name: x.name || '—', dept: x.department || '—', pos: x.position || '—', pct: x.percent || 0, passed: !!x.passed, tsMs: tsMs });
+    });
+    rows.sort(function (a, b) { return b.tsMs - a.tsMs; });
+    if (!rows.length) {
+      panel.innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Шалгалт байхгүй</div></div>';
+      return;
+    }
+    function fmtHabeaTs(ms) {
+      if (!ms) return '—';
+      var d = new Date(ms);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    panel.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Нэр</th><th>Хэлтэс</th><th>Тушаал</th><th>%</th><th>Дүн</th><th>Огноо</th><th></th></tr></thead><tbody>' +
+      rows.map(function (r, i) {
+        return '<tr>' +
+          '<td style="color:#8A94A6;font-size:12px;font-weight:700">' + (i + 1) + '</td>' +
+          '<td style="font-weight:600">' + esc(r.name) + '</td>' +
+          '<td>' + esc(r.dept) + '</td>' +
+          '<td>' + esc(r.pos) + '</td>' +
+          '<td style="font-weight:800;color:' + (r.passed ? 'var(--green)' : 'var(--red)') + '">' + r.pct + '%</td>' +
+          '<td><span style="font-size:11px;font-weight:600;color:' + (r.passed ? 'var(--green)' : 'var(--red)') + '">' + (r.passed ? 'Тэнцсэн' : 'Тэнцээгүй') + '</span></td>' +
+          '<td style="font-size:12px;color:#8A94A6">' + fmtHabeaTs(r.tsMs) + '</td>' +
+          '<td><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteHabeaResult(\'' + r.id + '\')">Устгах</button></td>' +
+          '</tr>';
+      }).join('') +
+      '</tbody></table></div>';
+  } catch (e) {
+    panel.innerHTML = '<div class="empty-state" style="padding:20px"><i class="ti ti-alert-circle"></i><div>' + esc(String(e.message || 'Алдаа')) + '</div></div>';
+  }
+}
+async function deleteHabeaResult(id) {
+  if (!confirm('Энэ шалгалтын бичлэгийг устгахдаа итгэлтэй байна уу?')) return;
+  try {
+    var hdb = getHabeaDb(); if (!hdb) throw new Error('db');
+    await hdb.collection('habea_exam_results').doc(id).delete();
+    toast('Устгагдлаа ✓', 'success');
+    loadHabeaResultsPanel();
+  } catch (e) { toast('Алдаа гарлаа', 'err'); }
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
