@@ -2188,8 +2188,8 @@ function reportCard(r, withActions) {
   var pts = reportPoints(r), actions = '';
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
-      '<button class="btn btn-primary btn-sm" data-verify="' + r.id + '"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
-      '<button class="btn btn-secondary btn-sm" data-reject="' + r.id + '">Татгалзах</button></div>';
+      '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();verifyReport(\'' + r.id + '\',\'reject\')">Татгалзах</button></div>';
   }
   return '<div class="report-card" data-report="' + r.id + '">' + photo +
     '<div style="flex:1;min-width:0">' +
