@@ -676,7 +676,7 @@ function renderResultsTableMonthly(data){
       <td style="font-size:12px">${r.total||0}/${maxPts}</td>
       <td><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></td>
       <td><span class="badge ${gradeClass(g)}">${g}</span></td>
-      <td><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button><button class="btn btn-ghost btn-xs" style="color:var(--red);margin-left:4px" onclick="deleteResult('${r.id}')">Устгах</button></td>
     </tr>`;
   }).join("");
   if(data.length){const pass=data.filter(r=>r.passed).length;const avg=Math.round(data.reduce((s,r)=>s+(r.percent||0),0)/data.length);const sumEl=document.getElementById("rSummaryRow");sumEl.style.display="flex";sumEl.innerHTML=`<span>📊 ${data.length} шалгалт</span><span style="margin:0 12px">·</span><span style="color:var(--green)">✅ ${pass} тэнцсэн</span><span style="margin:0 12px">·</span><span style="color:var(--red)">❌ ${data.length-pass} тэнцээгүй</span><span style="margin:0 12px">·</span><span>📈 Голч: ${avg}%</span><span style="margin:0 12px">·</span><span>σ ${stdDev(data.map(r=>r.percent||0))}%</span>`;}
@@ -700,7 +700,7 @@ function renderResultsTable(){
       <td style="font-size:12px">${r.total||0}/${maxPts}</td>
       <td><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></td>
       <td><span class="badge ${gradeClass(g)}">${g}</span></td>
-      <td><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button><button class="btn btn-ghost btn-xs" style="color:var(--red);margin-left:4px" onclick="deleteResult('${r.id}')">Устгах</button></td>
     </tr>`;
   }).join("");
 
@@ -1169,6 +1169,18 @@ async function clearAll(){
     const batch=db.batch();snap.docs.forEach(d=>batch.delete(d.ref));
     await batch.commit();
     allResults=[];renderDashboard();renderResultsTable();renderArchiveTree();
+    toast("Устгагдлаа ✅");
+  }catch(e){toast("Алдаа гарлаа","err")}
+}
+
+async function deleteResult(id){
+  const r=allResults.find(x=>x.id===id);
+  const name=r?esc(r.name):"";
+  if(!confirm(`"${name}" - шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй.`))return;
+  try{
+    await db.collection(COLLECTION).doc(id).delete();
+    allResults=allResults.filter(x=>x.id!==id);
+    renderDashboard();renderResultsTable();renderArchiveTree();
     toast("Устгагдлаа ✅");
   }catch(e){toast("Алдаа гарлаа","err")}
 }
