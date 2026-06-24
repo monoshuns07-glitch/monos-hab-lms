@@ -514,6 +514,22 @@ function migrateDB() {
   if (!k.bonus) k.bonus = def.bonus;
   else if (!k.bonus.nearMiss) k.bonus.nearMiss = def.bonus.nearMiss;
   if (!k.dept) k.dept = def.dept;
+  // Давхардсан report ID арилгах — arrayUnion-оос үүссэн олон copy-г нэг болгоно
+  // (verified/rejected > reported; дараа нь хамгийн сүүлийн createdAt)
+  if (DB.reports && DB.reports.length > 1) {
+    var byId = {};
+    DB.reports.forEach(function (r) {
+      if (!r || !r.id) return;
+      var prev = byId[r.id];
+      if (!prev) { byId[r.id] = r; return; }
+      var rDone = r.status === 'verified' || r.status === 'rejected';
+      var pDone = prev.status === 'verified' || prev.status === 'rejected';
+      if (rDone && !pDone) { byId[r.id] = r; }
+      else if (!rDone && pDone) { /* keep prev */ }
+      else if ((r.createdAt || '') > (prev.createdAt || '')) { byId[r.id] = r; }
+    });
+    DB.reports = Object.keys(byId).map(function (id) { return byId[id]; });
+  }
 }
 
 /* Ажилтны хувьд зөвхөн өөрийн датаг харуулна. ХАБЭА (admin) бол бүгдийг хэвээр. */
@@ -2305,8 +2321,7 @@ function createReport(type, risk, location, desc, photo, signature) {
 
 function verifyReport(id, decision, newRisk) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
-  if (!r) { toast('DEBUG: report ' + id + ' олдсонгүй. DB.reports.length=' + (DB.reports||[]).length, 'error'); return; }
-  if (r.status !== 'reported') { toast('DEBUG: status=' + r.status + ' (reported биш)', 'warn'); return; }
+  if (!r || r.status !== 'reported') return;
   r.verifiedAt = new Date().toISOString();
   r.verifiedBy = (SESSION && SESSION.email) || USER.name;
   r.verified_by = r.verifiedBy; // спекийн талбарын нэр
