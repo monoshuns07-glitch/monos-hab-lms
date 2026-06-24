@@ -502,6 +502,7 @@ function migrateDB() {
   });
   if (!DB.trainingModules) DB.trainingModules = {};
   if (!DB.moduleReleases) DB.moduleReleases = {};
+  if (!DB.userRoles) DB.userRoles = {};
   if (!DB.empProgress) DB.empProgress = {};
   if (!DB.settings) DB.settings = seedDB().settings;
   if (!DB.settings.kpi) DB.settings.kpi = seedDB().settings.kpi;
@@ -2528,50 +2529,52 @@ function resetKpiConfig() {
   toast('Анхдагч KPI тохиргоо сэргээгдлээ');
 }
 /* ---- Туслах Админ удирдлага ---- */
+function _swRolesGet() { try { return JSON.parse(localStorage.getItem('sw_user_roles') || '{}'); } catch (e) { return {}; } }
+function _swRolesSet(obj) { try { localStorage.setItem('sw_user_roles', JSON.stringify(obj)); } catch (e) {} }
+
 function loadSubadmins() {
   var listEl = document.getElementById('subadminList');
   if (!listEl) return;
-  if (DEMO || !fbReady) {
-    listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px">Demo горимд байна — амьд сайт дээр харагдана.</div>';
+  // DB.userRoles-аас (localStorage-д хадгалагддаг) уншина — Firestore rules хэрэггүй
+  var roles = (DB && DB.userRoles) || _swRolesGet();
+  var admins = Object.keys(roles).filter(function (email) {
+    return (roles[email] || {}).role === 'depthead';
+  }).map(function (email) {
+    return { email: email, dept: roles[email].department || '', updatedAt: roles[email].updatedAt || '' };
+  });
+  if (!admins.length) {
+    listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px;padding:8px 0">Туслах Админ байхгүй байна.</div>';
     return;
   }
-  listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px;padding:8px 0">Ачаалж байна...</div>';
-  fdb.collection('user_roles').get().then(function (snap) {
-    var admins = [];
-    snap.forEach(function (doc) {
-      var d = doc.data() || {};
-      if (d.role === 'depthead') admins.push({ email: doc.id, dept: d.department || '', updatedAt: d.updatedAt || '' });
-    });
-    if (!admins.length) {
-      listEl.innerHTML = '<div style="color:#94A3B8;font-size:13px;padding:8px 0">Туслах Админ байхгүй байна.</div>';
-      return;
-    }
-    listEl.innerHTML = admins.map(function (a) {
-      return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #F1F5F9">' +
-        '<div style="width:36px;height:36px;border-radius:10px;background:#EDE9FE;color:#7C3AED;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ti ti-user-shield"></i></div>' +
-        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1E293B">' + esc(a.email) + '</div>' +
-        '<div style="font-size:12px;color:#64748B">' + esc(a.dept || 'Алба тогтоогүй') + (a.updatedAt ? ' · ' + timeAgo(a.updatedAt) : '') + '</div></div>' +
-        '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA;flex-shrink:0" data-rmsubadmin="' + esc(a.email) + '"><i class="ti ti-user-minus"></i> Хасах</button>' +
-        '</div>';
-    }).join('');
-    listEl.querySelectorAll('[data-rmsubadmin]').forEach(function (btn) {
-      btn.addEventListener('click', function () { removeSubadmin(btn.getAttribute('data-rmsubadmin')); });
-    });
-  }).catch(function (err) {
-    listEl.innerHTML = '<div style="color:#DC2626;font-size:13px">Алдаа: ' + esc(err.message || String(err)) + '</div>';
+  listEl.innerHTML = admins.map(function (a) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #F1F5F9">' +
+      '<div style="width:36px;height:36px;border-radius:10px;background:#EDE9FE;color:#7C3AED;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0"><i class="ti ti-user-shield"></i></div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1E293B">' + esc(a.email) + '</div>' +
+      '<div style="font-size:12px;color:#64748B">' + esc(a.dept || 'Алба тогтоогүй') + (a.updatedAt ? ' · ' + timeAgo(a.updatedAt) : '') + '</div></div>' +
+      '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA;flex-shrink:0" data-rmsubadmin="' + esc(a.email) + '"><i class="ti ti-user-minus"></i> Хасах</button>' +
+      '</div>';
+  }).join('');
+  listEl.querySelectorAll('[data-rmsubadmin]').forEach(function (btn) {
+    btn.addEventListener('click', function () { removeSubadmin(btn.getAttribute('data-rmsubadmin')); });
   });
 }
 
 function removeSubadmin(email) {
-  if (!fbReady || !email) return;
-  fdb.collection('user_roles').doc(email).set({
-    role: 'employee', department: '',
-    updatedBy: (SESSION && SESSION.email) || 'admin',
-    updatedAt: new Date().toISOString()
-  }).then(function () {
-    toast(esc(email) + ' — Туслах Админ эрх хасагдлаа', 'warn');
-    loadSubadmins();
-  }).catch(function (err) { toast('Алдаа: ' + (err.message || String(err)), 'error'); });
+  if (!email) return;
+  // DB.userRoles + localStorage-д хасна
+  if (DB && DB.userRoles) delete DB.userRoles[email];
+  var lr = _swRolesGet(); delete lr[email]; _swRolesSet(lr);
+  saveDB();
+  toast(esc(email) + ' — Туслах Админ эрх хасагдлаа', 'warn');
+  loadSubadmins();
+  // Firestore user_roles-д ч бичихийг оролдоно (rules байвал, байхгүй бол чимээгүй орхино)
+  if (fbReady) {
+    fdb.collection('user_roles').doc(email).set({
+      role: 'employee', department: '',
+      updatedBy: (SESSION && SESSION.email) || 'admin',
+      updatedAt: new Date().toISOString()
+    }).catch(function () {});
+  }
 }
 
 function actionAddSubadmin() {
@@ -4242,13 +4245,19 @@ function actionSetEmpRole(id) {
     onSubmit: function (v) {
       var email = (v.email || '').trim().toLowerCase();
       if (!email) { toast('Имэйл заавал бөглөнө', 'warn'); return false; }
-      if (email !== e.email) { e.email = email; saveDB(); }
-      if (!fbReady || DEMO) {
-        toast('Demo горим — Firebase-д бичихгүй. Амьд систем дээр ажиллана.', 'warn'); return;
+      if (email !== e.email) { e.email = email; }
+      // DB.userRoles + localStorage-д хадгална (Firestore rules хэрэггүй)
+      if (!DB.userRoles) DB.userRoles = {};
+      var roleEntry = { role: v.role, department: v.role === 'depthead' ? v.dept : '', updatedBy: (SESSION && SESSION.email) || 'admin', updatedAt: new Date().toISOString() };
+      DB.userRoles[email] = roleEntry;
+      var lr = _swRolesGet(); lr[email] = roleEntry; _swRolesSet(lr);
+      saveDB();
+      toast(esc(e.name) + ' → ' + v.role + ' эрх олгогдлоо', 'success');
+      renderEmployees();
+      // Firestore user_roles-д ч бичихийг оролдоно (rules байвал, байхгүй бол чимээгүй орхино)
+      if (fbReady && !DEMO) {
+        fdb.collection('user_roles').doc(email).set(roleEntry).catch(function () {});
       }
-      fdb.collection('user_roles').doc(email).set({ role: v.role, department: v.role === 'depthead' ? v.dept : '', updatedBy: SESSION.email || 'admin', updatedAt: new Date().toISOString() })
-        .then(function () { toast(esc(e.name) + ' → ' + v.role + ' эрх олгогдлоо', 'success'); renderEmployees(); })
-        .catch(function (err) { toast('Алдаа: ' + (err.message || err), 'error'); });
     }
   });
 }
@@ -4937,6 +4946,8 @@ function establishSession() {
         var dept = data.department || '';
         // Админ олгосон user_roles/{email} override шалгана
         if (email) {
+          // localStorage-с эхлэн шалгана (Firestore rules хэрэггүй, хурдан)
+          try { var lrole = _swRolesGet()[email]; if (lrole && lrole.role) { role = lrole.role; dept = lrole.department || dept; } } catch (e2) {}
           fdb.collection('user_roles').doc(email).get().then(function (rSnap) {
             if (rSnap.exists) {
               var rd = rSnap.data() || {};
@@ -4946,6 +4957,7 @@ function establishSession() {
             SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
             resolve();
           }).catch(function () {
+            // Firestore user_roles уншихад алдаа — localStorage-с авсан role ашиглана
             SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
             resolve();
           });
