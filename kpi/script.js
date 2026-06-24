@@ -816,6 +816,19 @@ function formModal(opts) {
         if (String(val) === String(f.value)) op.selected = true;
         ctrl.appendChild(op);
       });
+    } else if (f.type === 'checkboxlist') {
+      ctrl = elc('div', 'chk-list');
+      ctrl.style.cssText = 'max-height:180px;overflow-y:auto;border:1px solid #E2E8F0;border-radius:8px;padding:6px 8px';
+      (f.options || []).forEach(function (o) {
+        var val = (o && o.value != null) ? o.value : o;
+        var lbl = (o && o.label != null) ? o.label : o;
+        var row = elc('label', 'chk-row');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:13px';
+        var cb = elc('input'); cb.type = 'checkbox'; cb.value = val;
+        if (f.value && f.value.indexOf(val) > -1) cb.checked = true;
+        row.appendChild(cb); row.appendChild(document.createTextNode(lbl));
+        ctrl.appendChild(row);
+      });
     } else if (f.type === 'chips') {
       ctrl = elc('div', 'chip-select');
       (f.options || []).forEach(function (o, i) {
@@ -863,6 +876,8 @@ function formModal(opts) {
         var ca = grp.querySelector('.chip-opt.active'); v = ca ? ca.getAttribute('data-value') : '';
       } else if (f.type === 'severity') {
         var sa = grp.querySelector('.sev-btn.active'); v = sa ? parseInt(sa.getAttribute('data-value'), 10) : 3;
+      } else if (f.type === 'checkboxlist') {
+        v = Array.prototype.slice.call(grp.querySelectorAll('.chk-list input[type=checkbox]:checked')).map(function (c) { return c.value; });
       } else {
         v = grp.querySelector('input,select,textarea').value;
         if (typeof v === 'string') v = v.trim();
@@ -3915,7 +3930,7 @@ function renderTasks() {
   var tasks = DB.tasks.filter(function (t) {
     if (admin) return true;
     if (dh && SESSION && SESSION.dept) return t.dept === SESSION.dept || t.dept === 'all';
-    if (emp) { var me = myEmp(); return me && (t.empId === me.id || t.dept === me.dept || t.dept === 'all'); }
+    if (emp) { var me = myEmp(); return me && (t.empId === me.id || (t.empIds && t.empIds.indexOf(me.id) > -1) || t.dept === me.dept || t.dept === 'all'); }
     return false;
   }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
 
@@ -3940,7 +3955,8 @@ function renderTasks() {
   function taskCard(t) {
     var isDone = t.status === 'done';
     var deptLabel = t.dept === 'all' ? 'Бүх алба' : esc(t.dept || '');
-    var empLabel = t.empId ? esc((DB.employees.filter(function (e) { return e.id === t.empId; })[0] || {}).name || t.empId) : '';
+    var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
+    var empLabel = ids.map(function (eid) { return esc((DB.employees.filter(function (e) { return e.id === eid; })[0] || {}).name || eid); }).join(', ');
     var targetLabel = empLabel ? (deptLabel + ' · ' + empLabel) : deptLabel;
     var canComplete = !isDone && (admin || dh || emp);
     return '<div style="background:#fff;border:1px solid ' + (isDone ? '#D1FAE5' : '#EEF1F4') + ';border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px">' +
@@ -3996,10 +4012,8 @@ function renderTasks() {
 }
 function actionAddTask() {
   var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
-  var empOpts = [{ value: '', label: '— Тодорхой ажилтан биш (алба бүхэлдээ харна) —' }].concat(
-    (DB.employees || []).slice().sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
-      .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; })
-  );
+  var empOpts = (DB.employees || []).slice().sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
+    .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; });
   formModal({
     title: 'Шинэ даалгавар',
     width: '520px',
@@ -4007,19 +4021,20 @@ function actionAddTask() {
       { name: 'title', label: 'Даалгаврын гарчиг', type: 'text', required: true, placeholder: 'Юу хийх ёстой...' },
       { name: 'desc', label: 'Тайлбар (заавал биш)', type: 'textarea', placeholder: 'Дэлгэрэнгүй...' },
       { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: 'all' },
-      { name: 'empId', label: 'Тодорхой ажилтанд (заавал биш)', type: 'select', options: empOpts, value: '' },
+      { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist', options: empOpts, value: [] },
       { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' }
     ],
     submitLabel: 'Нэмэх',
     onSubmit: function (v) {
       DB.tasks = DB.tasks || [];
-      var assignedEmp = v.empId ? DB.employees.filter(function (e) { return e.id === v.empId; })[0] : null;
+      var empIds = Array.isArray(v.empIds) ? v.empIds.filter(Boolean) : [];
       DB.tasks.unshift({
         id: nextId('TSK', DB.tasks),
         title: v.title,
         desc: v.desc || '',
-        dept: assignedEmp ? assignedEmp.dept : (v.dept || 'all'),
-        empId: v.empId || '',
+        dept: v.dept || 'all',
+        empId: empIds[0] || '',
+        empIds: empIds,
         dueDate: v.dueDate || '',
         status: 'open',
         createdBy: USER.name,
