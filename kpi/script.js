@@ -2617,15 +2617,19 @@ function actionAddSubadmin() {
       var email = (emailEl ? emailEl.value : '').trim();
       var dept = deptEl ? deptEl.value : '';
       if (!email) { toast('Хэрэглэгч сонгоно уу', 'warn'); return; }
-      fdb.collection('user_roles').doc(email).set({
-        role: 'depthead', department: dept,
-        updatedBy: (SESSION && SESSION.email) || 'admin',
-        updatedAt: new Date().toISOString()
-      }).then(function () {
-        closeModal();
-        toast(esc(email) + ' → Туслах Админ болгогдлоо (' + esc(dept) + ')', 'success');
-        loadSubadmins();
-      }).catch(function (err) { toast('Алдаа: ' + (err.message || String(err)), 'error'); });
+      // DB.userRoles + localStorage-д хадгална (Firestore rules хэрэггүй)
+      if (!DB.userRoles) DB.userRoles = {};
+      var roleEntry = { role: 'depthead', department: dept, updatedBy: (SESSION && SESSION.email) || 'admin', updatedAt: new Date().toISOString() };
+      DB.userRoles[email] = roleEntry;
+      var lr = _swRolesGet(); lr[email] = roleEntry; _swRolesSet(lr);
+      saveDB();
+      closeModal();
+      toast(esc(email) + ' → Туслах Админ болгогдлоо (' + esc(dept) + ')', 'success');
+      loadSubadmins();
+      // Firestore user_roles-д ч бичихийг оролдоно (rules байвал, байхгүй бол чимээгүй орхино)
+      if (fbReady) {
+        fdb.collection('user_roles').doc(email).set(roleEntry).catch(function () {});
+      }
     });
   }).catch(function (err) {
     node.innerHTML = '<div style="color:#DC2626;font-size:13px">Хэрэглэгчдийг ачаалж чадсангүй: ' + esc(err.message || String(err)) + '</div>';
