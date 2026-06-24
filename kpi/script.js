@@ -2395,6 +2395,13 @@ function renderReportflow() {
   }
 
   sec.innerHTML = html;
+  /* Батлах/Татгалзах товчид шууд listener нэмэх — event delegation-аас хамаарахгүй */
+  sec.querySelectorAll('[data-verify]').forEach(function(btn) {
+    btn.addEventListener('click', function(e) { e.stopPropagation(); verifyReport(btn.getAttribute('data-verify'), 'verify'); });
+  });
+  sec.querySelectorAll('[data-reject]').forEach(function(btn) {
+    btn.addEventListener('click', function(e) { e.stopPropagation(); verifyReport(btn.getAttribute('data-reject'), 'reject'); });
+  });
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
 
@@ -4828,8 +4835,9 @@ function handleClick(e) {
     return;
   }
 
-  /* --- Бусад товчны ерөнхий хариу --- */
+  /* --- Бусад товчны ерөнхий хариу (form submit товчнуудыг алгасна) --- */
   if (el.tagName === 'BUTTON' && (el.classList.contains('btn') || el.classList.contains('icon-btn-sm'))) {
+    if (el.type === 'submit') return; // formModal submit-ийг form.addEventListener('submit') боловсруулна
     if (t) toast('«' + t + '» — ' + actionHint(t), 'info');
   }
 }
