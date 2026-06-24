@@ -2366,7 +2366,7 @@ function renderReportflow() {
   var verified = reports.filter(function (r) { return r.status === 'verified'; });
   var rejected = reports.filter(function (r) { return r.status === 'rejected'; });
   var thisMonth = verified.filter(function (r) { return monthKey(r.verifiedAt || r.createdAt) === monthKey(); }).length;
-  var admin = isAdmin() || isDeptHead();
+  var admin = isAdmin();
   var myBonus = 0;
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
