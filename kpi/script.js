@@ -4236,8 +4236,7 @@ function actionSetEmpRole(id) {
   if (!e) return;
   var roleOpts = [
     { value: 'employee', label: 'Ажилтан (энгийн)' },
-    { value: 'depthead', label: 'Албаны дарга (зөвхөн өөрийн алба харна)' },
-    { value: 'admin', label: 'ХАБЭА Админ (бүгдийг харна)' }
+    { value: 'depthead', label: 'Албаны дарга (зөвхөн өөрийн алба харна)' }
   ];
   formModal({
     title: 'Системийн эрх тохируулах — ' + e.name,
@@ -4256,7 +4255,9 @@ function actionSetEmpRole(id) {
       if (!DB.userRoles) DB.userRoles = {};
       var roleEntry = { role: v.role, department: v.role === 'depthead' ? v.dept : '', updatedBy: (SESSION && SESSION.email) || 'admin', updatedAt: new Date().toISOString() };
       DB.userRoles[email] = roleEntry;
-      var lr = _swRolesGet(); lr[email] = roleEntry; _swRolesSet(lr);
+      var lr = _swRolesGet();
+      if (v.role === 'depthead') { lr[email] = roleEntry; } else { delete lr[email]; }
+      _swRolesSet(lr);
       saveDB();
       toast(esc(e.name) + ' → ' + v.role + ' эрх олгогдлоо', 'success');
       renderEmployees();
@@ -4952,8 +4953,8 @@ function establishSession() {
         var dept = data.department || '';
         // Админ олгосон user_roles/{email} override шалгана
         if (email) {
-          // localStorage-с эхлэн шалгана (Firestore rules хэрэггүй, хурдан)
-          try { var lrole = _swRolesGet()[email]; if (lrole && lrole.role) { role = lrole.role; dept = lrole.department || dept; } } catch (e2) {}
+          // localStorage-с depthead override шалгана (admin эрх localStorage-аар огт олгогдохгүй)
+          try { var lrole = _swRolesGet()[email]; if (lrole && lrole.role === 'depthead') { role = 'depthead'; dept = lrole.department || dept; } } catch (e2) {}
           fdb.collection('user_roles').doc(email).get().then(function (rSnap) {
             if (rSnap.exists) {
               var rd = rSnap.data() || {};
