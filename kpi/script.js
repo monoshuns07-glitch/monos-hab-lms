@@ -745,6 +745,10 @@ function nextId(prefix, arr) {
   arr.forEach(function (x) { var m = /(\d+)$/.exec(x.id); if (m) max = Math.max(max, parseInt(m[1], 10)); });
   return prefix + '-' + pad(max + 1);
 }
+// Ажилтны scoped view-д nextId давхардал үүсэх тул timestamp+random ID хэрэглэнэ
+function newId(prefix) {
+  return prefix + '-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).toUpperCase();
+}
 function scoreClass(s) { return s >= 90 ? 'score-high' : (s >= 75 ? 'score-mid' : 'score-low'); }
 
 /* ============ Toast мэдэгдэл ============ */
@@ -2307,7 +2311,7 @@ function actionReportNew(presetType) {
 function createReport(type, risk, location, desc, photo, signature) {
   var who = currentReporter();
   var r = {
-    id: nextId('RP', DB.reports), type: type, risk_level: risk, status: 'reported',
+    id: newId('RP'), type: type, risk_level: risk, status: 'reported',
     desc: desc, location: location, dept: who.dept || '',
     reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '', reporterEmail: who.email || '',
     photo: photo || '', signature: signature || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
@@ -2928,7 +2932,7 @@ function takeExam(examId) {
 
 function recordExamResult(ex, who, score) {
   var passed = score >= ex.pass;
-  DB.examResults.unshift({ id: nextId('ER', DB.examResults), examId: ex.id, examTitle: ex.title, uid: who.uid || '', empId: who.id || '', email: who.email || '', name: who.name || '', score: score, passed: passed, attempt: 1, createdAt: new Date().toISOString() });
+  DB.examResults.unshift({ id: newId('ER'), examId: ex.id, examTitle: ex.title, uid: who.uid || '', empId: who.id || '', email: who.email || '', name: who.name || '', score: score, passed: passed, attempt: 1, createdAt: new Date().toISOString() });
   // Холбогдох ажилтны шалгалтын дүнг шинэчилнэ (ахиц бодоход өмнөхийг хадгална)
   var emp = (DB.employees || []).filter(function (e) { return (who.uid && e.uid === who.uid) || (who.id && e.id === who.id) || _sameEmail(e.email, who.email); })[0];
   if (emp) {
@@ -4101,7 +4105,7 @@ function actionAddSuggestion() {
     submitLabel: 'Илгээх',
     onSubmit: function (v) {
       var s = {
-        id: nextId('SG', DB.suggestions), title: v.title, body: v.body, dept: v.dept,
+        id: newId('SG'), title: v.title, body: v.body, dept: v.dept,
         status: 'new', votes: 0, author: USER.name, authorInitials: USER.initials,
         authorUid: (SESSION && SESSION.uid) || null,
         voted: false, createdAt: new Date().toISOString()
