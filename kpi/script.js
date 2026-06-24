@@ -824,7 +824,8 @@ function formModal(opts) {
   var cancel = elc('button', 'btn btn-secondary', 'Цуцлах');
   cancel.type = 'button'; cancel.addEventListener('click', closeModal);
   var submit = elc('button', 'btn btn-primary', opts.submitLabel || 'Хадгалах');
-  submit.type = 'submit';
+  submit.type = 'button';
+  submit.addEventListener('click', function(e) { e.stopPropagation(); form.dispatchEvent(new Event('submit', { cancelable: true })); });
   foot.appendChild(cancel); foot.appendChild(submit);
 
   var m = buildModal(opts.title, form, { width: opts.width || '480px' });
@@ -2188,8 +2189,8 @@ function reportCard(r, withActions) {
   var pts = reportPoints(r), actions = '';
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
-      '<button class="btn btn-primary btn-sm" data-verify="' + r.id + '"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
-      '<button class="btn btn-secondary btn-sm" data-reject="' + r.id + '">Татгалзах</button></div>';
+      '<button class="btn btn-primary btn-sm" onclick="window.verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="window.verifyReport(\'' + r.id + '\',\'reject\')">Татгалзах</button></div>';
   }
   return '<div class="report-card" data-report="' + r.id + '">' + photo +
     '<div style="flex:1;min-width:0">' +
@@ -2395,13 +2396,6 @@ function renderReportflow() {
   }
 
   sec.innerHTML = html;
-  /* Батлах/Татгалзах товчид шууд listener нэмэх — event delegation-аас хамаарахгүй */
-  sec.querySelectorAll('[data-verify]').forEach(function(btn) {
-    btn.addEventListener('click', function(e) { e.stopPropagation(); verifyReport(btn.getAttribute('data-verify'), 'verify'); });
-  });
-  sec.querySelectorAll('[data-reject]').forEach(function(btn) {
-    btn.addEventListener('click', function(e) { e.stopPropagation(); verifyReport(btn.getAttribute('data-reject'), 'reject'); });
-  });
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
 
@@ -4634,8 +4628,6 @@ function handleClick(e) {
   /* Сургалтын агуулга засах (админ) */
   if (el.hasAttribute && el.hasAttribute('data-editcourse')) { actionEditCourse(CURRENT_CAT); return; }
 
-  /* data-verify/data-reject товчнуудыг section listener (bubble) боловсруулна — handleClick оролцохгүй */
-  if (el.hasAttribute && (el.hasAttribute('data-verify') || el.hasAttribute('data-reject'))) return;
 
   /* --- Сургалтын модулийн toggle / үйлдэлүүд --- */
   var modact = el.getAttribute ? el.getAttribute('data-modact') : null;
