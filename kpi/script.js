@@ -5090,8 +5090,14 @@ async function init() {
   // DB.userRoles-с SESSION эрхийн override шалгана (admin тохируулсан, kpi_state/main-д байдаг)
   if (SESSION && SESSION.email && DB.userRoles && DB.userRoles[SESSION.email]) {
     var _ro = DB.userRoles[SESSION.email];
-    if (_ro.role) SESSION.role = _ro.role;
-    if (_ro.department) SESSION.dept = _ro.department;
+    if (_ro.role && _ro.role !== SESSION.role) {
+      SESSION.role = _ro.role;
+      if (_ro.department) SESSION.dept = _ro.department;
+      // loadDB дахин ачаална — шүүлт зөв role-оор ажиллана (depthead → өөрийн алба)
+      await loadDB();
+    } else if (_ro.department) {
+      SESSION.dept = _ro.department;
+    }
   }
   injectControls();
   applyRole();
