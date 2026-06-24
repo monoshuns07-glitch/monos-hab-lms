@@ -2191,8 +2191,8 @@ function reportCard(r, withActions) {
   var pts = reportPoints(r), actions = '';
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
-      '<button class="btn btn-primary btn-sm" onclick="window.verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
-      '<button class="btn btn-secondary btn-sm" onclick="window.verifyReport(\'' + r.id + '\',\'reject\')">Татгалзах</button></div>';
+      '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();window.verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
+      '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.verifyReport(\'' + r.id + '\',\'reject\')">Татгалзах</button></div>';
   }
   return '<div class="report-card" data-report="' + r.id + '">' + photo +
     '<div style="flex:1;min-width:0">' +
@@ -2366,7 +2366,7 @@ function renderReportflow() {
   var verified = reports.filter(function (r) { return r.status === 'verified'; });
   var rejected = reports.filter(function (r) { return r.status === 'rejected'; });
   var thisMonth = verified.filter(function (r) { return monthKey(r.verifiedAt || r.createdAt) === monthKey(); }).length;
-  var admin = isAdmin();
+  var admin = isAdmin() || isDeptHead();
   var myBonus = 0;
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
@@ -5087,16 +5087,15 @@ async function init() {
   if (!SESSION) { showLoginScreen(); return; }
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   var fresh = await loadDB();
-  // DB.userRoles-с SESSION эрхийн override шалгана (admin тохируулсан, kpi_state/main-д байдаг)
-  if (SESSION && SESSION.email && DB.userRoles && DB.userRoles[SESSION.email]) {
+  // DB.userRoles-с SESSION эрхийн override шалгана — зөвхөн employee→depthead тохиолдолд
+  // (admin-ийн role хэзээ ч бууруулагдахгүй, kpi_state/main-д хадгалагдсан override)
+  if (SESSION && SESSION.email && SESSION.role === 'employee' && DB.userRoles && DB.userRoles[SESSION.email]) {
     var _ro = DB.userRoles[SESSION.email];
-    if (_ro.role && _ro.role !== SESSION.role) {
-      SESSION.role = _ro.role;
+    if (_ro.role === 'depthead') {
+      SESSION.role = 'depthead';
       if (_ro.department) SESSION.dept = _ro.department;
-      // loadDB дахин ачаална — шүүлт зөв role-оор ажиллана (depthead → өөрийн алба)
+      // loadDB дахин ачаална — depthead шүүлт зөв role-оор ажиллана
       await loadDB();
-    } else if (_ro.department) {
-      SESSION.dept = _ro.department;
     }
   }
   injectControls();
