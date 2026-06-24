@@ -1953,19 +1953,51 @@ function loadRiskDashboard(dept, cb) {
   }
   if (!fbReady || !fdb) { cb(null); return; }
   fdb.collection(RISK_COL).doc(dept).get()
-    .then(function (snap) { cb(snap.exists ? snap.data() : null); })
+    .then(function (snap) {
+      if (!snap.exists) { cb(null); return; }
+      var d = snap.data();
+      // Storage-т хадгалсан файл бол URL-ээс HTML татна
+      if (d.htmlUrl) {
+        fetch(d.htmlUrl).then(function (r) { return r.text(); })
+          .then(function (html) { cb({ dept: dept, html: html }); })
+          .catch(function () { cb(null); });
+      } else {
+        cb(d);
+      }
+    })
     .catch(function () { cb(null); });
 }
 
 function saveRiskDashboard(dept, html, cb) {
-  var data = { dept: dept, html: html, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
   if (DEMO) {
+    var data = { dept: dept, html: html, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
     try { localStorage.setItem('rdash_' + dept, JSON.stringify(data)); cb(true); } catch (e) { cb(false); }
     return;
   }
   if (!fbReady || !fdb) { cb(false); return; }
-  fdb.collection(RISK_COL).doc(dept).set(data)
-    .then(function () { cb(true); }).catch(function () { cb(false); });
+  var meta = { dept: dept, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
+  // Firebase Storage-т HTML байршуулж, URL-г Firestore-д хадгална
+  if (typeof firebase !== 'undefined' && firebase.storage) {
+    var path = 'risk_dashboards/' + encodeURIComponent(dept) + '.html';
+    var ref = firebase.storage().ref(path);
+    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    ref.put(blob).then(function () { return ref.getDownloadURL(); })
+      .then(function (url) {
+        meta.htmlUrl = url;
+        return fdb.collection(RISK_COL).doc(dept).set(meta);
+      })
+      .then(function () { cb(true); })
+      .catch(function (err) {
+        // Storage амжилтгүй бол Firestore-д шууд хадгална (1MB хязгаартай)
+        meta.html = html;
+        fdb.collection(RISK_COL).doc(dept).set(meta)
+          .then(function () { cb(true); }).catch(function () { cb(false); });
+      });
+  } else {
+    meta.html = html;
+    fdb.collection(RISK_COL).doc(dept).set(meta)
+      .then(function () { cb(true); }).catch(function () { cb(false); });
+  }
 }
 
 function deleteRiskDashboard(dept, cb) {
@@ -2038,7 +2070,7 @@ function renderRiskAdmin(sec) {
     var dept = inp.getAttribute('data-risk-upload');
     var file = inp.files[0];
     inp.value = '';
-    if (file.size > 950000) { toast('Файл хэт том (950KB дээд хязгаар)', 'warn'); return; }
+    if (file.size > 10000000) { toast('Файл хэт том (10MB дээд хязгаар)', 'warn'); return; }
     var rd = new FileReader();
     rd.onload = function (e) {
       var html = e.target.result;
