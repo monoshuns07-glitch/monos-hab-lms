@@ -2305,7 +2305,8 @@ function createReport(type, risk, location, desc, photo, signature) {
 
 function verifyReport(id, decision, newRisk) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
-  if (!r || r.status !== 'reported') return;
+  if (!r) { toast('DEBUG: report ' + id + ' олдсонгүй. DB.reports.length=' + (DB.reports||[]).length, 'error'); return; }
+  if (r.status !== 'reported') { toast('DEBUG: status=' + r.status + ' (reported биш)', 'warn'); return; }
   r.verifiedAt = new Date().toISOString();
   r.verifiedBy = (SESSION && SESSION.email) || USER.name;
   r.verified_by = r.verifiedBy; // спекийн талбарын нэр
