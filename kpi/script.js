@@ -5087,6 +5087,12 @@ async function init() {
   if (!SESSION) { showLoginScreen(); return; }
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   var fresh = await loadDB();
+  // DB.userRoles-с SESSION эрхийн override шалгана (admin тохируулсан, kpi_state/main-д байдаг)
+  if (SESSION && SESSION.email && DB.userRoles && DB.userRoles[SESSION.email]) {
+    var _ro = DB.userRoles[SESSION.email];
+    if (_ro.role) SESSION.role = _ro.role;
+    if (_ro.department) SESSION.dept = _ro.department;
+  }
   injectControls();
   applyRole();
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
