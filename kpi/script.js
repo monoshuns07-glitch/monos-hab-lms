@@ -672,7 +672,8 @@ function categoryAverages() {
 /* — Албаны түвшний оноо (coverage + бонус + анхны тусламж + PPE) — */
 function deptList() {
   var s = {}; (DB.employees || []).forEach(function (e) { if (e.dept) s[e.dept] = 1; });
-  return Object.keys(s);
+  var list = Object.keys(s).sort();
+  return list.length ? list : DEPTS.slice();
 }
 function deptMembers(dept) { return (DB.employees || []).filter(function (e) { return e.dept === dept && !e.onLeave; }); }
 function deptCoverage(dept) {
@@ -2595,7 +2596,7 @@ function actionAddSubadmin() {
     });
     users.sort(function (a, b) { return a.email < b.email ? -1 : 1; });
 
-    var deptOpts = DEPTS.map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
+    var deptOpts = deptList().map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('');
     var userOpts = users.length
       ? users.map(function (u) {
           var lbl = u.name && u.name !== u.email ? u.name + ' — ' + u.email : u.email;
@@ -4078,7 +4079,7 @@ function actionAddSuggestion() {
     title: 'Сайжруулалтын санал гаргах',
     fields: [
       { name: 'title', label: 'Гарчиг', type: 'text', required: true, placeholder: 'Саналын товч нэр' },
-      { name: 'dept', label: 'Хэлтэс', type: 'select', options: DEPTS },
+      { name: 'dept', label: 'Хэлтэс', type: 'select', options: deptList() },
       { name: 'body', label: 'Дэлгэрэнгүй', type: 'textarea', required: true, rows: 4, placeholder: 'Асуудал ба санал болгож буй шийдэл...' }
     ],
     submitLabel: 'Илгээх',
@@ -4129,7 +4130,7 @@ function actionAddEmployee() {
     fields: [
       { name: 'name', label: 'Овог нэр', type: 'text', required: true, placeholder: 'Ж: Б. Болд' },
       { name: 'role', label: 'Албан тушаал', type: 'select', options: ROLES },
-      { name: 'dept', label: 'Хэлтэс', type: 'select', options: DEPTS },
+      { name: 'dept', label: 'Хэлтэс', type: 'select', options: deptList() },
       { name: 'training', label: 'Сургалт (0-100)', type: 'number', value: 80, min: 0, max: 100 },
       { name: 'participation', label: 'Идэвхтэй оролцоо (0-100)', type: 'number', value: 75, min: 0, max: 100 },
       { name: 'discipline', label: 'Дүрэм сахилт (0-100)', type: 'number', value: 80, min: 0, max: 100 },
