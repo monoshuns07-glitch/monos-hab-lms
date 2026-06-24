@@ -1068,7 +1068,7 @@ function renderModAdmin(sec, key, mod, title) {
   var examQs = mod.examQuestions || [];
   var hasExam = examQs.length > 0;
 
-  var deptRows = DEPTS.map(function (dept) {
+  var deptRows = deptList().map(function (dept) {
     var rel = getModRel(key, dept);
     var dEmps = (DB.employees || []).filter(function (e) { return e.dept === dept; });
     var dDone = dEmps.filter(function (e) { return getEmpProg(e.id, key).trainingCompleted; }).length;
@@ -1988,7 +1988,7 @@ function renderHazards() {
 }
 
 function renderRiskAdmin(sec) {
-  var depts = DEPTS.slice();
+  var depts = deptList();
   var html = '<div style="padding:24px 28px 0">' +
     '<h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">Эрсдэлийн үнэлгээ</h1>' +
     '<p style="font-size:13px;color:#64748B;margin:0 0 20px">Алба бүрд интерактив эрсдэлийн үнэлгээний дашбоард HTML файл байршуулна. Ажилтнууд өөрийн албаны дашбоардыг автоматаар харна.</p></div>' +
@@ -3963,7 +3963,7 @@ function renderTasks() {
   }
 }
 function actionAddTask() {
-  var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(DEPTS.map(function (d) { return { value: d, label: d }; }));
+  var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
   var empOpts = [{ value: '', label: '— Тодорхой ажилтан биш (алба бүхэлдээ харна) —' }].concat(
     (DB.employees || []).slice().sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
       .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; })
