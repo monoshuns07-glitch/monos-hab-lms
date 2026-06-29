@@ -2018,11 +2018,12 @@ function loadRiskDashboard(dept, cb) {
       var d = snap.data();
       // Storage-т хадгалсан файл бол URL-ээс HTML татна
       if (d.htmlUrl) {
-        fetch(d.htmlUrl).then(function (r) { return r.text(); })
-          .then(function (html) { cb({ dept: dept, html: html }); })
-          .catch(function () { cb(null); });
-      } else {
+        // URL байгаа бол HTML татахгүй — харах үед л татна (CORS асуудлаас зайлсхийх)
+        cb({ dept: dept, htmlUrl: d.htmlUrl, uploadedAt: d.uploadedAt, uploadedBy: d.uploadedBy });
+      } else if (d.html) {
         cb(d);
+      } else {
+        cb(null);
       }
     })
     .catch(function () { cb(null); });
@@ -2114,7 +2115,7 @@ function renderRiskAdmin(sec) {
       if (!card) return;
       var viewBtn = card.querySelector('[data-risk-view]');
       var delBtn = card.querySelector('[data-risk-del]');
-      if (data && data.html) {
+      if (data && (data.html || data.htmlUrl)) {
         var dt = data.uploadedAt ? new Date(data.uploadedAt).toLocaleDateString('mn-MN') : '';
         if (stEl) stEl.innerHTML = '<span style="color:#16A34A"><i class="ti ti-circle-check"></i> Байршуулсан' + (dt ? ' · ' + dt : '') + '</span>';
         if (viewBtn) viewBtn.style.display = '';
@@ -2140,8 +2141,19 @@ function renderRiskAdmin(sec) {
       var html = e.target.result;
       toast(esc(dept) + ' — байршуулж байна...', 'info');
       saveRiskDashboard(dept, html, function (ok) {
-        if (ok) { toast(esc(dept) + ' — дашбоард амжилттай байршлаа', 'success'); renderHazards(); }
-        else toast('Хадгалахад алдаа гарлаа', 'error');
+        if (ok) {
+          toast(esc(dept) + ' — дашбоард амжилттай байршлаа', 'success');
+          var key2 = dept.replace(/[\s\/]+/g, '_');
+          var stEl2 = document.getElementById('riskSt_' + key2);
+          var card2 = sec.querySelector('[data-risk-dept="' + dept + '"]');
+          if (stEl2) stEl2.innerHTML = '<span style="color:#16A34A"><i class="ti ti-circle-check"></i> Байршуулсан · ' + new Date().toLocaleDateString('mn-MN') + '</span>';
+          if (card2) {
+            var vb2 = card2.querySelector('[data-risk-view]');
+            var db2 = card2.querySelector('[data-risk-del]');
+            if (vb2) vb2.style.display = '';
+            if (db2) db2.style.display = '';
+          }
+        } else { toast('Хадгалахад алдаа гарлаа', 'error'); }
       });
     };
     rd.onerror = function () { toast('Файл уншихад алдаа гарлаа', 'error'); };
@@ -2152,8 +2164,16 @@ function renderRiskAdmin(sec) {
     if (vb) {
       var dept = vb.getAttribute('data-risk-view');
       loadRiskDashboard(dept, function (data) {
-        if (!data || !data.html) { toast('Дашбоард олдсонгүй', 'warn'); return; }
-        openRiskPreviewModal(dept, data.html);
+        if (!data) { toast('Дашбоард олдсонгүй', 'warn'); return; }
+        if (data.html) { openRiskPreviewModal(dept, data.html); return; }
+        if (data.htmlUrl) {
+          toast('Дашбоард ачаалж байна...', 'info');
+          fetch(data.htmlUrl).then(function (r) { return r.text(); })
+            .then(function (html) { openRiskPreviewModal(dept, html); })
+            .catch(function () { toast('Дашбоард ачаалахад алдаа гарлаа', 'error'); });
+          return;
+        }
+        toast('Дашбоард олдсонгүй', 'warn');
       });
       return;
     }
