@@ -1143,7 +1143,6 @@ function renderModAdmin(sec, key, mod, title) {
     '<button class="btn btn-secondary btn-sm" id="mBtnContent"><i class="ti ti-edit"></i> Агуулга засах</button>' +
     '<button class="btn btn-secondary btn-sm" id="mBtnExam"><i class="ti ti-clipboard-list"></i> Шалгалт засах' + (hasExam ? ' (' + examQs.length + ')' : '') + '</button>' +
     '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border:1.5px solid #6EE7B7" id="mBtnOpenAll"><i class="ti ti-lock-open"></i> Бүх сургалт нэгдэж нээх</button>' +
-    '<button class="btn btn-secondary btn-sm" id="mBtnSyncAdmin"><i class="ti ti-refresh"></i> Шалгалтын дүн шинэчлэх</button>' +
     '</div></div>' +
 
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">' +
@@ -1184,19 +1183,6 @@ function renderModAdmin(sec, key, mod, title) {
         saveDB();
         toast('Бүх сургалт нэгдэж нээгдлаа', 'success');
         renderTrainingModule(CURRENT_MOD);
-      }
-      if (ev.target.closest('#mBtnSyncAdmin')) {
-        var btn = ev.target.closest('#mBtnSyncAdmin');
-        btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Татаж байна...';
-        readHabeaExamsByEmail().then(function (habeaMap) {
-          if (syncHabeaToModProgress(habeaMap, DB.employees)) {
-            saveDB();
-            toast('Ажилтнуудын шалгалтын дүн шинэчлэгдлээ', 'success');
-          } else {
-            toast('Шинэ дүн олдсонгүй', 'info');
-          }
-          renderTrainingModule(CURRENT_MOD);
-        }).catch(function () { toast('Шинэчлэхэд алдаа гарлаа', 'error'); renderTrainingModule(CURRENT_MOD); });
       }
     });
   }
@@ -1273,11 +1259,8 @@ function renderModEmployee(sec, key, mod, title, me) {
   }
 
   sec.innerHTML =
-    '<div style="padding:22px 24px 0;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
-    '<div><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 3px">' + esc(title) + '</h1>' +
+    '<div style="padding:22px 24px 0"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 3px">' + esc(title) + '</h1>' +
     '<p style="font-size:12px;color:#64748B;margin:0 0 16px">Дотоод сургалт · ' + esc(me.dept || '') + '</p></div>' +
-    '<button class="btn btn-secondary btn-sm" id="mBtnSyncExam" style="margin-top:4px"><i class="ti ti-refresh"></i> Шалгалтын дүн шинэчлэх</button>' +
-    '</div>' +
     '<div style="padding:0 24px 24px">' +
 
     '<div class="card" style="padding:20px;margin-bottom:14px">' +
@@ -1291,24 +1274,10 @@ function renderModEmployee(sec, key, mod, title, me) {
 
     examSection +
     '</div>';
-  var syncBtn = sec.querySelector('#mBtnSyncExam');
-  if (syncBtn) {
-    syncBtn.addEventListener('click', function () {
-      syncBtn.disabled = true; syncBtn.innerHTML = '<i class="ti ti-loader-2"></i> Татаж байна...';
-      readHabeaExamsByEmail().then(function (habeaMap) {
-        if (syncHabeaToModProgress(habeaMap, DB.employees)) {
-          saveDB();
-          toast('Шалгалтын дүн шинэчлэгдлээ', 'success');
-        } else {
-          toast('Шинэ дүн олдсонгүй', 'info');
-        }
-        renderTrainingModule(CURRENT_MOD);
-      }).catch(function () { toast('Шинэчлэхэд алдаа гарлаа', 'error'); renderTrainingModule(CURRENT_MOD); });
-    });
-  }
 }
 
 /* ========== Үндсэн dispatcher ========== */
+var _trnSyncInProgress = false;
 function renderTrainingModule(key) {
   CURRENT_MOD = key;
   var sec = pageEl('trn-mod'); if (!sec) return;
@@ -1331,6 +1300,18 @@ function renderTrainingModule(key) {
     } else {
       renderModEmployee(sec, key, mod, title, me);
     }
+  }
+
+  /* Auto-sync habea exam results in background (once per navigation) */
+  if (!_trnSyncInProgress && !DEMO && fbReady) {
+    _trnSyncInProgress = true;
+    readHabeaExamsByEmail().then(function (habeaMap) {
+      _trnSyncInProgress = false;
+      if (syncHabeaToModProgress(habeaMap, DB.employees)) {
+        saveDB();
+        if (CURRENT_MOD === key) renderTrainingModule(key);
+      }
+    }).catch(function () { _trnSyncInProgress = false; });
   }
 }
 
