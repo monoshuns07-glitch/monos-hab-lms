@@ -403,8 +403,7 @@
         <p class="page-subtitle">Нийт 142 идэвхтэй ажилтан</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-secondary"><i class="ti ti-filter"></i> Шүүх</button>
-        <button class="btn btn-secondary"><i class="ti ti-download"></i> Excel</button>
+        <button class="btn btn-secondary" id="addExtTrainingBtn" data-admin-only="1"><i class="ti ti-calendar-plus"></i> Гадны сургалт нэмэх</button>
         <button class="btn btn-primary" data-admin-only="1"><i class="ti ti-user-plus"></i> Шинэ ажилтан</button>
       </div>
     </div>
@@ -424,41 +423,12 @@
           <i class="ti ti-search"></i>
           <input type="text" placeholder="Нэр, овог, ID-аар хайх...">
         </div>
-        <div class="select-pill"><i class="ti ti-building"></i><span>Бүх хэлтэс</span><i class="ti ti-chevron-down"></i></div>
-        <div class="select-pill"><i class="ti ti-briefcase"></i><span>Бүх албан тушаал</span><i class="ti ti-chevron-down"></i></div>
-        <div class="select-pill"><i class="ti ti-sort-ascending"></i><span>KPI оноо</span><i class="ti ti-chevron-down"></i></div>
+        <div class="select-pill" id="empDeptPill"><i class="ti ti-building"></i><span>Бүх хэлтэс</span><i class="ti ti-chevron-down"></i></div>
+        <div class="select-pill" id="empSortPill"><i class="ti ti-sort-ascending"></i><span>KPI оноо</span><i class="ti ti-chevron-down"></i></div>
       </div>
-
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th style="width:30px"><input type="checkbox"></th>
-            <th>Ажилтан</th>
-            <th>Алба</th>
-            <th>MiSkill видео</th>
-            <th>Урьдчилсан</th>
-            <th>Сүүлийн шалгалт</th>
-            <th>Ахиц</th>
-            <th>Бонус</th>
-            <th>Нийт оноо</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="empTableBody">
-        </tbody>
-      </table>
-
+      <div id="empTableWrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"></div>
       <div class="table-footer">
-        <div>1-10 / 142 ажилтан</div>
-        <div class="pagination">
-          <button class="page-btn"><i class="ti ti-chevron-left"></i></button>
-          <button class="page-btn active">1</button>
-          <button class="page-btn">2</button>
-          <button class="page-btn">3</button>
-          <button class="page-btn">...</button>
-          <button class="page-btn">15</button>
-          <button class="page-btn"><i class="ti ti-chevron-right"></i></button>
-        </div>
+        <div id="empFooterInfo">—</div>
       </div>
     </div>
   </section>
