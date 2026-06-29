@@ -1027,7 +1027,9 @@ function renderMyExams() {
   var me = myEmployeeRecord();
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
   var name = encodeURIComponent((me && me.name) || '');
-  var cards = EXAM_PAGES.map(function (ep) {
+  var cards = EXAM_PAGES.filter(function (ep) {
+    return isModExamUnlocked(me, ep.key);
+  }).map(function (ep) {
     var prog = me ? getEmpProg(me.id, ep.key) : {};
     var scoreHtml = prog.examTaken
       ? '<div style="margin-top:10px;display:inline-block;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '% · ' + (prog.examPassed ? 'Тэнцсэн ✓' : 'Тэнцээгүй') + '</div>'
@@ -1045,7 +1047,8 @@ function renderMyExams() {
     '<div style="padding:26px 28px 14px"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">ХАБЭА Шалгалт</h1>' +
     '<p style="font-size:13px;color:#64748B;margin:0">Тохирох шалгалтаа сонгоод өгнө үү. Дүн автоматаар бүртгэгдэнэ.</p></div>' +
     '<div style="padding:0 28px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">' +
-    cards + '</div>';
+    (cards || '<div class="empty-state" style="padding:40px"><i class="ti ti-lock"></i><div>Нээлттэй шалгалт байхгүй.<br><span style="font-size:12px;color:#94A3B8">Сургалтаа дуусгасны дараа шалгалтын товч гарч ирнэ.</span></div></div>') +
+    '</div>';
 }
 
 function renderSidebar() {
