@@ -3442,54 +3442,47 @@ function renderAdminPanel() {
     'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
 }
 
-/* ============ Шалгалтын админ (habea-admin — апп дотор шингээсэн) ============ */
+/* ============ Шалгалтын удирдлага ============ */
 function renderExamAdmin() {
   var sec = pageEl('examadmin'); if (!sec) return;
   if (!isAdmin()) { sec.style.padding = ''; sec.innerHTML = '<div class="card"><div class="empty-state" style="padding:30px"><i class="ti ti-lock"></i><div>Зөвхөн ХАБЭА ажилтан хандана.</div></div></div>'; return; }
   sec.style.padding = '';
-  // Дотоод сургалтын ангиллууд (нав цэснээс автоматаар)
-  var cats = [];
-  $$('.nav-item.leaf[data-cat]').forEach(function (el) { var c = el.getAttribute('data-cat'); if (c && cats.indexOf(c) < 0) cats.push(c); });
-  var examOpen = (DB.settings && DB.settings.examOpen) || {};
-  var cardsHtml = cats.map(function (cat) {
-    var key = courseKey(cat);
-    var isOpen = examOpen[key] !== false;
-    return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px;' + (isOpen ? '' : 'opacity:.7;border-left:4px solid #DC2626') + '">' +
-      '<div style="width:46px;height:46px;border-radius:12px;background:' + (isOpen ? '#E0E7FF' : '#FEE2E2') + ';color:' + (isOpen ? '#3730A3' : '#991B1B') + ';display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-clipboard-text"></i></div>' +
-      '<div style="flex:1;min-width:0"><div style="font-weight:600">' + esc(cat) + '</div>' +
-      '<div style="font-size:12px;color:#8A94A6">Шалгалтын асуулт + дүн · Ажилтнуудад ' + (isOpen ? '<span style="color:#16A34A;font-weight:600">нээлттэй ✓</span>' : '<span style="color:#DC2626;font-weight:600">хаалттай ✗</span>') + '</div></div>' +
-      '<div style="display:flex;gap:8px;align-items:center">' +
-      '<button class="btn btn-sm" style="' + (isOpen ? 'background:#FEE2E2;color:#991B1B;border-color:#FECACA' : 'background:#D1FAE5;color:#065F46;border-color:#A7F3D0') + '" data-exam-toggle="' + esc(key) + '" data-exam-cat="' + esc(cat) + '">' +
-      '<i class="ti ti-' + (isOpen ? 'lock' : 'lock-open') + '"></i> ' + (isOpen ? 'Хаах' : 'Нээх') + '</button>' +
-      '<a href="/shalgalt/habea-admin.html?exam=' + encodeURIComponent(key) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="ti ti-external-link"></i> Дүн</a></div></div>';
+
+  var examCards = EXAM_PAGES.map(function (ep) {
+    var taken = 0, passed = 0;
+    (DB.employees || []).forEach(function (emp) {
+      var p = getEmpProg(emp.id, ep.key);
+      if (p.examTaken) { taken++; if (p.examPassed) passed++; }
+    });
+    var total = (DB.employees || []).length;
+    var pct = taken ? Math.round(passed / taken * 100) : 0;
+    var adminUrl = 'https://monoshuns-hab.netlify.app/habea-admin.html?exam=' + encodeURIComponent(ep.key);
+    return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px">' +
+      '<div style="width:46px;height:46px;border-radius:12px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0"><i class="ti ' + ep.icon + '"></i></div>' +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-weight:600">' + esc(ep.label) + '</div>' +
+      '<div style="font-size:12px;color:#8A94A6">' + taken + '/' + total + ' өгсөн' + (taken ? ' · Тэнцсэн ' + passed + ' (' + pct + '%)' : '') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;flex-shrink:0">' +
+      '<a href="' + adminUrl + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm"><i class="ti ti-pencil"></i> Асуулт засах</a>' +
+      '<a href="' + adminUrl + '&tab=results" target="_blank" rel="noopener" class="btn btn-sm" style="background:#F1F5F9;color:#475569;border:1.5px solid #E2E8F0"><i class="ti ti-chart-bar"></i> Дүн</a>' +
+      '</div></div>';
   }).join('');
-  sec.innerHTML = '<div class="page-header"><div><h1>Шалгалтын удирдлага</h1>' +
-    '<p class="page-subtitle">Сургалт бүрийн шалгалтын асуулт, дүнг тусад нь удирдана</p></div></div>' +
+
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Шалгалтын удирдлага</h1>' +
+    '<p class="page-subtitle">ХАБЭА шалгалт бүрийн асуулт, тохиргоо, дүнг удирдана</p></div></div>' +
     '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:18px;border:1.5px solid #C7D2FE">' +
     '<div style="width:46px;height:46px;border-radius:12px;background:#4338CA;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-layout-dashboard"></i></div>' +
     '<div style="flex:1"><div style="font-weight:700">Ерөнхий админ (бүх шалгалтын дүн)</div>' +
     '<div style="font-size:12px;color:#8A94A6">Бүх дүн, статистик, тохиргоо · PIN 1234</div></div>' +
-    '<a href="/shalgalt/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
-    '<h3 style="margin:0 0 12px">Сургалт бүрийн шалгалтын админ</h3>' +
-    (cardsHtml || '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Сургалт олдсонгүй</div></div>') +
-    '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px"><h3 style="margin:0">Шалгалтын бүртгэл</h3><button onclick="loadHabeaResultsPanel()" class="btn btn-sm btn-ghost" style="font-size:12px;padding:4px 10px"><i class="ti ti-refresh"></i> Шинэчлэх</button></div>' +
+    '<a href="https://monoshuns-hab.netlify.app/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
+    '<h3 style="margin:0 0 12px">ХАБЭА Шалгалт — Тус бүрийн удирдлага</h3>' +
+    examCards +
+    '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px"><h3 style="margin:0">Шалгалтын бүртгэл</h3>' +
+    '<button onclick="loadHabeaResultsPanel()" class="btn btn-sm btn-ghost" style="font-size:12px;padding:4px 10px"><i class="ti ti-refresh"></i> Шинэчлэх</button></div>' +
     '<div id="habeaResultsPanel"><div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div></div>';
-  setTimeout(function(){ loadHabeaResultsPanel(); }, 0);
-  if (!sec._examAdminWired) {
-    sec._examAdminWired = true;
-    sec.addEventListener('click', function (ev) {
-      var tb = ev.target.closest('[data-exam-toggle]');
-      if (!tb) return;
-      var key = tb.getAttribute('data-exam-toggle');
-      var cat = tb.getAttribute('data-exam-cat');
-      DB.settings.examOpen = DB.settings.examOpen || {};
-      var wasOpen = DB.settings.examOpen[key] !== false;
-      DB.settings.examOpen[key] = !wasOpen;
-      saveDB();
-      renderExamAdmin();
-      toast((wasOpen ? '🔒 ' : '🔓 ') + esc(cat) + ' шалгалт ' + (wasOpen ? 'хаагдлаа' : 'нээгдлээ'), wasOpen ? 'warn' : 'success');
-    });
-  }
+  setTimeout(function () { loadHabeaResultsPanel(); }, 0);
 }
 
 async function loadHabeaResultsPanel() {
@@ -5233,7 +5226,7 @@ function applyRole() {
   } catch (e) {}
   if (isAdmin()) {
     // Операциональ цэсүүдийг админы харагдацаас нуух
-    ['incidents', 'inspections', 'suggestions', 'health'].forEach(function (pg) {
+    ['incidents', 'inspections', 'suggestions', 'health', 'myexams'].forEach(function (pg) {
       var nav = document.querySelector('.nav-item[data-page="' + pg + '"]');
       if (nav) nav.style.display = 'none';
     });
