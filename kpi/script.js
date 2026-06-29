@@ -1089,7 +1089,7 @@ function renderModAdmin(sec, key, mod, title) {
     var dDone = dEmps.filter(function (e) { return getEmpProg(e.id, key).trainingCompleted; }).length;
     return '<tr>' +
       '<td style="font-weight:500;font-size:13px">' + esc(dept) + ' <span style="color:#94A3B8;font-weight:400;font-size:11px">' + dEmps.length + ' хүн</span></td>' +
-      '<td style="text-align:center">' + modTog(!!(rel.trainingReleased), !hasContent, 'data-modact="train" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
+      '<td style="text-align:center">' + modTog(!!(mod.releasedToAll || rel.trainingReleased), !hasContent, 'data-modact="train" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
       '<td style="text-align:center">' + modTog(!!(rel.examForceUnlocked), !hasExam, 'data-modact="exam" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
       '<td style="text-align:center;font-size:13px"><span style="color:#16A34A;font-weight:600">' + dDone + '</span><span style="color:#94A3B8">/' + dEmps.length + '</span></td>' +
       '<td style="font-size:11px;color:#94A3B8">' + (rel.updatedAt ? timeAgo(rel.updatedAt) : '—') + '</td>' +
