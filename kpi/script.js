@@ -294,6 +294,8 @@ function seedDB() {
       firstAidBoxCounts: {} // { dept: N } — алба тус бүрийн хайрцгийн тоо (admin тохируулна)
     },
     employees: [],
+    extTrainings: [],
+    extAttendance: {},
     hazards: [],
     suggestions: [],
     incidents: [],
@@ -532,6 +534,8 @@ function migrateDB() {
   if (!DB.moduleReleases) DB.moduleReleases = {};
   if (!DB.userRoles) DB.userRoles = {};
   if (!DB.empProgress) DB.empProgress = {};
+  if (!Array.isArray(DB.extTrainings)) DB.extTrainings = [];
+  if (!DB.extAttendance || typeof DB.extAttendance !== 'object') DB.extAttendance = {};
   if (!DB.settings) DB.settings = seedDB().settings;
   if (!DB.settings.kpi) DB.settings.kpi = seedDB().settings.kpi;
   // Дутуу дэд тохиргоог нөхөх (хэрэглэгчийн өөрчилснийг хадгална)
@@ -1878,66 +1882,157 @@ function filteredEmployees() {
   return list;
 }
 
+/* ---- Гадны сургалтын туслах функцүүд ---- */
+function getExtAtt(extId, empId) {
+  return ((DB.extAttendance || {})[extId + '_' + empId]) || { status: '' };
+}
+var EXT_STATUS = {
+  '':        { label: '—',        color: '#CBD5E1', bg: '#F8FAFC' },
+  planned:   { label: 'Товлосон', color: '#6366F1', bg: '#EEF2FF' },
+  attended:  { label: 'Суусан',   color: '#16A34A', bg: '#DCFCE7' },
+  absent:    { label: 'Тасалсан', color: '#DC2626', bg: '#FEE2E2' },
+  excused:   { label: 'Чөлөөтэй',color: '#D97706', bg: '#FEF3C7' }
+};
+var EXT_STATUS_CYCLE = ['', 'planned', 'attended', 'absent', 'excused'];
+
 function renderEmployees() {
-  var tbody = $('#empTableBody');
-  if (!tbody) return;
+  var wrap = $('#empTableWrap');
+  if (!wrap) return;
   var list = filteredEmployees();
   var total = list.length;
-  // — Алба тус бүрээр бүлэглэнэ (алба бүрд тухайн албаны ажилчид) —
-  var groups = {};
-  list.forEach(function (e) { var d = e.dept || 'Тодорхойгүй'; (groups[d] = groups[d] || []).push(e); });
-  var deptNames = Object.keys(groups).sort(function (a, b) { return deptScore(b) - deptScore(a); });
+  var extTrainings = DB.extTrainings || [];
+  var intKeys = Object.keys(TRAINING_MODULES);
+  var totalCols = 3 + intKeys.length + (extTrainings.length || 1) + 2;
+
+  // --- thead ---
+  var intColspan = intKeys.length;
+  var extColspan = extTrainings.length || 1;
+  var intHeadCells = intKeys.map(function (k) {
+    var label = TRAINING_MODULES[k];
+    var short = label.length > 12 ? label.slice(0, 10) + '…' : label;
+    return '<th style="font-size:10px;font-weight:600;color:#1D4ED8;white-space:nowrap;padding:5px 8px;min-width:64px" title="' + esc(label) + '">' + esc(short) + '</th>';
+  }).join('');
+  var extHeadCells = extTrainings.length
+    ? extTrainings.map(function (t) {
+        var del = (isAdmin() || isDeptHead()) ? ' <button class="icon-btn-sm" style="font-size:9px;opacity:.5;vertical-align:middle" data-del-ext="' + esc(t.id) + '" title="Устгах">✕</button>' : '';
+        return '<th style="font-size:10px;font-weight:600;color:#166534;white-space:nowrap;padding:5px 8px;min-width:70px">' + esc(t.name) + (t.date ? '<br><span style="font-weight:400;color:#64748B">' + esc(t.date) + '</span>' : '') + del + '</th>';
+      }).join('')
+    : '<th style="font-size:11px;color:#94A3B8;font-weight:400;padding:5px 8px">—</th>';
+
+  var thead = '<thead>' +
+    '<tr>' +
+    '<th style="width:28px"></th>' +
+    '<th>Ажилтан</th>' +
+    '<th>Алба</th>' +
+    '<th colspan="' + intColspan + '" style="background:#EFF6FF;color:#1D4ED8;text-align:center;font-size:11px;padding:6px 8px">Дотоод сургалт</th>' +
+    '<th colspan="' + extColspan + '" style="background:#F0FDF4;color:#166534;text-align:center;font-size:11px;padding:6px 8px">Гадны сургалт</th>' +
+    '<th style="white-space:nowrap">Нийт KPI</th>' +
+    '<th></th>' +
+    '</tr>' +
+    '<tr>' +
+    '<th></th><th></th><th></th>' +
+    intHeadCells + extHeadCells +
+    '<th></th><th></th>' +
+    '</tr>' +
+    '</thead>';
+
+  // --- employee row ---
+  function empIntCells(e) {
+    return intKeys.map(function (k) {
+      var prog = getEmpProg(e.id, k);
+      var vis = isModTrainingVisible(e, k);
+      if (!vis) return '<td style="text-align:center;color:#E2E8F0">—</td>';
+      if (prog.trainingCompleted) return '<td style="text-align:center" title="Дуусгасан"><span style="color:#16A34A;font-size:15px">✓</span></td>';
+      if (prog.trainingStarted)   return '<td style="text-align:center" title="Эхэлсэн"><span style="color:#F59E0B;font-size:13px">⌛</span></td>';
+      return '<td style="text-align:center" title="Эхлээгүй"><span style="color:#CBD5E1;font-size:13px">○</span></td>';
+    }).join('');
+  }
+  function empExtCells(e) {
+    if (!extTrainings.length) return '<td style="text-align:center;color:#94A3B8;font-size:11px">—</td>';
+    return extTrainings.map(function (t) {
+      var att = getExtAtt(t.id, e.id);
+      var s = EXT_STATUS[att.status] || EXT_STATUS[''];
+      var canEdit = isAdmin() || isDeptHead();
+      var cursor = canEdit ? 'cursor:pointer' : '';
+      var attr = canEdit ? 'data-ext-toggle="' + esc(t.id) + '_' + esc(e.id) + '"' : '';
+      return '<td style="text-align:center"><span class="tag" style="font-size:10px;padding:2px 7px;background:' + s.bg + ';color:' + s.color + ';border-radius:20px;' + cursor + '" ' + attr + '>' + s.label + '</span></td>';
+    }).join('');
+  }
   function rowHTML(e) {
     var tot = empTotal(e);
-    var habeaCnt = (e.habeaExams || []).length;
-    var preScore = e.examPrev != null ? e.examPrev : '—';
-    var postScore = kpiExam(e);
-    var preCell = preScore === '—'
-      ? '<span style="color:#94A3B8;font-size:12px">—</span>'
-      : '<span class="score-pill ' + scoreClass(num(preScore)) + '" style="font-size:11px">' + preScore + '</span>';
-    var postCell = '<span class="score-pill ' + scoreClass(postScore) + '">' + postScore + '</span>' +
-      (habeaCnt ? '<div style="font-size:10px;color:#94A3B8;margin-top:2px">MiSkill: ' + habeaCnt + 'ш</div>' : '');
     return '<tr data-emp="' + e.id + '">' +
       '<td><input type="checkbox"></td>' +
       '<td><div class="emp-cell"><div class="avatar avatar-sm">' + esc(e.initials) + '</div>' +
       '<div class="emp-info"><div class="emp-name">' + esc(e.name) +
-      (e.onLeave ? ' <span class="tag tag-warn">Чөлөөтэй</span>' : '') +
+      (e.onLeave ? ' <span class="tag tag-warn" style="font-size:10px">Чөлөөтэй</span>' : '') +
       '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
-      '<td>' + esc(e.dept) + '</td>' +
-      '<td><span class="score-pill ' + scoreClass(kpiVideo(e)) + '">' + kpiVideo(e) + '%</span></td>' +
-      '<td>' + preCell + '</td>' +
-      '<td>' + postCell + '</td>' +
-      '<td><span class="score-pill ' + scoreClass(kpiImprovement(e)) + '">' + kpiImprovement(e) + '</span></td>' +
-      '<td><span class="score-pill score-bonus" title="' + empBonusPoints(e) + ' оноо">+' + empBonusPoints(e) + '</span></td>' +
+      '<td style="font-size:12px">' + esc(e.dept) + '</td>' +
+      empIntCells(e) + empExtCells(e) +
       '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
       '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
       '</tr>';
   }
-  if (!total) {
-    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">' +
-      '<i class="ti ti-search-off"></i><div>Илэрц олдсонгүй</div></div></td></tr>';
-  } else {
-    tbody.innerHTML = deptNames.map(function (d) {
-      var members = groups[d];
-      var avgT = Math.round(avg(members.map(empTotal)));
-      var head = '<tr class="dept-group-row"><td colspan="10" style="background:#F0FDF4;padding:11px 14px;font-weight:700;color:#065F46;border-top:2px solid #BBF7D0">' +
-        '<i class="ti ti-building" style="margin-right:6px"></i>' + esc(d) +
-        '<span style="font-weight:500;color:#16A34A;font-size:12px;margin-left:8px">· ' + members.length + ' ажилтан · дундаж KPI ' + avgT + '</span></td></tr>';
-      return head + members.map(rowHTML).join('');
+
+  // --- dept group row ---
+  function deptRow(d, members) {
+    var avgT = Math.round(avg(members.map(empTotal)));
+    // Дотоод сургалт дүн
+    var intSummary = intKeys.map(function (k) {
+      var done = members.filter(function (e) { return getEmpProg(e.id, k).trainingCompleted; }).length;
+      var vis  = members.filter(function (e) { return isModTrainingVisible(e, k); }).length;
+      if (!vis) return '<span style="color:#CBD5E1;font-size:11px">—</span>';
+      var pct = Math.round(done / vis * 100);
+      var col = pct === 100 ? '#16A34A' : pct >= 50 ? '#F59E0B' : '#DC2626';
+      return '<span style="color:' + col + ';font-weight:600;font-size:11px">' + done + '/' + vis + '</span>';
+    }).join('<span style="color:#CBD5E1;margin:0 2px">·</span>');
+    // Гадны сургалт дүн
+    var extSummary = extTrainings.map(function (t) {
+      var att = 0, abs = 0, exc = 0, plan = 0;
+      members.forEach(function (e) {
+        var s = getExtAtt(t.id, e.id).status;
+        if (s === 'attended') att++;
+        else if (s === 'absent') abs++;
+        else if (s === 'excused') exc++;
+        else if (s === 'planned') plan++;
+      });
+      return '<span style="font-size:11px;margin-right:8px"><span style="color:#475569;font-weight:600">' + esc(t.name) + ':</span> ' +
+        (att ? '<span style="color:#16A34A">' + att + ' суусан</span> ' : '') +
+        (abs ? '<span style="color:#DC2626">' + abs + ' тасалсан</span> ' : '') +
+        (exc ? '<span style="color:#D97706">' + exc + ' чөлөөтэй</span> ' : '') +
+        (plan ? '<span style="color:#6366F1">' + plan + ' товлосон</span>' : '') +
+        '</span>';
     }).join('');
+    return '<tr class="dept-group-row"><td colspan="' + totalCols + '" style="background:#F0FDF4;padding:10px 14px;border-top:2px solid #BBF7D0">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<span style="font-weight:700;color:#065F46"><i class="ti ti-building" style="margin-right:5px"></i>' + esc(d) + '</span>' +
+      '<span style="color:#16A34A;font-size:12px">' + members.length + ' ажилтан · KPI ' + avgT + '</span>' +
+      (intSummary ? '<span style="font-size:11px;color:#475569;margin-left:6px"><span style="color:#1D4ED8;font-weight:600">Дотоод:</span> ' + intSummary + '</span>' : '') +
+      (extSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#166534;font-weight:600">Гадны:</span> ' + extSummary + '</span>' : '') +
+      '</div></td></tr>';
   }
 
-  var footer = $('.page[data-page="employees"] .table-footer');
-  if (footer) footer.innerHTML = '<div>' + total + ' ажилтан · ' + deptNames.length + ' алба' + (isDeptHead() && SESSION && SESSION.dept ? ' · <span style="color:#8B5CF6;font-weight:600">' + esc(SESSION.dept) + '</span>' : '') + '</div>';
+  // --- Render ---
+  var groups = {};
+  list.forEach(function (e) { var d = e.dept || 'Тодорхойгүй'; (groups[d] = groups[d] || []).push(e); });
+  var deptNames = Object.keys(groups).sort(function (a, b) { return deptScore(b) - deptScore(a); });
 
-  // Туслах админ үед page subtitle-г шинэчлэх
+  var tbodyHtml = !total
+    ? '<tr><td colspan="' + totalCols + '"><div class="empty-state"><i class="ti ti-search-off"></i><div>Илэрц олдсонгүй</div></div></td></tr>'
+    : deptNames.map(function (d) {
+        return deptRow(d, groups[d]) + groups[d].map(rowHTML).join('');
+      }).join('');
+
+  wrap.innerHTML = '<table class="data-table" style="min-width:700px">' + thead +
+    '<tbody id="empTableBody">' + tbodyHtml + '</tbody></table>';
+
+  // footer
+  var fi = $('#empFooterInfo');
+  if (fi) fi.innerHTML = total + ' ажилтан · ' + deptNames.length + ' алба' + (isDeptHead() && SESSION && SESSION.dept ? ' · <span style="color:#8B5CF6;font-weight:600">' + esc(SESSION.dept) + '</span>' : '');
+
   var psub = $('.page[data-page="employees"] .page-subtitle');
   if (psub) {
-    if (isDeptHead() && SESSION && SESSION.dept) {
-      psub.textContent = esc(SESSION.dept) + ' · ' + total + ' ажилтан (зөвхөн харах эрхтэй)';
-    } else if (isAdmin()) {
-      psub.textContent = 'Нийт ' + total + ' ажилтан';
-    }
+    if (isDeptHead() && SESSION && SESSION.dept) psub.textContent = esc(SESSION.dept) + ' · ' + total + ' ажилтан';
+    else if (isAdmin()) psub.textContent = 'Нийт ' + total + ' ажилтан';
   }
 
   setStat('.page[data-page="employees"] .stat-strip', 0, DB.employees.length);
@@ -1945,6 +2040,77 @@ function renderEmployees() {
   setStat('.page[data-page="employees"] .stat-strip', 2, DB.employees.filter(function (e) { return e.onLeave; }).length);
   setStat('.page[data-page="employees"] .stat-strip', 3, avgKpi().toFixed(1));
   setStat('.page[data-page="employees"] .stat-strip', 4, DB.employees.filter(function (e) { return empTotal(e) < 75; }).length);
+}
+
+/* ---- Гадны сургалт нэмэх/устгах ---- */
+function openAddExtTrainingModal() {
+  var body = document.createElement('div');
+  body.style.cssText = 'display:flex;flex-direction:column;gap:14px;padding:4px 0';
+  body.innerHTML =
+    '<div><label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px">Сургалтын нэр *</label>' +
+    '<input id="extTName" class="form-control" placeholder="жишээ: Галын аюулгүй байдал" style="width:100%"></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+    '<div><label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px">Огноо</label>' +
+    '<input id="extTDate" class="form-control" placeholder="2026-07" style="width:100%"></div>' +
+    '<div><label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:5px">Зохион байгуулагч</label>' +
+    '<input id="extTOrg" class="form-control" placeholder="ОБЕГ, ХАСХОМ..." style="width:100%"></div>' +
+    '</div>';
+  var footer = document.createElement('div');
+  footer.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:8px';
+  footer.innerHTML = '<button class="btn btn-secondary" id="extTCancel">Болих</button>' +
+    '<button class="btn btn-primary" id="extTSave"><i class="ti ti-plus"></i> Нэмэх</button>';
+  var wrap = document.createElement('div');
+  wrap.appendChild(body); wrap.appendChild(footer);
+  buildModal('Гадны сургалт нэмэх', wrap, { width: '440px' });
+  document.getElementById('extTCancel').onclick = function () { closeModal(); };
+  document.getElementById('extTSave').onclick = function () {
+    var name = (document.getElementById('extTName').value || '').trim();
+    if (!name) { toast('Сургалтын нэр оруулна уу', 'warn'); return; }
+    DB.extTrainings = DB.extTrainings || [];
+    DB.extTrainings.push({ id: 'ext_' + Date.now(), name: name, date: (document.getElementById('extTDate').value || '').trim(), org: (document.getElementById('extTOrg').value || '').trim() });
+    saveDB();
+    closeModal();
+    renderEmployees();
+    toast('Гадны сургалт нэмэгдлээ', 'success');
+  };
+}
+
+function wireEmployeesPage() {
+  var page = $('.page[data-page="employees"]');
+  if (!page || page._empWired) return;
+  page._empWired = true;
+
+  // Гадны сургалт нэмэх товч
+  var addBtn = document.getElementById('addExtTrainingBtn');
+  if (addBtn) addBtn.addEventListener('click', openAddExtTrainingModal);
+
+  // Attendance toggle + ext delete (event delegation on page)
+  page.addEventListener('click', function (ev) {
+    // Attendance toggle
+    var toggleEl = ev.target.closest('[data-ext-toggle]');
+    if (toggleEl) {
+      var key = toggleEl.getAttribute('data-ext-toggle');
+      DB.extAttendance = DB.extAttendance || {};
+      var cur = (DB.extAttendance[key] || {}).status || '';
+      var idx = EXT_STATUS_CYCLE.indexOf(cur);
+      var next = EXT_STATUS_CYCLE[(idx + 1) % EXT_STATUS_CYCLE.length];
+      DB.extAttendance[key] = { status: next };
+      saveDB();
+      renderEmployees();
+      return;
+    }
+    // Delete external training
+    var delEl = ev.target.closest('[data-del-ext]');
+    if (delEl) {
+      var extId = delEl.getAttribute('data-del-ext');
+      if (!confirm('Энэ гадны сургалтыг устгах уу? Бүх ажилтны бүртгэл арилна.')) return;
+      DB.extTrainings = (DB.extTrainings || []).filter(function (t) { return t.id !== extId; });
+      Object.keys(DB.extAttendance || {}).forEach(function (k) { if (k.indexOf(extId + '_') === 0) delete DB.extAttendance[k]; });
+      saveDB();
+      renderEmployees();
+      toast('Устгагдлаа', 'success');
+    }
+  });
 }
 
 /* ============ KPI хуудас (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
@@ -5310,6 +5476,7 @@ async function init() {
   injectControls();
   applyRole();
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
+  wireEmployeesPage();
 
   // URL-аас тодорхой хэсэг нээх (жишээ: /kpi/?page=hazards)
   try {
