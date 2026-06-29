@@ -2036,10 +2036,30 @@ function saveRiskDashboard(dept, html, cb) {
     return;
   }
   if (!fbReady || !fdb) { cb(false); return; }
-  if (html.length > 900000) { toast('Файл хэт том (900KB дээд хязгаар). Зурагны тоог багасгаж туршина уу.', 'warn'); cb(false); return; }
-  var meta = { dept: dept, html: html, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
-  fdb.collection(RISK_COL).doc(dept).set(meta)
-    .then(function () { cb(true); }).catch(function () { cb(false); });
+  var R2W = 'https://monos-upload.buynt666.workers.dev';
+  var R2K = 'monos2026';
+  var fname = 'rdash_' + Date.now() + '_' + dept.replace(/[^a-zA-Z0-9]/g, '_') + '.html';
+  var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  var xhr = new XMLHttpRequest();
+  xhr.open('PUT', R2W + '/' + fname);
+  xhr.setRequestHeader('X-Key', R2K);
+  xhr.setRequestHeader('Content-Type', 'text/html;charset=utf-8');
+  xhr.onload = function () {
+    var meta = { dept: dept, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
+    if (xhr.status === 200) {
+      try { meta.htmlUrl = JSON.parse(xhr.responseText).url; } catch (e) { meta.htmlUrl = R2W + '/' + fname; }
+    } else {
+      meta.html = html;
+    }
+    fdb.collection(RISK_COL).doc(dept).set(meta)
+      .then(function () { cb(true); }).catch(function () { cb(false); });
+  };
+  xhr.onerror = function () {
+    var meta = { dept: dept, html: html, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
+    fdb.collection(RISK_COL).doc(dept).set(meta)
+      .then(function () { cb(true); }).catch(function () { cb(false); });
+  };
+  xhr.send(blob);
 }
 
 function deleteRiskDashboard(dept, cb) {
