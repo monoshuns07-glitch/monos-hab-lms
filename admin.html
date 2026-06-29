@@ -211,6 +211,12 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 }
 .tab-section{display:none}
 .tab-section.active{display:block}
+.subtab-bar{display:flex;gap:4px;padding:0 0 16px 0;border-bottom:1px solid var(--line);margin-bottom:20px}
+.subtab-btn{padding:8px 18px;border:none;background:rgba(255,255,255,.05);border-radius:8px;font-family:inherit;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;transition:all .2s;letter-spacing:.02em}
+.subtab-btn:hover{color:white;background:rgba(255,255,255,.1)}
+.subtab-btn.active{background:var(--red);color:white}
+.subtab-section{display:none}
+.subtab-section.active{display:block}
 
 /* ===== CONTAINER ===== */
 .admin-container{max-width:1260px;margin:0 auto;padding:30px 28px;position:relative;z-index:10}
@@ -676,8 +682,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <button class="tab-btn active" data-tab="kb">📋 Даатгал</button>
     <button class="tab-btn" data-tab="users">👥 Хэрэглэгчид</button>
     <button class="tab-btn" data-tab="videos">🎬 Видео</button>
-    <button class="tab-btn" data-tab="lms">📖 Сургалт</button>
-    <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
+        <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
     <a class="tab-btn" href="/kpi/" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">🛡️ KPI / ХАБЭА</a>
   </div>
 </div>
@@ -778,6 +783,12 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 <div id="tab-videos" class="tab-section">
 <div class="admin-container">
 
+  <div class="subtab-bar">
+    <button class="subtab-btn active" data-subtab="video">🎬 Видео</button>
+    <button class="subtab-btn" data-subtab="lms">📖 Сургалт</button>
+  </div>
+
+  <div class="subtab-section active" id="subtab-video">
   <div class="stats-grid">
     <div class="stat-card blue">
       <div class="stat-label">Нийт видео</div>
@@ -824,14 +835,9 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
   <div id="videoListWrap">
     <div class="loading"><div class="spinner"></div><p>Ачаалж байна...</p></div>
   </div>
+  </div><!-- /subtab-video -->
 
-</div>
-</div>
-
-<!-- ===== LMS TAB ===== -->
-<div id="tab-lms" class="tab-section">
-<div class="admin-container">
-
+  <div class="subtab-section" id="subtab-lms">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
       <div style="font-size:18px;font-weight:700;color:var(--white);margin-bottom:6px">📖 Сургалтын удирдлага</div>
@@ -848,6 +854,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
   <div class="lms-tree" id="lmsTree">
     <div class="lms-empty" style="padding:48px;text-align:center">Ачаалж байна…</div>
   </div>
+  </div><!-- /subtab-lms -->
 
 </div>
 </div>
@@ -1746,6 +1753,17 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     if(btn.dataset.tab==='dashboard') loadDashboard();
   });
 });
+// Sub-tab switching inside Видео tab
+document.querySelectorAll('.subtab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const parent=btn.closest('.tab-section');
+    parent.querySelectorAll('.subtab-btn').forEach(b=>b.classList.remove('active'));
+    parent.querySelectorAll('.subtab-section').forEach(s=>s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('subtab-'+btn.dataset.subtab).classList.add('active');
+    if(btn.dataset.subtab==='lms' && !lmsChapters.length) loadLMS();
+  });
+});
 
 /* ===== SECONDARY FIREBASE APP (for creating users without logging out admin) ===== */
 const firebaseConfigSecondary = {
@@ -2565,13 +2583,6 @@ let loadedQTrainings=new Set();
 let selChapterId=null, selTopicId=null, selTrainingId=null;
 let editingChapterId=null, editingTopicId=null, editingTrainingId=null, editingQuestionId=null;
 
-(function(){
-  document.querySelectorAll('.tab-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      if(btn.dataset.tab==='lms' && !lmsChapters.length) loadLMS();
-    });
-  });
-})();
 
 async function loadLMS(){
   document.getElementById('lmsTree').innerHTML='<div class="lms-empty" style="padding:48px;text-align:center">Ачаалж байна…</div>';
