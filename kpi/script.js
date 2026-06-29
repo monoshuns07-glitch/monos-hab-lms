@@ -995,6 +995,35 @@ var EXAM_PAGES = [
 ];
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
+
+  if (isAdmin()) {
+    var adminCards = EXAM_PAGES.map(function (ep) {
+      var taken = 0, passed = 0;
+      (DB.employees || []).forEach(function (emp) {
+        var p = getEmpProg(emp.id, ep.key);
+        if (p.examTaken) { taken++; if (p.examPassed) passed++; }
+      });
+      var total = (DB.employees || []).length;
+      var pct = taken ? Math.round(passed / taken * 100) : 0;
+      var adminUrl = 'https://monoshuns-hab.netlify.app/habea-admin.html?exam=' + encodeURIComponent(ep.key);
+      return '<div class="card" style="padding:22px;border:1.5px solid #E2E8F0">' +
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">' +
+        '<div style="width:48px;height:48px;border-radius:13px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0"><i class="ti ' + ep.icon + '"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;color:#1E293B">' + esc(ep.label) + '</div>' +
+        '<div style="font-size:12px;color:#64748B;margin-top:2px">' + taken + '/' + total + ' өгсөн' + (taken ? ' · Тэнцсэн ' + passed + ' (' + pct + '%)' : '') + '</div></div></div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<a href="' + adminUrl + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm" style="flex:1;text-align:center"><i class="ti ti-pencil"></i> Асуулт засах</a>' +
+        '<a href="' + adminUrl + '&tab=results" target="_blank" rel="noopener" class="btn btn-sm" style="flex:1;text-align:center;background:#F1F5F9;color:#475569;border:1.5px solid #E2E8F0"><i class="ti ti-chart-bar"></i> Дүн харах</a>' +
+        '</div></div>';
+    }).join('');
+    sec.innerHTML =
+      '<div style="padding:26px 28px 14px"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">ХАБЭА Шалгалт — Удирдлага</h1>' +
+      '<p style="font-size:13px;color:#64748B;margin:0">Шалгалт бүрийн асуулт, тохиргоог тусад нь засна. Дүн автоматаар KPI-д бүртгэгдэнэ.</p></div>' +
+      '<div style="padding:0 28px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">' +
+      adminCards + '</div>';
+    return;
+  }
+
   var me = myEmployeeRecord();
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
   var name = encodeURIComponent((me && me.name) || '');
@@ -1008,7 +1037,7 @@ function renderMyExams() {
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       '<div style="width:52px;height:52px;border-radius:14px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:14px"><i class="ti ' + ep.icon + '"></i></div>' +
       '<div style="font-size:16px;font-weight:700;color:#1E293B;margin-bottom:4px">' + esc(ep.label) + '</div>' +
-      '<div style="font-size:12px;color:#64748B">Шалгалт өгөх · Хоёр сонголттой (урьдчилсан / дараах)</div>' +
+      '<div style="font-size:12px;color:#64748B">Шалгалт өгөх · Дүн автоматаар бүртгэгдэнэ</div>' +
       scoreHtml +
       '</div></a>';
   }).join('');
@@ -5204,7 +5233,7 @@ function applyRole() {
   } catch (e) {}
   if (isAdmin()) {
     // Операциональ цэсүүдийг админы харагдацаас нуух
-    ['incidents', 'inspections', 'suggestions', 'health', 'myexams'].forEach(function (pg) {
+    ['incidents', 'inspections', 'suggestions', 'health'].forEach(function (pg) {
       var nav = document.querySelector('.nav-item[data-page="' + pg + '"]');
       if (nav) nav.style.display = 'none';
     });
