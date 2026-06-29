@@ -1114,6 +1114,7 @@ function renderModAdmin(sec, key, mod, title) {
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     '<button class="btn btn-secondary btn-sm" id="mBtnContent"><i class="ti ti-edit"></i> Агуулга засах</button>' +
     '<button class="btn btn-secondary btn-sm" id="mBtnExam"><i class="ti ti-clipboard-list"></i> Шалгалт засах' + (hasExam ? ' (' + examQs.length + ')' : '') + '</button>' +
+    '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border:1.5px solid #6EE7B7" id="mBtnOpenAll"><i class="ti ti-lock-open"></i> Бүх сургалт нэгдэж нээх</button>' +
     '</div></div>' +
 
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">' +
@@ -1146,6 +1147,15 @@ function renderModAdmin(sec, key, mod, title) {
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#mBtnContent')) { actionModEditContent(CURRENT_MOD); }
       if (ev.target.closest('#mBtnExam')) { actionModEditExam(CURRENT_MOD); }
+      if (ev.target.closest('#mBtnOpenAll')) {
+        DB.trainingModules = DB.trainingModules || {};
+        Object.keys(TRAINING_MODULES).forEach(function (k) {
+          DB.trainingModules[k] = _merge(DB.trainingModules[k] || {}, { releasedToAll: true });
+        });
+        saveDB();
+        toast('Бүх сургалт нэгдэж нээгдлаа', 'success');
+        renderTrainingModule(CURRENT_MOD);
+      }
     });
   }
 }
