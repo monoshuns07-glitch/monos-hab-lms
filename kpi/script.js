@@ -2036,28 +2036,32 @@ function saveRiskDashboard(dept, html, cb) {
   }
   if (!fbReady || !fdb) { cb(false); return; }
   var meta = { dept: dept, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
-  // Firebase Storage-т HTML байршуулж, URL-г Firestore-д хадгална
-  if (typeof firebase !== 'undefined' && firebase.storage) {
-    var path = 'risk_dashboards/' + encodeURIComponent(dept) + '.html';
-    var ref = firebase.storage().ref(path);
-    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    ref.put(blob).then(function () { return ref.getDownloadURL(); })
-      .then(function (url) {
-        meta.htmlUrl = url;
-        return fdb.collection(RISK_COL).doc(dept).set(meta);
-      })
-      .then(function () { cb(true); })
-      .catch(function (err) {
-        // Storage амжилтгүй бол Firestore-д шууд хадгална (1MB хязгаартай)
-        meta.html = html;
-        fdb.collection(RISK_COL).doc(dept).set(meta)
-          .then(function () { cb(true); }).catch(function () { cb(false); });
-      });
-  } else {
+  var R2_WORKER = 'https://monos-upload.buynt666.workers.dev';
+  var R2_KEY = 'monos2026';
+  var R2_PUB = 'https://pub-37442944b6904de39c30b229d9534d04.r2.dev';
+  var fname = 'risk_dashboards/' + encodeURIComponent(dept) + '.html';
+  var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  var xhr = new XMLHttpRequest();
+  xhr.open('PUT', R2_WORKER + '/' + fname);
+  xhr.setRequestHeader('X-Key', R2_KEY);
+  xhr.setRequestHeader('Content-Type', 'text/html;charset=utf-8');
+  xhr.onload = function () {
+    if (xhr.status === 200) {
+      meta.htmlUrl = R2_PUB + '/' + fname;
+      fdb.collection(RISK_COL).doc(dept).set(meta)
+        .then(function () { cb(true); }).catch(function () { cb(false); });
+    } else {
+      meta.html = html;
+      fdb.collection(RISK_COL).doc(dept).set(meta)
+        .then(function () { cb(true); }).catch(function () { cb(false); });
+    }
+  };
+  xhr.onerror = function () {
     meta.html = html;
     fdb.collection(RISK_COL).doc(dept).set(meta)
       .then(function () { cb(true); }).catch(function () { cb(false); });
-  }
+  };
+  xhr.send(blob);
 }
 
 function deleteRiskDashboard(dept, cb) {
