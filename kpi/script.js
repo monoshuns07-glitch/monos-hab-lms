@@ -1429,65 +1429,10 @@ function actionModEditExam(key) {
 
 /* ---- Ажилтны шалгалт өгөх inline модал ---- */
 function actionTakeModExam(key, empId) {
-  var mod = getMod(key);
-  var qs = mod.examQuestions || [];
-  if (!qs.length) { toast('Шалгалтын асуулт байхгүй байна', 'warn'); return; }
-  var ans = [];
-  for (var i = 0; i < qs.length; i++) ans.push(-1);
-  var node = elc('div', 'modal-info');
-  var submitted = false;
-
-  function drawExam() {
-    var html = '<div style="font-size:13px;color:#64748B;margin-bottom:12px">' + qs.length + ' асуулт · Тэнцэх босго: ' + (mod.passScore || 70) + '%</div>';
-    qs.forEach(function (q, qi) {
-      html += '<div style="margin-bottom:16px;padding:14px;background:' + (submitted && ans[qi] !== q.correctIndex ? '#FEF2F2' : submitted ? '#F0FDF4' : '#F8FAFC') + ';border-radius:10px;border:1px solid ' + (submitted && ans[qi] !== q.correctIndex ? '#FECACA' : submitted ? '#BBF7D0' : '#E2E8F0') + '">' +
-        '<div style="font-weight:600;font-size:14px;margin-bottom:10px">' + (qi + 1) + '. ' + esc(q.question) + '</div>';
-      (q.options || []).forEach(function (opt, oi) {
-        var sel = ans[qi] === oi;
-        var isCorrect = submitted && oi === q.correctIndex;
-        var isWrong = submitted && sel && oi !== q.correctIndex;
-        html += '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:' + (submitted ? 'default' : 'pointer') + ';background:' + (isCorrect ? '#D1FAE5' : isWrong ? '#FEE2E2' : sel ? '#EFF6FF' : 'transparent') + ';margin-bottom:4px;border:1px solid ' + (isCorrect ? '#6EE7B7' : isWrong ? '#FECACA' : sel ? '#BFDBFE' : 'transparent') + '">' +
-          '<input type="radio" name="qe_' + qi + '" value="' + oi + '" ' + (sel ? 'checked' : '') + ' ' + (submitted ? 'disabled' : '') + ' data-qi="' + qi + '" data-oi="' + oi + '" style="flex-shrink:0">' +
-          '<span style="font-size:13px">' + esc(opt) + '</span>' +
-          (isCorrect ? ' <i class="ti ti-check" style="color:#16A34A;margin-left:auto"></i>' : '') +
-          (isWrong ? ' <i class="ti ti-x" style="color:#DC2626;margin-left:auto"></i>' : '') + '</label>';
-      });
-      html += '</div>';
-    });
-    if (!submitted) {
-      html += '<button class="btn btn-primary btn-block" id="eSubmit" style="margin-top:4px"><i class="ti ti-send"></i> Шалгалт илгээх</button>';
-    }
-    node.innerHTML = html;
-    if (!submitted) {
-      node.querySelectorAll('input[type=radio]').forEach(function (inp) {
-        inp.addEventListener('change', function () { ans[+inp.getAttribute('data-qi')] = +inp.getAttribute('data-oi'); drawExam(); });
-      });
-      var sub = node.querySelector('#eSubmit');
-      if (sub) sub.addEventListener('click', function () {
-        var ua = ans.filter(function (a) { return a === -1; }).length;
-        if (ua) { toast(ua + ' асуултад хариулна уу', 'warn'); return; }
-        var correct = 0;
-        qs.forEach(function (q, qi) { if (ans[qi] === q.correctIndex) correct++; });
-        var score = Math.round(correct / qs.length * 100);
-        var passed = score >= (mod.passScore || 70);
-        setEmpProgData(empId, key, { examTaken: true, examScore: score, examPassed: passed, examTakenAt: new Date().toISOString() });
-        submitted = true;
-        drawExam();
-        setTimeout(function () {
-          closeModal();
-          infoModal('Шалгалтын дүн',
-            '<div style="text-align:center;padding:16px 0">' +
-            '<div style="font-size:52px;font-weight:800;color:' + (passed ? '#16A34A' : '#DC2626') + '">' + score + '<span style="font-size:22px">%</span></div>' +
-            '<div style="font-size:17px;font-weight:700;color:' + (passed ? '#16A34A' : '#DC2626') + ';margin:8px 0">' + (passed ? '🎉 Тэнцсэн!' : '✗ Тэнцээгүй') + '</div>' +
-            '<div style="font-size:14px;color:#64748B">' + correct + '/' + qs.length + ' асуулт зөв' + (passed ? '' : ' · Дахин оролдоно уу') + '</div>' +
-            '<div style="font-size:12px;color:#94A3B8;margin-top:6px">Тэнцэх босго: ' + (mod.passScore || 70) + '%</div></div>');
-          renderTrainingModule(CURRENT_MOD);
-        }, 1200);
-      });
-    }
-  }
-  drawExam();
-  buildModal((TRAINING_MODULES[key] || key) + ' — шалгалт', node, { width: '520px' });
+  var me = myEmployeeRecord();
+  var email = encodeURIComponent((SESSION && SESSION.email) || '');
+  var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
+  window.open('https://habea-deploy.vercel.app/habea-exam.html?email=' + email + '&name=' + name, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
