@@ -8,35 +8,37 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --red:#E30613;--red-l:#FFF1F2;--red-m:#FFE4E6;
   --ink:#0F172A;--ink2:#374151;--muted:#9CA3AF;--muted2:#D1D5DB;
-  --bg:#F8F9FB;--white:#FFFFFF;--border:#E5E7EB;--border2:#F3F4F6;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.06);
-  --shadow:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -1px rgba(0,0,0,.04);
-  --shadow-lg:0 20px 40px -8px rgba(0,0,0,.1),0 8px 16px -4px rgba(0,0,0,.06);
+  --bg:#F8F9FB;--white:#fff;--border:#E5E7EB;--border2:#F3F4F6;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.06);
+  --shadow:0 4px 12px rgba(0,0,0,.08);
+  --shadow-lg:0 20px 40px rgba(0,0,0,.12);
   --radius:14px;--radius-sm:9px;
   --green:#059669;--gl:#ECFDF5;--gm:#D1FAE5;
-  --amber:#D97706;--al:#FFFBEB;
-  --blue:#2563EB;--bl:#EFF6FF;
+  --amber:#D97706;--al:#FFFBEB;--am:#FDE68A;
+  --blue:#4F46E5;--bl:#EEF2FF;--bm:#C7D2FE;
+  --purple:#7C3AED;
   --sidebar:240px;
 }
 html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
 
-/* ── LAYOUT ── */
-#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#667eea18,#f093fb10)}
 #appWrap{display:none;height:100vh;overflow:hidden}
 .layout{display:flex;height:100%}
 
-/* ── SIDEBAR ── */
+/* SIDEBAR */
 .sidebar{width:var(--sidebar);background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
-.sb-header{padding:20px 16px;border-bottom:1px solid var(--border)}
+.sb-header{padding:18px 16px;border-bottom:1px solid var(--border)}
 .sb-logo{display:flex;align-items:center;gap:10px}
-.sb-icon{width:36px;height:36px;background:var(--red);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.sb-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--red),#FF6B35);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
 .sb-name{font-weight:800;font-size:15px;color:var(--ink);letter-spacing:-.3px}
-.sb-org{font-size:11px;color:var(--muted);font-weight:500}
+.sb-org{font-size:11px;color:var(--muted);font-weight:500;margin-top:1px}
 .sb-nav{padding:12px 8px;flex:1}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;color:var(--muted);font-weight:600;font-size:13px;transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left;font-family:'Inter',sans-serif}
 .nav-item:hover{background:var(--bg);color:var(--ink2)}
@@ -44,7 +46,7 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:
 .nav-icon{font-size:16px;flex-shrink:0}
 .sb-footer{padding:12px 8px;border-top:1px solid var(--border)}
 
-/* ── MAIN ── */
+/* MAIN */
 .main{flex:1;overflow-y:auto;background:var(--bg)}
 .topbar{height:56px;background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:50}
 .topbar-title{font-weight:800;font-size:18px;color:var(--ink);letter-spacing:-.4px;flex:1}
@@ -52,10 +54,12 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:
 .page.active{display:block}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── BUTTONS ── */
+/* BUTTONS */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 18px;border-radius:9px;font-weight:600;font-size:13px;border:none;cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif;line-height:1;white-space:nowrap}
 .btn-primary{background:var(--red);color:#fff}
 .btn-primary:hover{background:#C8050F;box-shadow:0 4px 14px rgba(227,6,19,.25)}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-blue:hover{background:#4338CA;box-shadow:0 4px 14px rgba(79,70,229,.3)}
 .btn-outline{background:var(--white);color:var(--ink2);border:1.5px solid var(--border)}
 .btn-outline:hover{border-color:var(--ink);background:var(--bg)}
 .btn-ghost{background:transparent;color:var(--muted);border:none}
@@ -67,114 +71,142 @@ html,body{height:100%;font-family:'Inter',sans-serif;background:var(--bg);color:
 .btn-sm{padding:7px 12px;font-size:12px;border-radius:7px}
 .btn-xs{padding:5px 10px;font-size:11px;border-radius:6px}
 
-/* ── CARDS ── */
+/* CARDS */
 .card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-sm)}
 .card-sm{background:var(--white);border-radius:var(--radius-sm);border:1px solid var(--border)}
 
-/* ── STAT CARDS ── */
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
-.stat{padding:20px;background:var(--white);border-radius:var(--radius);border:1px solid var(--border)}
-.stat-val{font-size:32px;font-weight:900;letter-spacing:-1px;line-height:1}
-.stat-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+/* KPI CARDS */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.kpi{padding:18px 20px;background:var(--white);border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
+.kpi-val{font-size:30px;font-weight:900;letter-spacing:-1px;line-height:1}
+.kpi-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-top:5px}
+.kpi-trend{font-size:12px;font-weight:700;margin-top:4px}
+.kpi-trend.up{color:var(--green)}
+.kpi-trend.down{color:var(--red)}
+.kpi-icon{position:absolute;right:16px;top:16px;font-size:24px;opacity:.12}
 
-/* ── TABLE ── */
+/* TABLE */
 .tbl-wrap{overflow-x:auto;background:var(--white);border-radius:var(--radius);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse}
 thead{background:var(--bg)}
-th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border)}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
 td{padding:11px 14px;border-bottom:1px solid var(--border2);color:var(--ink2);vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:#FAFAFA}
+tr:hover td{background:#FAFBFF}
 
-/* ── BADGE ── */
+/* BADGE */
 .badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:100px;font-size:11px;font-weight:700}
 .badge-pass{background:var(--gl);color:var(--green)}
 .badge-fail{background:var(--red-l);color:var(--red)}
 .badge-pre{background:var(--bl);color:var(--blue)}
 .badge-post{background:var(--al);color:var(--amber)}
+.grade-A{background:#DCFCE7;color:#166534}
+.grade-B{background:#DBEAFE;color:#1E40AF}
+.grade-C{background:#FEF9C3;color:#854D0E}
+.grade-D{background:#FFEDD5;color:#9A3412}
+.grade-F{background:#FEE2E2;color:#991B1B}
 
-/* ── FORM ── */
+/* FORM */
 .field{margin-bottom:16px}
 .field label{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:6px}
 .inp{width:100%;background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;font-size:14px;color:var(--ink);font-family:'Inter',sans-serif;outline:none;transition:all .18s}
-.inp:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(227,6,19,.07)}
+.inp:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
 .inp::placeholder{color:var(--muted)}
 select.inp{cursor:pointer}
 textarea.inp{resize:vertical}
 .inp-sm{padding:8px 12px;font-size:13px}
 .field-note{font-size:12px;color:var(--muted);margin-top:4px}
 
-/* ── MODAL ── */
-.overlay{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.4);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+/* FILTER BAR */
+.filter-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:20px;padding:14px 16px;background:var(--white);border-radius:var(--radius);border:1px solid var(--border)}
+.filter-bar select,.filter-bar input[type=date],.filter-bar input[type=text]{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;font-weight:600;color:var(--ink2);font-family:'Inter',sans-serif;outline:none;cursor:pointer}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--blue)}
+.filter-sep{width:1px;height:24px;background:var(--border);flex-shrink:0}
+.filter-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+/* TABS */
+.tabs{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
+.tab{padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border:none;background:transparent;font-family:'Inter',sans-serif;transition:all .15s}
+.tab.active{background:var(--white);color:var(--ink);box-shadow:var(--shadow-sm)}
+
+/* CHARTS */
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px}
+.chart-card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:20px}
+.chart-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+
+/* LEADERBOARD */
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;transition:background .15s}
+.lb-row:hover{background:var(--bg)}
+.lb-rank{min-width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0}
+.lb-rank.gold{background:#FEF3C7;color:#B45309}
+.lb-rank.silver{background:#F1F5F9;color:#64748B}
+.lb-rank.bronze{background:#FEF9C3;color:#92400E}
+.lb-rank.normal{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
+
+/* ARCHIVE TREE */
+.archive-year{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.archive-year-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--white);cursor:pointer;font-weight:700;font-size:15px;color:var(--ink);transition:background .15s}
+.archive-year-hdr:hover{background:var(--bg)}
+.archive-month{padding:0 18px 12px}
+.archive-month-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:9px;margin-bottom:6px;border:1px solid var(--border2)}
+.archive-month-name{font-weight:700;font-size:13px;color:var(--ink2)}
+.archive-month-meta{font-size:12px;color:var(--muted);font-weight:600}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;z-index:200;background:rgba(15,23,42,.45);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
 .overlay.show{display:flex}
 .modal{background:var(--white);border-radius:20px;border:1px solid var(--border);box-shadow:var(--shadow-lg);width:100%;max-width:680px;margin:auto}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
 .modal-title{font-weight:800;font-size:17px;color:var(--ink)}
-.modal-body{padding:24px;max-height:70vh;overflow-y:auto}
+.modal-body{padding:24px;max-height:72vh;overflow-y:auto}
 .modal-ftr{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
 
-/* ── DRAG-HANDLE / Q LIST ── */
+/* Q EDITOR */
 .q-item{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;transition:all .15s}
 .q-item:hover{border-color:var(--red);box-shadow:var(--shadow)}
 .q-num{min-width:28px;height:28px;border-radius:7px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--muted);flex-shrink:0}
 .q-text{flex:1;font-weight:600;font-size:13px;color:var(--ink2);line-height:1.4}
 .q-meta{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .type-badge{padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;background:var(--bg);color:var(--muted);border:1px solid var(--border)}
-
-/* ── OPTIONS EDITOR ── */
 .opt-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .opt-row input{flex:1}
 .correct-toggle{width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s;flex-shrink:0}
 .correct-toggle.yes{border-color:var(--green);background:var(--gl);color:var(--green)}
 
-/* ── PIN ── */
+/* PIN */
 .pin-row{display:flex;gap:10px;justify-content:center;margin:20px 0}
 .pin-inp{width:54px;height:64px;background:var(--white);border:2px solid var(--border);border-radius:12px;font-size:26px;font-weight:800;text-align:center;color:var(--ink);font-family:'Inter',sans-serif;outline:none;transition:all .2s}
-.pin-inp:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(227,6,19,.1)}
+.pin-inp:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
 
-/* ── TOAST ── */
+/* TOAST */
 .toast-box{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .t{background:var(--ink);color:#fff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:600;min-width:200px;box-shadow:var(--shadow-lg);animation:toastIn .25s ease;display:flex;align-items:center;gap:8px}
 @keyframes toastIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── SPINNER ── */
 .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:sp .65s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
-/* ── FILTER TABS ── */
-.tabs{display:inline-flex;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
-.tab{padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted);border:none;background:transparent;font-family:'Inter',sans-serif;transition:all .15s}
-.tab.active{background:var(--white);color:var(--ink);box-shadow:var(--shadow-sm)}
-
-/* ── CHART containers ── */
-.charts-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:24px}
-.chart-card{background:var(--white);border-radius:var(--radius);border:1px solid var(--border);padding:20px}
-.chart-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px}
-
-/* ── RESPONSIVE ── */
-@media(max-width:768px){
-  .sidebar{width:56px;overflow:visible}
-  .sb-header .sb-org,.sb-header .sb-name,.nav-item span{display:none}
-  .sb-name{display:none}
-  .sb-icon{margin:0 auto}
-  .nav-item{justify-content:center;padding:10px}
-  .nav-icon{margin:0}
-}
-
-/* ── Section heading ── */
 .sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .sec-title{font-size:15px;font-weight:800;color:var(--ink)}
 .divider{height:1px;background:var(--border2);margin:20px 0}
+
+@media(max-width:768px){
+  .sidebar{width:56px}
+  .sb-header .sb-org,.sb-header .sb-name,.nav-item span{display:none}
+  .sb-icon{margin:0 auto}
+  .nav-item{justify-content:center;padding:10px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
 
-<!-- ══════ LOGIN ══════ -->
+<!-- LOGIN -->
 <div id="loginWrap">
   <div style="width:100%;max-width:400px;padding:20px">
-    <div class="card" style="padding:36px;text-align:center">
-      <div style="width:56px;height:56px;background:var(--red);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 20px">🔐</div>
-      <h1 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:6px;letter-spacing:-.3px">Админ нэвтрэх</h1>
+    <div class="card" style="padding:36px;text-align:center;border-radius:20px">
+      <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--red),#FF6B35);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 20px;box-shadow:0 8px 20px rgba(227,6,19,.3)">🔐</div>
+      <h1 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:6px;letter-spacing:-.3px">ХАБЭА Админ</h1>
       <p style="color:var(--muted);font-size:14px;margin-bottom:4px">4 оронтой PIN кодоо оруулна уу</p>
       <div class="pin-row" id="pinRow">
         <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p0">
@@ -183,15 +215,14 @@ textarea.inp{resize:vertical}
         <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p3">
       </div>
       <div id="pinErr" style="color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px"></div>
-      <button class="btn btn-primary" style="width:100%;padding:13px" onclick="checkPin()">Нэвтрэх</button>
+      <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="checkPin()">Нэвтрэх</button>
     </div>
   </div>
 </div>
 
-<!-- ══════ APP ══════ -->
+<!-- APP -->
 <div id="appWrap">
   <div class="layout">
-    <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sb-header">
         <div class="sb-logo">
@@ -213,50 +244,121 @@ textarea.inp{resize:vertical}
       </div>
     </aside>
 
-    <!-- Main -->
     <div class="main">
       <div class="topbar">
         <div class="topbar-title" id="pageTitle">Дашборд</div>
-        <div id="topActions"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="lastRefresh" style="font-size:11px;color:var(--muted);font-weight:600"></span>
+          <button class="btn btn-outline btn-sm" id="btnRefresh" onclick="refreshData()">🔄 Шинэчлэх</button>
+        </div>
       </div>
 
       <!-- DASHBOARD -->
       <div class="page active" id="page-dashboard">
-        <div class="stats-grid" id="statsGrid">
-          <div class="stat"><div class="stat-val" id="sTotal">—</div><div class="stat-lbl">Нийт шалгалт</div></div>
-          <div class="stat"><div class="stat-val" id="sPass" style="color:var(--green)">—</div><div class="stat-lbl">Тэнцсэн</div></div>
-          <div class="stat"><div class="stat-val" id="sFail" style="color:var(--red)">—</div><div class="stat-lbl">Тэнцээгүй</div></div>
-          <div class="stat"><div class="stat-val" id="sAvg" style="color:var(--amber)">—</div><div class="stat-lbl">Голч %</div></div>
-          <div class="stat"><div class="stat-val" id="sPre" style="color:var(--blue)">—</div><div class="stat-lbl">Урьдчилсан</div></div>
-          <div class="stat"><div class="stat-val" id="sPost" style="color:var(--amber)">—</div><div class="stat-lbl">Дараах</div></div>
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <span class="filter-label">Шүүлт:</span>
+          <select id="fDateRange" onchange="applyDashFilter()">
+            <option value="all">Бүх хугацаа</option>
+            <option value="7">Сүүлийн 7 хоног</option>
+            <option value="30">Сүүлийн 30 хоног</option>
+            <option value="90">Сүүлийн 3 сар</option>
+            <option value="365">Энэ жил</option>
+          </select>
+          <select id="fDept" onchange="applyDashFilter()"><option value="">Бүх хэлтэс</option></select>
+          <select id="fExamType" onchange="applyDashFilter()">
+            <option value="">Бүх төрөл</option>
+            <option value="pre">Урьдчилсан</option>
+            <option value="post">Дараах</option>
+          </select>
+          <select id="fPassFilter" onchange="applyDashFilter()">
+            <option value="">Бүгд</option>
+            <option value="pass">Тэнцсэн</option>
+            <option value="fail">Тэнцээгүй</option>
+          </select>
+          <div class="filter-sep"></div>
+          <button class="btn btn-ghost btn-sm" onclick="resetDashFilter()">✕ Цэвэрлэх</button>
         </div>
+
+        <div class="kpi-grid" id="kpiGrid">
+          <div class="kpi"><div class="kpi-icon">📝</div><div class="kpi-val" id="kTotal">—</div><div class="kpi-lbl">Нийт шалгалт</div></div>
+          <div class="kpi"><div class="kpi-icon">✅</div><div class="kpi-val" style="color:var(--green)" id="kPass">—</div><div class="kpi-lbl">Тэнцсэн</div><div class="kpi-trend" id="kPassRate"></div></div>
+          <div class="kpi"><div class="kpi-icon">❌</div><div class="kpi-val" style="color:var(--red)" id="kFail">—</div><div class="kpi-lbl">Тэнцээгүй</div></div>
+          <div class="kpi"><div class="kpi-icon">📈</div><div class="kpi-val" style="color:var(--amber)" id="kAvg">—</div><div class="kpi-lbl">Голч %</div><div class="kpi-trend" id="kAvgTrend"></div></div>
+          <div class="kpi"><div class="kpi-icon">📋</div><div class="kpi-val" style="color:var(--blue)" id="kPre">—</div><div class="kpi-lbl">Урьдчилсан</div></div>
+          <div class="kpi"><div class="kpi-icon">🎓</div><div class="kpi-val" style="color:var(--purple)" id="kPost">—</div><div class="kpi-lbl">Дараах</div></div>
+        </div>
+
         <div class="charts-grid">
-          <div class="chart-card"><div class="chart-title">Дүнгийн тархалт (%)</div><canvas id="cDist" height="200"></canvas></div>
-          <div class="chart-card"><div class="chart-title">Тэнцсэн / Тэнцээгүй</div><canvas id="cPie" height="200"></canvas></div>
+          <div class="chart-card" style="grid-column:1/-1"><div class="chart-title">Цаг хугацааны тренд (сар бүрийн дундаж %)</div><canvas id="cTrend" height="100"></canvas></div>
+          <div class="chart-card"><div class="chart-title">Дүнгийн тархалт (%)</div><canvas id="cDist" height="220"></canvas></div>
+          <div class="chart-card"><div class="chart-title">Тэнцсэн / Тэнцээгүй</div><canvas id="cPie" height="220"></canvas></div>
         </div>
-        <div class="chart-card"><div class="chart-title">Асуулт бүрийн голч оноо (%)</div><canvas id="cQ" height="140" style="margin-top:4px"></canvas></div>
+
+        <div class="charts-grid">
+          <div class="chart-card"><div class="chart-title">Хэлтэс тус бүрийн дундаж %</div><canvas id="cDept" height="220"></canvas></div>
+          <div class="chart-card"><div class="chart-title">Асуулт бүрийн голч оноо %</div><canvas id="cQ" height="220"></canvas></div>
+        </div>
+
+        <!-- Month Comparison -->
+        <div class="card" style="padding:20px;margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">📅 Сарын харьцуулалт — хэлтэс тус бүр</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="cmpMonth1" onchange="renderMonthComparison()" style="background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--ink2);font-family:'Inter',sans-serif;outline:none"></select>
+              <span style="font-size:13px;color:var(--muted);font-weight:700">vs</span>
+              <select id="cmpMonth2" onchange="renderMonthComparison()" style="background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--ink2);font-family:'Inter',sans-serif;outline:none"></select>
+            </div>
+          </div>
+          <div id="monthComparison"></div>
+        </div>
+
+        <!-- Leaderboard -->
+        <div class="card" style="padding:20px;margin-bottom:20px">
+          <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px">🏆 TOP-10 Шилдэг гүйцэтгэл</div>
+          <div id="leaderboard"></div>
+        </div>
       </div>
 
       <!-- RESULTS -->
       <div class="page" id="page-results">
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px;justify-content:space-between">
-          <div class="tabs" id="fTabs">
-            <button class="tab active" onclick="filter('all',this)">Бүгд</button>
-            <button class="tab" onclick="filter('pre',this)">Урьдчилсан</button>
-            <button class="tab" onclick="filter('post',this)">Дараах</button>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-green btn-sm" onclick="exportCSV()">⬇ CSV</button>
+        <div class="filter-bar">
+          <input type="text" id="rSearch" placeholder="🔍 Нэрээр хайх..." onInput="renderResultsTable()" style="min-width:160px">
+          <div class="filter-sep"></div>
+          <select id="rExamType" onchange="renderResultsTable()">
+            <option value="">Бүх төрөл</option>
+            <option value="pre">Урьдчилсан</option>
+            <option value="post">Дараах</option>
+          </select>
+          <select id="rDept" onchange="renderResultsTable()"><option value="">Бүх хэлтэс</option></select>
+          <select id="rPass" onchange="renderResultsTable()">
+            <option value="">Бүгд</option>
+            <option value="pass">Тэнцсэн</option>
+            <option value="fail">Тэнцээгүй</option>
+          </select>
+          <div class="filter-sep"></div>
+          <button class="btn btn-ghost btn-sm" onclick="resetResultFilter()">✕ Цэвэрлэх</button>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-blue btn-sm" onclick="exportExcel()">⬇ Excel (.xlsx)</button>
             <button class="btn btn-danger btn-sm" onclick="clearAll()">🗑 Бүгдийг устгах</button>
           </div>
         </div>
+
+        <!-- Archive Tree -->
+        <div id="archiveTree" style="margin-bottom:20px"></div>
+
+        <!-- Flat table -->
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>#</th><th>Овог нэр</th><th>Алба</th><th>Тушаал</th><th>Төрөл</th><th>Огноо</th><th>%</th><th>Оноо</th><th>Дүн</th><th></th></tr></thead>
+            <thead><tr>
+              <th>#</th><th>Нэр</th><th>Хэлтэс</th><th>Тушаал</th>
+              <th>Төрөл</th><th>Огноо</th><th>%</th><th>Оноо</th><th>Дүн</th><th>Үсгэн</th><th></th>
+            </tr></thead>
             <tbody id="rBody"></tbody>
           </table>
         </div>
-        <div id="rEmpty" style="text-align:center;padding:60px;color:var(--muted);display:none">📭 Шалгалтын мэдээлэл байхгүй байна</div>
+        <div id="rEmpty" style="text-align:center;padding:60px;color:var(--muted);display:none">📭 Мэдээлэл байхгүй байна</div>
+        <div id="rSummaryRow" style="display:none;margin-top:12px;padding:14px 18px;background:var(--white);border-radius:var(--radius);border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--ink2)"></div>
       </div>
 
       <!-- QUESTIONS -->
@@ -264,7 +366,7 @@ textarea.inp{resize:vertical}
         <div class="sec-hdr" style="margin-bottom:16px">
           <div>
             <div class="sec-title">Шалгалтын асуултууд</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px">Асуулт нэмж, засаж, устгаж болно. Шалгалт хуудас шинэ асуултаар шинэчлэгдэнэ.</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">Асуулт нэмж, засаж, устгаж болно.</div>
           </div>
           <button class="btn btn-primary" onclick="openQEditor(null)">+ Асуулт нэмэх</button>
         </div>
@@ -278,14 +380,14 @@ textarea.inp{resize:vertical}
             <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:16px">🏢 Ерөнхий тохиргоо</div>
             <div class="field"><label>Байгууллагын нэр</label><input class="inp" id="cfgOrg" placeholder="МОНОС ХҮНС ХК"></div>
             <div class="field"><label>Шалгалтын гарчиг</label><input class="inp" id="cfgTitle" placeholder="ХАБЭА Давтан зааварчилгааны сургалт"></div>
-            <div class="field"><label>Тэнцэх босго (%)</label><input class="inp" id="cfgPass" type="number" min="1" max="100" placeholder="60"></div>
-            <div class="field"><label>Админ PIN код</label><input class="inp" id="cfgPin" type="text" maxlength="6" placeholder="1234"></div>
+            <div class="field"><label>Тэнцэх босго (%)</label><input class="inp" id="cfgPass" type="number" min="1" max="100" placeholder="60" style="width:120px"></div>
+            <div class="field"><label>Админ PIN код</label><input class="inp" id="cfgPin" type="text" maxlength="6" placeholder="1234" style="width:120px"></div>
           </div>
           <div class="card" style="padding:24px;margin-bottom:16px">
             <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:6px">📱 QR / Форм холбоосууд</div>
             <div style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5">Шалгалт хуудас дээр "Бүртгүүлэх" / "Үнэлгээ өгөх" товчинд холбогдох URL-уудыг оруулна уу.</div>
-            <div class="field"><label>📋 Бүртгэлийн форм URL (урьдчилсан шалгалт)</label><input class="inp" id="cfgReg" placeholder="https://docs.google.com/forms/..."></div>
-            <div class="field"><label>🎓 Үнэлгээний форм URL (дараах шалгалт)</label><input class="inp" id="cfgEval" placeholder="https://docs.google.com/forms/..."></div>
+            <div class="field"><label>📋 Бүртгэлийн форм URL (урьдчилсан)</label><input class="inp" id="cfgReg" placeholder="https://docs.google.com/forms/..."></div>
+            <div class="field"><label>🎓 Үнэлгээний форм URL (дараах)</label><input class="inp" id="cfgEval" placeholder="https://docs.google.com/forms/..."></div>
           </div>
           <button class="btn btn-primary" style="padding:12px 28px" onclick="saveSettings()">💾 Хадгалах</button>
         </div>
@@ -324,18 +426,15 @@ textarea.inp{resize:vertical}
 
 <script>
 // ── Firebase ──
-const firebaseConfig={apiKey:"AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0",authDomain:"monos-hab-system.firebaseapp.com",projectId:"monos-hab-system",storageBucket:"monos-hab-system.firebasestorage.app",messagingSenderId:"81969155633",appId:"1:81969155633:web:20dfac4abed86e0d0ccf10"};
-firebase.initializeApp(firebaseConfig);
+firebase.initializeApp({apiKey:"AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",authDomain:"habea-shalgalt.firebaseapp.com",projectId:"habea-shalgalt",storageBucket:"habea-shalgalt.firebasestorage.app",messagingSenderId:"910170773266",appId:"1:910170773266:web:38c7af5f7d0c352a5bc5cb"});
 const db=firebase.firestore();
 
-// ── State ──
 let CFG={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60,adminPin:"1234"};
-let QS=[];
-let allResults=[],filterType="all";
-let editingQIdx=null;
-let charts={};
-
+let QS=[],allResults=[],editingQIdx=null,charts={};
 const COLLECTION="habea_exam_results";
+const EXKEY=(function(){try{return new URLSearchParams(location.search).get('exam')||'';}catch(e){return '';}})();
+const QSUF=EXKEY?('_'+EXKEY):'';
+
 const DEFAULT_QS=[
   {id:1,type:"open",points:8,question:"Таны бодлоор ХАБЭА гэж юу вэ?",keywords:["аюулгүй","эрүүл","хөдөлмөр","ахуй"],placeholder:"Жишээ нь: Хөдөлмөрийн аюулгүй байдал, эрүүл ахуй гэдэг нь..."},
   {id:2,type:"single",points:8,question:"Аюулгүй ажиллагааг хангаж ажиллах нь ...... үүрэг хариуцлага юм.",options:[{id:"a",text:"Удирдах ажилтны"},{id:"b",text:"ХАБЭА-н ажилтны"},{id:"c",text:"Ажилтан бүрийн"},{id:"d",text:"Үйлдвэрийн тоног төхөөрөмжтэй харьцаж ажилладаг ажилтан"}],correct:"c"},
@@ -344,11 +443,20 @@ const DEFAULT_QS=[
   {id:5,type:"single",points:8,question:"Нийт ослын 90% нь хандлагаас үүсдэг бол зөв хандлагыг олно уу.",options:[{id:"a",text:"Гэр бүлийнхээ өмнө хариуцлага хүлээж аюулгүй ажиллаж сурья."},{id:"b",text:"Өмнө нь ингэж хийгээд болсон юм."},{id:"c",text:"Зааварчилгааг гарын үсэг зурах төдий үзэх."},{id:"d",text:"Мэдэх шаардлагагүй."}],correct:"a"},
   {id:6,type:"matching",points:12,question:"Дараах тэмдэгүүдийн төрлийг тохирох өнгөтэй нь холбоно уу.",leftItems:[{id:"a",text:"Анхааруулах тэмдэг"},{id:"b",text:"Хориглох тэмдэг"},{id:"c",text:"Сануулах тэмдэг"}],rightItems:[{id:"1",text:"Улаан дээр хар",color:"#C73B3B"},{id:"2",text:"Шар дээр хар",color:"#C4960A"},{id:"3",text:"Цэнхэр дээр цагаан",color:"#2563B5"}],correct:{a:"2",b:"1",c:"3"}},
   {id:7,type:"single",points:8,question:"Аль нь ажилтны үүрэг хариуцлага вэ?",options:[{id:"a",text:"Зааварчилгаа авч ажиллах"},{id:"b",text:"Ажлын хувцас өмсөх"},{id:"c",text:"Ажлын байрны үзлэг хийх"},{id:"d",text:"Ослын тохиолдолд мэдэгдэх"},{id:"e",text:"Дээрх бүгд зөв"}],correct:"e"},
-  {id:8,type:"three-words",points:12,question:"Биед, хувцасанд гал гарвал ямар дүрмийг баримтлах вэ?",hint:"Гурван үг бичнэ үү (Зогс — Хэвт — Эргэлд)",keywords:[["зогс","зогсох"],["хэвт","унаж","уна"],["эргэлд","эргэх","өнхрөх","өнхөр"]]},
+  {id:8,type:"three-words",points:12,question:"Биед, хувцасанд гал гарвал ямар дүрмийг баримтлах вэ?",hint:"Гурван үг бичнэ үү (Зогс — Хэвт — Эргэлд)",keywords:["зогс,зогсох","хэвт,унаж,уна","эргэлд,эргэх,өнхрөх,өнхөр"]},
   {id:9,type:"multi",points:12,question:"Газар хөдлөх үед байшин дотор байвал авах зөв арга хэмжээнүүдийг сонгоно уу.",options:[{id:"a",text:"Тайван байх"},{id:"b",text:"Аюулгүй газар хорогдох"},{id:"c",text:"Яаралтай гадагш гарах"},{id:"d",text:"Цонхонд ойр очих"},{id:"e",text:"Цонхноос хол байх"},{id:"f",text:"Дээрээс унах зүйлсийн доор зогсохгүй байх"},{id:"g",text:"Хаалга онгойлгох"}],correct:["a","b","e","f"]},
   {id:10,type:"multi",points:4,question:"Хамгаалах хэрэгслийг сонгоно уу.",options:[{id:"a",text:"Маск"},{id:"b",text:"Ажлын гутал"},{id:"c",text:"Комбинзон"},{id:"d",text:"Чихэвч"},{id:"e",text:"Өндрийн бүс"},{id:"f",text:"Нүдний шил"}],correct:["a","b","c","d","e","f"]},
   {id:11,type:"three-mistakes",points:8,question:"Ажилтнуудын гаргадаг алдааг 3-г бичнэ үү."}
 ];
+
+// ── Helpers ──
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function letterGrade(pct){if(pct>=90)return"A";if(pct>=80)return"B";if(pct>=70)return"C";if(pct>=60)return"D";return"F"}
+function gradeClass(g){return"grade-"+g}
+function totalPts(){return QS.reduce((s,q)=>s+(q.points||0),0)}
+function stdDev(arr){if(!arr.length)return 0;const avg=arr.reduce((a,b)=>a+b,0)/arr.length;return Math.sqrt(arr.map(v=>Math.pow(v-avg,2)).reduce((a,b)=>a+b,0)/arr.length).toFixed(1)}
+function fmtDate(d){if(!(d instanceof Date))return"—";return d.toLocaleDateString("mn-MN")}
+function fmtDateTime(d){if(!(d instanceof Date))return"—";return d.toLocaleString("mn-MN")}
 
 // ── PIN ──
 function setupPin(){
@@ -362,184 +470,730 @@ function getPin(){return[0,1,2,3].map(i=>document.getElementById("p"+i).value).j
 function clearPin(){[0,1,2,3].forEach(i=>{document.getElementById("p"+i).value=""});document.getElementById("pinErr").textContent=""}
 
 async function checkPin(){
-  // Load settings first to get PIN
   try{const s=await db.collection("habea_config").doc("settings").get();if(s.exists)CFG={...CFG,...s.data()};}catch(e){}
-  const entered=getPin();
-  if(entered===(CFG.adminPin||"1234")){
+  if(getPin()===(CFG.adminPin||"1234")){
     document.getElementById("loginWrap").style.display="none";
     document.getElementById("appWrap").style.display="block";
     await loadAll();
   } else {
     document.getElementById("pinErr").textContent="PIN буруу байна";
-    clearPin(); setTimeout(()=>document.getElementById("p0").focus(),50);
+    clearPin();setTimeout(()=>document.getElementById("p0").focus(),50);
   }
 }
 
 async function loadAll(){
   try{
-    const[sSnap,qSnap,rSnap]=await Promise.all([
+    const[sS,qS,rS]=await Promise.all([
       db.collection("habea_config").doc("settings").get(),
-      db.collection("habea_config").doc("questions").get(),
+      db.collection("habea_config").doc("questions"+QSUF).get(),
       db.collection(COLLECTION).orderBy("timestamp","desc").get()
     ]);
-    if(sSnap.exists) CFG={...CFG,...sSnap.data()};
-    QS=qSnap.exists&&qSnap.data().list?.length>0?qSnap.data().list:JSON.parse(JSON.stringify(DEFAULT_QS));
-    allResults=rSnap.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
-  }catch(e){toast("Мэдээлэл татахад алдаа гарлаа","err")}
+    if(sS.exists)CFG={...CFG,...sS.data()};
+    const rawQS=qS.exists&&qS.data().list?.length>0?qS.data().list:JSON.parse(JSON.stringify(DEFAULT_QS));
+    QS=rawQS.map(q=>q.type==="three-words"&&Array.isArray(q.keywords)?{...q,keywords:q.keywords.map(k=>Array.isArray(k)?k.join(","):String(k||""))}:q);
+    allResults=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+    if(EXKEY) allResults=allResults.filter(r=>r.examKey===EXKEY); // зөвхөн энэ сургалтын шалгалтын дүн
+    console.log("[loadAll] OK, results:",allResults.length,"exam:",EXKEY||"(бүгд)");
+  }catch(e){
+    console.error("[loadAll] Firestore error:",e);
+    const msg=(e&&e.message)?e.message:String(e);
+    toast("Мэдээлэл татахад алдаа: "+msg.substring(0,80),"err");
+  }
   document.getElementById("sbOrg").textContent=CFG.orgName||"МОНОС ХҮНС ХК";
+  const t=new Date();document.getElementById("lastRefresh").textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,"0")} шинэчлэгдсэн`;
+  populateDeptFilters();
   renderDashboard();
   renderResultsTable();
+  renderArchiveTree();
   renderQuestionList();
   loadSettingsForm();
 }
 
 function logout(){document.getElementById("appWrap").style.display="none";document.getElementById("loginWrap").style.display="flex";clearPin();setTimeout(()=>document.getElementById("p0").focus(),100)}
 
-// ── Navigation ──
 function gotoPage(id,btn){
   document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
   document.getElementById("page-"+id).classList.add("active");
   btn.classList.add("active");
-  const titles={dashboard:"Дашборд",results:"Үр дүнгүүд",questions:"Шалгалтын асуултууд",settings:"Тохиргоо"};
-  document.getElementById("pageTitle").textContent=titles[id]||"";
+  const t={dashboard:"Дашборд",results:"Үр дүнгүүд",questions:"Шалгалтын асуултууд",settings:"Тохиргоо"};
+  document.getElementById("pageTitle").textContent=t[id]||"";
+}
+
+// ── Department filters ──
+function populateDeptFilters(){
+  const depts=[...new Set(allResults.map(r=>r.department||"").filter(Boolean))].sort();
+  ["fDept","rDept"].forEach(id=>{
+    const sel=document.getElementById(id);
+    const cur=sel.value;
+    sel.innerHTML='<option value="">Бүх хэлтэс</option>'+depts.map(d=>`<option value="${esc(d)}"${d===cur?" selected":""}>${esc(d)}</option>`).join("");
+  });
+}
+
+// ── Dashboard Filters ──
+function getDashFiltered(){
+  let data=[...allResults];
+  const days=parseInt(document.getElementById("fDateRange").value)||0;
+  if(days){const cutoff=new Date(Date.now()-days*86400000);data=data.filter(r=>r.timestamp>=cutoff)}
+  const dept=document.getElementById("fDept").value;
+  if(dept)data=data.filter(r=>r.department===dept);
+  const et=document.getElementById("fExamType").value;
+  if(et)data=data.filter(r=>r.examType===et);
+  const pf=document.getElementById("fPassFilter").value;
+  if(pf==="pass")data=data.filter(r=>r.passed);
+  if(pf==="fail")data=data.filter(r=>!r.passed);
+  return data;
+}
+function applyDashFilter(){renderDashboard()}
+function resetDashFilter(){
+  ["fDateRange","fDept","fExamType","fPassFilter"].forEach(id=>{document.getElementById(id).value=""});
+  renderDashboard();
 }
 
 // ── Dashboard ──
 function renderDashboard(){
-  const all=allResults;
-  const pass=all.filter(r=>r.passed).length;
-  const avg=all.length?Math.round(all.reduce((s,r)=>s+(r.percent||0),0)/all.length):0;
-  document.getElementById("sTotal").textContent=all.length;
-  document.getElementById("sPass").textContent=pass;
-  document.getElementById("sFail").textContent=all.length-pass;
-  document.getElementById("sAvg").textContent=avg+"%";
-  document.getElementById("sPre").textContent=all.filter(r=>r.examType==="pre").length;
-  document.getElementById("sPost").textContent=all.filter(r=>r.examType==="post").length;
-  renderCharts();
+  const data=getDashFiltered();
+  const pass=data.filter(r=>r.passed).length;
+  const fail=data.length-pass;
+  const pcts=data.map(r=>r.percent||0);
+  const avg=pcts.length?Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length):0;
+  const passRate=data.length?Math.round(pass/data.length*100):0;
+
+  document.getElementById("kTotal").textContent=data.length;
+  document.getElementById("kPass").textContent=pass;
+  document.getElementById("kPassRate").textContent=data.length?passRate+"% тэнцсэн":"";
+  document.getElementById("kPassRate").className="kpi-trend "+(passRate>=60?"up":"down");
+  document.getElementById("kFail").textContent=fail;
+  document.getElementById("kAvg").textContent=avg?avg+"%":"—";
+  document.getElementById("kAvgTrend").textContent=avg?"Голч дүн":"";
+  document.getElementById("kAvgTrend").className="kpi-trend "+(avg>=(CFG.passPercent||60)?"up":"down");
+  document.getElementById("kPre").textContent=data.filter(r=>r.examType==="pre").length;
+  document.getElementById("kPost").textContent=data.filter(r=>r.examType==="post").length;
+
+  renderCharts(data);
+  renderLeaderboard(data);
+  populateMonthSelects();
+  renderMonthComparison();
 }
 
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(e){}});charts={}}
 
-function renderCharts(){
+function renderCharts(data){
   destroyCharts();
-  const all=allResults;
-  // Dist
-  const bands=["0–20","21–40","41–60","61–80","81–100"];
+
+  // Trend chart — group by year-month
+  const monthMap={};
+  data.forEach(r=>{
+    if(!(r.timestamp instanceof Date))return;
+    const key=r.timestamp.getFullYear()+"-"+String(r.timestamp.getMonth()+1).padStart(2,"0");
+    if(!monthMap[key]){monthMap[key]={sum:0,cnt:0}}
+    monthMap[key].sum+=(r.percent||0);monthMap[key].cnt++;
+  });
+  const sortedMonths=Object.keys(monthMap).sort();
+  const trendLabels=sortedMonths.map(k=>{const[y,m]=k.split("-");return m+"р сар "+y});
+  const trendData=sortedMonths.map(k=>Math.round(monthMap[k].sum/monthMap[k].cnt));
+  charts.trend=new Chart(document.getElementById("cTrend"),{type:"line",data:{labels:trendLabels.length?trendLabels:["Өгөгдөл байхгүй"],datasets:[{label:"Дундаж %",data:trendData.length?trendData:[0],borderColor:"#4F46E5",backgroundColor:"rgba(79,70,229,.08)",tension:.4,fill:true,pointBackgroundColor:"#4F46E5",pointRadius:5,pointHoverRadius:7}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{min:0,max:100,grid:{color:"rgba(0,0,0,.04)"},ticks:{font:{size:11},callback:v=>v+"%"}}}}});
+
+  // Dist chart
+  const bands=["0–20%","21–40%","41–60%","61–80%","81–100%"];
   const cnt=[0,0,0,0,0];
-  all.forEach(r=>{cnt[Math.min(4,Math.floor((r.percent||0)/20))]++});
+  data.forEach(r=>{cnt[Math.min(4,Math.floor((r.percent||0)/20))]++});
   charts.dist=new Chart(document.getElementById("cDist"),{type:"bar",data:{labels:bands,datasets:[{data:cnt,backgroundColor:["#EF4444","#F97316","#F59E0B","#10B981","#059669"],borderRadius:6,borderWidth:0}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{grid:{color:"rgba(0,0,0,.04)"},ticks:{font:{size:11},precision:0}}}}});
+
   // Pie
-  const pass=all.filter(r=>r.passed).length;
-  charts.pie=new Chart(document.getElementById("cPie"),{type:"doughnut",data:{labels:["Тэнцсэн","Тэнцээгүй"],datasets:[{data:[pass,all.length-pass],backgroundColor:["#059669","#E30613"],borderWidth:0,hoverBorderWidth:0}]},options:{cutout:"68%",plugins:{legend:{labels:{font:{size:12},boxWidth:14}}}}});
-  // Per-question
+  const pass=data.filter(r=>r.passed).length;
+  charts.pie=new Chart(document.getElementById("cPie"),{type:"doughnut",data:{labels:["Тэнцсэн","Тэнцээгүй"],datasets:[{data:[pass,data.length-pass],backgroundColor:["#059669","#E30613"],borderWidth:0}]},options:{cutout:"68%",plugins:{legend:{labels:{font:{size:12},boxWidth:14}}}}});
+
+  // Dept chart
+  const deptMap={};
+  data.forEach(r=>{const d=r.department||"Тодорхойгүй";if(!deptMap[d]){deptMap[d]={sum:0,cnt:0}}deptMap[d].sum+=(r.percent||0);deptMap[d].cnt++});
+  const depts=Object.keys(deptMap);
+  const deptAvgs=depts.map(d=>Math.round(deptMap[d].sum/deptMap[d].cnt));
+  charts.dept=new Chart(document.getElementById("cDept"),{type:"bar",data:{labels:depts.length?depts:["Өгөгдөл байхгүй"],datasets:[{label:"Дундаж %",data:deptAvgs.length?deptAvgs:[0],backgroundColor:"rgba(79,70,229,.7)",borderRadius:6,borderWidth:0}]},options:{indexAxis:"y",responsive:true,plugins:{legend:{display:false}},scales:{x:{min:0,max:100,grid:{color:"rgba(0,0,0,.04)"},ticks:{font:{size:11},callback:v=>v+"%"}},y:{grid:{display:false},ticks:{font:{size:11}}}}}});
+
+  // Per-question avg
   const qAvg=QS.map(q=>{
-    if(!all.length) return 0;
-    const a=all.reduce((s,r)=>{const b=(r.breakdown||[]).find(b=>b.id===q.id);return s+(b&&b.points?b.earned/b.points*100:0)},0)/all.length;
+    if(!data.length)return 0;
+    const a=data.reduce((s,r)=>{const b=(r.breakdown||[]).find(b=>b.id===q.id);return s+(b&&b.points?b.earned/b.points*100:0)},0)/data.length;
     return Math.round(a);
   });
-  charts.q=new Chart(document.getElementById("cQ"),{type:"bar",data:{labels:QS.map(q=>"А"+q.id),datasets:[{data:qAvg,backgroundColor:qAvg.map(v=>v>=60?"rgba(5,150,105,.7)":"rgba(227,6,19,.7)"),borderRadius:4,borderWidth:0}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{min:0,max:100,grid:{color:"rgba(0,0,0,.04)"},ticks:{font:{size:11},callback:v=>v+"%"}}}}});
+  charts.q=new Chart(document.getElementById("cQ"),{type:"bar",data:{labels:QS.map((q,i)=>"А"+(i+1)),datasets:[{data:qAvg,backgroundColor:qAvg.map(v=>v>=60?"rgba(5,150,105,.7)":"rgba(227,6,19,.7)"),borderRadius:4,borderWidth:0}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:11}}},y:{min:0,max:100,grid:{color:"rgba(0,0,0,.04)"},ticks:{font:{size:11},callback:v=>v+"%"}}}}});
 }
 
-// ── Results ──
-function filter(type,btn){
-  filterType=type;
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  btn.classList.add("active");
+function renderLeaderboard(data){
+  const sorted=[...data].sort((a,b)=>(b.percent||0)-(a.percent||0)).slice(0,10);
+  const rankIcons=["🥇","🥈","🥉"];
+  const rankClasses=["gold","silver","bronze"];
+  document.getElementById("leaderboard").innerHTML=sorted.length?sorted.map((r,i)=>{
+    const g=letterGrade(r.percent||0);
+    return`<div class="lb-row">
+      <div class="lb-rank ${rankClasses[i]||"normal"}">${rankIcons[i]||i+1}</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:13px;color:var(--ink)">${esc(r.name)}</div>
+        <div style="font-size:11px;color:var(--muted);font-weight:600">${esc(r.department||"—")} · ${esc(r.position||"—")}</div>
+      </div>
+      <div style="font-size:20px;font-weight:900;color:${r.percent>=60?"var(--green)":"var(--red)"}">${r.percent||0}%</div>
+      <span class="badge ${gradeClass(g)}" style="margin-left:8px">${g}</span>
+    </div>`;
+  }).join(""):`<div style="text-align:center;padding:30px;color:var(--muted)">Өгөгдөл байхгүй</div>`;
+}
+
+// ── Results Filters ──
+function getResultFiltered(){
+  if(window._monthFilter){const f=window._monthFilter;delete window._monthFilter;return allResults.filter(r=>{if(!(r.timestamp instanceof Date))return false;return r.timestamp.getFullYear()===f.year&&r.timestamp.getMonth()+1===f.month})}
+  let data=[...allResults];
+  const search=(document.getElementById("rSearch").value||"").trim().toLowerCase();
+  if(search)data=data.filter(r=>String(r.name||"").toLowerCase().includes(search));
+  const et=document.getElementById("rExamType").value;
+  if(et)data=data.filter(r=>r.examType===et);
+  const dept=document.getElementById("rDept").value;
+  if(dept)data=data.filter(r=>r.department===dept);
+  const pf=document.getElementById("rPass").value;
+  if(pf==="pass")data=data.filter(r=>r.passed);
+  if(pf==="fail")data=data.filter(r=>!r.passed);
+  return data;
+}
+function resetResultFilter(){
+  document.getElementById("rSearch").value="";
+  ["rExamType","rDept","rPass"].forEach(id=>{document.getElementById(id).value=""});
+  window._monthFilter=null;
   renderResultsTable();
+  renderArchiveTree();
 }
-function getFiltered(){return filterType==="all"?allResults:allResults.filter(r=>r.examType===filterType)}
-
-function renderResultsTable(){
-  const data=getFiltered();
-  const tb=document.getElementById("rBody");
+function renderResultsTableMonthly(data){
+  const maxPts=totalPts();
   document.getElementById("rEmpty").style.display=data.length?"none":"block";
-  tb.innerHTML=data.map((r,i)=>{
-    const dt=r.timestamp instanceof Date?r.timestamp.toLocaleDateString("mn-MN"):"—";
+  document.getElementById("rBody").innerHTML=data.map((r,i)=>{
+    const g=letterGrade(r.percent||0);
     return`<tr>
-      <td style="font-weight:700;color:var(--muted)">${i+1}</td>
+      <td style="font-weight:700;color:var(--muted);font-size:12px">${i+1}</td>
       <td style="font-weight:700;color:var(--ink)">${esc(r.name)}</td>
       <td>${esc(r.department||"—")}</td>
       <td>${esc(r.position||"—")}</td>
       <td><span class="badge ${r.examType==="pre"?"badge-pre":"badge-post"}">${r.examType==="pre"?"Урьдчилсан":"Дараах"}</span></td>
-      <td style="font-size:12px">${dt}</td>
+      <td style="font-size:12px">${fmtDate(r.timestamp)}</td>
       <td style="font-weight:800;color:${r.passed?"var(--green)":"var(--red)"}">${r.percent||0}%</td>
-      <td>${r.total||0}/${QS.reduce((s,q)=>s+q.points,0)}</td>
+      <td style="font-size:12px">${r.total||0}/${maxPts}</td>
       <td><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></td>
-      <td><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button></td>
+      <td><span class="badge ${gradeClass(g)}">${g}</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button><button class="btn btn-ghost btn-xs" style="color:var(--red);margin-left:4px" onclick="deleteResult('${r.id}')">Устгах</button></td>
     </tr>`;
+  }).join("");
+  if(data.length){const pass=data.filter(r=>r.passed).length;const avg=Math.round(data.reduce((s,r)=>s+(r.percent||0),0)/data.length);const sumEl=document.getElementById("rSummaryRow");sumEl.style.display="flex";sumEl.innerHTML=`<span>📊 ${data.length} шалгалт</span><span style="margin:0 12px">·</span><span style="color:var(--green)">✅ ${pass} тэнцсэн</span><span style="margin:0 12px">·</span><span style="color:var(--red)">❌ ${data.length-pass} тэнцээгүй</span><span style="margin:0 12px">·</span><span>📈 Голч: ${avg}%</span><span style="margin:0 12px">·</span><span>σ ${stdDev(data.map(r=>r.percent||0))}%</span>`;}
+}
+
+function renderResultsTable(){
+  const data=getResultFiltered();
+  const maxPts=totalPts();
+  document.getElementById("rEmpty").style.display=data.length?"none":"block";
+  const tbody=document.getElementById("rBody");
+  tbody.innerHTML=data.map((r,i)=>{
+    const g=letterGrade(r.percent||0);
+    return`<tr>
+      <td style="font-weight:700;color:var(--muted);font-size:12px">${i+1}</td>
+      <td style="font-weight:700;color:var(--ink)">${esc(r.name)}</td>
+      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.department||"—")}</td>
+      <td>${esc(r.position||"—")}</td>
+      <td><span class="badge ${r.examType==="pre"?"badge-pre":"badge-post"}">${r.examType==="pre"?"Урьдчилсан":"Дараах"}</span></td>
+      <td style="font-size:12px;white-space:nowrap">${fmtDate(r.timestamp)}</td>
+      <td style="font-weight:800;color:${r.passed?"var(--green)":"var(--red)"}">${r.percent||0}%</td>
+      <td style="font-size:12px">${r.total||0}/${maxPts}</td>
+      <td><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></td>
+      <td><span class="badge ${gradeClass(g)}">${g}</span></td>
+      <td style="white-space:nowrap"><button class="btn btn-ghost btn-xs" onclick="openDetail('${r.id}')">Харах</button><button class="btn btn-ghost btn-xs" style="color:var(--red);margin-left:4px" onclick="deleteResult('${r.id}')">Устгах</button></td>
+    </tr>`;
+  }).join("");
+
+  // Summary footer
+  if(data.length){
+    const pass=data.filter(r=>r.passed).length;
+    const avg=Math.round(data.reduce((s,r)=>s+(r.percent||0),0)/data.length);
+    const sd=stdDev(data.map(r=>r.percent||0));
+    const sumEl=document.getElementById("rSummaryRow");
+    sumEl.style.display="flex";
+    sumEl.innerHTML=`<span>📊 Нийт: <b>${data.length}</b></span>
+    <span style="margin:0 16px">·</span>
+    <span>✅ Тэнцсэн: <b style="color:var(--green)">${pass}</b> (${Math.round(pass/data.length*100)}%)</span>
+    <span style="margin:0 16px">·</span>
+    <span>❌ Тэнцээгүй: <b style="color:var(--red)">${data.length-pass}</b></span>
+    <span style="margin:0 16px">·</span>
+    <span>📈 Голч: <b>${avg}%</b></span>
+    <span style="margin:0 16px">·</span>
+    <span>σ Стандарт хазайлт: <b>${sd}%</b></span>`;
+  } else {
+    document.getElementById("rSummaryRow").style.display="none";
+  }
+}
+
+// ── Archive Tree (Dept → Month → Шалгалт) ──
+const MONTH_FOLDERS=["","01-Нэгдүгээр-сар","02-Хоёрдугаар-сар","03-Гуравдугаар-сар","04-Дөрөвдүгээр-сар","05-Тавдугаар-сар","06-Зургадугаар-сар","07-Долдугаар-сар","08-Наймдугаар-сар","09-Есдүгээр-сар","10-Аравдугаар-сар","11-Арван-нэгдүгээр-сар","12-Арван-хоёрдугаар-сар"];
+
+function renderArchiveTree(){
+  // Build dept → month map
+  const deptMap={};
+  allResults.forEach(r=>{
+    if(!(r.timestamp instanceof Date))return;
+    const dept=r.department||"Тодорхойгүй";
+    const mk=r.timestamp.getFullYear()+"-"+String(r.timestamp.getMonth()+1).padStart(2,"0");
+    if(!deptMap[dept])deptMap[dept]={};
+    if(!deptMap[dept][mk])deptMap[dept][mk]=[];
+    deptMap[dept][mk].push(r);
+  });
+
+  const depts=Object.keys(deptMap).sort();
+  if(!depts.length){document.getElementById("archiveTree").innerHTML=`<div style="text-align:center;padding:30px;color:var(--muted)">📭 Архив хоосон байна</div>`;return}
+
+  document.getElementById("archiveTree").innerHTML=depts.map((dept,di)=>{
+    const months=Object.keys(deptMap[dept]).sort((a,b)=>b.localeCompare(a));
+    const totalDept=months.reduce((s,m)=>s+deptMap[dept][m].length,0);
+    const passAll=months.reduce((s,m)=>s+deptMap[dept][m].filter(r=>r.passed).length,0);
+    const avgAll=Math.round(months.reduce((s,m)=>s+deptMap[dept][m].reduce((ss,r)=>ss+(r.percent||0),0),0)/totalDept);
+    const uid=`dept_${di}`;
+    return`<div class="archive-year">
+      <div class="archive-year-hdr" onclick="toggleYear('${uid}')">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap">
+          <span style="font-size:18px">🏢</span>
+          <span style="font-weight:800">${esc(dept)}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:100px;padding:2px 10px">${totalDept} шалгалт</span>
+          <span style="font-size:12px;font-weight:700;color:var(--green)">✅ ${passAll} тэнцсэн (${Math.round(passAll/totalDept*100)}%)</span>
+          <span style="font-size:12px;font-weight:700;color:var(--amber)">📈 Голч ${avgAll}%</span>
+        </div>
+        <span id="${uid}arrow" style="color:var(--muted)">▼</span>
+      </div>
+      <div id="${uid}" class="archive-month">
+        ${months.map((mk,mi)=>{
+          const rs=deptMap[dept][mk];
+          const[y,mo]=mk.split("-");
+          const passC=rs.filter(r=>r.passed).length;
+          const avgM=Math.round(rs.reduce((s,r)=>s+(r.percent||0),0)/rs.length);
+          const passRate=Math.round(passC/rs.length*100);
+          // Month-over-month trend
+          const prevMk=months[mi+1];
+          let trend="";
+          if(prevMk){
+            const prevRs=deptMap[dept][prevMk];
+            const prevAvg=Math.round(prevRs.reduce((s,r)=>s+(r.percent||0),0)/prevRs.length);
+            const diff=avgM-prevAvg;
+            trend=diff>0?`<span style="color:var(--green);font-weight:700">▲ +${diff}%</span>`:diff<0?`<span style="color:var(--red);font-weight:700">▼ ${diff}%</span>`:`<span style="color:var(--muted);font-weight:700">= өөрчлөлтгүй</span>`;
+          }
+          const muid=`mo_${di}_${mi}`;
+          const mLabel=`${MONTH_FOLDERS[parseInt(mo)]} ${y}`;
+          return`<div class="archive-month-item" style="flex-direction:column;align-items:stretch;padding:0">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;flex-wrap:wrap" onclick="toggleYear('${muid}')">
+              <span style="font-size:15px">📅</span>
+              <div class="archive-month-name" style="flex:1">${mLabel}</div>
+              ${trend}
+              <span style="font-size:11px;color:var(--muted)">${rs.length} шалгалт</span>
+              <span id="${muid}arrow" style="color:var(--muted);font-size:12px">▼</span>
+            </div>
+            <div id="${muid}" style="padding:0 0 6px 28px">
+              <div style="border-left:2px solid var(--border);margin-left:6px;padding-left:12px">
+                <div style="display:flex;align-items:center;gap:8px;padding:8px 0;flex-wrap:wrap">
+                  <span style="font-size:14px">📁</span>
+                  <span style="font-weight:700;font-size:13px">Шалгалт</span>
+                  <span style="font-size:11px;color:var(--muted)">${rs.length} файл</span>
+                  <span style="font-size:11px;color:var(--green)">✅ ${passC} тэнцсэн (${passRate}%)</span>
+                  <span style="font-size:11px;color:var(--amber)">📈 Голч: ${avgM}%</span>
+                  <div style="display:flex;gap:6px;margin-left:auto">
+                    <button class="btn btn-outline btn-xs" onclick="showMonthDeptResults('${esc(dept)}','${mk}')">👁 Харах</button>
+                    <button class="btn btn-blue btn-xs" onclick="exportDeptMonthExcel('${esc(dept)}','${mk}')">⬇ Excel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
   }).join("");
 }
 
+function showMonthDeptResults(dept,mk){
+  const[y,mo]=mk.split("-");
+  const data=allResults.filter(r=>{
+    if(!(r.timestamp instanceof Date))return false;
+    return r.department===dept&&r.timestamp.getFullYear()===parseInt(y)&&r.timestamp.getMonth()+1===parseInt(mo);
+  });
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+  document.getElementById("page-results").classList.add("active");
+  document.querySelectorAll(".nav-item")[1].classList.add("active");
+  document.getElementById("pageTitle").textContent="Үр дүнгүүд";
+  window._monthFilter=null;
+  renderResultsTableMonthly(data);
+  toast(`${dept} · ${MONTH_FOLDERS[parseInt(mo)]} ${y} — ${data.length} дүн`);
+}
+
+function exportDeptMonthExcel(dept,mk){
+  const[y,mo]=mk.split("-");
+  const data=allResults.filter(r=>{
+    if(!(r.timestamp instanceof Date))return false;
+    return r.department===dept&&r.timestamp.getFullYear()===parseInt(y)&&r.timestamp.getMonth()+1===parseInt(mo);
+  });
+  if(!data.length){toast("Өгөгдөл байхгүй","err");return}
+  const dateStr=`${y}-${mo}`;
+  const safeDept=dept.replace(/\s+/g,"-");
+  doExcelExport(data,`${dateStr}_Шалгалт_${safeDept}`);
+}
+
+function toggleYear(id){
+  const el=document.getElementById(id);
+  const arr=document.getElementById(id+"arrow");
+  if(!el)return;
+  const isHidden=el.style.display==="none";
+  el.style.display=isHidden?"block":"none";
+  if(arr)arr.textContent=isHidden?"▼":"▶";
+}
+
+function showMonthResults(year,month){
+  // Filter results table to that month
+  document.getElementById("rSearch").value="";
+  document.getElementById("rExamType").value="";
+  document.getElementById("rDept").value="";
+  document.getElementById("rPass").value="";
+  // Use a temporary month filter
+  const data=allResults.filter(r=>{
+    if(!(r.timestamp instanceof Date))return false;
+    return r.timestamp.getFullYear()===year&&r.timestamp.getMonth()+1===month;
+  });
+  // Navigate to results and show filtered
+  document.querySelectorAll(".page").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("active"));
+  document.getElementById("page-results").classList.add("active");
+  document.querySelectorAll(".nav-item")[1].classList.add("active");
+  document.getElementById("pageTitle").textContent="Үр дүнгүүд";
+  // Temporarily override
+  window._monthFilter={year,month};
+  renderResultsTableMonthly(data);
+  toast(`${year} оны ${month}-р сарын шалгалтууд — ${data.length} дүн`);
+}
+
+// ── Excel Export ──
+function letterGradeXL(pct){return letterGrade(pct)}
+
+function buildExcelData(data){
+  const maxPts=totalPts();
+  const pass=data.filter(r=>r.passed).length;
+  const pcts=data.map(r=>r.percent||0);
+  const avg=pcts.length?Math.round(pcts.reduce((a,b)=>a+b,0)/pcts.length):0;
+  const sd=stdDev(pcts);
+  const today=new Date().toLocaleDateString("mn-MN");
+
+  // Sheet 1: Summary
+  const s1=[
+    [CFG.examTitle||"ХАБЭА Шалгалт"],
+    ["Тайлан гаргасан огноо:", today],
+    [],
+    ["ХУРААНГУЙ"],
+    ["Нийт шалгалт",data.length],
+    ["Тэнцсэн",pass],
+    ["Тэнцээгүй",data.length-pass],
+    ["Тэнцсэн хувь",data.length?Math.round(pass/data.length*100)+"%":"—"],
+    ["Голч дүн",avg+"%"],
+    ["Хамгийн өндөр",(pcts.length?Math.max(...pcts):0)+"%"],
+    ["Хамгийн доод",(pcts.length?Math.min(...pcts):0)+"%"],
+    ["Стандарт хазайлт",sd+"%"],
+    ["Тэнцэх босго",(CFG.passPercent||60)+"%"],
+    [],
+    ["Үсгэн дүнгийн тархалт"],
+    ["А (90-100%)",data.filter(r=>letterGrade(r.percent||0)==="A").length],
+    ["B (80-89%)",data.filter(r=>letterGrade(r.percent||0)==="B").length],
+    ["C (70-79%)",data.filter(r=>letterGrade(r.percent||0)==="C").length],
+    ["D (60-69%)",data.filter(r=>letterGrade(r.percent||0)==="D").length],
+    ["F (0-59%)",data.filter(r=>letterGrade(r.percent||0)==="F").length],
+    [],
+    ["Хэлтэс тус бүрийн дундаж"],
+  ];
+  const deptMap={};
+  data.forEach(r=>{const d=r.department||"Тодорхойгүй";if(!deptMap[d]){deptMap[d]={sum:0,cnt:0}}deptMap[d].sum+=(r.percent||0);deptMap[d].cnt++});
+  Object.entries(deptMap).sort((a,b)=>b[1].sum/b[1].cnt-a[1].sum/a[1].cnt).forEach(([d,v])=>s1.push([d,Math.round(v.sum/v.cnt)+"%",v.cnt+" шалгалт"]));
+
+  // Sheet 2: Detail (+ signature column)
+  const s2hdr=["№","Овог нэр","Хэлтэс","Албан тушаал","Нийт асуулт","Авсан оноо","Боломжит дээд","Хувь (%)","Үсгэн дүн","Шалгалтын төрөл","Огноо","Тэнцсэн эсэх","Гарын үсэг"];
+  const s2rows=data.map((r,i)=>[
+    i+1, r.name, r.department||"", r.position||"",
+    QS.length, r.total||0, maxPts,
+    r.percent||0, letterGrade(r.percent||0),
+    r.examType==="pre"?"Урьдчилсан":"Дараах",
+    r.timestamp instanceof Date?r.timestamp.toLocaleDateString("mn-MN"):"—",
+    r.passed?"Тэнцсэн":"Тэнцээгүй",
+    r.signature?"":"— байхгүй —"
+  ]);
+
+  // Footer (нэг нэмэлт багана учир 13 урт болгоно)
+  const pad13=arr=>{while(arr.length<13)arr.push("");return arr};
+  s2rows.push([]);
+  s2rows.push(pad13(["","ДҮГНЭЛТ"]));
+  s2rows.push(pad13(["","Нийт ажилтан",data.length]));
+  s2rows.push(pad13(["","Тэнцсэн",pass,"",Math.round(pass/(data.length||1)*100)+"%"]));
+  s2rows.push(pad13(["","Тэнцээгүй",data.length-pass,"",Math.round((data.length-pass)/(data.length||1)*100)+"%"]));
+  s2rows.push(pad13(["","Голч дүн","","","",avg+"%"]));
+  s2rows.push(pad13(["","Стандарт хазайлт","","","",sd+"%"]));
+
+  return{s1,s2hdr,s2rows};
+}
+
+function exportExcel(){
+  const data=getResultFiltered();
+  if(!data.length){toast("Татах өгөгдөл байхгүй","err");return}
+  doExcelExport(data);
+}
+
+function exportMonthExcel(year,month){
+  const data=allResults.filter(r=>{
+    if(!(r.timestamp instanceof Date))return false;
+    return r.timestamp.getFullYear()===year&&r.timestamp.getMonth()+1===month;
+  });
+  if(!data.length){toast("Тухайн сард өгөгдөл байхгүй","err");return}
+  doExcelExport(data,`${year}-${String(month).padStart(2,"0")}`);
+}
+
+async function doExcelExport(data,suffix=""){
+  const{s1,s2hdr,s2rows}=buildExcelData(data);
+
+  // ExcelJS байгаа эсэхийг шалгая, байхгүй бол хуучин SheetJS-ээр fallback хийе
+  if(typeof ExcelJS==="undefined"){
+    return doExcelExportLegacy(data,suffix);
+  }
+
+  toast("Excel бэлдэж байна... ⏳");
+
+  const wb=new ExcelJS.Workbook();
+  wb.creator="ХАБЭА Систем";
+  wb.created=new Date();
+
+  // ── Sheet 1: Хураангуй ──
+  const ws1=wb.addWorksheet("Хураангуй");
+  ws1.columns=[{width:34},{width:22},{width:22}];
+  s1.forEach((row,i)=>{
+    const r=ws1.addRow(row);
+    if(i===0){r.font={bold:true,size:16,color:{argb:"FF4F46E5"}};ws1.mergeCells(r.number,1,r.number,3)}
+    else if(typeof row[0]==="string"&&(row[0]==="ХУРААНГУЙ"||row[0]==="Үсгэн дүнгийн тархалт"||row[0]==="Хэлтэс тус бүрийн дундаж")){
+      r.font={bold:true,size:13,color:{argb:"FFFFFFFF"}};
+      r.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF4F46E5"}};
+    }
+  });
+
+  // ── Sheet 2: Дэлгэрэнгүй + Гарын үсэг ──
+  const ws2=wb.addWorksheet("Дэлгэрэнгүй үр дүн");
+  ws2.columns=[
+    {width:5},{width:22},{width:20},{width:20},{width:11},{width:11},
+    {width:11},{width:10},{width:9},{width:14},{width:14},{width:12},{width:28}
+  ];
+
+  // Толгой мөр
+  const hdrRow=ws2.addRow(s2hdr);
+  hdrRow.height=26;
+  hdrRow.eachCell(c=>{
+    c.font={bold:true,color:{argb:"FFFFFFFF"},size:11};
+    c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF4F46E5"}};
+    c.alignment={vertical:"middle",horizontal:"center",wrapText:true};
+    c.border={top:{style:"thin",color:{argb:"FFCBD5E1"}},bottom:{style:"thin",color:{argb:"FFCBD5E1"}},left:{style:"thin",color:{argb:"FFCBD5E1"}},right:{style:"thin",color:{argb:"FFCBD5E1"}}};
+  });
+
+  // Өгөгдлийн мөрүүд (зөвхөн data.length-тэй тэнцүү тоо нь жинхэнэ ажилтны мөр)
+  for(let i=0;i<data.length;i++){
+    const r=data[i];
+    const rowVals=s2rows[i];
+    const row=ws2.addRow(rowVals);
+    row.height=64; // Гарын үсэг харуулахын тулд өндөрсгөнө
+    row.alignment={vertical:"middle"};
+    // Тэнцсэн/тэнцээгүй өнгөтэй болгоё (12-р багана)
+    const passCell=row.getCell(12);
+    if(r.passed){passCell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFD1FAE5"}};passCell.font={color:{argb:"FF065F46"},bold:true}}
+    else{passCell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFEE2E2"}};passCell.font={color:{argb:"FF991B1B"},bold:true}}
+    // Бүх эс рүү бараахан border
+    row.eachCell(c=>{c.border={top:{style:"hair",color:{argb:"FFE5E7EB"}},bottom:{style:"hair",color:{argb:"FFE5E7EB"}},left:{style:"hair",color:{argb:"FFE5E7EB"}},right:{style:"hair",color:{argb:"FFE5E7EB"}}}});
+    // 13-р багана = гарын үсэг → зураг embed
+    if(r.signature){
+      try{
+        // Формат автоматаар (jpeg / png) тогтоох
+        const m=r.signature.match(/^data:image\/(\w+);base64,/);
+        const ext=m?(m[1]==="jpg"?"jpeg":m[1]):"png";
+        const base64=r.signature.replace(/^data:image\/\w+;base64,/,"");
+        const imageId=wb.addImage({base64,extension:ext});
+        const rNum=row.number-1; // ExcelJS image anchor нь 0-based
+        // editAs:"twoCell" → эс хэмжээ өөрчлөгдвөл зураг мөн хамт өөрчлөгдөнө
+        ws2.addImage(imageId,{
+          tl:{col:12.05,row:rNum+0.05},
+          br:{col:12.98,row:rNum+0.98},
+          editAs:"twoCell"
+        });
+        row.getCell(13).value="";
+      }catch(e){
+        console.error("[Excel] image embed err:",e);
+        row.getCell(13).value="(зураг алдаа)";
+      }
+    }else{
+      row.getCell(13).font={color:{argb:"FF9CA3AF"},italic:true};
+      row.getCell(13).alignment={vertical:"middle",horizontal:"center"};
+    }
+  }
+
+  // Footer мөрүүд (s2rows-ийн үлдсэн хэсэг)
+  for(let i=data.length;i<s2rows.length;i++){
+    const row=ws2.addRow(s2rows[i]);
+    if(s2rows[i][1]==="ДҮГНЭЛТ"){
+      row.font={bold:true,size:12};
+      row.eachCell(c=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFEEF2FF"}}});
+    }
+  }
+
+  // Толгой мөрийг хөлдөөе
+  ws2.views=[{state:"frozen",ySplit:1,xSplit:0}];
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const today=new Date().toISOString().split("T")[0];
+  a.href=url;a.download=`Шалгалтын_дүн_${suffix||today}.xlsx`;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},100);
+  toast("Excel татагдлаа ✅");
+}
+
+// Fallback (хэрэв ExcelJS ачаалагдаагүй бол)
+function doExcelExportLegacy(data,suffix=""){
+  const{s1,s2hdr,s2rows}=buildExcelData(data);
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet(s1);
+  ws1["!cols"]=[{wch:30},{wch:20},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,ws1,"Хураангуй");
+  const ws2=XLSX.utils.aoa_to_sheet([s2hdr,...s2rows]);
+  ws2["!cols"]=[{wch:5},{wch:20},{wch:18},{wch:18},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:14},{wch:12},{wch:25}];
+  ws2["!freeze"]={xSplit:0,ySplit:1};
+  XLSX.utils.book_append_sheet(wb,ws2,"Дэлгэрэнгүй үр дүн");
+  const today=new Date().toISOString().split("T")[0];
+  XLSX.writeFile(wb,`Шалгалтын_дүн_${suffix||today}.xlsx`);
+  toast("Excel татагдлаа ✅ (зураггүй)");
+}
+
+// ── Detail Modal ──
 function openDetail(id){
-  const r=allResults.find(x=>x.id===id);
-  if(!r) return;
+  const r=allResults.find(x=>x.id===id);if(!r)return;
   document.getElementById("dTitle").textContent=esc(r.name)+" — Дэлгэрэнгүй";
-  const dt=r.timestamp instanceof Date?r.timestamp.toLocaleString("mn-MN"):"—";
-  const total=QS.reduce((s,q)=>s+q.points,0);
+  const maxPts=totalPts();
+  const g=letterGrade(r.percent||0);
+  const globalAvg=allResults.length?Math.round(allResults.reduce((s,x)=>s+(x.percent||0),0)/allResults.length):0;
+  const diff=(r.percent||0)-globalAvg;
+  const diffStr=diff>0?`▲ +${diff}%`:diff<0?`▼ ${diff}%`:"= дундаж";
+  const diffCol=diff>0?"var(--green)":diff<0?"var(--red)":"var(--muted)";
+
   let h=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
-    <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Алба</div><div style="font-weight:700">${esc(r.department||"—")}</div></div>
+    <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Хэлтэс</div><div style="font-weight:700">${esc(r.department||"—")}</div></div>
     <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Тушаал</div><div style="font-weight:700">${esc(r.position||"—")}</div></div>
-    <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Нийт дүн</div><div style="font-size:26px;font-weight:900;color:${r.passed?"var(--green)":"var(--red)"}">${r.percent||0}%</div><div style="font-size:12px;color:var(--muted)">${r.total}/${total} оноо</div></div>
-    <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Огноо</div><div style="font-size:13px;font-weight:600">${dt}</div><div style="margin-top:6px"><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span></div></div>
+    <div class="card-sm" style="padding:14px"><div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:4px">Нийт дүн</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <div style="font-size:28px;font-weight:900;color:${r.passed?"var(--green)":"var(--red)"}">${r.percent||0}%</div>
+        <span class="badge ${gradeClass(g)}" style="font-size:14px;padding:4px 12px">${g}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">${r.total||0}/${maxPts} оноо</div>
+    </div>
+    <div class="card-sm" style="padding:14px">
+      <div style="font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;margin-bottom:6px">Нийт дундажтай харьцуулалт</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="font-size:22px;font-weight:900;color:${diffCol}">${diffStr}</div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Нийт голч: ${globalAvg}%</div>
+      <div style="display:flex;gap:0;height:6px;border-radius:3px;overflow:hidden;background:var(--bg)">
+        <div style="width:${globalAvg}%;background:var(--muted2);border-radius:3px"></div>
+      </div>
+      <div style="display:flex;gap:0;height:6px;border-radius:3px;overflow:hidden;background:var(--bg);margin-top:4px">
+        <div style="width:${Math.min(100,r.percent||0)}%;background:${r.passed?"var(--green)":"var(--red)"};border-radius:3px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:600;color:var(--muted);margin-top:3px"><span>Дундаж</span><span>Энэ ажилтан</span></div>
+      <div style="margin-top:8px"><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span> · ${fmtDateTime(r.timestamp)}</div>
+    </div>
   </div>
+  ${r.signature?`
+  <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">✍️ Ажилтны гарын үсэг</div>
+  <div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <img src="${r.signature}" alt="Гарын үсэг" style="max-height:120px;max-width:280px;background:#fff;border:1px dashed var(--border2);border-radius:8px;padding:6px;flex-shrink:0">
+    <div style="flex:1;min-width:180px">
+      <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:4px">${esc(r.name||"")}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${esc(r.department||"")}${r.position?" · "+esc(r.position):""}</div>
+      <div style="font-size:11px;color:var(--muted)">Зурсан: ${fmtDateTime(r.timestamp)}</div>
+      <a href="${r.signature}" download="signature_${esc((r.name||"signature").replace(/[^а-яА-ЯёЁa-zA-Z0-9-]/g,"_"))}.png" class="btn btn-ghost" style="margin-top:8px;padding:4px 10px;font-size:11px;display:inline-flex">⬇️ Татаж авах</a>
+    </div>
+  </div>`:`
+  <div style="background:var(--bg);border:1px dashed var(--border2);border-radius:12px;padding:14px;margin-bottom:20px;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px">
+    <span style="font-size:18px">⚠️</span> Гарын үсэг бүртгэгдээгүй (хуучин шалгалт)
+  </div>`}
   <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Асуулт бүрийн задаргаа</div>
   <div style="display:flex;flex-direction:column;gap:8px">`;
+
   (r.breakdown||[]).forEach((b,i)=>{
     const q=QS[i]||{question:"Асуулт "+b.id,points:b.points||0};
     const ratio=b.points>0?b.earned/b.points:0;
     const cl=ratio===1?"var(--green)":ratio===0?"var(--red)":"var(--amber)";
     const icon=ratio===1?"✅":ratio===0?"❌":"⚡";
+    // Compute global avg for this question
+    const qGlobAvg=allResults.length?Math.round(allResults.reduce((s,x)=>{const bx=(x.breakdown||[]).find(bk=>bk.id===b.id);return s+(bx&&bx.points?bx.earned/bx.points*100:0)},0)/allResults.length):0;
     h+=`<div style="padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border2)">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
-        <div style="font-size:13px;font-weight:600;color:var(--ink2);line-height:1.4;flex:1">${icon} ${esc((q.question||"").substring(0,80))}${(q.question||"").length>80?"…":""}</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink2);line-height:1.4;flex:1">${icon} ${esc((q.question||"").substring(0,75))}${(q.question||"").length>75?"…":""}</div>
         <div style="font-weight:800;font-size:14px;color:${cl};flex-shrink:0">${b.earned}/${b.points}</div>
       </div>
-      <div style="height:4px;background:var(--border2);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.round(ratio*100)}%;background:${cl};border-radius:2px"></div></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div style="flex:1">
+          <div style="height:5px;background:var(--border2);border-radius:2px;overflow:hidden;margin-bottom:3px">
+            <div style="height:100%;width:${Math.round(ratio*100)}%;background:${cl};border-radius:2px"></div>
+          </div>
+          <div style="height:5px;background:var(--border2);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${qGlobAvg}%;background:var(--muted2);border-radius:2px"></div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-weight:600;flex-shrink:0;text-align:right">
+          <div style="color:${cl}">${Math.round(ratio*100)}%</div>
+          <div>голч ${qGlobAvg}%</div>
+        </div>
+      </div>
     </div>`;
   });
-  h+=`</div>`;
+  h+=`</div>
+  <div style="margin-top:14px;padding:10px 14px;background:var(--bl);border-radius:8px;font-size:12px;color:var(--blue);font-weight:600">
+    💡 Хоёр мөр: дээд — энэ ажилтан, доод — нийт дундаж
+  </div>`;
   document.getElementById("dBody").innerHTML=h;
   document.getElementById("detailModal").classList.add("show");
 }
 function closeDetail(){document.getElementById("detailModal").classList.remove("show")}
 document.getElementById("detailModal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeDetail()});
 
-// ── CSV ──
-function exportCSV(){
-  const data=getFiltered();
-  if(!data.length){toast("Татах өгөгдөл байхгүй","err");return}
-  const total=QS.reduce((s,q)=>s+q.points,0);
-  const hdr=["№","Овог нэр","Алба","Тушаал","Шалгалтын төрөл","Огноо","Хувь","Оноо","Нийт","Дүн"];
-  const rows=data.map((r,i)=>[i+1,r.name,r.department||"",r.position||"",r.examType==="pre"?"Урьдчилсан":"Дараах",r.timestamp instanceof Date?r.timestamp.toLocaleString("mn-MN"):"—",(r.percent||0)+"%",r.total||0,total,r.passed?"Тэнцсэн":"Тэнцээгүй"]);
-  const csv="﻿"+[hdr,...rows].map(row=>row.map(c=>{const s=String(c??"");return s.includes(",")||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s}).join(",")).join("\n");
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8;"}));a.download=`HABEA_${new Date().toISOString().split("T")[0]}.csv`;a.click();
-  toast("CSV татагдлаа ✅");
-}
-
+// ── Delete All ──
 async function clearAll(){
-  if(!confirm("Бүх шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй.")) return;
+  if(!confirm("Бүх шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй."))return;
   try{
     const snap=await db.collection(COLLECTION).get();
-    const batch=db.batch();
-    snap.docs.forEach(d=>batch.delete(d.ref));
+    const batch=db.batch();snap.docs.forEach(d=>batch.delete(d.ref));
     await batch.commit();
-    allResults=[];
-    renderDashboard();renderResultsTable();
+    allResults=[];renderDashboard();renderResultsTable();renderArchiveTree();
+    toast("Устгагдлаа ✅");
+  }catch(e){toast("Алдаа гарлаа","err")}
+}
+
+async function deleteResult(id){
+  const r=allResults.find(x=>x.id===id);
+  const name=r?esc(r.name):"";
+  if(!confirm(`"${name}" - шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй.`))return;
+  try{
+    await db.collection(COLLECTION).doc(id).delete();
+    allResults=allResults.filter(x=>x.id!==id);
+    renderDashboard();renderResultsTable();renderArchiveTree();
     toast("Устгагдлаа ✅");
   }catch(e){toast("Алдаа гарлаа","err")}
 }
 
 // ── Question List ──
 function renderQuestionList(){
-  const total=QS.reduce((s,q)=>s+q.points,0);
+  const total=totalPts();
   const typeLabel={open:"Нээлттэй",single:"Нэг сонголт",multi:"Олон сонголт",matching:"Холбох",["three-words"]:"Гурван үг",["three-mistakes"]:"3 алдаа"};
   document.getElementById("qList").innerHTML=`
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:12px 16px;background:var(--white);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:13px;color:var(--muted)">
     Нийт <strong style="color:var(--ink)">${QS.length}</strong> асуулт · Нийт <strong style="color:var(--ink)">${total}</strong> оноо
   </div>
-  ${QS.map((q,i)=>`
-  <div class="q-item">
+  ${QS.map((q,i)=>`<div class="q-item">
     <div class="q-num">${i+1}</div>
     <div class="q-text">${esc((q.question||"").substring(0,80))}${(q.question||"").length>80?"…":""}</div>
     <div class="q-meta">
@@ -556,8 +1210,7 @@ function openQEditor(idx){
   editingQIdx=idx;
   document.getElementById("qModalTitle").textContent=idx===null?"Асуулт нэмэх":"Асуулт засах";
   const q=idx===null?{type:"single",points:8,question:"",options:[{id:"a",text:""},{id:"b",text:""}],correct:"a"}:JSON.parse(JSON.stringify(QS[idx]));
-  renderQEditorForm(q);
-  document.getElementById("qModal").classList.add("show");
+  renderQEditorForm(q);document.getElementById("qModal").classList.add("show");
 }
 function closeQModal(){document.getElementById("qModal").classList.remove("show");editingQIdx=null}
 document.getElementById("qModal").addEventListener("click",e=>{if(e.target===e.currentTarget)closeQModal()});
@@ -574,238 +1227,130 @@ function renderQEditorForm(q){
   <div class="field"><label>Оноо</label><input class="inp inp-sm" type="number" id="ePts" value="${q.points||8}" min="1" max="100" style="width:100px"></div>
   <div id="typeFields"></div>`;
   document.getElementById("qModalBody").innerHTML=h;
-  renderTypeFields(q.type, q);
+  renderTypeFields(q.type,q);
 }
 
-function onTypeChange(){
-  const type=document.getElementById("eType").value;
-  editorQ.type=type;
-  renderTypeFields(type, editorQ);
-}
+function onTypeChange(){editorQ.type=document.getElementById("eType").value;renderTypeFields(editorQ.type,editorQ)}
 
-function renderTypeFields(type, q){
+function renderTypeFields(type,q){
   const wrap=document.getElementById("typeFields");
   if(type==="open"){
     wrap.innerHTML=`<div class="field"><label>Placeholder текст</label><input class="inp" id="ePH" value="${esc(q.placeholder||"")}"></div>
     <div class="field"><label>Түлхүүр үгс (таслалаар тусгаарлана)</label><input class="inp" id="eKW" value="${esc((q.keywords||[]).join(","))}"></div>`;
-  }
-  else if(type==="single"){
+  }else if(type==="single"){
     const opts=q.options||[{id:"a",text:""},{id:"b",text:""}];
     const correct=q.correct||"a";
-    let h=`<div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Сонголтууд <span style="color:var(--muted);font-weight:500">(✓ дарж зөв хариулт болгоно)</span></div>
-    <div id="optList">`;
-    opts.forEach((o,i)=>{
-      const isCorr=correct===o.id;
-      h+=`<div class="opt-row">
-        <div style="min-width:24px;height:24px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)">${o.id.toUpperCase()}</div>
-        <input class="inp inp-sm" value="${esc(o.text)}" id="opt_${i}" style="flex:1">
-        <button class="correct-toggle${isCorr?" yes":""}" id="ct_${i}" onclick="setCorrectSingle(${i})" title="${isCorr?"Зөв хариулт":"Зөв болгох"}">${isCorr?"✓":"○"}</button>
-        <button class="btn btn-ghost btn-xs" onclick="removeOpt(${i})" title="Устгах">✕</button>
-      </div>`;
-    });
+    let h=`<div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Сонголтууд <span style="color:var(--muted);font-weight:500">(✓ дарж зөв хариулт болгоно)</span></div><div id="optList">`;
+    opts.forEach((o,i)=>{const isCorr=correct===o.id;h+=`<div class="opt-row">
+      <div style="min-width:24px;height:24px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)">${o.id.toUpperCase()}</div>
+      <input class="inp inp-sm" value="${esc(o.text)}" id="opt_${i}" style="flex:1">
+      <button class="correct-toggle${isCorr?" yes":""}" id="ct_${i}" onclick="setCorrectSingle(${i})">${isCorr?"✓":"○"}</button>
+      <button class="btn btn-ghost btn-xs" onclick="removeOpt(${i})">✕</button>
+    </div>`;});
     h+=`</div><button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOpt()">+ Сонголт нэмэх</button>`;
-    wrap.innerHTML=h;
-    wrap.dataset.correct=correct;
-    wrap.dataset.opts=JSON.stringify(opts);
-  }
-  else if(type==="multi"){
+    wrap.innerHTML=h;wrap.dataset.correct=correct;wrap.dataset.opts=JSON.stringify(opts);
+  }else if(type==="multi"){
     const opts=q.options||[{id:"a",text:""},{id:"b",text:""}];
     const corrArr=Array.isArray(q.correct)?q.correct:[];
-    let h=`<div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Сонголтууд <span style="color:var(--muted);font-weight:500">(✓ дарж зөв хариулт болгоно — хэд хэдийг сонгоно)</span></div>
-    <div id="optList">`;
-    opts.forEach((o,i)=>{
-      const isCorr=corrArr.includes(o.id);
-      h+=`<div class="opt-row">
-        <div style="min-width:24px;height:24px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)">${o.id.toUpperCase()}</div>
-        <input class="inp inp-sm" value="${esc(o.text)}" id="opt_${i}" style="flex:1">
-        <button class="correct-toggle${isCorr?" yes":""}" id="ct_${i}" onclick="toggleCorrectMulti(${i})">${isCorr?"✓":"○"}</button>
-        <button class="btn btn-ghost btn-xs" onclick="removeOpt(${i})">✕</button>
-      </div>`;
-    });
+    let h=`<div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Сонголтууд <span style="color:var(--muted);font-weight:500">(хэд хэдийг зөв болгоно)</span></div><div id="optList">`;
+    opts.forEach((o,i)=>{const isCorr=corrArr.includes(o.id);h+=`<div class="opt-row">
+      <div style="min-width:24px;height:24px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--muted)">${o.id.toUpperCase()}</div>
+      <input class="inp inp-sm" value="${esc(o.text)}" id="opt_${i}" style="flex:1">
+      <button class="correct-toggle${isCorr?" yes":""}" id="ct_${i}" onclick="toggleCorrectMulti(${i})">${isCorr?"✓":"○"}</button>
+      <button class="btn btn-ghost btn-xs" onclick="removeOpt(${i})">✕</button>
+    </div>`;});
     h+=`</div><button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="addOpt()">+ Сонголт нэмэх</button>`;
-    wrap.innerHTML=h;
-    wrap.dataset.opts=JSON.stringify(opts);
-    wrap.dataset.corrArr=JSON.stringify(corrArr);
-  }
-  else if(type==="matching"){
+    wrap.innerHTML=h;wrap.dataset.opts=JSON.stringify(opts);wrap.dataset.corrArr=JSON.stringify(corrArr);
+  }else if(type==="matching"){
     const li=q.leftItems||[{id:"a",text:""},{id:"b",text:""}];
     const ri=q.rightItems||[{id:"1",text:""},{id:"2",text:""}];
     const corr=q.correct||{};
-    let h=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Зүүн тал (асуул)</div>
-      <div id="mLeft">`;
+    let h=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px"><div>
+      <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Зүүн тал</div><div id="mLeft">`;
     li.forEach((l,i)=>h+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <span style="min-width:20px;font-size:11px;font-weight:800;color:var(--muted)">${l.id.toUpperCase()}</span>
       <input class="inp inp-sm" value="${esc(l.text)}" id="ml_${i}" style="flex:1">
       <button class="btn btn-ghost btn-xs" onclick="removeMLeft(${i})">✕</button>
     </div>`);
     h+=`</div><button class="btn btn-outline btn-xs" onclick="addMLeft()">+ Нэмэх</button></div>
-    <div>
-      <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Баруун тал (хариулт)</div>
-      <div id="mRight">`;
+    <div><div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Баруун тал</div><div id="mRight">`;
     ri.forEach((r,i)=>h+=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
       <span style="min-width:20px;font-size:11px;font-weight:800;color:var(--muted)">${r.id}</span>
       <input class="inp inp-sm" value="${esc(r.text)}" id="mr_${i}" style="flex:1">
       <button class="btn btn-ghost btn-xs" onclick="removeMRight(${i})">✕</button>
     </div>`);
     h+=`</div><button class="btn btn-outline btn-xs" onclick="addMRight()">+ Нэмэх</button></div></div>
-    <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Зөв хосууд (Зүүн → Баруун)</div>
-    <div id="mPairs">`;
-    li.forEach(l=>{
-      h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="min-width:80px;font-size:13px;font-weight:600;color:var(--ink2)">${esc(l.text)||l.id.toUpperCase()}</div>
-        <div style="font-size:18px;color:var(--muted)">→</div>
-        <select class="inp inp-sm" id="mp_${l.id}" style="flex:1">
-          <option value="">Сонгоно уу</option>
-          ${ri.map(r=>`<option value="${r.id}"${corr[l.id]===r.id?" selected":""}>${r.text||r.id}</option>`).join("")}
-        </select>
-      </div>`;
-    });
-    h+=`</div>`;
-    wrap.innerHTML=h;
-    wrap.dataset.li=JSON.stringify(li);
-    wrap.dataset.ri=JSON.stringify(ri);
-  }
-  else if(type==="three-words"){
-    const kws=q.keywords||[[""],[""],[""]];
+    <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:8px">Зөв хосууд</div><div id="mPairs">`;
+    li.forEach(l=>{h+=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <div style="min-width:80px;font-size:13px;font-weight:600;color:var(--ink2)">${esc(l.text)||l.id.toUpperCase()}</div>
+      <div style="font-size:18px;color:var(--muted)">→</div>
+      <select class="inp inp-sm" id="mp_${l.id}" style="flex:1">
+        <option value="">Сонгоно уу</option>
+        ${ri.map(r=>`<option value="${r.id}"${corr[l.id]===r.id?" selected":""}>${r.text||r.id}</option>`).join("")}
+      </select>
+    </div>`;});
+    h+=`</div>`;wrap.innerHTML=h;
+    wrap.dataset.li=JSON.stringify(li);wrap.dataset.ri=JSON.stringify(ri);
+  }else if(type==="three-words"){
+    const raw=q.keywords||["","",""];
+    const kws=raw.map(k=>Array.isArray(k)?k.join(","):String(k||""));
     let h=`<div class="field"><label>Hint текст</label><input class="inp" id="eTWHint" value="${esc(q.hint||"")}"></div>
-    <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Гурван үгийн түлхүүр үгс (таслалаар тусгаарлана)</div>`;
-    [0,1,2].forEach(i=>h+=`<div class="field"><label>${i+1}-р үг</label><input class="inp inp-sm" id="etw_${i}" value="${esc((kws[i]||[]).join(","))}"></div>`);
+    <div style="font-size:13px;font-weight:700;color:var(--ink2);margin-bottom:10px">Түлхүүр үгс (таслалаар)</div>`;
+    [0,1,2].forEach(i=>h+=`<div class="field"><label>${i+1}-р үг</label><input class="inp inp-sm" id="etw_${i}" value="${esc(kws[i]||"")}"></div>`);
     wrap.innerHTML=h;
-  }
-  else if(type==="three-mistakes"){
+  }else if(type==="three-mistakes"){
     wrap.innerHTML=`<div style="font-size:13px;color:var(--muted);padding:12px;background:var(--bg);border-radius:8px">Ажилтан гурван алдаа чөлөөтэй бичдэг. Нэмэлт тохиргоо шаардлагагүй.</div>`;
   }
 }
 
-// Option helpers for single/multi
 const LETTERS="abcdefghijklmnopqrstuvwxyz";
-function getCurrentOpts(){
-  const count=document.querySelectorAll("[id^='opt_']").length;
-  return Array.from({length:count},(_,i)=>({id:LETTERS[i],text:document.getElementById("opt_"+i)?.value||""}));
-}
+function getCurrentOpts(){const c=document.querySelectorAll("[id^='opt_']").length;return Array.from({length:c},(_,i)=>({id:LETTERS[i],text:document.getElementById("opt_"+i)?.value||""}))}
 function addOpt(){
-  const opts=getCurrentOpts();
-  opts.push({id:LETTERS[opts.length]||String(opts.length+1),text:""});
+  const opts=getCurrentOpts();opts.push({id:LETTERS[opts.length]||String(opts.length+1),text:""});
   const type=document.getElementById("eType").value;
   const correct=type==="single"?(document.getElementById("typeFields").dataset.correct||"a"):null;
   const corrArr=type==="multi"?JSON.parse(document.getElementById("typeFields").dataset.corrArr||"[]"):null;
   renderTypeFields(type,{...editorQ,type,options:opts,correct:type==="multi"?corrArr:correct});
 }
 function removeOpt(i){
-  const opts=getCurrentOpts();
-  opts.splice(i,1);
+  const opts=getCurrentOpts();opts.splice(i,1);
   const reassigned=opts.map((o,idx)=>({...o,id:LETTERS[idx]}));
   const type=document.getElementById("eType").value;
   renderTypeFields(type,{...editorQ,type,options:reassigned,correct:type==="multi"?[]:reassigned[0]?.id||"a"});
 }
-function setCorrectSingle(i){
-  document.querySelectorAll(".correct-toggle").forEach((b,j)=>{b.classList.remove("yes");b.textContent="○"});
-  const btn=document.getElementById("ct_"+i);
-  btn.classList.add("yes");btn.textContent="✓";
-  document.getElementById("typeFields").dataset.correct=LETTERS[i];
-}
-function toggleCorrectMulti(i){
-  const btn=document.getElementById("ct_"+i);
-  const isYes=btn.classList.contains("yes");
-  btn.classList.toggle("yes",!isYes);
-  btn.textContent=!isYes?"✓":"○";
-  let arr=JSON.parse(document.getElementById("typeFields").dataset.corrArr||"[]");
-  const id=LETTERS[i];
-  if(!isYes&&!arr.includes(id))arr.push(id);
-  else arr=arr.filter(x=>x!==id);
-  document.getElementById("typeFields").dataset.corrArr=JSON.stringify(arr);
-}
+function setCorrectSingle(i){document.querySelectorAll(".correct-toggle").forEach((b,j)=>{b.classList.remove("yes");b.textContent="○"});const btn=document.getElementById("ct_"+i);btn.classList.add("yes");btn.textContent="✓";document.getElementById("typeFields").dataset.correct=LETTERS[i]}
+function toggleCorrectMulti(i){const btn=document.getElementById("ct_"+i);const isYes=btn.classList.contains("yes");btn.classList.toggle("yes",!isYes);btn.textContent=!isYes?"✓":"○";let arr=JSON.parse(document.getElementById("typeFields").dataset.corrArr||"[]");const id=LETTERS[i];if(!isYes&&!arr.includes(id))arr.push(id);else arr=arr.filter(x=>x!==id);document.getElementById("typeFields").dataset.corrArr=JSON.stringify(arr)}
+function addMLeft(){const c=document.querySelectorAll("[id^='ml_']").length;const li=Array.from({length:c},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));li.push({id:LETTERS[c],text:""});const ri=Array.from({length:document.querySelectorAll("[id^='mr_']").length},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:ri,correct:{}})}
+function addMRight(){const cL=document.querySelectorAll("[id^='ml_']").length;const cR=document.querySelectorAll("[id^='mr_']").length;const li=Array.from({length:cL},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));const ri=Array.from({length:cR},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));ri.push({id:String(cR+1),text:""});renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:ri,correct:{}})}
+function removeMLeft(i){const c=document.querySelectorAll("[id^='ml_']").length;const li=Array.from({length:c},(_,j)=>({id:LETTERS[j],text:document.getElementById("ml_"+j)?.value||""}));li.splice(i,1);const reassigned=li.map((l,idx)=>({...l,id:LETTERS[idx]}));const ri=Array.from({length:document.querySelectorAll("[id^='mr_']").length},(_,j)=>({id:String(j+1),text:document.getElementById("mr_"+j)?.value||""}));renderTypeFields("matching",{...editorQ,leftItems:reassigned,rightItems:ri,correct:{}})}
+function removeMRight(i){const cL=document.querySelectorAll("[id^='ml_']").length;const cR=document.querySelectorAll("[id^='mr_']").length;const li=Array.from({length:cL},(_,j)=>({id:LETTERS[j],text:document.getElementById("ml_"+j)?.value||""}));const ri=Array.from({length:cR},(_,j)=>({id:String(j+1),text:document.getElementById("mr_"+j)?.value||""}));ri.splice(i,1);const reassigned=ri.map((r,idx)=>({...r,id:String(idx+1)}));renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:reassigned,correct:{}})}
 
-// Matching helpers
-function addMLeft(){
-  const count=document.querySelectorAll("[id^='ml_']").length;
-  const li=Array.from({length:count},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));
-  li.push({id:LETTERS[count],text:""});
-  const ri=Array.from({length:document.querySelectorAll("[id^='mr_']").length},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));
-  renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:ri,correct:{}});
-}
-function addMRight(){
-  const count=document.querySelectorAll("[id^='mr_']").length;
-  const li=Array.from({length:document.querySelectorAll("[id^='ml_']").length},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));
-  const ri=Array.from({length:count},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));
-  ri.push({id:String(count+1),text:""});
-  renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:ri,correct:{}});
-}
-function removeMLeft(i){
-  const count=document.querySelectorAll("[id^='ml_']").length;
-  const li=Array.from({length:count},(_,j)=>({id:LETTERS[j],text:document.getElementById("ml_"+j)?.value||""}));
-  li.splice(i,1);
-  const reassigned=li.map((l,idx)=>({...l,id:LETTERS[idx]}));
-  const ri=Array.from({length:document.querySelectorAll("[id^='mr_']").length},(_,j)=>({id:String(j+1),text:document.getElementById("mr_"+j)?.value||""}));
-  renderTypeFields("matching",{...editorQ,leftItems:reassigned,rightItems:ri,correct:{}});
-}
-function removeMRight(i){
-  const countL=document.querySelectorAll("[id^='ml_']").length;
-  const countR=document.querySelectorAll("[id^='mr_']").length;
-  const li=Array.from({length:countL},(_,j)=>({id:LETTERS[j],text:document.getElementById("ml_"+j)?.value||""}));
-  const ri=Array.from({length:countR},(_,j)=>({id:String(j+1),text:document.getElementById("mr_"+j)?.value||""}));
-  ri.splice(i,1);
-  const reassigned=ri.map((r,idx)=>({...r,id:String(idx+1)}));
-  renderTypeFields("matching",{...editorQ,leftItems:li,rightItems:reassigned,correct:{}});
-}
-
-// ── Save Question ──
 async function saveQuestion(){
   const type=document.getElementById("eType").value;
   const question=(document.getElementById("eQ")?.value||"").trim();
   const points=parseInt(document.getElementById("ePts")?.value)||8;
   if(!question){toast("Асуултын текст оруулна уу","err");return}
   let q={type,question,points,id:editingQIdx===null?(QS.length?Math.max(...QS.map(x=>x.id||0))+1:1):QS[editingQIdx].id};
-
-  if(type==="open"){
-    q.placeholder=document.getElementById("ePH")?.value||"";
-    q.keywords=(document.getElementById("eKW")?.value||"").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean);
-  }
-  else if(type==="single"){
-    const opts=getCurrentOpts();
-    const correct=document.getElementById("typeFields").dataset.correct||"a";
-    q.options=opts; q.correct=correct;
-  }
-  else if(type==="multi"){
-    const opts=getCurrentOpts();
-    const corrArr=JSON.parse(document.getElementById("typeFields").dataset.corrArr||"[]");
-    q.options=opts; q.correct=corrArr;
-  }
+  if(type==="open"){q.placeholder=document.getElementById("ePH")?.value||"";q.keywords=(document.getElementById("eKW")?.value||"").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean)}
+  else if(type==="single"){q.options=getCurrentOpts();q.correct=document.getElementById("typeFields").dataset.correct||"a"}
+  else if(type==="multi"){q.options=getCurrentOpts();q.correct=JSON.parse(document.getElementById("typeFields").dataset.corrArr||"[]")}
   else if(type==="matching"){
-    const countL=document.querySelectorAll("[id^='ml_']").length;
-    const countR=document.querySelectorAll("[id^='mr_']").length;
-    const li=Array.from({length:countL},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));
-    const ri=Array.from({length:countR},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));
-    const corr={};li.forEach(l=>{const v=document.getElementById("mp_"+l.id)?.value;if(v)corr[l.id]=v;});
-    q.leftItems=li; q.rightItems=ri; q.correct=corr;
-  }
-  else if(type==="three-words"){
+    const cL=document.querySelectorAll("[id^='ml_']").length,cR=document.querySelectorAll("[id^='mr_']").length;
+    const li=Array.from({length:cL},(_,i)=>({id:LETTERS[i],text:document.getElementById("ml_"+i)?.value||""}));
+    const ri=Array.from({length:cR},(_,i)=>({id:String(i+1),text:document.getElementById("mr_"+i)?.value||""}));
+    const corr={};li.forEach(l=>{const v=document.getElementById("mp_"+l.id)?.value;if(v)corr[l.id]=v});
+    q.leftItems=li;q.rightItems=ri;q.correct=corr;
+  }else if(type==="three-words"){
     q.hint=document.getElementById("eTWHint")?.value||"";
-    q.keywords=[0,1,2].map(i=>(document.getElementById("etw_"+i)?.value||"").split(",").map(s=>s.trim().toLowerCase()).filter(Boolean));
+    q.keywords=[0,1,2].map(i=>(document.getElementById("etw_"+i)?.value||"").trim().toLowerCase());
   }
-
-  if(editingQIdx===null) QS.push(q);
-  else QS[editingQIdx]=q;
-
-  try{
-    await db.collection("habea_config").doc("questions").set({list:QS});
-    toast("Асуулт хадгалагдлаа ✅");
-    closeQModal();
-    renderQuestionList();
-    renderDashboard();
-  }catch(e){toast("Хадгалахад алдаа гарлаа","err")}
+  if(editingQIdx===null)QS.push(q);else QS[editingQIdx]=q;
+  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Хадгалагдлаа ✅");closeQModal();renderQuestionList();renderDashboard()}catch(e){console.error("saveQuestion:",e);toast("Алдаа: "+e.message,"err")}
 }
-
 async function deleteQ(i){
-  if(!confirm(`${i+1}-р асуултыг устгахдаа итгэлтэй байна уу?`)) return;
+  if(!confirm(`${i+1}-р асуултыг устгахдаа итгэлтэй байна уу?`))return;
   QS.splice(i,1);
-  try{
-    await db.collection("habea_config").doc("questions").set({list:QS});
-    toast("Устгагдлаа ✅");
-    renderQuestionList();
-  }catch(e){toast("Алдаа гарлаа","err")}
+  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Устгагдлаа ✅");renderQuestionList()}catch(e){toast("Алдаа гарлаа","err")}
 }
 
 // ── Settings ──
@@ -817,38 +1362,169 @@ function loadSettingsForm(){
   document.getElementById("cfgReg").value=CFG.regUrl||"";
   document.getElementById("cfgEval").value=CFG.evalUrl||"";
 }
-
 async function saveSettings(){
-  const settings={
-    orgName:document.getElementById("cfgOrg").value.trim(),
-    examTitle:document.getElementById("cfgTitle").value.trim(),
-    passPercent:parseInt(document.getElementById("cfgPass").value)||60,
-    adminPin:document.getElementById("cfgPin").value.trim()||"1234",
-    regUrl:document.getElementById("cfgReg").value.trim(),
-    evalUrl:document.getElementById("cfgEval").value.trim()
-  };
+  const s={orgName:document.getElementById("cfgOrg").value.trim(),examTitle:document.getElementById("cfgTitle").value.trim(),passPercent:parseInt(document.getElementById("cfgPass").value)||60,adminPin:document.getElementById("cfgPin").value.trim()||"1234",regUrl:document.getElementById("cfgReg").value.trim(),evalUrl:document.getElementById("cfgEval").value.trim()};
+  try{await db.collection("habea_config").doc("settings").set(s);CFG={...s};document.getElementById("sbOrg").textContent=s.orgName||"МОНОС ХҮНС ХК";toast("Хадгалагдлаа ✅")}catch(e){toast("Алдаа гарлаа","err")}
+}
+
+// ── Month Comparison ──
+function populateMonthSelects(){
+  const mkSet=new Set();
+  allResults.forEach(r=>{
+    if(!(r.timestamp instanceof Date))return;
+    mkSet.add(r.timestamp.getFullYear()+"-"+String(r.timestamp.getMonth()+1).padStart(2,"0"));
+  });
+  const MONTHS=["","1-р сар","2-р сар","3-р сар","4-р сар","5-р сар","6-р сар","7-р сар","8-р сар","9-р сар","10-р сар","11-р сар","12-р сар"];
+  const sorted=[...mkSet].sort((a,b)=>b.localeCompare(a));
+  const opts=sorted.map(mk=>{const[y,m]=mk.split("-");return`<option value="${mk}">${MONTHS[parseInt(m)]} ${y}</option>`}).join("");
+  document.getElementById("cmpMonth1").innerHTML=opts;
+  document.getElementById("cmpMonth2").innerHTML=opts;
+  // Default: most recent vs previous
+  if(sorted.length>1)document.getElementById("cmpMonth2").value=sorted[1];
+}
+
+function renderMonthComparison(){
+  const mk1=document.getElementById("cmpMonth1").value;
+  const mk2=document.getElementById("cmpMonth2").value;
+  if(!mk1||!mk2){document.getElementById("monthComparison").innerHTML=`<div style="text-align:center;padding:20px;color:var(--muted)">Хоёр сараа сонгоно уу</div>`;return}
+  const MONTHS=["","1-р сар","2-р сар","3-р сар","4-р сар","5-р сар","6-р сар","7-р сар","8-р сар","9-р сар","10-р сар","11-р сар","12-р сар"];
+  function mkLabel(mk){const[y,m]=mk.split("-");return MONTHS[parseInt(m)]+" "+y}
+
+  // Get results for each month
+  function monthData(mk){
+    const[y,m]=mk.split("-");
+    return allResults.filter(r=>{
+      if(!(r.timestamp instanceof Date))return false;
+      return r.timestamp.getFullYear()===parseInt(y)&&r.timestamp.getMonth()+1===parseInt(m);
+    });
+  }
+  const d1=monthData(mk1), d2=monthData(mk2);
+
+  // Get all depts that appear in either month
+  const depts=[...new Set([...d1.map(r=>r.department||"Тодорхойгүй"),...d2.map(r=>r.department||"Тодорхойгүй")])].sort();
+
+  function stat(data){
+    if(!data.length)return{avg:0,pass:0,cnt:0,passRate:0};
+    const avg=Math.round(data.reduce((s,r)=>s+(r.percent||0),0)/data.length);
+    const pass=data.filter(r=>r.passed).length;
+    return{avg,pass,cnt:data.length,passRate:Math.round(pass/data.length*100)};
+  }
+
+  const overall1=stat(d1),overall2=stat(d2);
+
+  let h=`
+  <!-- Overall summary row -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;padding:14px;background:linear-gradient(135deg,#EEF2FF,#F5F3FF);border-radius:12px;border:1px solid #C7D2FE">
+    <div style="text-align:center">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${mkLabel(mk1)}</div>
+      <div style="font-size:28px;font-weight:900;color:var(--ink)">${overall1.avg}%</div>
+      <div style="font-size:12px;color:var(--muted)">${overall1.cnt} шалгалт · ✅ ${overall1.passRate}%</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+      ${(()=>{
+        const diff=overall1.avg-overall2.avg;
+        const diffPR=overall1.passRate-overall2.passRate;
+        const col=diff>0?"var(--green)":diff<0?"var(--red)":"var(--muted)";
+        const arrow=diff>0?"▲":diff<0?"▼":"=";
+        return`<div style="font-size:22px;font-weight:900;color:${col}">${arrow} ${Math.abs(diff)}%</div>
+        <div style="font-size:11px;color:var(--muted);font-weight:600">голч дүнгийн өөрчлөлт</div>
+        <div style="font-size:11px;font-weight:700;color:${diffPR>0?"var(--green)":diffPR<0?"var(--red)":"var(--muted)"}">${diffPR>0?"▲ +":"▼ "}${Math.abs(diffPR)}% тэнцэлт</div>`;
+      })()}
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${mkLabel(mk2)}</div>
+      <div style="font-size:28px;font-weight:900;color:var(--ink)">${overall2.avg}%</div>
+      <div style="font-size:12px;color:var(--muted)">${overall2.cnt} шалгалт · ✅ ${overall2.passRate}%</div>
+    </div>
+  </div>
+
+  <!-- Dept rows -->
+  <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Хэлтэс тус бүрийн харьцуулалт</div>
+  <div style="display:flex;flex-direction:column;gap:8px">`;
+
+  depts.forEach(dept=>{
+    const rd1=d1.filter(r=>(r.department||"Тодорхойгүй")===dept);
+    const rd2=d2.filter(r=>(r.department||"Тодорхойгүй")===dept);
+    const s1=stat(rd1),s2=stat(rd2);
+    const diff=s1.avg-s2.avg;
+    const diffPR=s1.passRate-s2.passRate;
+    const col=diff>0?"var(--green)":diff<0?"var(--red)":"var(--muted)";
+    const arrow=diff>0?"▲":diff<0?"▼":"=";
+    const barW1=Math.min(100,s1.avg);const barW2=Math.min(100,s2.avg);
+    h+=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-weight:700;font-size:14px;color:var(--ink)">🏢 ${esc(dept)}</div>
+        <div style="font-size:16px;font-weight:900;color:${col}">${arrow} ${diff===0?"өөрчлөлтгүй":Math.abs(diff)+"%"}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center">
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px">
+            <span style="color:var(--blue)">${mkLabel(mk1)}</span>
+            <span style="color:var(--blue);font-weight:900">${s1.cnt?s1.avg+"% ("+s1.cnt+"ш)":"—"}</span>
+          </div>
+          <div style="height:8px;background:#E0E7FF;border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${barW1}%;background:#4F46E5;border-radius:4px;transition:width .5s"></div>
+          </div>
+          ${s1.cnt?`<div style="font-size:11px;color:var(--muted);margin-top:3px">✅ ${s1.passRate}% тэнцсэн</div>`:`<div style="font-size:11px;color:var(--muted);margin-top:3px">Өгөгдөл байхгүй</div>`}
+        </div>
+        <div style="font-size:18px;color:${col};font-weight:900;text-align:center;min-width:32px">${arrow}</div>
+        <div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:4px">
+            <span style="color:var(--purple)">${mkLabel(mk2)}</span>
+            <span style="color:var(--purple);font-weight:900">${s2.cnt?s2.avg+"% ("+s2.cnt+"ш)":"—"}</span>
+          </div>
+          <div style="height:8px;background:#EDE9FE;border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${barW2}%;background:#7C3AED;border-radius:4px;transition:width .5s"></div>
+          </div>
+          ${s2.cnt?`<div style="font-size:11px;color:var(--muted);margin-top:3px">✅ ${s2.passRate}% тэнцсэн</div>`:`<div style="font-size:11px;color:var(--muted);margin-top:3px">Өгөгдөл байхгүй</div>`}
+        </div>
+      </div>
+      ${diff!==0?`<div style="margin-top:8px;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:600;background:${diff>0?"var(--gl)":"var(--red-l)"};color:${diff>0?"var(--green)":"var(--red)"}">${diff>0?"📈":"📉"} ${mkLabel(mk1)} нь ${mkLabel(mk2)}-тай харьцуулахад голч дүн ${Math.abs(diff)}%-иар ${diff>0?"өссөн":"буурсан"}${diffPR!==0?`, тэнцэлт ${Math.abs(diffPR)}%-иар ${diffPR>0?"нэмэгдсэн":"буурсан"}`:""}.</div>`:""}
+    </div>`;
+  });
+  h+=`</div>`;
+  document.getElementById("monthComparison").innerHTML=h;
+}
+
+// ── Refresh ──
+async function refreshData(){
+  const btn=document.getElementById("btnRefresh");
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
   try{
-    await db.collection("habea_config").doc("settings").set(settings);
-    CFG={...settings};
-    document.getElementById("sbOrg").textContent=settings.orgName||"МОНОС ХҮНС ХК";
-    toast("Тохиргоо хадгалагдлаа ✅");
-  }catch(e){toast("Хадгалахад алдаа гарлаа","err")}
+    const[qS,rS]=await Promise.all([
+      db.collection("habea_config").doc("questions"+QSUF).get(),
+      db.collection(COLLECTION).orderBy("timestamp","desc").get()
+    ]);
+    if(qS.exists&&qS.data().list?.length>0)QS=qS.data().list;
+    allResults=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+    populateDeptFilters();renderDashboard();renderResultsTable();renderArchiveTree();
+    const t=new Date();document.getElementById("lastRefresh").textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,"0")} шинэчлэгдсэн`;
+    toast("Шинэчлэгдлээ ✅");
+  }catch(e){toast("Алдаа гарлаа","err")}
+  btn.disabled=false;btn.innerHTML='🔄 Шинэчлэх';
 }
 
 // ── Toast ──
-function toast(msg,type="ok"){
-  const t=document.createElement("div");t.className="t";
-  const cl=type==="err"?"#EF4444":type==="warn"?"#D97706":"#059669";
-  t.innerHTML=`<span style="color:${cl}">${type==="err"?"✕":type==="warn"?"⚠":"✓"}</span>${msg}`;
-  document.getElementById("toastBox").appendChild(t);setTimeout(()=>t.remove(),3000)
-}
-
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function toast(msg,type="ok"){const t=document.createElement("div");t.className="t";const cl=type==="err"?"#EF4444":type==="warn"?"#D97706":"#059669";t.innerHTML=`<span style="color:${cl}">${type==="err"?"✕":type==="warn"?"⚠":"✓"}</span>${msg}`;document.getElementById("toastBox").appendChild(t);setTimeout(()=>t.remove(),3200)}
 
 // ── Init ──
 setupPin();
 document.getElementById("p0").focus();
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&document.getElementById("loginWrap").style.display!=="none")checkPin()});
+
+// Auto-refresh every 5 minutes when logged in
+setInterval(()=>{
+  if(document.getElementById("appWrap").style.display!=="none"){
+    db.collection(COLLECTION).orderBy("timestamp","desc").get().then(rS=>{
+      const fresh=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+      if(fresh.length!==allResults.length){
+        allResults=fresh;
+        populateDeptFilters();renderDashboard();renderResultsTable();renderArchiveTree();
+        const t=new Date();document.getElementById("lastRefresh").textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,"0")} шинэчлэгдсэн`;
+      }
+    }).catch(()=>{});
+  }
+},300000);
 </script>
 </body>
 </html>
