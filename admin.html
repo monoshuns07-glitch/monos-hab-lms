@@ -682,7 +682,8 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
     <button class="tab-btn active" data-tab="kb">📋 Даатгал</button>
     <button class="tab-btn" data-tab="users">👥 Хэрэглэгчид</button>
     <button class="tab-btn" data-tab="videos">🎬 Видео</button>
-        <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
+    <button class="tab-btn" data-tab="lms" style="display:none" id="tabBtnLms">📖 Сургалт</button>
+    <button class="tab-btn" data-tab="dashboard">📊 Дашбоард</button>
     <a class="tab-btn" href="/kpi/" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">🛡️ KPI / ХАБЭА</a>
   </div>
 </div>
@@ -783,12 +784,6 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 <div id="tab-videos" class="tab-section">
 <div class="admin-container">
 
-  <div class="subtab-bar">
-    <button class="subtab-btn active" data-subtab="video">🎬 Видео</button>
-    <button class="subtab-btn" data-subtab="lms">📖 Сургалт</button>
-  </div>
-
-  <div class="subtab-section active" id="subtab-video">
   <div class="stats-grid">
     <div class="stat-card blue">
       <div class="stat-label">Нийт видео</div>
@@ -835,9 +830,14 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
   <div id="videoListWrap">
     <div class="loading"><div class="spinner"></div><p>Ачаалж байна...</p></div>
   </div>
-  </div><!-- /subtab-video -->
 
-  <div class="subtab-section" id="subtab-lms">
+</div>
+</div>
+
+<!-- ===== LMS TAB ===== -->
+<div id="tab-lms" class="tab-section">
+<div class="admin-container">
+
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
       <div style="font-size:18px;font-weight:700;color:var(--white);margin-bottom:6px">📖 Сургалтын удирдлага</div>
@@ -854,7 +854,6 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
   <div class="lms-tree" id="lmsTree">
     <div class="lms-empty" style="padding:48px;text-align:center">Ачаалж байна…</div>
   </div>
-  </div><!-- /subtab-lms -->
 
 </div>
 </div>
@@ -1750,20 +1749,23 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
     if(btn.dataset.tab==='users') loadUsers();
     if(btn.dataset.tab==='videos') loadVideos();
+    if(btn.dataset.tab==='lms' && !lmsChapters.length) loadLMS();
     if(btn.dataset.tab==='dashboard') loadDashboard();
   });
 });
-// Sub-tab switching inside Видео tab
-document.querySelectorAll('.subtab-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    const parent=btn.closest('.tab-section');
-    parent.querySelectorAll('.subtab-btn').forEach(b=>b.classList.remove('active'));
-    parent.querySelectorAll('.subtab-section').forEach(s=>s.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('subtab-'+btn.dataset.subtab).classList.add('active');
-    if(btn.dataset.subtab==='lms' && !lmsChapters.length) loadLMS();
-  });
-});
+// ?tab=lms URL param-аар Сургалт tab-ийг автоматаар нээх (KPI iframe дотроос нэвтрэх)
+(function(){
+  var tp=new URLSearchParams(location.search).get('tab');
+  if(tp==='lms'){
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
+    var btn=document.querySelector('.tab-btn[data-tab="lms"]');
+    if(btn){btn.style.display='';btn.classList.add('active');}
+    var sec=document.getElementById('tab-lms');
+    if(sec)sec.classList.add('active');
+    if(!lmsChapters.length) loadLMS();
+  }
+})();
 
 /* ===== SECONDARY FIREBASE APP (for creating users without logging out admin) ===== */
 const firebaseConfigSecondary = {
