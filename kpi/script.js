@@ -988,9 +988,9 @@ function switchPage(pageId) {
 /* ============ Sidebar badge-ууд ============ */
 /* ============ ХАБЭА Шалгалт — ажилтны шалгалт сонголтын хуудас ============ */
 var EXAM_PAGES = [
-  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',    url: 'https://habea-deploy.vercel.app/habea-urdchilsan.html',   icon: 'ti-clipboard-list',   color: '#4F46E5', bg: '#EEF2FF' },
-  { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт', url: 'https://habea-deploy.vercel.app/habea-eeljit.html',       icon: 'ti-refresh',          color: '#0891B2', bg: '#E0F2FE' },
-  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт', url: 'https://habea-deploy.vercel.app/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
+  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',    url: 'https://monoshuns-hab.netlify.app/habea-urdchilsan.html',   icon: 'ti-clipboard-list',   color: '#4F46E5', bg: '#EEF2FF' },
+  { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт', url: 'https://monoshuns-hab.netlify.app/habea-eeljit.html',       icon: 'ti-refresh',          color: '#0891B2', bg: '#E0F2FE' },
+  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт', url: 'https://monoshuns-hab.netlify.app/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
 ];
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
@@ -1508,7 +1508,7 @@ function actionTakeModExam(key, empId) {
   var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
   var exam = encodeURIComponent(key);
   var title = encodeURIComponent(TRAINING_MODULES[key] || key);
-  window.open('https://habea-deploy.vercel.app/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
+  window.open('https://monoshuns-hab.netlify.app/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
