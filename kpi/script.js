@@ -1294,14 +1294,59 @@ function actionModEditContent(key) {
   if (!isAdmin()) return;
   var mod = getMod(key);
   var node = elc('div', 'modal-info');
+  var R2_WORKER = 'https://monos-upload.buynt666.workers.dev';
+  var R2_KEY = 'monos2026';
   node.innerHTML =
-    '<div class="rf-field"><label style="font-weight:600;font-size:13px">Видео холбоос (YouTube)</label>' +
-    '<input type="text" id="mVid" class="rf-input" placeholder="https://youtu.be/..." value="' + esc(mod.videoUrl || '') + '"></div>' +
-    '<div class="rf-field" style="margin-top:12px"><label style="font-weight:600;font-size:13px">Слайд / PPT холбоос</label>' +
-    '<input type="text" id="mPpt" class="rf-input" placeholder="https://docs.google.com/..." value="' + esc(mod.pptUrl || '') + '"></div>' +
+    '<div class="rf-field"><label style="font-weight:600;font-size:13px">Видео файл байршуулах (R2)</label>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+    '<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0"><i class="ti ti-upload"></i> Файл сонгох<input type="file" id="mVidFile" accept="video/*" style="display:none"></label>' +
+    '<span id="mVidProgress" style="font-size:12px;color:#64748B"></span></div>' +
+    '<div class="rf-field" style="margin-top:8px"><label style="font-weight:600;font-size:13px">Видео холбоос (YouTube эсвэл R2 URL)</label>' +
+    '<input type="text" id="mVid" class="rf-input" placeholder="https://youtu.be/... эсвэл R2 URL" value="' + esc(mod.videoUrl || '') + '"></div></div>' +
+    '<div class="rf-field" style="margin-top:12px"><label style="font-weight:600;font-size:13px">Материал файл байршуулах (PDF, PPT)</label>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+    '<label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0"><i class="ti ti-upload"></i> Файл сонгох<input type="file" id="mPptFile" accept=".pdf,.ppt,.pptx,.doc,.docx" style="display:none"></label>' +
+    '<span id="mPptProgress" style="font-size:12px;color:#64748B"></span></div>' +
+    '<div class="rf-field" style="margin-top:8px"><label style="font-weight:600;font-size:13px">Материал холбоос (Google Docs эсвэл R2 URL)</label>' +
+    '<input type="text" id="mPpt" class="rf-input" placeholder="https://docs.google.com/... эсвэл R2 URL" value="' + esc(mod.pptUrl || '') + '"></div></div>' +
     '<div class="rf-field" style="margin-top:12px"><label style="font-weight:600;font-size:13px">Тайлбар / зааварчилгаа</label>' +
-    '<textarea id="mDesc" class="rf-input" rows="6" placeholder="Сургалтын зорилго, агуулга...">' + esc(mod.desc || '') + '</textarea></div>' +
+    '<textarea id="mDesc" class="rf-input" rows="4" placeholder="Сургалтын зорилго, агуулга...">' + esc(mod.desc || '') + '</textarea></div>' +
     '<button class="btn btn-primary btn-block" id="mSaveContent" style="margin-top:14px"><i class="ti ti-device-floppy"></i> Хадгалах</button>';
+
+  function r2Upload(file, progressEl, inputEl) {
+    if (!file) return;
+    var fname = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    progressEl.textContent = 'Байршуулж байна...';
+    progressEl.style.color = '#D97706';
+    var xhr = new XMLHttpRequest();
+    xhr.open('PUT', R2_WORKER + '/' + fname);
+    xhr.setRequestHeader('X-Key', R2_KEY);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) progressEl.textContent = Math.round(e.loaded / e.total * 100) + '%';
+    };
+    xhr.onload = function () {
+      if (xhr.status === 200) {
+        var res = JSON.parse(xhr.responseText);
+        inputEl.value = res.url;
+        progressEl.textContent = 'Амжилттай байршлаа ✓';
+        progressEl.style.color = '#16A34A';
+      } else {
+        progressEl.textContent = 'Алдаа гарлаа';
+        progressEl.style.color = '#DC2626';
+      }
+    };
+    xhr.onerror = function () { progressEl.textContent = 'Холболтын алдаа'; progressEl.style.color = '#DC2626'; };
+    xhr.send(file);
+  }
+
+  node.querySelector('#mVidFile').addEventListener('change', function () {
+    r2Upload(this.files[0], node.querySelector('#mVidProgress'), node.querySelector('#mVid'));
+  });
+  node.querySelector('#mPptFile').addEventListener('change', function () {
+    r2Upload(this.files[0], node.querySelector('#mPptProgress'), node.querySelector('#mPpt'));
+  });
+
   node.addEventListener('click', function (ev) {
     if (!ev.target.closest('#mSaveContent')) return;
     setModData(key, {
