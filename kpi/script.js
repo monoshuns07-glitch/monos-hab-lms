@@ -2040,7 +2040,7 @@ function saveRiskDashboard(dept, html, cb) {
   var R2_WORKER = 'https://monos-upload.buynt666.workers.dev';
   var R2_KEY = 'monos2026';
   var R2_PUB = 'https://pub-37442944b6904de39c30b229d9534d04.r2.dev';
-  var fname = 'risk_dashboards/' + Date.now() + '_' + dept.replace(/[^a-zA-Z0-9]/g, '_') + '.html';
+  var fname = 'rdash_' + Date.now() + '_' + dept.replace(/[^a-zA-Z0-9]/g, '_') + '.html';
   var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   var xhr = new XMLHttpRequest();
   xhr.open('PUT', R2_WORKER + '/' + fname);
@@ -2048,7 +2048,7 @@ function saveRiskDashboard(dept, html, cb) {
   xhr.setRequestHeader('Content-Type', 'text/html;charset=utf-8');
   xhr.onload = function () {
     if (xhr.status === 200) {
-      meta.htmlUrl = R2_PUB + '/' + fname;
+      try { meta.htmlUrl = JSON.parse(xhr.responseText).url; } catch (e) { meta.htmlUrl = R2_PUB + '/' + fname; }
       fdb.collection(RISK_COL).doc(dept).set(meta)
         .then(function () { cb(true); }).catch(function () { cb(false); });
     } else {
