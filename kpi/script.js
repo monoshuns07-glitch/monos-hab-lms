@@ -1265,8 +1265,8 @@ function renderTrainingModule(key) {
       renderModSubadmin(sec, key, mod, title, SESSION && SESSION.dept);
     }
   } else {
-    var me = myEmp();
-    if (!me || !isModTrainingVisible(me, key)) {
+    var me = myEmployeeRecord();
+    if (!isModTrainingVisible(me, key)) {
       sec.innerHTML = renderModLockedPage(title, 'ХАБЭА мэргэжилтэн эсвэл цехийн дарга нээх хүртэл хүлээнэ үү.');
     } else {
       renderModEmployee(sec, key, mod, title, me);
