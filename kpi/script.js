@@ -342,6 +342,30 @@ async function readHabeaExamsByEmail() {
   return map;
 }
 
+/* habea exam дүнг KPI-ийн empProgress-д бичих (examKey → training module key тааруулна) */
+function syncHabeaToModProgress(habeaByEmail, employees) {
+  var modKeys = Object.keys(TRAINING_MODULES);
+  var changed = false;
+  (employees || []).forEach(function (emp) {
+    var email = String(emp.email || '').toLowerCase().trim();
+    var hx = habeaByEmail[email];
+    if (!hx || !hx.list) return;
+    hx.list.forEach(function (item) {
+      var mkey = item.key;
+      if (!mkey || modKeys.indexOf(mkey) === -1) return;
+      var progKey = emp.id + '_' + mkey;
+      DB.empProgress = DB.empProgress || {};
+      var cur = DB.empProgress[progKey] || {};
+      var pct = Math.round(item.percent || 0);
+      if (!cur.examTaken || pct > (cur.examScore || 0)) {
+        DB.empProgress[progKey] = _merge(cur, { examTaken: true, examScore: pct, examPassed: !!item.passed, examTakenAt: item.ts ? new Date(item.ts * 1000).toISOString() : new Date().toISOString() });
+        changed = true;
+      }
+    });
+  });
+  return changed;
+}
+
 /* Нэвтэрсэн ажилтны шалгалтын дүнг шинээр татаж, өөрийнх нь KPI-г шинэчилнэ (шалгалт өгөөд буцахад) */
 async function refreshMyExams() {
   try {
@@ -451,6 +475,10 @@ async function syncEmployeesWithRealData() {
     }
     return r;
   });
+  try {
+    var habeaMap = await readHabeaExamsByEmail();
+    if (syncHabeaToModProgress(habeaMap, DB.employees)) saveDB();
+  } catch (e) {}
   return true;
 }
 
@@ -1115,6 +1143,7 @@ function renderModAdmin(sec, key, mod, title) {
     '<button class="btn btn-secondary btn-sm" id="mBtnContent"><i class="ti ti-edit"></i> Агуулга засах</button>' +
     '<button class="btn btn-secondary btn-sm" id="mBtnExam"><i class="ti ti-clipboard-list"></i> Шалгалт засах' + (hasExam ? ' (' + examQs.length + ')' : '') + '</button>' +
     '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border:1.5px solid #6EE7B7" id="mBtnOpenAll"><i class="ti ti-lock-open"></i> Бүх сургалт нэгдэж нээх</button>' +
+    '<button class="btn btn-secondary btn-sm" id="mBtnSyncAdmin"><i class="ti ti-refresh"></i> Шалгалтын дүн шинэчлэх</button>' +
     '</div></div>' +
 
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">' +
@@ -1155,6 +1184,19 @@ function renderModAdmin(sec, key, mod, title) {
         saveDB();
         toast('Бүх сургалт нэгдэж нээгдлаа', 'success');
         renderTrainingModule(CURRENT_MOD);
+      }
+      if (ev.target.closest('#mBtnSyncAdmin')) {
+        var btn = ev.target.closest('#mBtnSyncAdmin');
+        btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Татаж байна...';
+        readHabeaExamsByEmail().then(function (habeaMap) {
+          if (syncHabeaToModProgress(habeaMap, DB.employees)) {
+            saveDB();
+            toast('Ажилтнуудын шалгалтын дүн шинэчлэгдлээ', 'success');
+          } else {
+            toast('Шинэ дүн олдсонгүй', 'info');
+          }
+          renderTrainingModule(CURRENT_MOD);
+        }).catch(function () { toast('Шинэчлэхэд алдаа гарлаа', 'error'); renderTrainingModule(CURRENT_MOD); });
       }
     });
   }
@@ -1231,8 +1273,11 @@ function renderModEmployee(sec, key, mod, title, me) {
   }
 
   sec.innerHTML =
-    '<div style="padding:22px 24px 0"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 3px">' + esc(title) + '</h1>' +
+    '<div style="padding:22px 24px 0;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
+    '<div><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 3px">' + esc(title) + '</h1>' +
     '<p style="font-size:12px;color:#64748B;margin:0 0 16px">Дотоод сургалт · ' + esc(me.dept || '') + '</p></div>' +
+    '<button class="btn btn-secondary btn-sm" id="mBtnSyncExam" style="margin-top:4px"><i class="ti ti-refresh"></i> Шалгалтын дүн шинэчлэх</button>' +
+    '</div>' +
     '<div style="padding:0 24px 24px">' +
 
     '<div class="card" style="padding:20px;margin-bottom:14px">' +
@@ -1246,6 +1291,21 @@ function renderModEmployee(sec, key, mod, title, me) {
 
     examSection +
     '</div>';
+  var syncBtn = sec.querySelector('#mBtnSyncExam');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', function () {
+      syncBtn.disabled = true; syncBtn.innerHTML = '<i class="ti ti-loader-2"></i> Татаж байна...';
+      readHabeaExamsByEmail().then(function (habeaMap) {
+        if (syncHabeaToModProgress(habeaMap, DB.employees)) {
+          saveDB();
+          toast('Шалгалтын дүн шинэчлэгдлээ', 'success');
+        } else {
+          toast('Шинэ дүн олдсонгүй', 'info');
+        }
+        renderTrainingModule(CURRENT_MOD);
+      }).catch(function () { toast('Шинэчлэхэд алдаа гарлаа', 'error'); renderTrainingModule(CURRENT_MOD); });
+    });
+  }
 }
 
 /* ========== Үндсэн dispatcher ========== */
@@ -1432,7 +1492,9 @@ function actionTakeModExam(key, empId) {
   var me = myEmployeeRecord();
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
   var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
-  window.open('https://habea-deploy.vercel.app/habea-exam.html?email=' + email + '&name=' + name, '_blank');
+  var exam = encodeURIComponent(key);
+  var title = encodeURIComponent(TRAINING_MODULES[key] || key);
+  window.open('https://habea-deploy.vercel.app/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
