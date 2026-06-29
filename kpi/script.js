@@ -1056,7 +1056,7 @@ function renderModContentHtml(mod) {
       : '<a href="' + esc(mod.videoUrl) + '" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-bottom:12px;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-player-play"></i> Видео үзэх</a>';
   }
   if (mod.pptUrl) {
-    html += '<a href="' + esc(mod.pptUrl) + '" target="_blank" rel="noopener" class="btn btn-secondary" style="margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px"><i class="ti ti-presentation"></i> Слайд харах</a>';
+    html += '<button class="btn btn-secondary" style="margin-bottom:12px;margin-left:8px;display:inline-flex;align-items:center;gap:6px" data-ppt-view="' + esc(mod.pptUrl) + '"><i class="ti ti-presentation"></i> Слайд харах</button>';
   }
   if (mod.desc) {
     html += '<div style="font-size:14px;line-height:1.85;white-space:pre-wrap;color:#475569;margin-top:8px">' + esc(mod.desc) + '</div>';
@@ -4790,6 +4790,19 @@ function handleClick(e) {
 
   /* Сургалтын агуулга засах (админ) */
   if (el.hasAttribute && el.hasAttribute('data-editcourse')) { actionEditCourse(CURRENT_CAT); return; }
+
+  /* Слайд modal харах */
+  var pptUrl = el.closest ? (el.closest('[data-ppt-view]') || el).getAttribute('data-ppt-view') : null;
+  if (pptUrl) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'width:100%;height:75vh;min-height:400px';
+    var ifr = document.createElement('iframe');
+    ifr.style.cssText = 'width:100%;height:100%;border:0;border-radius:8px';
+    ifr.src = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(pptUrl);
+    wrap.appendChild(ifr);
+    buildModal('Слайд харах', wrap, { width: '92vw' });
+    return;
+  }
 
 
   /* --- Сургалтын модулийн toggle / үйлдэлүүд --- */
