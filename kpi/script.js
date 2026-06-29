@@ -2167,10 +2167,7 @@ function renderRiskAdmin(sec) {
         if (!data) { toast('Дашбоард олдсонгүй', 'warn'); return; }
         if (data.html) { openRiskPreviewModal(dept, data.html); return; }
         if (data.htmlUrl) {
-          toast('Дашбоард ачаалж байна...', 'info');
-          fetch(data.htmlUrl).then(function (r) { return r.text(); })
-            .then(function (html) { openRiskPreviewModal(dept, html); })
-            .catch(function () { toast('Дашбоард ачаалахад алдаа гарлаа', 'error'); });
+          openRiskPreviewModal(dept, data.htmlUrl, true);
           return;
         }
         toast('Дашбоард олдсонгүй', 'warn');
@@ -2205,7 +2202,7 @@ function renderRiskDept(sec, dept) {
   loadRiskDashboard(dept, function (data) {
     var area = document.getElementById('riskEmpArea');
     if (!area) return;
-    if (!data || !data.html) {
+    if (!data || (!data.html && !data.htmlUrl)) {
       area.innerHTML = '<div style="text-align:center;padding:40px 20px">' +
         '<i class="ti ti-chart-off" style="font-size:40px;color:#CBD5E1;display:block;margin-bottom:12px"></i>' +
         '<div style="color:#94A3B8;font-size:14px">Энэ албанд эрсдэлийн үнэлгээний дашбоард бэлдэгдээгүй байна.</div>' +
@@ -2217,20 +2214,28 @@ function renderRiskDept(sec, dept) {
     wrapper.style.cssText = 'border-radius:12px;overflow:hidden;border:1px solid #E2E8F0;background:#fff';
     var iframe = document.createElement('iframe');
     iframe.style.cssText = 'width:100%;height:calc(100vh - 160px);min-height:480px;border:0;display:block';
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-    iframe.srcdoc = data.html;
+    if (data.htmlUrl) {
+      iframe.src = data.htmlUrl;
+    } else {
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      iframe.srcdoc = data.html;
+    }
     wrapper.appendChild(iframe);
     area.appendChild(wrapper);
   });
 }
 
-function openRiskPreviewModal(dept, html) {
+function openRiskPreviewModal(dept, htmlOrUrl, isUrl) {
   var wrap = document.createElement('div');
   wrap.style.cssText = 'width:100%;height:70vh;min-height:400px';
   var iframe = document.createElement('iframe');
   iframe.style.cssText = 'width:100%;height:100%;border:0;display:block;border-radius:8px;overflow:hidden';
-  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-  iframe.srcdoc = html;
+  if (isUrl) {
+    iframe.src = htmlOrUrl;
+  } else {
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    iframe.srcdoc = htmlOrUrl;
+  }
   wrap.appendChild(iframe);
   buildModal(esc(dept) + ' — Эрсдэлийн үнэлгээний дашбоард', wrap, { width: '90vw' });
 }
