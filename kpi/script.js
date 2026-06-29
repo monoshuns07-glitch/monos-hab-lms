@@ -63,7 +63,7 @@ var pageLabels = {
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', council: 'ХАБЭА-н зөвлөл', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
-  'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт'
+  'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт'
 };
 
 var DEPTS = ['Цех №1', 'Цех №2', 'Цех №3', 'Захиргаа', 'Тээвэр', 'Үйлчилгээ'];
@@ -981,10 +981,43 @@ function switchPage(pageId) {
   else if (pageId === 'video-track') renderVideoTracking();
   else if (pageId === 'hazards') renderHazards();
   else if (pageId === 'tasks') renderTasks();
+  else if (pageId === 'myexams') renderMyExams();
   else if (pageId === 'trn-mod') { try { renderTrainingModule(CURRENT_MOD); } catch (e2) {} }
 }
 
 /* ============ Sidebar badge-ууд ============ */
+/* ============ ХАБЭА Шалгалт — ажилтны шалгалт сонголтын хуудас ============ */
+var EXAM_PAGES = [
+  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',    url: 'https://habea-deploy.vercel.app/habea-urdchilsan.html',   icon: 'ti-clipboard-list',   color: '#4F46E5', bg: '#EEF2FF' },
+  { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт', url: 'https://habea-deploy.vercel.app/habea-eeljit.html',       icon: 'ti-refresh',          color: '#0891B2', bg: '#E0F2FE' },
+  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт', url: 'https://habea-deploy.vercel.app/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
+];
+function renderMyExams() {
+  var sec = pageEl('myexams'); if (!sec) return;
+  var me = myEmployeeRecord();
+  var email = encodeURIComponent((SESSION && SESSION.email) || '');
+  var name = encodeURIComponent((me && me.name) || '');
+  var cards = EXAM_PAGES.map(function (ep) {
+    var prog = me ? getEmpProg(me.id, ep.key) : {};
+    var scoreHtml = prog.examTaken
+      ? '<div style="margin-top:10px;display:inline-block;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '% · ' + (prog.examPassed ? 'Тэнцсэн ✓' : 'Тэнцээгүй') + '</div>'
+      : '<div style="margin-top:10px;font-size:12px;color:#94A3B8">Шалгалт өгөөгүй</div>';
+    var url = ep.url + '?email=' + email + '&name=' + name;
+    return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
+      '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
+      '<div style="width:52px;height:52px;border-radius:14px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:14px"><i class="ti ' + ep.icon + '"></i></div>' +
+      '<div style="font-size:16px;font-weight:700;color:#1E293B;margin-bottom:4px">' + esc(ep.label) + '</div>' +
+      '<div style="font-size:12px;color:#64748B">Шалгалт өгөх · Хоёр сонголттой (урьдчилсан / дараах)</div>' +
+      scoreHtml +
+      '</div></a>';
+  }).join('');
+  sec.innerHTML =
+    '<div style="padding:26px 28px 14px"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">ХАБЭА Шалгалт</h1>' +
+    '<p style="font-size:13px;color:#64748B;margin:0">Тохирох шалгалтаа сонгоод өгнө үү. Дүн автоматаар бүртгэгдэнэ.</p></div>' +
+    '<div style="padding:0 28px 28px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">' +
+    cards + '</div>';
+}
+
 function renderSidebar() {
   var pending = DB.hazards.filter(function (h) { return h.status !== 'resolved'; }).length;
   var hb = $('.nav-item[data-page="hazards"] .nav-badge');
@@ -5170,7 +5203,7 @@ function applyRole() {
   } catch (e) {}
   if (isAdmin()) {
     // Операциональ цэсүүдийг админы харагдацаас нуух
-    ['incidents', 'inspections', 'suggestions', 'health'].forEach(function (pg) {
+    ['incidents', 'inspections', 'suggestions', 'health', 'myexams'].forEach(function (pg) {
       var nav = document.querySelector('.nav-item[data-page="' + pg + '"]');
       if (nav) nav.style.display = 'none';
     });
