@@ -1434,7 +1434,13 @@ let allItems=[],filteredItems=[];
 /* ===== AUTH ===== */
 const loginScreen = document.getElementById('loginScreen');
 auth.onAuthStateChanged(user=>{
-  if(user){ loginScreen.classList.remove('show'); document.getElementById('userEmail').textContent=user.email; loadData(); }
+  if(user){
+    loginScreen.classList.remove('show');
+    document.getElementById('userEmail').textContent=user.email;
+    // Сургалт (LMS) embed горимд эхнээс нь LMS дата ачаална, бусад дата импортыг алгасна
+    if(typeof IS_LMS_EMBED!=='undefined' && IS_LMS_EMBED){ loadLMS(); }
+    else { loadData(); }
+  }
   else { loginScreen.classList.add('show'); }
 });
 document.getElementById('loginBtn').addEventListener('click', async()=>{
@@ -1754,16 +1760,21 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   });
 });
 // ?tab=lms URL param-аар Сургалт tab-ийг автоматаар нээх (KPI iframe дотроос нэвтрэх)
+// Iframe дотор бол admin header + tab-nav-г далдалж, зөвхөн Сургалтын агуулгыг харуулна.
+// (loadLMS() дуудалтыг auth амжилттай болсны дараа onAuthStateChanged дотор хийнэ.)
+var IS_LMS_EMBED = new URLSearchParams(location.search).get('tab')==='lms';
 (function(){
-  var tp=new URLSearchParams(location.search).get('tab');
-  if(tp==='lms'){
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
-    var btn=document.querySelector('.tab-btn[data-tab="lms"]');
-    if(btn){btn.style.display='';btn.classList.add('active');}
-    var sec=document.getElementById('tab-lms');
-    if(sec)sec.classList.add('active');
-    if(!lmsChapters.length) loadLMS();
+  if(!IS_LMS_EMBED) return;
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));
+  var sec=document.getElementById('tab-lms');
+  if(sec)sec.classList.add('active');
+  // Iframe дотор нэвтрэх үед л chrome-г нуух (дан admin.html?tab=lms шууд орвол харагдана)
+  var embedded=false; try{ embedded=(window.self!==window.top); }catch(e){ embedded=true; }
+  if(embedded){
+    var hdr=document.querySelector('.admin-header'); if(hdr)hdr.style.display='none';
+    var nav=document.querySelector('.tab-nav'); if(nav)nav.style.display='none';
+    var cont=sec?sec.querySelector('.admin-container'):null; if(cont)cont.style.paddingTop='18px';
   }
 })();
 
