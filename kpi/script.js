@@ -501,6 +501,27 @@ async function cleanupDemoData() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
 }
 
+/* Жишээ (демо) датаны тоо — dashboard анхааруулгад ашиглана */
+function demoDataCount() {
+  if (!DB) return 0;
+  return ['hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks', 'ppeObservations']
+    .reduce(function (s, k) { return s + ((DB[k] || []).length); }, 0);
+}
+
+/* Админ ГАРААР дарж бүх жишээ датаг устгана — fbReady эсэхээс үл хамааран ажиллана */
+function clearAllDemoData() {
+  if (!DB) return;
+  ['hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
+   'ppeObservations', 'notifications'].forEach(function (k) { DB[k] = []; });
+  if (!DB.settings) DB.settings = seedDB().settings;
+  DB.settings.demoCleaned = true;
+  try { saveDB(); } catch (e) {}
+  if (fbReady && fdb) { try { KPI_DOC().set(DB); } catch (e) {} }
+  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+  try { renderAll(); } catch (e) {}
+  toast('Жишээ (демо) дата бүрэн цэвэрлэгдлээ', 'success');
+}
+
 async function loadDB() {
   var fresh = false;
   if (DEMO) { // Локал жишээ горим — Firebase-гүй, localStorage-д хадгална
@@ -1772,6 +1793,22 @@ function renderEmployeeDashboard() {
 
 function renderDashboard() {
   if (isEmp()) { renderEmployeeDashboard(); return; }
+  // Демо дата анхааруулга (админд, эхний цэвэрлэлт хүртэл)
+  try {
+    var _dpage = document.querySelector('.page[data-page="dashboard"]');
+    var _dbn = document.getElementById('demoBanner');
+    var _showDemo = isAdmin() && !(DB.settings && DB.settings.demoCleaned) && demoDataCount() > 0;
+    if (_showDemo && _dpage) {
+      if (!_dbn) { _dbn = document.createElement('div'); _dbn.id = 'demoBanner'; _dpage.insertBefore(_dbn, _dpage.firstChild); }
+      _dbn.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:16px';
+      _dbn.innerHTML = '<i class="ti ti-alert-triangle" style="color:#D97706;font-size:20px"></i>' +
+        '<div style="flex:1;min-width:200px"><div style="font-weight:700;color:#92400E;font-size:14px">Жишээ (демо) дата илэрлээ — ' + demoDataCount() + ' бичлэг</div>' +
+        '<div style="font-size:12px;color:#B45309">Прототипийн жишээ аюул/санал/ослын мэдээллийг устгаж, цэвэр эхлүүлнэ үү.</div></div>' +
+        '<button class="btn btn-primary btn-sm" id="demoClearBtn" style="background:#D97706;border-color:#D97706"><i class="ti ti-trash"></i> Бүгдийг цэвэрлэх</button>';
+      var _cb = document.getElementById('demoClearBtn');
+      if (_cb) _cb.onclick = function () { if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу? Энэ үйлдлийг буцаах боломжгүй.')) clearAllDemoData(); };
+    } else if (_dbn) { _dbn.remove(); }
+  } catch (e) {}
   var a = avgKpi();
   var hero = $('.page[data-page="dashboard"] .kpi-hero .kpi-value');
   if (hero) hero.innerHTML = a.toFixed(1) + '<span class="kpi-unit">/100</span>';
