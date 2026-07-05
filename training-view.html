@@ -3,6 +3,22 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=1024, user-scalable=yes, maximum-scale=5" />
+
+<!-- ═══════════ PWA ═══════════ -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Монос ХАБЭА">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-72.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<meta name="msapplication-TileColor" content="#E30613">
+<meta name="msapplication-TileImage" content="/icons/icon-144.png">
+<script type="module" src="/pwa-init.js"></script>
+
 <title>Сургалт — МОНОС ХҮНС ХК</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700;9..144,900&family=Manrope:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -448,6 +464,12 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--ink);min-
   .exam-body,.training-hdr{padding:12px}
 }
 </style>
+<style>
+/* KPI сайтын MiSkill таб дотор iframe-ээр embed хийх горим */
+html.embed body { background:transparent !important; }
+html.embed .nav { position:static !important; }
+</style>
+<script>if(new URLSearchParams(location.search).get('embed')==='1'){document.documentElement.classList.add('embed');addEventListener('DOMContentLoaded',function(){var b=document.getElementById('navBackLink');if(b)b.href='employee.html?embed=1';});}</script>
 </head>
 <body>
 
@@ -460,7 +482,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--ink);min-
 
 <!-- Nav -->
 <nav class="nav">
-  <a href="employee.html" class="nav-back">
+  <a href="employee.html" class="nav-back" id="navBackLink">
     <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
     Буцах
   </a>
