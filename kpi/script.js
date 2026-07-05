@@ -492,8 +492,8 @@ async function syncEmployeesWithRealData() {
 async function cleanupDemoData() {
   if (DEMO || !fbReady || !DB || !isAdmin()) return;
   if (DB.settings && DB.settings.demoCleaned) return; // аль хэдийн цэвэрлэсэн
-  // Жишээ дата агуулсан операциональ массивуудыг хоослоно
-  ['hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
+  // Жишээ дата агуулсан массивуудыг хоослоно (employees-г дараа нь syncEmployeesWithRealData дүүргэнэ)
+  ['employees', 'hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
    'ppeObservations', 'notifications'].forEach(function (k) { DB[k] = []; });
   if (!DB.settings) DB.settings = seedDB().settings;
   DB.settings.demoCleaned = true;
@@ -508,15 +508,20 @@ function demoDataCount() {
     .reduce(function (s, k) { return s + ((DB[k] || []).length); }, 0);
 }
 
-/* Админ ГАРААР дарж бүх жишээ датаг устгана — fbReady эсэхээс үл хамааран ажиллана */
-function clearAllDemoData() {
+/* Админ ГАРААР дарж бүх жишээ датаг устгана — fbReady эсэхээс үл хамааран ажиллана.
+   Ажилтныг ч цэвэрлээд, жинхэнэ бүртгэлтэй хэрэглэгчдээс эргэн татна. */
+async function clearAllDemoData() {
   if (!DB) return;
-  ['hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
+  var btn = document.getElementById('clearDemoBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Цэвэрлэж байна...'; }
+  ['employees', 'hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
    'ppeObservations', 'notifications'].forEach(function (k) { DB[k] = []; });
   if (!DB.settings) DB.settings = seedDB().settings;
   DB.settings.demoCleaned = true;
+  // Жинхэнэ бүртгэлтэй ажилтнуудыг эргэн татна (байвал)
+  try { await syncEmployeesWithRealData(); } catch (e) {}
   try { saveDB(); } catch (e) {}
-  if (fbReady && fdb) { try { KPI_DOC().set(DB); } catch (e) {} }
+  if (fbReady && fdb) { try { await KPI_DOC().set(DB); } catch (e) {} }
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   try { renderAll(); } catch (e) {}
   toast('Жишээ (демо) дата бүрэн цэвэрлэгдлээ', 'success');
@@ -2881,7 +2886,13 @@ function renderSettings() {
   function sumBox(id, sum) {
     return '<div id="' + id + '" class="weight-total" style="background:' + (sum === 100 ? 'var(--emerald-light)' : 'var(--amber-light)') + ';color:' + (sum === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)') + '">Нийт: <strong>' + sum + '%</strong>' + (sum === 100 ? ' ✓' : ' (100 байх ёстой)') + '</div>';
   }
+  var _demoN = demoDataCount(), _empN = (DB.employees || []).length;
   body.innerHTML =
+    '<div class="card" id="demoCleanCard" style="border:1px solid #FDE68A;background:#FFFBEB;margin-bottom:16px">' +
+    '<h3 style="color:#92400E"><i class="ti ti-trash"></i> Жишээ (демо) дата цэвэрлэх</h3>' +
+    '<p style="font-size:13px;color:#B45309;margin:6px 0 12px">Прототипийн жишээ ажилтан, аюул, санал, осол, near-miss мэдээллийг бүрмөсөн устгаж, системийг цэвэр эхлүүлнэ. Жинхэнэ бүртгэлтэй ажилтнууд автоматаар эргэн нэмэгдэнэ.</p>' +
+    '<div style="font-size:12px;color:#92400E;margin-bottom:12px">Одоогийн байдал: <strong>' + _empN + '</strong> ажилтан · <strong>' + _demoN + '</strong> аюул/санал/осол/near-miss/тайлангийн бичлэг</div>' +
+    '<button class="btn btn-primary" id="clearDemoBtn" style="background:#D97706;border-color:#D97706"><i class="ti ti-trash"></i> Бүх жишээ датаг цэвэрлэх</button></div>' +
     '<div class="card"><h3>Байгууллагын мэдээлэл</h3><div class="form">' +
     '<div class="form-group"><label>Байгууллагын нэр</label><input type="text" id="setOrgName" value="' + esc(o.name || '') + '"></div>' +
     '<div class="form-row">' + inp('Регистрийн дугаар', 'setOrgReg', o.regNo || '', 'text', '') + inp('Ажилтны тоо', 'setOrgHc', o.headcount || 0, 'number', 'min="0" max="100000"') + '</div>' +
@@ -2913,6 +2924,15 @@ function renderSettings() {
     '<div id="subadminList" style="min-height:40px"><div style="color:#94A3B8;font-size:13px;padding:8px 0">Ачаалж байна...</div></div>' +
     '<div class="form-actions" style="margin-top:14px"><button class="btn btn-primary" data-addsubadmin="1"><i class="ti ti-user-plus"></i> Туслах Админ нэмэх</button></div></div>';
   setTimeout(loadSubadmins, 0);
+  setTimeout(function () {
+    var cdb = document.getElementById('clearDemoBtn');
+    if (cdb && !cdb._wired) {
+      cdb._wired = true;
+      cdb.addEventListener('click', function () {
+        if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу?\n\nАжилтан, аюул, санал, осол, near-miss бүгд устана. Жинхэнэ бүртгэлтэй ажилтнууд эргэн нэмэгдэнэ. Энэ үйлдлийг буцаах боломжгүй.')) clearAllDemoData();
+      });
+    }
+  }, 0);
 }
 function updateConfigSums() {
   function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
