@@ -3986,13 +3986,13 @@ function renderVtAdmin(sec) {
     '<div style="padding:22px 28px 0 28px">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">' +
     '<div><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
-    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">MiSkill платформоос экспортолсон сургалт ба шалгалтын тайлан</p></div></div>' +
+    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">Сургалт/шалгалт нэмж удирдана — ажилтнууд MiSkill цэсэндээ үзэж, шалгалтаа өгнө</p></div></div>' +
     '<div style="display:flex;gap:6px;border-bottom:2px solid #E2E8F0;margin-bottom:0">' +
-    '<button id="vtSubMiskill" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#1D4ED8;cursor:pointer;border-bottom:2px solid #1D4ED8;margin-bottom:-2px"><i class="ti ti-brand-youtube"></i> MiSkill</button>' +
-    '<button id="vtSubLms" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#64748B;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px"><i class="ti ti-book-2"></i> Сургалт</button>' +
+    '<button id="vtSubLms" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#1D4ED8;cursor:pointer;border-bottom:2px solid #1D4ED8;margin-bottom:-2px"><i class="ti ti-book-2"></i> Сургалт (удирдлага)</button>' +
+    '<button id="vtSubMiskill" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#64748B;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px"><i class="ti ti-chart-bar"></i> Гүйцэтгэлийн тайлан</button>' +
     '</div></div>' +
-    // MiSkill panel
-    '<div id="vtPanelMiskill">' +
+    // MiSkill/Гүйцэтгэл panel (default hidden — Сургалт default)
+    '<div id="vtPanelMiskill" style="display:none">' +
     '<div style="padding:16px 28px 0">' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
     '<button class="btn btn-secondary btn-sm" id="vtTpl"><i class="ti ti-download"></i> Загвар татах</button>' +
@@ -4047,9 +4047,9 @@ function renderVtAdmin(sec) {
       }).join('') + '</tbody></table></div></div>';
   }
 
-  // Close MiSkill panel + add LMS iframe panel
+  // Close Гүйцэтгэл panel + add LMS iframe panel (Сургалт — default харагдана)
   html += '</div>' +
-    '<div id="vtPanelLms" style="display:none;height:calc(100vh - 180px)">' +
+    '<div id="vtPanelLms" style="height:calc(100vh - 200px)">' +
     '<iframe src="' + adminUrl + '" style="width:100%;height:100%;border:none;border-radius:0" allow="same-origin"></iframe>' +
     '</div>';
 
@@ -4081,6 +4081,18 @@ function renderVtAdmin(sec) {
 }
 
 function renderVtEmployee(sec) {
+  // Ажилтны MiSkill цэс = админаас нэмсэн сургалтууд (Сургалтын самбар). Үзэж, шалгалтаа өгнө.
+  sec.style.padding = '0';
+  var eurl = 'https://monoshuns-hab.netlify.app/employee.html?embed=1';
+  sec.innerHTML =
+    '<div style="padding:18px 24px 10px">' +
+    '<h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
+    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">Танд оногдсон сургалтуудыг үзэж, шалгалтаа өгнө үү</p></div>' +
+    '<div style="height:calc(100vh - 150px);min-height:520px">' +
+    '<iframe src="' + eurl + '" style="width:100%;height:100%;border:none" allow="fullscreen"></iframe>' +
+    '</div>';
+  return;
+  /* eslint-disable */
   var row = miskillFindMyRow();
   var me = myEmp();
   var name = (me && me.name) || (SESSION && SESSION.email) || 'Ажилтан';
