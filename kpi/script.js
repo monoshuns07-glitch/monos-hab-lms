@@ -38,6 +38,8 @@ try { DEMO = (location.protocol === 'file:') || (String(location.search).indexOf
 
 /* Нэвтэрсэн хэрэглэгчийн сешн: { role:'admin' } эсвэл { role:'employee', empId, email, uid } */
 var SESSION = null;
+/* Системийн эзэн админ(ууд) — Firestore дахь role ямар ч байсан ҮРГЭЛЖ админ эрхтэй (цоожлогдохоос сэргийлнэ) */
+var ADMIN_EMAILS = ['buynt666@gmail.com'];
 function isAdmin() { return SESSION && SESSION.role === 'admin'; }
 function isDeptHead() { return SESSION && SESSION.role === 'depthead'; }
 function isEmp() { return SESSION && SESSION.role === 'employee'; }
@@ -300,9 +302,9 @@ function seedDB() {
     suggestions: [],
     incidents: [],
     notifications: [],
-    reports: reports,
-    firstAidChecks: firstAidChecks,
-    ppeObservations: ppeObservations,
+    reports: [],
+    firstAidChecks: [],
+    ppeObservations: [],
     videoViews: [],
     examResults: [],
     externalTrainings: [],
@@ -484,6 +486,21 @@ async function syncEmployeesWithRealData() {
   return true;
 }
 
+/* Хуучин прототипийн жишээ (демо) датаг НЭГ УДАА цэвэрлэнэ.
+   Зөвхөн админ ажиллуулна. DB.settings.demoCleaned туг тавьснаар дахин ажиллахгүй.
+   Жинхэнэ ажилтнууд бүртгэлээс автоматаар нэмэгддэг тул энд хамаарахгүй. */
+async function cleanupDemoData() {
+  if (DEMO || !fbReady || !DB || !isAdmin()) return;
+  if (DB.settings && DB.settings.demoCleaned) return; // аль хэдийн цэвэрлэсэн
+  // Жишээ дата агуулсан операциональ массивуудыг хоослоно
+  ['hazards', 'suggestions', 'incidents', 'reports', 'firstAidChecks',
+   'ppeObservations', 'notifications'].forEach(function (k) { DB[k] = []; });
+  if (!DB.settings) DB.settings = seedDB().settings;
+  DB.settings.demoCleaned = true;
+  try { await KPI_DOC().set(DB); } catch (e) {}
+  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+}
+
 async function loadDB() {
   var fresh = false;
   if (DEMO) { // Локал жишээ горим — Firebase-гүй, localStorage-д хадгална
@@ -510,6 +527,8 @@ async function loadDB() {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
+    // Хуучин прототипийн жишээ (демо) датаг нэг удаа цэвэрлэнэ — зөвхөн админ
+    try { await cleanupDemoData(); } catch (e) {}
     // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
     try { await syncEmployeesWithRealData(); } catch (e) {}
     // Ажилтан бол DB-г зөвхөн өөрийнхөөр шүүнэ (admin бүгдийг хардаг)
@@ -5353,19 +5372,23 @@ function establishSession() {
 
     function proceed(uid, email) {
       try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: uid })); } catch (e) {}
-      if (!fbReady) { SESSION = { role: 'admin', email: email, uid: uid, dept: '' }; resolve(); return; }
+      // Firebase холбогдоогүй бол эрх баталгаажуулах боломжгүй тул admin эрх ОЛГОХГҮЙ (аюулгүйн бодлого)
+      if (!fbReady) { SESSION = { role: 'employee', email: email, uid: uid, dept: '' }; resolve(); return; }
       fdb.collection('users').doc(uid).get().then(function (snap) {
         var data = (snap.exists && snap.data()) || {};
-        var role = data.role === 'admin' ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
+        // Admin эрхийг ЗӨВХӨН users/{uid}.role='admin' тодорхойлно (баталгаат эх сурвалж)
+        var isAdminByDoc = (data.role === 'admin');
+        var role = isAdminByDoc ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
         var dept = data.department || '';
-        // Админ олгосон user_roles/{email} override шалгана
+        // Админ олгосон user_roles/{email} override шалгана (зөвхөн depthead/employee, admin ОЛГОХГҮЙ)
         if (email) {
           // localStorage-с depthead override шалгана (admin эрх localStorage-аар огт олгогдохгүй)
-          try { var lrole = _swRolesGet()[email]; if (lrole && lrole.role === 'depthead') { role = 'depthead'; dept = lrole.department || dept; } } catch (e2) {}
+          try { var lrole = _swRolesGet()[email]; if (!isAdminByDoc && lrole && lrole.role === 'depthead') { role = 'depthead'; dept = lrole.department || dept; } } catch (e2) {}
           fdb.collection('user_roles').doc(email).get().then(function (rSnap) {
             if (rSnap.exists) {
               var rd = rSnap.data() || {};
-              if (rd.role) role = rd.role;
+              // Аюулгүйн бодлого: user_roles admin эрх олгохгүй. Admin зөвхөн users doc-оос.
+              if (!isAdminByDoc && (rd.role === 'depthead' || rd.role === 'employee')) role = rd.role;
               if (rd.department) dept = rd.department;
             }
             SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
@@ -5494,6 +5517,8 @@ async function init() {
   await establishSession();
   // Нэвтрээгүй бол апп доторх нэвтрэх дэлгэцийг гаргана (тусдаа хуудас руу үсрэхгүй)
   if (!SESSION) { showLoginScreen(); return; }
+  // Системийн эзэн админыг баталгаажуулна (Firestore role ямар ч байсан)
+  if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   var fresh = await loadDB();
   // DB.userRoles-с SESSION эрхийн override шалгана — зөвхөн employee→depthead тохиолдолд
