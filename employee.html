@@ -450,6 +450,13 @@ body{
   .filter-chip{padding:5px 10px;font-size:11px}
 }
 </style>
+<style>
+/* KPI сайтын MiSkill таб дотор iframe-ээр embed хийх горим — өөрийн nav/background нуух */
+html.embed .nav, html.embed .bottom-nav, html.embed #bgCanvas, html.embed .orb { display:none !important; }
+html.embed body { background:transparent !important; }
+html.embed .main { padding-top:16px !important; max-width:100% !important; }
+</style>
+<script>if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <canvas id="bgCanvas"></canvas>
@@ -476,17 +483,9 @@ body{
   </a>
   <div class="nav-divider"></div>
   <div class="nav-links">
-    <a href="employee.html" class="nav-link active">
-      <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-      Сургалт
-    </a>
     <a href="nohon-tulbur.html" class="nav-link">
       <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       Даатгал
-    </a>
-    <a href="my-results.html" class="nav-link">
-      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      Миний дүн
     </a>
     <a href="/kpi/" class="nav-link">
       <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
@@ -508,17 +507,9 @@ body{
 
 <!-- Mobile bottom nav -->
 <nav class="bottom-nav">
-  <a href="employee.html" class="bottom-nav-item active">
-    <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-    Сургалт
-  </a>
   <a href="nohon-tulbur.html" class="bottom-nav-item">
     <svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
     Даатгал
-  </a>
-  <a href="my-results.html" class="bottom-nav-item">
-    <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-    Миний дүн
   </a>
   <a href="/kpi/" class="bottom-nav-item">
     <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
@@ -1063,7 +1054,8 @@ function toggleChapter(head){
 
 /* ── Navigate to training ── */
 function openTraining(id){
-  location.href=`training-view.html?id=${encodeURIComponent(id)}`;
+  var emb = new URLSearchParams(location.search).get('embed')==='1' ? '&embed=1' : '';
+  location.href=`training-view.html?id=${encodeURIComponent(id)}${emb}`;
 }
 
 /* ── Logout ── */
