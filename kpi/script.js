@@ -3961,14 +3961,25 @@ function renderVtAdmin(sec) {
   }).sort(function (a, b) { return miskillScore(b) - miskillScore(a); });
 
   var weekLabel = rows.length && rows[0].weekStart ? rows[0].weekStart + ' — долоо хоног' : '';
-  var html = '<div style="padding:22px 28px 0">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">' +
+  var adminUrl = 'https://monoshuns-hab.netlify.app/admin.html?tab=lms';
+  var html =
+    // Sub-tab header
+    '<div style="padding:22px 28px 0 28px">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">' +
     '<div><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
-    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">MiSkill платформоос экспортолсон сургалт ба шалгалтын тайлан</p></div>' +
-    '<div style="display:flex;gap:8px">' +
+    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">MiSkill платформоос экспортолсон сургалт ба шалгалтын тайлан</p></div></div>' +
+    '<div style="display:flex;gap:6px;border-bottom:2px solid #E2E8F0;margin-bottom:0">' +
+    '<button id="vtSubMiskill" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#1D4ED8;cursor:pointer;border-bottom:2px solid #1D4ED8;margin-bottom:-2px"><i class="ti ti-brand-youtube"></i> MiSkill</button>' +
+    '<button id="vtSubLms" style="padding:9px 18px;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;color:#64748B;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px"><i class="ti ti-book-2"></i> Сургалт</button>' +
+    '</div></div>' +
+    // MiSkill panel
+    '<div id="vtPanelMiskill">' +
+    '<div style="padding:16px 28px 0">' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
     '<button class="btn btn-secondary btn-sm" id="vtTpl"><i class="ti ti-download"></i> Загвар татах</button>' +
-    '<button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV байршуулах</button></div></div>' +
-    (weekLabel ? '<div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1D4ED8;margin-bottom:12px"><i class="ti ti-calendar-week"></i> Тайлангийн долоо хоног: <strong>' + esc(rows[0].weekStart) + '</strong></div>' : '') +
+    '<button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV байршуулах</button>' +
+    '</div>' +
+    (weekLabel ? '<div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1D4ED8;margin-bottom:8px"><i class="ti ti-calendar-week"></i> Тайлангийн долоо хоног: <strong>' + esc(rows[0].weekStart) + '</strong></div>' : '') +
     '</div>';
 
   if (!rows.length) {
@@ -4017,12 +4028,35 @@ function renderVtAdmin(sec) {
       }).join('') + '</tbody></table></div></div>';
   }
 
+  // Close MiSkill panel + add LMS iframe panel
+  html += '</div>' +
+    '<div id="vtPanelLms" style="display:none;height:calc(100vh - 180px)">' +
+    '<iframe src="' + adminUrl + '" style="width:100%;height:100%;border:none;border-radius:0" allow="same-origin"></iframe>' +
+    '</div>';
+
   sec.innerHTML = html;
   if (!sec._vtWired) {
     sec._vtWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#vtImport')) importMiskillCSV();
       if (ev.target.closest('#vtTpl')) downloadMiskillTemplate();
+      // Sub-tab switching
+      if (ev.target.closest('#vtSubMiskill')) {
+        document.getElementById('vtPanelMiskill').style.display = '';
+        document.getElementById('vtPanelLms').style.display = 'none';
+        ev.target.closest('#vtSubMiskill').style.color = '#1D4ED8';
+        ev.target.closest('#vtSubMiskill').style.borderBottomColor = '#1D4ED8';
+        var lmsBtn = document.getElementById('vtSubLms');
+        if (lmsBtn) { lmsBtn.style.color = '#64748B'; lmsBtn.style.borderBottomColor = 'transparent'; }
+      }
+      if (ev.target.closest('#vtSubLms')) {
+        document.getElementById('vtPanelMiskill').style.display = 'none';
+        document.getElementById('vtPanelLms').style.display = '';
+        ev.target.closest('#vtSubLms').style.color = '#1D4ED8';
+        ev.target.closest('#vtSubLms').style.borderBottomColor = '#1D4ED8';
+        var msBtn = document.getElementById('vtSubMiskill');
+        if (msBtn) { msBtn.style.color = '#64748B'; msBtn.style.borderBottomColor = 'transparent'; }
+      }
     });
   }
 }
