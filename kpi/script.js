@@ -1943,6 +1943,38 @@ function filteredEmployees() {
   return list;
 }
 
+/* ---- Видео сургалт (MiSkill/LMS) — ажилтан бүрийн явцыг Firestore-оос уншина ---- */
+var LMS = { loaded: false, loading: false, trainings: [], progByUser: {} };
+function loadLmsData() {
+  if (DEMO || !fbReady) return Promise.resolve();
+  return fdb.collection('trainings').get().then(function (trSnap) {
+    LMS.trainings = trSnap.docs
+      .map(function (d) { return Object.assign({ id: d.id }, d.data()); })
+      .filter(function (t) { return t.isActive !== false; });
+    return fdb.collection('training_progress').get();
+  }).then(function (pgSnap) {
+    LMS.progByUser = {};
+    pgSnap.forEach(function (d) {
+      var x = d.data() || {};
+      if (!x.userId || !x.trainingId) return;
+      (LMS.progByUser[x.userId] = LMS.progByUser[x.userId] || {})[x.trainingId] = x;
+    });
+    LMS.loaded = true;
+  }).catch(function (e) { console.warn('[LMS] load:', e && e.message); });
+}
+function empLmsStats(emp) {
+  var uid = emp.uid || emp.id;
+  var inv = LMS.trainings.filter(function (t) { return (t.invitedEmployees || []).indexOf(uid) > -1; });
+  var progs = LMS.progByUser[uid] || {};
+  var passed = 0, inProg = 0;
+  inv.forEach(function (t) {
+    var p = progs[t.id];
+    if (p && p.status === 'passed') passed++;
+    else if (p && (p.status === 'in_progress' || p.status === 'failed')) inProg++;
+  });
+  return { invited: inv, progs: progs, total: inv.length, passed: passed, inProg: inProg };
+}
+
 /* ---- Гадны сургалтын туслах функцүүд ---- */
 function getExtAtt(extId, empId) {
   return ((DB.extAttendance || {})[extId + '_' + empId]) || { status: '' };
@@ -1959,11 +1991,16 @@ var EXT_STATUS_CYCLE = ['', 'planned', 'attended', 'absent', 'excused'];
 function renderEmployees() {
   var wrap = $('#empTableWrap');
   if (!wrap) return;
+  // Видео сургалтын (LMS) явцыг нэг удаа ачаалаад дахин зурна
+  if (!DEMO && fbReady && !LMS.loaded && !LMS.loading) {
+    LMS.loading = true;
+    loadLmsData().then(function () { LMS.loading = false; try { renderEmployees(); } catch (e) {} });
+  }
   var list = filteredEmployees();
   var total = list.length;
   var extTrainings = DB.extTrainings || [];
   var intKeys = Object.keys(TRAINING_MODULES);
-  var totalCols = 3 + intKeys.length + (extTrainings.length || 1) + 2;
+  var totalCols = 3 + intKeys.length + (extTrainings.length || 1) + 1 + 2;
 
   // --- thead ---
   var intColspan = intKeys.length;
@@ -1987,12 +2024,14 @@ function renderEmployees() {
     '<th>Алба</th>' +
     '<th colspan="' + intColspan + '" style="background:#EFF6FF;color:#1D4ED8;text-align:center;font-size:11px;padding:6px 8px">Дотоод сургалт</th>' +
     '<th colspan="' + extColspan + '" style="background:#F0FDF4;color:#166534;text-align:center;font-size:11px;padding:6px 8px">Гадны сургалт</th>' +
+    '<th style="background:#FFF7ED;color:#C2410C;text-align:center;font-size:11px;padding:6px 8px">Видео сургалт</th>' +
     '<th style="white-space:nowrap">Нийт KPI</th>' +
     '<th></th>' +
     '</tr>' +
     '<tr>' +
     '<th></th><th></th><th></th>' +
     intHeadCells + extHeadCells +
+    '<th style="font-size:10px;font-weight:600;color:#C2410C;text-align:center;white-space:nowrap;padding:5px 8px;min-width:72px" title="Тэнцсэн / Оногдсон сургалт">Тэнцсэн/Нийт</th>' +
     '<th></th><th></th>' +
     '</tr>' +
     '</thead>';
@@ -2019,6 +2058,16 @@ function renderEmployees() {
       return '<td style="text-align:center"><span class="tag" style="font-size:10px;padding:2px 7px;background:' + s.bg + ';color:' + s.color + ';border-radius:20px;' + cursor + '" ' + attr + '>' + s.label + '</span></td>';
     }).join('');
   }
+  function empVideoCell(e) {
+    if (DEMO || !fbReady) return '<td style="text-align:center;color:#CBD5E1">—</td>';
+    if (!LMS.loaded) return '<td style="text-align:center;color:#CBD5E1;font-size:11px" title="Ачаалж байна...">…</td>';
+    var s = empLmsStats(e);
+    if (!s.total) return '<td style="text-align:center;color:#94A3B8;font-size:11px" title="Сургалт оногдоогүй">—</td>';
+    var pct = Math.round(s.passed / s.total * 100);
+    var col = pct === 100 ? '#16A34A' : pct >= 50 ? '#D97706' : '#DC2626';
+    var bg  = pct === 100 ? '#DCFCE7' : pct >= 50 ? '#FEF3C7' : '#FEE2E2';
+    return '<td style="text-align:center"><span class="tag" data-vt-detail="' + esc(e.id) + '" style="cursor:pointer;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:' + bg + ';color:' + col + '" title="Дэлгэрэнгүй харах — дарна уу">' + s.passed + '/' + s.total + '</span></td>';
+  }
   function rowHTML(e) {
     var tot = empTotal(e);
     return '<tr data-emp="' + e.id + '">' +
@@ -2028,7 +2077,7 @@ function renderEmployees() {
       (e.onLeave ? ' <span class="tag tag-warn" style="font-size:10px">Чөлөөтэй</span>' : '') +
       '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
       '<td style="font-size:12px">' + esc(e.dept) + '</td>' +
-      empIntCells(e) + empExtCells(e) +
+      empIntCells(e) + empExtCells(e) + empVideoCell(e) +
       '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
       '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
       '</tr>';
@@ -2063,12 +2112,20 @@ function renderEmployees() {
         (plan ? '<span style="color:#6366F1">' + plan + ' товлосон</span>' : '') +
         '</span>';
     }).join('');
+    // Видео сургалтын албаны дүн
+    var vidSummary = '';
+    if (LMS.loaded) {
+      var vp = 0, vt = 0;
+      members.forEach(function (e) { var vs = empLmsStats(e); vp += vs.passed; vt += vs.total; });
+      if (vt) vidSummary = '<span style="font-weight:600;color:' + (vp === vt ? '#16A34A' : vp > 0 ? '#D97706' : '#DC2626') + '">' + vp + '/' + vt + ' тэнцсэн</span>';
+    }
     return '<tr class="dept-group-row"><td colspan="' + totalCols + '" style="background:#F0FDF4;padding:10px 14px;border-top:2px solid #BBF7D0">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
       '<span style="font-weight:700;color:#065F46"><i class="ti ti-building" style="margin-right:5px"></i>' + esc(d) + '</span>' +
       '<span style="color:#16A34A;font-size:12px">' + members.length + ' ажилтан · KPI ' + avgT + '</span>' +
       (intSummary ? '<span style="font-size:11px;color:#475569;margin-left:6px"><span style="color:#1D4ED8;font-weight:600">Дотоод:</span> ' + intSummary + '</span>' : '') +
       (extSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#166534;font-weight:600">Гадны:</span> ' + extSummary + '</span>' : '') +
+      (vidSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#C2410C;font-weight:600">Видео:</span> ' + vidSummary + '</span>' : '') +
       '</div></td></tr>';
   }
 
@@ -2136,6 +2193,44 @@ function openAddExtTrainingModal() {
   };
 }
 
+/* Ажилтны видео сургалтын дэлгэрэнгүй цонх */
+function openEmpVideoDetail(empId) {
+  var emp = (DB.employees || []).filter(function (e) { return e.id === empId; })[0];
+  if (!emp) return;
+  var s = empLmsStats(emp);
+  var node = elc('div');
+  if (!s.total) {
+    node.innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-school-off"></i><div>Энэ ажилтанд видео сургалт оногдоогүй байна.</div></div>';
+  } else {
+    var rows = s.invited.map(function (t) {
+      var p = s.progs[t.id];
+      var st = (p && p.status) || 'not_viewed';
+      var watchPct = p && p.watchProgress != null ? Math.round(p.watchProgress * 100) : 0;
+      var score = p && p.score != null ? p.score : null;
+      var badge;
+      if (st === 'passed')          badge = '<span style="background:#DCFCE7;color:#16A34A;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap">✓ Тэнцсэн' + (score != null ? ' · ' + score + '%' : '') + '</span>';
+      else if (st === 'in_progress') badge = '<span style="background:#EFF6FF;color:#1D4ED8;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap">' + watchPct + '% үзсэн</span>';
+      else if (st === 'failed')      badge = '<span style="background:#FEE2E2;color:#DC2626;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap">Тэнцээгүй' + (score != null ? ' · ' + score + '%' : '') + '</span>';
+      else                           badge = '<span style="background:#F1F5F9;color:#94A3B8;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;white-space:nowrap">Үзээгүй</span>';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #F1F5F9">' +
+        '<div style="width:30px;height:30px;border-radius:8px;background:#FFF7ED;color:#C2410C;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-player-play"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#1E293B">' + esc(t.title || '') + '</div>' +
+        '<div style="font-size:11px;color:#94A3B8">' + (t.duration ? t.duration + 'мин · ' : '') + 'Тэнцэх: ' + (t.passingScore || 70) + '%' +
+        '<span style="margin-left:8px">Үзэлт: ' + watchPct + '%</span></div>' +
+        '<div style="height:4px;background:#E2E8F0;border-radius:4px;margin-top:4px;overflow:hidden"><div style="height:100%;width:' + watchPct + '%;background:' + (st === 'passed' ? '#16A34A' : '#1D4ED8') + ';border-radius:4px"></div></div></div>' +
+        badge + '</div>';
+    }).join('');
+    node.innerHTML =
+      '<div style="display:flex;gap:14px;margin-bottom:14px">' +
+      '<div style="flex:1;text-align:center;background:#F8FAFC;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#1E293B">' + s.total + '</div><div style="font-size:11px;color:#64748B">Оногдсон</div></div>' +
+      '<div style="flex:1;text-align:center;background:#DCFCE7;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#16A34A">' + s.passed + '</div><div style="font-size:11px;color:#166534">Тэнцсэн</div></div>' +
+      '<div style="flex:1;text-align:center;background:#FEF3C7;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#D97706">' + (s.total - s.passed) + '</div><div style="font-size:11px;color:#92400E">Дутуу</div></div>' +
+      '</div>' +
+      '<div style="border:1px solid #F1F5F9;border-radius:10px;overflow:hidden;max-height:380px;overflow-y:auto">' + rows + '</div>';
+  }
+  buildModal('Видео сургалт — ' + esc(emp.name), node, { width: '600px' });
+}
+
 function wireEmployeesPage() {
   var page = $('.page[data-page="employees"]');
   if (!page || page._empWired) return;
@@ -2147,6 +2242,9 @@ function wireEmployeesPage() {
 
   // Attendance toggle + ext delete (event delegation on page)
   page.addEventListener('click', function (ev) {
+    // Видео сургалтын дэлгэрэнгүй
+    var vtEl = ev.target.closest('[data-vt-detail]');
+    if (vtEl) { openEmpVideoDetail(vtEl.getAttribute('data-vt-detail')); return; }
     // Attendance toggle
     var toggleEl = ev.target.closest('[data-ext-toggle]');
     if (toggleEl) {
