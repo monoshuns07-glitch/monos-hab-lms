@@ -756,13 +756,11 @@ auth.onAuthStateChanged(async user=>{
 /* ── Main loader ── */
 async function loadDashboard(){
   try{
-    /* 1. User profile (via server-side function — falls back to email lookup) */
+    /* 1. User profile — Firestore-оос шууд (сервер функц хэрэггүй, аль ч хостинг дээр ажиллана) */
     try{
-      const url='/api/get-user-profile?uid='+encodeURIComponent(currentUser.uid)+'&email='+encodeURIComponent(currentUser.email||'');
-      const r=await fetch(url);
-      const result=await r.json();
-      userProfile = result.exists
-        ? result.data
+      const pSnap=await db.collection('users').doc(currentUser.uid).get();
+      userProfile = pSnap.exists
+        ? pSnap.data()
         : {email:currentUser.email,firstName:'',lastName:'',position:'',department:''};
     }catch(e){
       userProfile = {email:currentUser.email,firstName:'',lastName:'',position:'',department:''};
