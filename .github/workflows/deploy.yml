@@ -1,0 +1,32 @@
+name: Deploy to Vercel
+
+# main салбар руу ямар нэг өөрчлөлт орох бүрд Vercel рүү автоматаар байршуулна.
+# Actions таб дээрээс гараар ч ажиллуулж болно (Run workflow).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Зэрэг олон deploy зэрэг явахаас сэргийлнэ — сүүлийнх нь давамгайлна.
+concurrency:
+  group: vercel-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Кодыг татах
+        uses: actions/checkout@v4
+
+      - name: Node тохируулах
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Vercel рүү байршуулах (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
