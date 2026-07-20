@@ -1966,13 +1966,16 @@ function empLmsStats(emp) {
   var uid = emp.uid || emp.id;
   var inv = LMS.trainings.filter(function (t) { return (t.invitedEmployees || []).indexOf(uid) > -1; });
   var progs = LMS.progByUser[uid] || {};
-  var passed = 0, inProg = 0;
+  var passed = 0, inProg = 0, viewed = 0;
   inv.forEach(function (t) {
     var p = progs[t.id];
-    if (p && p.status === 'passed') passed++;
-    else if (p && (p.status === 'in_progress' || p.status === 'failed')) inProg++;
+    var st = p && p.status;
+    if (st === 'passed') passed++;
+    else if (st === 'in_progress' || st === 'failed') inProg++;
+    // "Үзсэн" = ямар нэг байдлаар нээж эхэлсэн (тэнцсэн ч мөн үзсэнд тооцно)
+    if (st === 'passed' || st === 'in_progress' || st === 'failed' || (p && (p.watchProgress || 0) > 0)) viewed++;
   });
-  return { invited: inv, progs: progs, total: inv.length, passed: passed, inProg: inProg };
+  return { invited: inv, progs: progs, total: inv.length, passed: passed, inProg: inProg, viewed: viewed };
 }
 
 /* ---- Гадны сургалтын туслах функцүүд ---- */
@@ -2031,7 +2034,7 @@ function renderEmployees() {
     '<tr>' +
     '<th></th><th></th><th></th>' +
     intHeadCells + extHeadCells +
-    '<th style="font-size:10px;font-weight:600;color:#C2410C;text-align:center;white-space:nowrap;padding:5px 8px;min-width:72px" title="Тэнцсэн / Оногдсон сургалт">Тэнцсэн/Нийт</th>' +
+    '<th style="font-size:10px;font-weight:600;color:#C2410C;text-align:center;white-space:nowrap;padding:5px 8px;min-width:90px" title="Үзсэн ба тэнцсэн сургалтын тоо / нийт оногдсон">Үзсэн · Тэнцсэн</th>' +
     '<th></th><th></th>' +
     '</tr>' +
     '</thead>';
@@ -2063,10 +2066,13 @@ function renderEmployees() {
     if (!LMS.loaded) return '<td style="text-align:center;color:#CBD5E1;font-size:11px" title="Ачаалж байна...">…</td>';
     var s = empLmsStats(e);
     if (!s.total) return '<td style="text-align:center;color:#94A3B8;font-size:11px" title="Сургалт оногдоогүй">—</td>';
-    var pct = Math.round(s.passed / s.total * 100);
-    var col = pct === 100 ? '#16A34A' : pct >= 50 ? '#D97706' : '#DC2626';
-    var bg  = pct === 100 ? '#DCFCE7' : pct >= 50 ? '#FEF3C7' : '#FEE2E2';
-    return '<td style="text-align:center"><span class="tag" data-vt-detail="' + esc(e.id) + '" style="cursor:pointer;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:' + bg + ';color:' + col + '" title="Дэлгэрэнгүй харах — дарна уу">' + s.passed + '/' + s.total + '</span></td>';
+    var vCol = s.viewed === s.total ? '#1D4ED8' : s.viewed > 0 ? '#1D4ED8' : '#94A3B8';
+    var pCol = s.passed === s.total ? '#16A34A' : s.passed > 0 ? '#D97706' : '#DC2626';
+    return '<td style="text-align:center;padding:6px 8px">' +
+      '<div data-vt-detail="' + esc(e.id) + '" style="cursor:pointer;display:inline-flex;flex-direction:column;gap:3px;align-items:stretch;min-width:70px" title="Дэлгэрэнгүй харах — дарна уу">' +
+      '<span style="font-size:11px;font-weight:700;color:' + vCol + ';background:#EFF6FF;border-radius:6px;padding:2px 8px;white-space:nowrap">▶ ' + s.viewed + '/' + s.total + ' үзсэн</span>' +
+      '<span style="font-size:11px;font-weight:700;color:' + pCol + ';background:' + (s.passed === s.total ? '#DCFCE7' : '#FEF3C7') + ';border-radius:6px;padding:2px 8px;white-space:nowrap">✓ ' + s.passed + '/' + s.total + ' тэнцсэн</span>' +
+      '</div></td>';
   }
   function rowHTML(e) {
     var tot = empTotal(e);
@@ -2115,9 +2121,10 @@ function renderEmployees() {
     // Видео сургалтын албаны дүн
     var vidSummary = '';
     if (LMS.loaded) {
-      var vp = 0, vt = 0;
-      members.forEach(function (e) { var vs = empLmsStats(e); vp += vs.passed; vt += vs.total; });
-      if (vt) vidSummary = '<span style="font-weight:600;color:' + (vp === vt ? '#16A34A' : vp > 0 ? '#D97706' : '#DC2626') + '">' + vp + '/' + vt + ' тэнцсэн</span>';
+      var vp = 0, vt = 0, vv = 0;
+      members.forEach(function (e) { var vs = empLmsStats(e); vp += vs.passed; vt += vs.total; vv += vs.viewed; });
+      if (vt) vidSummary = '<span style="color:#1D4ED8;font-weight:600">' + vv + '/' + vt + ' үзсэн</span> · ' +
+        '<span style="font-weight:600;color:' + (vp === vt ? '#16A34A' : vp > 0 ? '#D97706' : '#DC2626') + '">' + vp + '/' + vt + ' тэнцсэн</span>';
     }
     return '<tr class="dept-group-row"><td colspan="' + totalCols + '" style="background:#F0FDF4;padding:10px 14px;border-top:2px solid #BBF7D0">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -2221,8 +2228,9 @@ function openEmpVideoDetail(empId) {
         badge + '</div>';
     }).join('');
     node.innerHTML =
-      '<div style="display:flex;gap:14px;margin-bottom:14px">' +
+      '<div style="display:flex;gap:10px;margin-bottom:14px">' +
       '<div style="flex:1;text-align:center;background:#F8FAFC;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#1E293B">' + s.total + '</div><div style="font-size:11px;color:#64748B">Оногдсон</div></div>' +
+      '<div style="flex:1;text-align:center;background:#EFF6FF;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#1D4ED8">' + s.viewed + '</div><div style="font-size:11px;color:#1E40AF">Үзсэн</div></div>' +
       '<div style="flex:1;text-align:center;background:#DCFCE7;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#16A34A">' + s.passed + '</div><div style="font-size:11px;color:#166534">Тэнцсэн</div></div>' +
       '<div style="flex:1;text-align:center;background:#FEF3C7;border-radius:10px;padding:10px"><div style="font-size:20px;font-weight:800;color:#D97706">' + (s.total - s.passed) + '</div><div style="font-size:11px;color:#92400E">Дутуу</div></div>' +
       '</div>' +
