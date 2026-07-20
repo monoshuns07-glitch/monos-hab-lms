@@ -1037,10 +1037,10 @@ function switchPage(pageId) {
 /* ============ Sidebar badge-ууд ============ */
 /* ============ ХАБЭА Шалгалт — ажилтны шалгалт сонголтын хуудас ============ */
 var EXAM_PAGES = [
-  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',       url: 'https://monoshuns-hab.netlify.app/habea-urdchilsan.html', icon: 'ti-clipboard-list', color: '#4F46E5', bg: '#EEF2FF' },
-  { key: 'ankhan',           label: 'Анхан шатны зааварчилгааны шалгалт',      url: 'https://monoshuns-hab.netlify.app/habea-ankhan.html',     icon: 'ti-school',         color: '#059669', bg: '#D1FAE5' },
-  { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт',    url: 'https://monoshuns-hab.netlify.app/habea-eeljit.html',     icon: 'ti-refresh',        color: '#0891B2', bg: '#E0F2FE' },
-  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт',url: 'https://monoshuns-hab.netlify.app/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
+  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',       url: '/habea-urdchilsan.html', icon: 'ti-clipboard-list', color: '#4F46E5', bg: '#EEF2FF' },
+  { key: 'ankhan',           label: 'Анхан шатны зааварчилгааны шалгалт',      url: '/habea-ankhan.html',     icon: 'ti-school',         color: '#059669', bg: '#D1FAE5' },
+  { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт',    url: '/habea-eeljit.html',     icon: 'ti-refresh',        color: '#0891B2', bg: '#E0F2FE' },
+  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт',url: '/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
 ];
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
@@ -1054,7 +1054,7 @@ function renderMyExams() {
       });
       var total = (DB.employees || []).length;
       var pct = taken ? Math.round(passed / taken * 100) : 0;
-      var adminUrl = 'https://monoshuns-hab.netlify.app/habea-admin.html?exam=' + encodeURIComponent(ep.key);
+      var adminUrl = '/habea-admin.html?exam=' + encodeURIComponent(ep.key);
       return '<div class="card" style="padding:22px;border:1.5px solid #E2E8F0">' +
         '<div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">' +
         '<div style="width:48px;height:48px;border-radius:13px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0"><i class="ti ' + ep.icon + '"></i></div>' +
@@ -1590,7 +1590,7 @@ function actionTakeModExam(key, empId) {
   var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
   var exam = encodeURIComponent(key);
   var title = encodeURIComponent(TRAINING_MODULES[key] || key);
-  window.open('https://monoshuns-hab.netlify.app/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
+  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
@@ -3701,7 +3701,7 @@ function renderExamAdmin() {
     });
     var total = (DB.employees || []).length;
     var pct = taken ? Math.round(passed / taken * 100) : 0;
-    var adminUrl = 'https://monoshuns-hab.netlify.app/habea-admin.html?exam=' + encodeURIComponent(ep.key);
+    var adminUrl = '/habea-admin.html?exam=' + encodeURIComponent(ep.key);
     return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:11px">' +
       '<div style="width:46px;height:46px;border-radius:12px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0"><i class="ti ' + ep.icon + '"></i></div>' +
       '<div style="flex:1;min-width:0">' +
@@ -3721,7 +3721,7 @@ function renderExamAdmin() {
     '<div style="width:46px;height:46px;border-radius:12px;background:#4338CA;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px"><i class="ti ti-layout-dashboard"></i></div>' +
     '<div style="flex:1"><div style="font-weight:700">Ерөнхий админ (бүх шалгалтын дүн)</div>' +
     '<div style="font-size:12px;color:#8A94A6">Бүх дүн, статистик, тохиргоо · PIN 1234</div></div>' +
-    '<a href="https://monoshuns-hab.netlify.app/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
+    '<a href="/habea-admin.html" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"><i class="ti ti-external-link"></i> Нээх</a></div>' +
     '<h3 style="margin:0 0 12px">ХАБЭА Шалгалт — Тус бүрийн удирдлага</h3>' +
     examCards +
     '<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px"><h3 style="margin:0">Шалгалтын бүртгэл</h3>' +
@@ -4037,7 +4037,7 @@ function renderVtAdmin(sec) {
   }).sort(function (a, b) { return miskillScore(b) - miskillScore(a); });
 
   var weekLabel = rows.length && rows[0].weekStart ? rows[0].weekStart + ' — долоо хоног' : '';
-  var adminUrl = 'https://monoshuns-hab.netlify.app/admin.html?tab=lms';
+  var adminUrl = '/admin.html?tab=lms';
   var html =
     // Sub-tab header
     '<div style="padding:22px 28px 0 28px">' +
@@ -4140,7 +4140,7 @@ function renderVtAdmin(sec) {
 function renderVtEmployee(sec) {
   // Ажилтны MiSkill цэс = админаас нэмсэн сургалтууд (Сургалтын самбар). Үзэж, шалгалтаа өгнө.
   sec.style.padding = '0';
-  var eurl = 'https://monoshuns-hab.netlify.app/employee.html?embed=1';
+  var eurl = '/employee.html?embed=1';
   sec.innerHTML =
     '<div style="padding:18px 24px 10px">' +
     '<h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
