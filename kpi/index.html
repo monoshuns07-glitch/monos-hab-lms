@@ -315,78 +315,13 @@
       <div style="position:relative;height:340px;width:100%"><canvas id="trendChart"></canvas></div>
     </div>
 
-    <!-- Department breakdown -->
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-header">
-          <h3>Хэлтсийн KPI харьцуулалт</h3>
-          <button class="link-btn">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
-        </div>
-        <div class="dept-list">
-          <div class="dept-row">
-            <div class="dept-name">Цех №1 · Угсралт</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:92%; background:var(--emerald)"></div></div>
-            <div class="dept-score">92</div>
-          </div>
-          <div class="dept-row">
-            <div class="dept-name">Цех №2 · Боловсруулалт</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:76%; background:var(--amber)"></div></div>
-            <div class="dept-score">76</div>
-          </div>
-          <div class="dept-row">
-            <div class="dept-name">Цех №3 · Тоног төхөөрөмж</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:84%; background:var(--emerald)"></div></div>
-            <div class="dept-score">84</div>
-          </div>
-          <div class="dept-row">
-            <div class="dept-name">Захиргаа</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:95%; background:var(--emerald)"></div></div>
-            <div class="dept-score">95</div>
-          </div>
-          <div class="dept-row">
-            <div class="dept-name">Тээвэр, ложистик</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:81%; background:var(--emerald)"></div></div>
-            <div class="dept-score">81</div>
-          </div>
-          <div class="dept-row">
-            <div class="dept-name">Үйлчилгээ</div>
-            <div class="dept-bar-wrap"><div class="dept-bar" style="width:68%; background:var(--coral)"></div></div>
-            <div class="dept-score">68</div>
-          </div>
-        </div>
+    <!-- Хэлтсийн KPI харьцуулалт (бүтэн өргөн) -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Хэлтсийн KPI харьцуулалт</h3>
+        <button class="link-btn" data-goemp="1">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
       </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h3>Шуурхай үйлдлүүд</h3>
-        </div>
-        <div class="quick-grid">
-          <a class="quick-card quick-warn" onclick="goTo('hazards')">
-            <i class="ti ti-alert-triangle"></i>
-            <div>Эрсдэл мэдээлэх</div>
-          </a>
-          <a class="quick-card quick-info" onclick="goTo('suggestions')">
-            <i class="ti ti-bulb"></i>
-            <div>Санал гаргах</div>
-          </a>
-          <a class="quick-card quick-success" onclick="goTo('training')">
-            <i class="ti ti-school"></i>
-            <div>Сургалт үзэх</div>
-          </a>
-          <a class="quick-card quick-purple" onclick="goTo('inspections')">
-            <i class="ti ti-clipboard-check"></i>
-            <div>Шалгалт хийх</div>
-          </a>
-          <a class="quick-card quick-blue" onclick="goTo('health')">
-            <i class="ti ti-stethoscope"></i>
-            <div>Эрүүл мэнд</div>
-          </a>
-          <a class="quick-card quick-coral" onclick="goTo('chatbot')">
-            <i class="ti ti-message-chatbot"></i>
-            <div>Бот ярих</div>
-          </a>
-        </div>
-      </div>
+      <div class="dept-list"></div>
     </div>
 
     <!-- Ажилтнуудын мэдээлэл (хайлт/шүүлт) -->
@@ -1906,6 +1841,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js?v=50"></script>
+<script src="script.js?v=51"></script>
 </body>
 </html>
