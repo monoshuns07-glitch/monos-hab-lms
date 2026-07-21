@@ -4208,15 +4208,66 @@ function empSafetyScore(e) {
   var vals = [deptPpe(e.dept), deptFirstAid(e.dept)].filter(function (v) { return v != null; });
   return vals.length ? Math.round(avg(vals)) : null;
 }
+var DASH_CATS = [
+  { label: 'Дотоод сургалт', rgb: '29,78,216',  fn: empIntTrainingPct, desc: 'Дотоод 5 модулийн дуусгасан хувь' },
+  { label: 'Гадны сургалт',  rgb: '22,101,52',  fn: empExtTrainingPct, desc: 'Гадны сургалтад хамрагдсан хувь' },
+  { label: 'Видео сургалт',  rgb: '194,65,12',  fn: kpiVideo,          desc: 'Оногдсон видео сургалтаас тэнцсэн хувь' },
+  { label: 'Аюул/NM',        rgb: '162,28,175', fn: empBonusScore,     desc: 'Аюул/near-miss мэдээллийн бонус оноо' },
+  { label: 'ХХХ·Тусламж',    rgb: '8,145,178',  fn: empSafetyScore,    desc: 'Албаны ХХХ мөрдөлт + анхны тусламж' },
+  { label: 'Даалгавар',      rgb: '22,163,74',  fn: kpiTask,           desc: 'Оногдсон даалгаврын биелэлт' }
+];
+var DASH_CAT_DEPT = ''; // '' = бүх алба; интерактив шүүлт
+function _dashEmps() {
+  var list = DB.employees || [];
+  return DASH_CAT_DEPT ? list.filter(function (e) { return e.dept === DASH_CAT_DEPT; }) : list;
+}
+function _avgOf(emps, fn) {
+  var vals = emps.map(fn).filter(function (v) { return v != null; });
+  return vals.length ? Math.round(avg(vals)) : 0;
+}
 function kpiCategoryBars() {
-  return [
-    { label: 'Дотоод сургалт', v: _avgFactor(empIntTrainingPct), rgb: '29,78,216' },
-    { label: 'Гадны сургалт',  v: _avgFactor(empExtTrainingPct), rgb: '22,101,52' },
-    { label: 'Видео сургалт',  v: _avgFactor(kpiVideo),          rgb: '194,65,12' },
-    { label: 'Аюул/NM',        v: _avgFactor(empBonusScore),     rgb: '162,28,175' },
-    { label: 'ХХХ·Тусламж',    v: _avgFactor(empSafetyScore),    rgb: '8,145,178' },
-    { label: 'Даалгавар',      v: _avgFactor(kpiTask),           rgb: '22,163,74' }
-  ];
+  var emps = _dashEmps();
+  return DASH_CATS.map(function (c) { return { label: c.label, rgb: c.rgb, v: _avgOf(emps, c.fn) }; });
+}
+
+/* Багана дээр дарахад — тухайн үзүүлэлтийн алба тус бүрийн задаргаа + анхаарал шаардлагатай ажилтнууд */
+function openCategoryDrilldown(idx) {
+  var cat = DASH_CATS[idx]; if (!cat) return;
+  var depts = deptList().map(function (d) {
+    var em = (DB.employees || []).filter(function (e) { return e.dept === d; });
+    return { d: d, v: _avgOf(em, cat.fn), n: em.length };
+  }).sort(function (a, b) { return b.v - a.v; });
+  var deptMax = Math.max(1, depts.reduce(function (a, x) { return Math.max(a, x.v); }, 0));
+
+  var lowEmps = _dashEmps().map(function (e) { return { e: e, v: cat.fn(e) }; })
+    .filter(function (x) { return x.v != null; })
+    .sort(function (a, b) { return a.v - b.v; }).slice(0, 8);
+
+  function col(v) { return v >= 85 ? '#16A34A' : v >= 60 ? '#D97706' : '#DC2626'; }
+  var deptRows = depts.map(function (r) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">' +
+      '<div style="width:130px;font-size:12.5px;font-weight:600;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.d) + '">' + esc(r.d) + '</div>' +
+      '<div style="flex:1;height:16px;background:#F1F5F9;border-radius:8px;overflow:hidden"><div style="height:100%;width:' + Math.round(r.v / deptMax * 100) + '%;background:' + col(r.v) + ';border-radius:8px;transition:width .4s"></div></div>' +
+      '<div style="width:40px;text-align:right;font-weight:700;font-size:13px;color:' + col(r.v) + '">' + r.v + '</div></div>';
+  }).join('') || '<div style="color:#94A3B8;font-size:13px;padding:8px">Алба бүртгэгдээгүй</div>';
+
+  var empRows = lowEmps.length ? lowEmps.map(function (x) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+      '<div class="avatar avatar-sm" style="width:28px;height:28px;font-size:11px">' + esc(x.e.initials || '') + '</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;color:#1E293B">' + esc(x.e.name) + '</div>' +
+      '<div style="font-size:11px;color:#94A3B8">' + esc(x.e.dept || '') + '</div></div>' +
+      '<span style="font-weight:700;font-size:13px;color:' + col(x.v) + '">' + x.v + '</span></div>';
+  }).join('') : '<div style="color:#94A3B8;font-size:13px;padding:8px">Дата алга</div>';
+
+  var node = elc('div');
+  node.innerHTML =
+    '<div style="font-size:12.5px;color:#64748B;margin-bottom:14px">' + esc(cat.desc) +
+    (DASH_CAT_DEPT ? ' · <b>' + esc(DASH_CAT_DEPT) + '</b>' : '') + '</div>' +
+    '<div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Алба тус бүрээр</div>' +
+    deptRows +
+    '<div style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 4px">Анхаарал шаардлагатай ажилтнууд</div>' +
+    empRows;
+  buildModal(cat.label + ' — дэлгэрэнгүй', node, { width: '620px' });
 }
 
 function renderCharts() {
@@ -4256,6 +4307,20 @@ function renderCharts() {
       }
     });
   }
+  // Алба сонгох dropdown — интерактив шүүлт
+  var deptSel = $('#dashCatDept');
+  if (deptSel) {
+    if (!deptSel._wired) {
+      deptSel._wired = true;
+      deptSel.addEventListener('change', function () { DASH_CAT_DEPT = this.value; renderCharts(); });
+    }
+    var opts = '<option value="">Бүх алба</option>' + deptList().map(function (d) {
+      return '<option value="' + esc(d) + '"' + (d === DASH_CAT_DEPT ? ' selected' : '') + '>' + esc(d) + '</option>';
+    }).join('');
+    if (deptSel.innerHTML !== opts) deptSel.innerHTML = opts;
+    deptSel.value = DASH_CAT_DEPT;
+  }
+
   var trendEl = $('#trendChart');
   if (trendEl) {
     if (charts.trend) charts.trend.destroy();
@@ -4282,12 +4347,14 @@ function renderCharts() {
         indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
         layout: { padding: { right: 12 } },
+        onClick: function (evt, els) { if (els && els.length) openCategoryDrilldown(els[0].index); },
+        onHover: function (evt, els) { evt.native.target.style.cursor = (els && els.length) ? 'pointer' : 'default'; },
         plugins: {
           legend: { display: false },
           tooltip: {
             backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, displayColors: false,
             titleFont: { family: 'Manrope', size: 13, weight: '600' }, bodyFont: { family: 'Manrope', size: 13 },
-            callbacks: { label: function (c) { return 'Дундаж: ' + c.parsed.x + ' / 100'; } }
+            callbacks: { label: function (c) { return 'Дундаж: ' + c.parsed.x + ' / 100 · дэлгэрэнгүйг үзэхээр дарна уу'; } }
           }
         },
         scales: {
