@@ -4191,6 +4191,34 @@ function monthlyTrendData() {
   return { labels: labels, training: training, risk: risk, incident: incident };
 }
 
+/* Дашбоардын үндсэн график — хүснэгтийн БҮХ үзүүлэлтийн одоогийн дундаж дүн (0-100) */
+function empIntTrainingPct(e) {
+  var keys = Object.keys(TRAINING_MODULES).filter(function (k) { return isModTrainingVisible(e, k); });
+  if (!keys.length) return null;
+  var done = keys.filter(function (k) { return getEmpProg(e.id, k).trainingCompleted; }).length;
+  return Math.round(done / keys.length * 100);
+}
+function empExtTrainingPct(e) {
+  var ext = DB.extTrainings || [];
+  if (!ext.length) return null;
+  var att = ext.filter(function (t) { return getExtAtt(t.id, e.id).status === 'attended'; }).length;
+  return Math.round(att / ext.length * 100);
+}
+function empSafetyScore(e) {
+  var vals = [deptPpe(e.dept), deptFirstAid(e.dept)].filter(function (v) { return v != null; });
+  return vals.length ? Math.round(avg(vals)) : null;
+}
+function kpiCategoryBars() {
+  return [
+    { label: 'Дотоод сургалт', v: _avgFactor(empIntTrainingPct), rgb: '29,78,216' },
+    { label: 'Гадны сургалт',  v: _avgFactor(empExtTrainingPct), rgb: '22,101,52' },
+    { label: 'Видео сургалт',  v: _avgFactor(kpiVideo),          rgb: '194,65,12' },
+    { label: 'Аюул/NM',        v: _avgFactor(empBonusScore),     rgb: '162,28,175' },
+    { label: 'ХХХ·Тусламж',    v: _avgFactor(empSafetyScore),    rgb: '8,145,178' },
+    { label: 'Даалгавар',      v: _avgFactor(kpiTask),           rgb: '22,163,74' }
+  ];
+}
+
 function renderCharts() {
   if (typeof Chart === 'undefined') {
     $$('#kpiRadar, #trendChart').forEach(function (c) {
@@ -4231,52 +4259,42 @@ function renderCharts() {
   var trendEl = $('#trendChart');
   if (trendEl) {
     if (charts.trend) charts.trend.destroy();
-    var td = monthlyTrendData();
-    var stackMax = td.labels.map(function (_, i) { return td.training[i] + td.risk[i] + td.incident[i]; })
-      .reduce(function (a, b) { return Math.max(a, b); }, 0);
-    function bar(label, data, rgb) {
-      return {
-        label: label, data: data,
-        backgroundColor: function (ctx) {
-          var ch = ctx.chart, area = ch.chartArea; if (!area) return 'rgba(' + rgb + ',0.85)';
-          var g = ch.ctx.createLinearGradient(0, area.bottom, 0, area.top);
-          g.addColorStop(0, 'rgba(' + rgb + ',0.65)'); g.addColorStop(1, 'rgba(' + rgb + ',1)');
-          return g;
-        },
-        hoverBackgroundColor: 'rgba(' + rgb + ',1)',
-        borderRadius: 6, borderSkipped: false, borderWidth: 0,
-        maxBarThickness: 26, categoryPercentage: 0.62, barPercentage: 0.86
-      };
-    }
+    var cats = kpiCategoryBars();
     charts.trend = new Chart(trendEl.getContext('2d'), {
       type: 'bar',
       data: {
-        labels: td.labels,
-        datasets: [
-          bar('Сургалт (тэнцсэн)', td.training, '4,120,87'),
-          bar('Эрсдэл мэдээлсэн', td.risk, '217,119,6'),
-          bar('Осол', td.incident, '220,38,38')
-        ]
+        labels: cats.map(function (c) { return c.label; }),
+        datasets: [{
+          label: 'Дундаж дүн',
+          data: cats.map(function (c) { return c.v; }),
+          backgroundColor: function (ctx) {
+            var rgb = cats[ctx.dataIndex].rgb, ch = ctx.chart, area = ch.chartArea;
+            if (!area) return 'rgba(' + rgb + ',0.9)';
+            var g = ch.ctx.createLinearGradient(area.left, 0, area.right, 0);
+            g.addColorStop(0, 'rgba(' + rgb + ',0.75)'); g.addColorStop(1, 'rgba(' + rgb + ',1)');
+            return g;
+          },
+          hoverBackgroundColor: cats.map(function (c) { return 'rgba(' + c.rgb + ',1)'; }),
+          borderRadius: 8, borderSkipped: false, maxBarThickness: 34, categoryPercentage: 0.72, barPercentage: 0.9
+        }]
       },
       options: {
+        indexAxis: 'y',
         responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
+        layout: { padding: { right: 12 } },
         plugins: {
-          legend: { position: 'bottom', labels: { font: { family: 'Manrope', size: 12, weight: '600' }, padding: 18, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8 } },
+          legend: { display: false },
           tooltip: {
-            backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, titleFont: { family: 'Manrope', size: 12, weight: '600' },
-            bodyFont: { family: 'Manrope', size: 13 }, usePointStyle: true, boxPadding: 6,
-            filter: function (c) { return c.parsed.y > 0; },
-            callbacks: { label: function (c) { return '  ' + c.dataset.label + ': ' + c.parsed.y; } }
+            backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, displayColors: false,
+            titleFont: { family: 'Manrope', size: 13, weight: '600' }, bodyFont: { family: 'Manrope', size: 13 },
+            callbacks: { label: function (c) { return 'Дундаж: ' + c.parsed.x + ' / 100'; } }
           }
         },
         scales: {
-          x: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', maxRotation: 0, autoSkipPadding: 8 } },
-          y: {
-            stacked: true, beginAtZero: true, suggestedMax: stackMax <= 4 ? stackMax + 1 : Math.ceil(stackMax * 1.15),
-            grid: { color: 'rgba(26,24,21,0.05)', drawTicks: false }, border: { display: false },
-            ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', precision: 0, stepSize: stackMax <= 8 ? 1 : undefined, padding: 8 }
-          }
+          x: { beginAtZero: true, max: 100, grid: { color: 'rgba(26,24,21,0.05)', drawTicks: false }, border: { display: false },
+            ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', stepSize: 25, padding: 6, callback: function (v) { return v + '%'; } } },
+          y: { grid: { display: false }, border: { display: false },
+            ticks: { font: { family: 'Manrope', size: 12.5, weight: '600' }, color: '#1A1815', padding: 6 } }
         }
       }
     });
