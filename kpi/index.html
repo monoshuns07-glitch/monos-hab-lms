@@ -388,6 +388,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Ажилтнуудын мэдээлэл (хайлт/шүүлт) -->
+    <div class="card" data-admin-only="1">
+      <div class="card-header">
+        <div>
+          <h3>Ажилтнуудын мэдээлэл</h3>
+          <p class="card-subtitle">Хайж, шүүж, дэлгэрэнгүй харна</p>
+        </div>
+        <div id="dashEmpCount" style="font-size:13px;color:#94A3B8;font-weight:600"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div class="search-box flex-grow" style="min-width:200px">
+          <i class="ti ti-search"></i>
+          <input id="dashEmpSearch" type="text" placeholder="Нэр, алба, албан тушаалаар хайх...">
+        </div>
+        <select id="dashEmpDept" class="cfg-input" style="width:auto;min-width:150px;height:auto;padding:9px 12px;font-size:13px"></select>
+        <select id="dashEmpSort" class="cfg-input" style="width:auto;min-width:160px;height:auto;padding:9px 12px;font-size:13px">
+          <option value="kpi">KPI: өндөр → бага</option>
+          <option value="kpilow">KPI: бага → өндөр</option>
+          <option value="name">Нэрээр (А-Я)</option>
+        </select>
+      </div>
+      <div id="dashEmpList" style="max-height:520px;overflow-y:auto"></div>
+    </div>
   </section>
 
   <!-- ============ PAGE: EMPLOYEES ============ -->
@@ -1882,6 +1906,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js?v=49"></script>
+<script src="script.js?v=50"></script>
 </body>
 </html>
