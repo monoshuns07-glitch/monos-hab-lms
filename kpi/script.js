@@ -1978,6 +1978,38 @@ function empLmsStats(emp) {
   return { invited: inv, progs: progs, total: inv.length, passed: passed, inProg: inProg, viewed: viewed };
 }
 
+/* ---- Аюул/Near-miss мэдээллийн ажилтан тус бүрийн дүн ---- */
+function empReportStats(e) {
+  var verified = 0, pending = 0;
+  (DB.reports || []).forEach(function (r) {
+    if (!reportBelongsTo(r, e)) return;
+    if (r.status === 'verified') verified++;
+    else if (r.status === 'reported') pending++;
+  });
+  return { verified: verified, pending: pending, points: empBonusPoints(e), score: empBonusScore(e) };
+}
+
+/* ---- Даалгавар: ажилтанд ЗААВЧИЛЖ өгсөн бол ажилтанд тооцно (албаны даалгавар энд ОРОХГҮЙ) ---- */
+function empTaskStats(e) {
+  var assigned = (DB.tasks || []).filter(function (t) {
+    var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
+    return ids.indexOf(e.id) > -1; // зөвхөн нэрлэн оногдуулсан даалгавар
+  });
+  var done = assigned.filter(function (t) { return t.status === 'done'; }).length;
+  return { total: assigned.length, done: done };
+}
+
+/* ---- Даалгавар: албанд (эсвэл бүх албанд) өгсөн даалгаврын дүн — албаны мөрөнд ---- */
+function deptTaskStats(dept) {
+  var assigned = (DB.tasks || []).filter(function (t) {
+    var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
+    if (ids.length) return false; // нэрлэсэн даалгавар албанд тооцогдохгүй
+    return t.dept === 'all' || t.dept === dept;
+  });
+  var done = assigned.filter(function (t) { return t.status === 'done'; }).length;
+  return { total: assigned.length, done: done };
+}
+
 /* ---- Гадны сургалтын туслах функцүүд ---- */
 function getExtAtt(extId, empId) {
   return ((DB.extAttendance || {})[extId + '_' + empId]) || { status: '' };
@@ -2003,7 +2035,7 @@ function renderEmployees() {
   var total = list.length;
   var extTrainings = DB.extTrainings || [];
   var intKeys = Object.keys(TRAINING_MODULES);
-  var totalCols = 3 + intKeys.length + (extTrainings.length || 1) + 1 + 2;
+  var totalCols = 3 + intKeys.length + (extTrainings.length || 1) + 1 + 3 + 2;
 
   // --- thead ---
   var intColspan = intKeys.length;
@@ -2028,6 +2060,7 @@ function renderEmployees() {
     '<th colspan="' + intColspan + '" style="background:#EFF6FF;color:#1D4ED8;text-align:center;font-size:11px;padding:6px 8px">Дотоод сургалт</th>' +
     '<th colspan="' + extColspan + '" style="background:#F0FDF4;color:#166534;text-align:center;font-size:11px;padding:6px 8px">Гадны сургалт</th>' +
     '<th style="background:#FFF7ED;color:#C2410C;text-align:center;font-size:11px;padding:6px 8px">Видео сургалт</th>' +
+    '<th colspan="3" style="background:#FDF4FF;color:#A21CAF;text-align:center;font-size:11px;padding:6px 8px">Оролцоо ба бусад</th>' +
     '<th style="white-space:nowrap">Нийт KPI</th>' +
     '<th></th>' +
     '</tr>' +
@@ -2035,6 +2068,9 @@ function renderEmployees() {
     '<th></th><th></th><th></th>' +
     intHeadCells + extHeadCells +
     '<th style="font-size:10px;font-weight:600;color:#C2410C;text-align:center;white-space:nowrap;padding:5px 8px;min-width:90px" title="Үзсэн ба тэнцсэн сургалтын тоо / нийт оногдсон">Үзсэн · Тэнцсэн</th>' +
+    '<th style="font-size:10px;font-weight:600;color:#A21CAF;text-align:center;white-space:nowrap;padding:5px 8px;min-width:78px" title="Баталгаажсан аюул/near-miss мэдээлэл ба олсон бонус оноо">Аюул/NM</th>' +
+    '<th style="font-size:10px;font-weight:600;color:#A21CAF;text-align:center;white-space:nowrap;padding:5px 8px;min-width:88px" title="Албаны ХХХ мөрдөлт ба анхны тусламжийн хайрцгийн бүрдэл">ХХХ · Тусламж</th>' +
+    '<th style="font-size:10px;font-weight:600;color:#A21CAF;text-align:center;white-space:nowrap;padding:5px 8px;min-width:70px" title="Биелүүлсэн / оногдсон даалгавар">Даалгавар</th>' +
     '<th></th><th></th>' +
     '</tr>' +
     '</thead>';
@@ -2074,6 +2110,36 @@ function renderEmployees() {
       '<span style="font-size:11px;font-weight:700;color:' + pCol + ';background:' + (s.passed === s.total ? '#DCFCE7' : '#FEF3C7') + ';border-radius:6px;padding:2px 8px;white-space:nowrap">✓ ' + s.passed + '/' + s.total + ' тэнцсэн</span>' +
       '</div></td>';
   }
+  // Аюул/Near-miss мэдээлэл — баталгаажсан тоо + бонус оноо
+  function empReportCell(e) {
+    var r = empReportStats(e);
+    if (!r.verified && !r.pending && !r.points) return '<td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>';
+    return '<td style="text-align:center;padding:6px 8px">' +
+      '<div style="font-size:13px;font-weight:700;color:#A21CAF">' + r.verified + '<span style="font-size:10px;font-weight:500;color:#94A3B8"> мэдээлэл</span></div>' +
+      (r.points ? '<div style="font-size:11px;font-weight:600;color:#16A34A">+' + r.points + ' бонус</div>' : '') +
+      (r.pending ? '<div style="font-size:10px;color:#D97706">' + r.pending + ' хүлээгдэж буй</div>' : '') +
+      '</div></td>';
+  }
+  // ХХХ (PPE) ба анхны тусламж — албаны түвшний оноо
+  function empSafetyCell(e) {
+    var ppe = deptPpe(e.dept), fa = deptFirstAid(e.dept);
+    if (ppe == null && fa == null) return '<td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>';
+    function pill(lbl, v) {
+      if (v == null) return '<span style="font-size:10px;color:#CBD5E1">' + lbl + ' —</span>';
+      var col = v >= 90 ? '#16A34A' : v >= 70 ? '#D97706' : '#DC2626';
+      return '<span style="font-size:11px;font-weight:700;color:' + col + '">' + lbl + ' ' + v + '%</span>';
+    }
+    return '<td style="text-align:center;padding:6px 8px"><div style="display:flex;flex-direction:column;gap:2px">' +
+      pill('ХХХ', ppe) + pill('Тус', fa) + '</div></td>';
+  }
+  // Даалгавар — биелүүлсэн / оногдсон
+  function empTaskCell(e) {
+    var t = empTaskStats(e);
+    if (!t.total) return '<td style="text-align:center;color:#CBD5E1;font-size:11px">—</td>';
+    var col = t.done === t.total ? '#16A34A' : t.done > 0 ? '#D97706' : '#DC2626';
+    var bg  = t.done === t.total ? '#DCFCE7' : '#FEF3C7';
+    return '<td style="text-align:center"><span style="font-size:12px;font-weight:700;color:' + col + ';background:' + bg + ';border-radius:20px;padding:3px 10px;white-space:nowrap">' + t.done + '/' + t.total + '</span></td>';
+  }
   function rowHTML(e) {
     var tot = empTotal(e);
     return '<tr data-emp="' + e.id + '">' +
@@ -2084,6 +2150,7 @@ function renderEmployees() {
       '</div><div class="emp-role">' + esc(e.role) + '</div></div></div></td>' +
       '<td style="font-size:12px">' + esc(e.dept) + '</td>' +
       empIntCells(e) + empExtCells(e) + empVideoCell(e) +
+      empReportCell(e) + empSafetyCell(e) + empTaskCell(e) +
       '<td><strong style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:15px">' + tot + '</strong></td>' +
       '<td><button class="icon-btn-sm" data-emp-menu="' + e.id + '"><i class="ti ti-dots-vertical"></i></button></td>' +
       '</tr>';
@@ -2126,6 +2193,17 @@ function renderEmployees() {
       if (vt) vidSummary = '<span style="color:#1D4ED8;font-weight:600">' + vv + '/' + vt + ' үзсэн</span> · ' +
         '<span style="font-weight:600;color:' + (vp === vt ? '#16A34A' : vp > 0 ? '#D97706' : '#DC2626') + '">' + vp + '/' + vt + ' тэнцсэн</span>';
     }
+    // Аюул/Near-miss албаны дүн
+    var repV = 0, repP = 0;
+    members.forEach(function (e) { var rs = empReportStats(e); repV += rs.verified; repP += rs.points; });
+    var repSummary = (repV || repP) ? '<span style="font-weight:600;color:#A21CAF">' + repV + ' мэдээлэл</span>' + (repP ? ' · <span style="color:#16A34A;font-weight:600">+' + repP + ' бонус</span>' : '') : '';
+    // ХХХ/Тусламж (албаны түвшин)
+    var dPpe = deptPpe(d), dFa = deptFirstAid(d);
+    var safeSummary = (dPpe != null || dFa != null)
+      ? (dPpe != null ? 'ХХХ ' + dPpe + '%' : 'ХХХ —') + ' · ' + (dFa != null ? 'Тус ' + dFa + '%' : 'Тус —') : '';
+    // Албаны даалгавар
+    var dts = deptTaskStats(d);
+    var taskSummary = dts.total ? '<span style="font-weight:600;color:' + (dts.done === dts.total ? '#16A34A' : '#D97706') + '">' + dts.done + '/' + dts.total + ' биелсэн</span>' : '';
     return '<tr class="dept-group-row"><td colspan="' + totalCols + '" style="background:#F0FDF4;padding:10px 14px;border-top:2px solid #BBF7D0">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
       '<span style="font-weight:700;color:#065F46"><i class="ti ti-building" style="margin-right:5px"></i>' + esc(d) + '</span>' +
@@ -2133,6 +2211,9 @@ function renderEmployees() {
       (intSummary ? '<span style="font-size:11px;color:#475569;margin-left:6px"><span style="color:#1D4ED8;font-weight:600">Дотоод:</span> ' + intSummary + '</span>' : '') +
       (extSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#166534;font-weight:600">Гадны:</span> ' + extSummary + '</span>' : '') +
       (vidSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#C2410C;font-weight:600">Видео:</span> ' + vidSummary + '</span>' : '') +
+      (repSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#A21CAF;font-weight:600">Аюул/NM:</span> ' + repSummary + '</span>' : '') +
+      (safeSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#A21CAF;font-weight:600">ХХХ/Тус:</span> ' + safeSummary + '</span>' : '') +
+      (taskSummary ? '<span style="font-size:11px;color:#475569"><span style="color:#A21CAF;font-weight:600">Албаны даалгавар:</span> ' + taskSummary + '</span>' : '') +
       '</div></td></tr>';
   }
 
