@@ -4154,6 +4154,43 @@ function actionBatchTraining() {
 
 /* ============ Графикууд ============ */
 var charts = { radar: null, trend: null };
+
+/* Сүүлийн 12 сарын ЖИНХЭНЭ хандлага — бодит бичлэгээс тооцно (хиймэл дата биш) */
+function monthlyTrendData() {
+  var now = new Date();
+  var labels = [], keys = [];
+  var MN = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
+  for (var i = 11; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels.push(MN[d.getMonth()] + ' сар');
+    keys.push(d.getFullYear() + '-' + (d.getMonth() + 1));
+  }
+  function mk(iso) { if (!iso) return null; var d = new Date(iso); return isNaN(d.getTime()) ? null : d.getFullYear() + '-' + (d.getMonth() + 1); }
+  function zeros() { return keys.map(function () { return 0; }); }
+  var training = zeros(), risk = zeros(), incident = zeros();
+  function bump(arr, iso) { var idx = keys.indexOf(mk(iso)); if (idx > -1) arr[idx]++; }
+
+  // Эрсдэл = аюул/near-miss мэдээлэл + эрсдэлийн бүртгэл
+  (DB.reports || []).forEach(function (r) { bump(risk, r.createdAt); });
+  (DB.hazards || []).forEach(function (h) { bump(risk, h.createdAt); });
+  // Осол
+  (DB.incidents || []).forEach(function (n) { bump(incident, n.date || n.createdAt); });
+  // Сургалт = модулийн шалгалт өгсөн + LMS видео сургалт тэнцсэн
+  Object.keys(DB.empProgress || {}).forEach(function (k) {
+    var p = DB.empProgress[k]; if (p && p.examTakenAt) bump(training, p.examTakenAt);
+  });
+  if (LMS.loaded) {
+    Object.keys(LMS.progByUser || {}).forEach(function (uid) {
+      var m = LMS.progByUser[uid];
+      Object.keys(m).forEach(function (tid) {
+        var p = m[tid];
+        if (p && p.status === 'passed') bump(training, p.passedAt || p.completedAt || p.updatedAt || p.lastViewedAt);
+      });
+    });
+  }
+  return { labels: labels, training: training, risk: risk, incident: incident };
+}
+
 function renderCharts() {
   if (typeof Chart === 'undefined') {
     $$('#kpiRadar, #trendChart').forEach(function (c) {
@@ -4194,40 +4231,55 @@ function renderCharts() {
   var trendEl = $('#trendChart');
   if (trendEl) {
     if (charts.trend) charts.trend.destroy();
-    var months = ['6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р', '1-р', '2-р', '3-р', '4-р', '5-р'];
+    var td = monthlyTrendData();
+    var maxV = Math.max(1, td.training.reduce(function (a, b) { return Math.max(a, b); }, 0),
+      td.risk.reduce(function (a, b) { return Math.max(a, b); }, 0),
+      td.incident.reduce(function (a, b) { return Math.max(a, b); }, 0));
+    function areaFill(rgb) {
+      return function (ctx) {
+        var ch = ctx.chart, area = ch.chartArea; if (!area) return 'rgba(' + rgb + ',0.10)';
+        var g = ch.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        g.addColorStop(0, 'rgba(' + rgb + ',0.28)'); g.addColorStop(1, 'rgba(' + rgb + ',0)');
+        return g;
+      };
+    }
+    function ds(label, data, color, rgb, fill) {
+      return {
+        label: label, data: data, borderColor: color,
+        backgroundColor: fill ? areaFill(rgb) : 'transparent',
+        borderWidth: 2.5, fill: !!fill, tension: 0.4,
+        pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#fff',
+        pointBorderColor: color, pointBorderWidth: 2, spanGaps: true
+      };
+    }
     charts.trend = new Chart(trendEl.getContext('2d'), {
       type: 'line',
       data: {
-        labels: months,
+        labels: td.labels,
         datasets: [
-          { label: 'KPI дундаж', data: [78, 80, 79, 82, 84, 83, 85, 84, 86, 85, 87, avgKpi()],
-            borderColor: '#047857',
-            backgroundColor: function (ctx) {
-              var ch = ctx.chart, area = ch.chartArea; if (!area) return null;
-              var g = ch.ctx.createLinearGradient(0, area.top, 0, area.bottom);
-              g.addColorStop(0, 'rgba(4,120,87,0.2)'); g.addColorStop(1, 'rgba(4,120,87,0)');
-              return g;
-            },
-            borderWidth: 2.5, fill: true, tension: 0.35, pointRadius: 0, pointHoverRadius: 5 },
-          { label: 'Мэдээлсэн эрсдэл', data: [15, 18, 12, 20, 22, 19, 25, 18, 22, 24, 26, DB.hazards.length],
-            borderColor: '#D97706', backgroundColor: 'transparent', borderWidth: 2, tension: 0.35,
-            pointRadius: 0, pointHoverRadius: 5, yAxisID: 'y1' },
-          { label: 'Осол', data: [1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-            borderColor: '#DC2626', backgroundColor: 'transparent', borderWidth: 2, tension: 0.35,
-            pointRadius: 0, pointHoverRadius: 5, yAxisID: 'y1' }
+          ds('Сургалт (тэнцсэн)', td.training, '#047857', '4,120,87', true),
+          ds('Эрсдэл мэдээлсэн', td.risk, '#D97706', '217,119,6', false),
+          ds('Осол', td.incident, '#DC2626', '220,38,38', false)
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { font: { family: 'Manrope', size: 12 }, padding: 14, usePointStyle: true, boxWidth: 8 } },
-          tooltip: { backgroundColor: '#1A1815', padding: 12, cornerRadius: 8 }
+          legend: { position: 'bottom', labels: { font: { family: 'Manrope', size: 12 }, padding: 16, usePointStyle: true, pointStyle: 'circle', boxWidth: 8 } },
+          tooltip: {
+            backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, titleFont: { family: 'Manrope', size: 12 },
+            bodyFont: { family: 'Manrope', size: 13 }, usePointStyle: true, boxPadding: 5,
+            callbacks: { label: function (c) { return '  ' + c.dataset.label + ': ' + c.parsed.y; } }
+          }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80' } },
-          y: { min: 0, max: 100, grid: { color: 'rgba(26,24,21,0.05)' }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', stepSize: 25 } },
-          y1: { position: 'right', min: 0, max: 35, grid: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', stepSize: 10 } }
+          x: { grid: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', maxRotation: 0, autoSkipPadding: 12 } },
+          y: {
+            beginAtZero: true, suggestedMax: maxV <= 4 ? maxV + 1 : Math.ceil(maxV * 1.15),
+            grid: { color: 'rgba(26,24,21,0.05)' },
+            ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', precision: 0, stepSize: maxV <= 6 ? 1 : undefined }
+          }
         }
       }
     });
