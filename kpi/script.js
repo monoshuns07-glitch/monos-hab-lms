@@ -4232,53 +4232,50 @@ function renderCharts() {
   if (trendEl) {
     if (charts.trend) charts.trend.destroy();
     var td = monthlyTrendData();
-    var maxV = Math.max(1, td.training.reduce(function (a, b) { return Math.max(a, b); }, 0),
-      td.risk.reduce(function (a, b) { return Math.max(a, b); }, 0),
-      td.incident.reduce(function (a, b) { return Math.max(a, b); }, 0));
-    function areaFill(rgb) {
-      return function (ctx) {
-        var ch = ctx.chart, area = ch.chartArea; if (!area) return 'rgba(' + rgb + ',0.10)';
-        var g = ch.ctx.createLinearGradient(0, area.top, 0, area.bottom);
-        g.addColorStop(0, 'rgba(' + rgb + ',0.28)'); g.addColorStop(1, 'rgba(' + rgb + ',0)');
-        return g;
-      };
-    }
-    function ds(label, data, color, rgb, fill) {
+    var stackMax = td.labels.map(function (_, i) { return td.training[i] + td.risk[i] + td.incident[i]; })
+      .reduce(function (a, b) { return Math.max(a, b); }, 0);
+    function bar(label, data, rgb) {
       return {
-        label: label, data: data, borderColor: color,
-        backgroundColor: fill ? areaFill(rgb) : 'transparent',
-        borderWidth: 2.5, fill: !!fill, tension: 0.4,
-        pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#fff',
-        pointBorderColor: color, pointBorderWidth: 2, spanGaps: true
+        label: label, data: data,
+        backgroundColor: function (ctx) {
+          var ch = ctx.chart, area = ch.chartArea; if (!area) return 'rgba(' + rgb + ',0.85)';
+          var g = ch.ctx.createLinearGradient(0, area.bottom, 0, area.top);
+          g.addColorStop(0, 'rgba(' + rgb + ',0.65)'); g.addColorStop(1, 'rgba(' + rgb + ',1)');
+          return g;
+        },
+        hoverBackgroundColor: 'rgba(' + rgb + ',1)',
+        borderRadius: 6, borderSkipped: false, borderWidth: 0,
+        maxBarThickness: 26, categoryPercentage: 0.62, barPercentage: 0.86
       };
     }
     charts.trend = new Chart(trendEl.getContext('2d'), {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: td.labels,
         datasets: [
-          ds('Сургалт (тэнцсэн)', td.training, '#047857', '4,120,87', true),
-          ds('Эрсдэл мэдээлсэн', td.risk, '#D97706', '217,119,6', false),
-          ds('Осол', td.incident, '#DC2626', '220,38,38', false)
+          bar('Сургалт (тэнцсэн)', td.training, '4,120,87'),
+          bar('Эрсдэл мэдээлсэн', td.risk, '217,119,6'),
+          bar('Осол', td.incident, '220,38,38')
         ]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { font: { family: 'Manrope', size: 12 }, padding: 16, usePointStyle: true, pointStyle: 'circle', boxWidth: 8 } },
+          legend: { position: 'bottom', labels: { font: { family: 'Manrope', size: 12, weight: '600' }, padding: 18, usePointStyle: true, pointStyle: 'circle', boxWidth: 8, boxHeight: 8 } },
           tooltip: {
-            backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, titleFont: { family: 'Manrope', size: 12 },
-            bodyFont: { family: 'Manrope', size: 13 }, usePointStyle: true, boxPadding: 5,
+            backgroundColor: '#1A1815', padding: 12, cornerRadius: 10, titleFont: { family: 'Manrope', size: 12, weight: '600' },
+            bodyFont: { family: 'Manrope', size: 13 }, usePointStyle: true, boxPadding: 6,
+            filter: function (c) { return c.parsed.y > 0; },
             callbacks: { label: function (c) { return '  ' + c.dataset.label + ': ' + c.parsed.y; } }
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', maxRotation: 0, autoSkipPadding: 12 } },
+          x: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', maxRotation: 0, autoSkipPadding: 8 } },
           y: {
-            beginAtZero: true, suggestedMax: maxV <= 4 ? maxV + 1 : Math.ceil(maxV * 1.15),
-            grid: { color: 'rgba(26,24,21,0.05)' },
-            ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', precision: 0, stepSize: maxV <= 6 ? 1 : undefined }
+            stacked: true, beginAtZero: true, suggestedMax: stackMax <= 4 ? stackMax + 1 : Math.ceil(stackMax * 1.15),
+            grid: { color: 'rgba(26,24,21,0.05)', drawTicks: false }, border: { display: false },
+            ticks: { font: { family: 'Manrope', size: 11 }, color: '#908A80', precision: 0, stepSize: stackMax <= 8 ? 1 : undefined, padding: 8 }
           }
         }
       }
