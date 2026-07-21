@@ -1957,6 +1957,68 @@ function renderDashboard() {
     }).join('');
   }
   renderActivity();
+  renderDashEmployees();
+}
+
+/* ---- Дашбоард дээрх ажилтны хайлт/шүүлт ---- */
+var dashEmpState = { q: '', dept: '', sort: 'kpi' };
+function renderDashEmployees() {
+  var wrap = $('#dashEmpList'); if (!wrap) return;
+  // Алба сонгох dropdown бөглөх
+  var deptSel = $('#dashEmpDept');
+  if (deptSel) {
+    var opts = '<option value="">Бүх алба</option>' + deptList().map(function (d) {
+      return '<option value="' + esc(d) + '"' + (d === dashEmpState.dept ? ' selected' : '') + '>' + esc(d) + '</option>';
+    }).join('');
+    if (deptSel.innerHTML !== opts) deptSel.innerHTML = opts;
+    deptSel.value = dashEmpState.dept;
+  }
+  // Input-уудыг нэг удаа wire хийх
+  var page = $('.page[data-page="dashboard"]');
+  if (page && !page._dashEmpWired) {
+    page._dashEmpWired = true;
+    var si = $('#dashEmpSearch'); if (si) si.addEventListener('input', function () { dashEmpState.q = this.value; renderDashEmployees(); });
+    var ds = $('#dashEmpDept'); if (ds) ds.addEventListener('change', function () { dashEmpState.dept = this.value; renderDashEmployees(); });
+    var so = $('#dashEmpSort'); if (so) so.addEventListener('change', function () { dashEmpState.sort = this.value; renderDashEmployees(); });
+    wrap.addEventListener('click', function (ev) {
+      var row = ev.target.closest('[data-emp-detail]');
+      if (row) openEmployeeDetail(row.getAttribute('data-emp-detail'));
+    });
+  }
+
+  var q = (dashEmpState.q || '').toLowerCase().trim();
+  var list = (DB.employees || []).filter(function (e) {
+    if (dashEmpState.dept && e.dept !== dashEmpState.dept) return false;
+    if (!q) return true;
+    return (e.name || '').toLowerCase().indexOf(q) > -1 || (e.dept || '').toLowerCase().indexOf(q) > -1 ||
+      (e.role || '').toLowerCase().indexOf(q) > -1 || (e.email || '').toLowerCase().indexOf(q) > -1;
+  });
+  if (dashEmpState.sort === 'name') list.sort(function (a, b) { return (a.name || '').localeCompare(b.name || '', 'mn'); });
+  else if (dashEmpState.sort === 'kpilow') list.sort(function (a, b) { return empTotal(a) - empTotal(b); });
+  else list.sort(function (a, b) { return empTotal(b) - empTotal(a); });
+
+  function kcol(v) { return v == null ? '#CBD5E1' : v >= 85 ? '#16A34A' : v >= 60 ? '#D97706' : '#DC2626'; }
+  function chip(lbl, v) {
+    return '<span style="font-size:10.5px;font-weight:600;color:' + kcol(v) + ';background:#F8FAFC;border:1px solid #EEF1F4;border-radius:6px;padding:1px 7px;white-space:nowrap">' + lbl + ' ' + (v == null ? '—' : v) + '</span>';
+  }
+  wrap.innerHTML = list.length ? list.map(function (e) {
+    var tot = empTotal(e), tc = kcol(tot);
+    return '<div data-emp-detail="' + e.id + '" style="display:flex;align-items:center;gap:12px;padding:11px 8px;border-bottom:1px solid #F1F5F9;cursor:pointer;border-radius:8px" onmouseover="this.style.background=\'#F8FAFC\'" onmouseout="this.style.background=\'\'">' +
+      '<div class="avatar avatar-sm" style="width:36px;height:36px;flex-shrink:0">' + esc(e.initials || '') + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13.5px;font-weight:600;color:#1E293B">' + esc(e.name) +
+      (e.onLeave ? ' <span class="tag tag-warn" style="font-size:9px">Чөлөөтэй</span>' : '') + '</div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:5px">' + esc(e.dept || '') + (e.role ? ' · ' + esc(e.role) : '') + '</div>' +
+      '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
+      chip('Давтан', kpiDavtan(e)) + chip('Шалг', kpiExam(e)) + chip('Видео', kpiVideo(e)) +
+      chip('Даалг', kpiTask(e)) + chip('Аюул/NM', empBonusScore(e)) + '</div></div>' +
+      '<div style="text-align:center;flex-shrink:0"><div style="font-size:20px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif;color:' + tc + '">' + tot + '</div>' +
+      '<div style="font-size:10px;color:#94A3B8">KPI</div></div>' +
+      '<i class="ti ti-chevron-right" style="color:#CBD5E1;flex-shrink:0"></i></div>';
+  }).join('') : '<div class="empty-state" style="padding:30px"><i class="ti ti-search-off"></i><div>Ажилтан олдсонгүй</div></div>';
+
+  var cnt = $('#dashEmpCount');
+  if (cnt) cnt.textContent = list.length + ' ажилтан';
 }
 
 function renderActivity() {
