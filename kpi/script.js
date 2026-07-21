@@ -282,7 +282,8 @@ function seedDB() {
       weights: { training: 20, participation: 30, discipline: 25, health: 15, leadership: 10 },
       /* ====== Шинэ KPI арга зүйн тохиргоо — бүгд эндээс өөрчлөгдөнө ====== */
       kpi: {
-        weights: { video: 50, exam: 22, improvement: 8, firstTry: 5, bonus: 15 }, // нийлбэр = 100
+        // Давтан сургалт + шалгалт + видео(LMS) + даалгавар (урьдчилсан/анхан ОРОХГҮЙ) + аюул бонус. Нийлбэр = 100
+        weights: { davtan: 30, exam: 25, video: 25, task: 20, bonus: 15 },
         baseThreshold: 75,   // албаны coverage-д тооцох суурь оноо (бонусгүй) босго
         bonusTarget: 30,     // энэ хэмжээний бонус оноо = бонус жингийн 100%
         bonus: {
@@ -586,6 +587,10 @@ function migrateDB() {
   // Дутуу дэд тохиргоог нөхөх (хэрэглэгчийн өөрчилснийг хадгална)
   var def = seedDB().settings.kpi, k = DB.settings.kpi;
   if (!k.weights) k.weights = def.weights;
+  // Хуучин жингийн бүтэц (video/exam/improvement/firstTry) → шинэ (davtan/exam/video/task) руу шилжүүлнэ
+  if (k.weights && (k.weights.improvement != null || k.weights.firstTry != null || k.weights.davtan == null || k.weights.task == null)) {
+    k.weights = { davtan: def.weights.davtan, exam: def.weights.exam, video: def.weights.video, task: def.weights.task, bonus: (k.weights.bonus != null ? k.weights.bonus : def.weights.bonus) };
+  }
   if (k.baseThreshold == null) k.baseThreshold = def.baseThreshold;
   if (k.bonusTarget == null) k.bonusTarget = def.bonusTarget;
   if (!k.bonus) k.bonus = def.bonus;
@@ -692,27 +697,84 @@ function empTrainingCoverage(e) {
   return Math.round(done / all.length * 100);
 }
 
-/* — Суурь үзүүлэлтүүд (хувь хүн, 0–100). Юу ч хасахгүй — — */
+/* ============================================================
+   ШИНЭ KPI АРГА ЗҮЙ (2026-07): урьдчилсан/анхан зааварчилгаа KPI-д ОРОХГҮЙ.
+   Зөвхөн ДАВТАН зааварчилгаа + шалгалтын дүн + видео сургалт (LMS) + даалгавар.
+   Ажилтан 3 сар тутам давтан сургалтад хамрагдаж, шалгалт тэнцсэн байх ёстой.
+   ============================================================ */
+var KPI_DAVTAN_KEYS = ['davtan_eeljit', 'davtan_eeljit_bus', 'davtan_odor_tutmiin'];
+var DAVTAN_VALID_DAYS = 90; // 3 сар — үүнээс хэтэрвэл дахин хамрагдах шаардлагатай
+
+function _daysAgo(iso) {
+  if (!iso) return Infinity;
+  var t = new Date(iso).getTime();
+  if (isNaN(t)) return Infinity;
+  return (Date.now() - t) / 86400000;
+}
+/* Нэг давтан модулийн оноо (0-100): тэнцсэн + сүүлийн 3 сард = 100 */
+function davtanModScore(p) {
+  if (!p) return 0;
+  var when = p.examTakenAt || p.trainingCompletedAt;
+  var recent = _daysAgo(when) <= DAVTAN_VALID_DAYS;
+  if (p.examPassed && recent) return 100;   // тэнцсэн + хугацаандаа
+  if (p.examPassed && !recent) return 40;   // тэнцсэн ч 3 сар хэтэрсэн — шинэчлэх хэрэгтэй
+  if (p.trainingCompleted) return 55;       // сургалтаа үзсэн, шалгалт тэнцээгүй
+  if (p.trainingStarted) return 20;
+  return 0;
+}
+/* 1) Давтан сургалтын хамралт (сүүлийн 3 сард тэнцсэн эсэх). Нээгдээгүй бол null */
+function kpiDavtan(e) {
+  var keys = KPI_DAVTAN_KEYS.filter(function (k) { return isModTrainingVisible(e, k); });
+  if (!keys.length) return null;
+  var sum = 0;
+  keys.forEach(function (k) { sum += davtanModScore(getEmpProg(e.id, k)); });
+  return Math.round(sum / keys.length);
+}
+/* 2) Шалгалтын дүн: давтан модулиудын шалгалтын дундаж оноо. Өгөөгүй бол null */
+function kpiExam(e) {
+  var scores = [];
+  KPI_DAVTAN_KEYS.forEach(function (k) {
+    var p = getEmpProg(e.id, k);
+    if (p && p.examTaken && p.examScore != null) scores.push(_f(p.examScore));
+  });
+  // Гадаад ХАБЭА шалгалтын дүн байвал (урьдчилсан/анхан бус) нэмж тооцно
+  if (e.examScore != null && e.habeaExams && e.habeaExams.length) {
+    // habeaExams-с зөвхөн давтан төрлийг оруулах боломжгүй тул нийт дүнг нэмнэ
+  }
+  if (!scores.length) return null;
+  return clamp(Math.round(avg(scores)), 0, 100);
+}
+/* 3) Видео сургалт (LMS): тэнцсэн/оногдсон. Сургалт оногдоогүй/ачаалаагүй бол null */
 function kpiVideo(e) {
-  var cov = empTrainingCoverage(e);                          // гадны сургалтын хамрах %
-  var vid = clamp(Math.round(_f(e.video, e.training)), 0, 100); // видео үзэлтийн импорт / fallback
-  if (cov == null) return vid;                                // гадны сургалт алга → видео импорт
-  return Math.max(cov, vid);                                  // хоёулаа сургалтын дүн — өндрийг нь авна
+  if (DEMO || !fbReady || !LMS.loaded) return null;
+  var s = empLmsStats(e);
+  if (!s.total) return null;
+  return Math.round(s.passed / s.total * 100);
 }
-function kpiExam(e) { return clamp(Math.round(_f(e.examScore, e.training)), 0, 100); }
-function kpiImprovement(e) {
-  if (!e.examScore) return 0;                 // шалгалт өгөөгүй — ахиц хэмжих юм алга → 0
-  if (e.examPrev == null) return 0;           // ганц шалгалт — өмнөх дата алга, ахиц хэмжихгүй → 0
-  return clamp(Math.round(50 + (_f(e.examScore) - _f(e.examPrev)) * 4), 0, 100); // Урьдчилсан→Дараах өссөн нь өндөр, буурсан нь бага
+/* 4) Даалгаврын биелэлт: биелүүлсэн/оногдсон. Оногдоогүй бол null */
+function kpiTask(e) {
+  var t = empTaskStats(e);
+  if (!t.total) return null;
+  return Math.round(t.done / t.total * 100);
 }
-function kpiFirstTry(e) { return e.firstTry ? 100 : 0; }
+
+/* KPI-ийн хүчин зүйлс (тохиргооны жинтэй). Дата байхгүй зүйлийг алгасаж жинг дахин хуваарилна */
+function empKpiFactors(e) {
+  var w = kpiCfg().weights;
+  return [
+    { key: 'davtan', label: 'Давтан сургалт', v: kpiDavtan(e), w: _f(w.davtan) },
+    { key: 'exam',   label: 'Шалгалтын дүн',  v: kpiExam(e),   w: _f(w.exam) },
+    { key: 'video',  label: 'Видео сургалт',  v: kpiVideo(e),  w: _f(w.video) },
+    { key: 'task',   label: 'Даалгавар',      v: kpiTask(e),   w: _f(w.task) }
+  ];
+}
 
 /* Суурь оноо (бонусгүй, 0–100). Албаны coverage үүн дээр тооцогдоно */
 function empBase(e) {
-  var w = kpiCfg().weights, bw = w.video + w.exam + w.improvement + w.firstTry;
-  if (bw <= 0) return 0;
-  return Math.round((kpiVideo(e) * w.video + kpiExam(e) * w.exam +
-    kpiImprovement(e) * w.improvement + kpiFirstTry(e) * w.firstTry) / bw);
+  var parts = empKpiFactors(e).filter(function (p) { return p.v != null && p.w > 0; });
+  var ws = parts.reduce(function (a, p) { return a + p.w; }, 0);
+  if (!ws) return 0;
+  return Math.round(parts.reduce(function (a, p) { return a + p.v * p.w; }, 0) / ws);
 }
 
 /* — Бонус (нэмэгдэх, зөвхөн баталгаажсан мэдээллээс, сарын cap-тай) — */
@@ -747,18 +809,22 @@ function empBonusScore(e) { return clamp(Math.round(empBonusPoints(e) / (kpiCfg(
 
 /* Нийт оноо (0–100): суурь хувь + бонус хувь. Бонус зөвхөн НЭМНЭ, хэзээ ч хасахгүй */
 function empTotal(e) {
-  var w = kpiCfg().weights, bw = w.video + w.exam + w.improvement + w.firstTry;
-  return Math.round((empBase(e) * bw + empBonusScore(e) * w.bonus) / 100);
+  var w = kpiCfg().weights, bw = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task);
+  var bonusW = _f(w.bonus);
+  return Math.round((empBase(e) * bw + empBonusScore(e) * bonusW) / (bw + bonusW || 1));
 }
 function avgKpi() { return avg(DB.employees.map(empTotal)); }
 
-/* Суурь үзүүлэлт + бонусын дундаж (KPI хуудсанд) */
+/* Хүчин зүйл тус бүрийн дундаж (зөвхөн дататай ажилтнаар). KPI хуудас/дашбоардад */
+function _avgFactor(fn) {
+  var vals = (DB.employees || []).map(fn).filter(function (v) { return v != null; });
+  return vals.length ? Math.round(avg(vals)) : 0;
+}
 function categoryAverages() {
-  var e = DB.employees;
   return {
-    video: Math.round(avg(e.map(kpiVideo))), exam: Math.round(avg(e.map(kpiExam))),
-    improvement: Math.round(avg(e.map(kpiImprovement))), firstTry: Math.round(avg(e.map(kpiFirstTry))),
-    bonus: Math.round(avg(e.map(empBonusScore)))
+    davtan: _avgFactor(kpiDavtan), exam: _avgFactor(kpiExam),
+    video: _avgFactor(kpiVideo), task: _avgFactor(kpiTask),
+    bonus: _avgFactor(empBonusScore)
   };
 }
 
@@ -1734,16 +1800,16 @@ function renderEmployeeDashboard() {
 
   /* ---- KPI задаргаа ---- */
   var w = kpiCfg().weights;
-  var bw = w.video + w.exam + w.improvement + w.firstTry;
-  var bonusW = w.bonus;
+  var bw = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task);
+  var bonusW = _f(w.bonus);
   var totalW = bw + bonusW;
   var components = [
-    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: w.video, color: '#3730A3' },
+    { label: 'Давтан сургалт', icon: 'ti-refresh', score: kpiDavtan(e), weight: w.davtan, color: '#3730A3' },
     { label: 'Шалгалтын дүн', icon: 'ti-clipboard-check', score: kpiExam(e), weight: w.exam, color: '#0891B2' },
-    { label: 'Шалгалтын ахиц', icon: 'ti-trending-up', score: kpiImprovement(e), weight: w.improvement, color: '#16A34A' },
-    { label: 'Анх тэнцсэн', icon: 'ti-medal', score: kpiFirstTry(e), weight: w.firstTry, color: '#D97706' },
-    { label: 'Бонус оноо', icon: 'ti-gift', score: empBonusScore(e), weight: bonusW, color: '#DC2626' }
-  ];
+    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: w.video, color: '#C2410C' },
+    { label: 'Даалгавар', icon: 'ti-checkbox', score: kpiTask(e), weight: w.task, color: '#16A34A' },
+    { label: 'Аюул/NM бонус', icon: 'ti-gift', score: empBonusScore(e), weight: bonusW, color: '#DC2626' }
+  ].map(function (c) { if (c.score == null) c.score = 0; return c; });
   var firstName = (e.name || '').split(/\s+/).pop();
 
   sec.innerHTML =
@@ -1850,8 +1916,8 @@ function renderDashboard() {
 
   /* Радар легенд — шинэ үзүүлэлтээр динамик */
   var cat = categoryAverages();
-  var legVals = [cat.video, cat.exam, cat.improvement, cat.firstTry, cat.bonus];
-  var legLabels = ['Видео', 'Шалгалт', 'Ахиц', 'Анх тэнцсэн', 'Бонус'];
+  var legVals = [cat.davtan, cat.exam, cat.video, cat.task, cat.bonus];
+  var legLabels = ['Давтан', 'Шалгалт', 'Видео', 'Даалгавар', 'Бонус'];
   $$('.page[data-page="dashboard"] .legend-item').forEach(function (li, i) {
     if (legVals[i] == null) return;
     var dot = li.querySelector('.dot') ? li.querySelector('.dot').outerHTML : '';
@@ -2029,7 +2095,7 @@ function renderEmployees() {
   // Видео сургалтын (LMS) явцыг нэг удаа ачаалаад дахин зурна
   if (!DEMO && fbReady && !LMS.loaded && !LMS.loading) {
     LMS.loading = true;
-    loadLmsData().then(function () { LMS.loading = false; try { renderEmployees(); } catch (e) {} });
+    loadLmsData().then(function () { LMS.loading = false; try { renderEmployees(); renderKpiPage(); renderDashboard(); if (charts.radar) renderCharts(); } catch (e) {} });
   }
   var list = filteredEmployees();
   var total = list.length;
@@ -2363,10 +2429,10 @@ function wireEmployeesPage() {
 
 /* ============ KPI хуудас (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
 var KPI_BASE_META = [
-  { key: 'video', label: 'Видео сургалтын үзэлт', icon: 'ti-player-play', color: ['#FEF3C7', '#92400E'], desc: 'Гадаад платформоос импортолсон үзэлтийн %', fn: kpiVideo },
-  { key: 'exam', label: 'Танхим шалгалтын дүн', icon: 'ti-clipboard-check', color: ['#D1FAE5', '#065F46'], desc: 'QR кодоор өгсөн шалгалтын дундаж дүн', fn: kpiExam },
-  { key: 'improvement', label: 'Шалгалтын дүнгийн ахиц', icon: 'ti-trending-up', color: ['#DBEAFE', '#1E40AF'], desc: 'Өмнөх улирлаас дээшилсэн нь урамшина', fn: kpiImprovement },
-  { key: 'firstTry', label: 'Дахин шалгалтгүй тэнцсэн', icon: 'ti-medal', color: ['#E0E7FF', '#3730A3'], desc: 'Анхны шалгалтаа дан тэнцсэн (жижиг бонус)', fn: kpiFirstTry }
+  { key: 'davtan', label: 'Давтан зааварчилгаа', icon: 'ti-refresh', color: ['#E0E7FF', '#3730A3'], desc: '3 сар тутам давтан сургалтад хамрагдаж шалгалт тэнцсэн эсэх', fn: kpiDavtan },
+  { key: 'exam', label: 'Шалгалтын дүн', icon: 'ti-clipboard-check', color: ['#D1FAE5', '#065F46'], desc: 'Давтан зааварчилгааны шалгалтын дундаж оноо', fn: kpiExam },
+  { key: 'video', label: 'Видео сургалт (LMS)', icon: 'ti-player-play', color: ['#FFEDD5', '#9A3412'], desc: 'Оногдсон видео сургалтаас тэнцсэн хувь', fn: kpiVideo },
+  { key: 'task', label: 'Даалгаврын биелэлт', icon: 'ti-checkbox', color: ['#DBEAFE', '#1E40AF'], desc: 'Ажилтанд оногдсон даалгаврын биелэлт', fn: kpiTask }
 ];
 function scoreTone(v) { return v >= 88 ? '' : (v >= 75 ? ' warn' : ' danger'); }
 function badgeTone(v) { return v >= 88 ? 'success' : (v >= 75 ? 'warn' : 'danger'); }
@@ -2389,8 +2455,8 @@ function renderKpiPage() {
   // Динамик томьёо
   var fr = $('.page[data-page="kpi"] .formula');
   if (fr) {
-    var terms = [['f-amber', 'Видео', w.video], ['f-teal', 'Шалгалт', w.exam], ['f-emerald', 'Ахиц', w.improvement],
-      ['f-blue', 'Анх тэнцсэн', w.firstTry], ['f-coral', 'Бонус', w.bonus]];
+    var terms = [['f-blue', 'Давтан', w.davtan], ['f-teal', 'Шалгалт', w.exam], ['f-amber', 'Видео', w.video],
+      ['f-emerald', 'Даалгавар', w.task], ['f-coral', 'Бонус', w.bonus]];
     fr.innerHTML = '<span>Нийт =</span>' + terms.map(function (t, i) {
       return (i ? '<span>+</span>' : '') + '<span class="f-term ' + t[0] + '">' + t[1] + ' × <strong>' + (t[2] / 100).toFixed(2) + '</strong></span>';
     }).join('') + '<span style="margin-left:8px;font-size:12px;color:#16A34A;font-weight:600">бонус зөвхөн нэмнэ ↑</span>';
@@ -2402,7 +2468,7 @@ function renderKpiPage() {
 
   // — 4 суурь үзүүлэлт —
   KPI_BASE_META.forEach(function (m) {
-    var v = emps.length ? Math.round(avg(emps.map(m.fn))) : 0;
+    var v = _avgFactor(m.fn);
     html += '<div class="kpi-cat-card"><div class="kpi-cat-head">' +
       '<div class="kpi-cat-icon" style="background:' + m.color[0] + ';color:' + m.color[1] + '"><i class="ti ' + m.icon + '"></i></div>' +
       '<div><h3>' + m.label + '</h3><p>Жин: ' + w[m.key] + '%</p></div>' +
@@ -2462,8 +2528,9 @@ function renderKpiPage() {
 function kpiMethodologyHtml() {
   var c = kpiCfg();
   return '<div style="line-height:1.6;font-size:14px">' +
-    '<p><strong>Зарчим:</strong> Энэ систем "осол болоогүй"-г биш, ажилтан <strong>идэвхтэй оролцож байгааг</strong> хэмжинэ (leading indicator). Бонус зөвхөн <strong>нэмэгдэнэ</strong>, хэзээ ч хасагдахгүй. KPI урамшуулдаг — шийтгэдэггүй.</p>' +
-    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Суурь (видео ' + c.weights.video + '% + шалгалт ' + c.weights.exam + '% + ахиц ' + c.weights.improvement + '% + анх тэнцсэн ' + c.weights.firstTry + '%) + Бонус (' + c.weights.bonus + '%).</p>' +
+    '<p><strong>Зарчим:</strong> Энэ систем ажилтан <strong>идэвхтэй оролцож байгааг</strong> хэмжинэ. <strong>Урьдчилсан ба анхан шатны зааварчилгаа KPI-д ОРОХГҮЙ</strong> (нэг удаагийн шинэ ажилтны танилцуулга тул). Бонус зөвхөн <strong>нэмэгдэнэ</strong>, хэзээ ч хасагдахгүй.</p>' +
+    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Давтан сургалт ' + c.weights.davtan + '% + Шалгалтын дүн ' + c.weights.exam + '% + Видео сургалт(LMS) ' + c.weights.video + '% + Даалгавар ' + c.weights.task + '% + Аюул/NM бонус ' + c.weights.bonus + '%.</p>' +
+    '<p style="margin-top:10px"><strong>Давтан зааварчилгаа:</strong> Ажилтан бүр <strong>3 сар тутам</strong> давтан зааварчилгааны сургалтад хамрагдаж, шалгалт өгч тэнцсэн байх ёстой. 3 сар хэтэрвэл оноо буурч, дахин хамрагдах шаардлагатай.</p>' +
     '<p style="margin-top:10px"><strong>Бонус</strong> зөвхөн ХАБ ажилтан <strong>баталгаажуулсны дараа</strong> тооцогдоно. Аюул +' + c.bonus.hazard + '. Near-miss эрсдэлээр: бага ' + c.bonus.nearMiss.low + ', дунд ' + c.bonus.nearMiss.mid + ', өндөр ' + c.bonus.nearMiss.high + '. Нэг хүн сард дээд тал нь ' + c.bonus.monthlyCap + ' мэдээллээр бонус авна (тоо биш чанарыг урамшуулна).</p>' +
     '<p style="margin-top:10px"><strong>Албаны оноо</strong> = босго (' + c.baseThreshold + ') давсан гишүүдийн хувь (coverage) + албаны бонус + анхны тусламжийн хайрцгийн бүрэн бүтэн байдал + PPE мөрдөлтийн %. <em>Нэг хүний хоцрогдол бүхэл албыг унагаахгүй.</em></p>' +
     '<p style="margin-top:10px;color:#64748B;font-size:13px">Бүх жин, босго, бонус оноо, cap-ыг <strong>Тохиргоо</strong> хэсгээс өөрчилж болно — кодонд хатуу бичээгүй.</p>' +
@@ -3068,7 +3135,7 @@ function renderSettings() {
   function inp(label, id, val, type, attrs) {
     return '<div class="form-group flex-grow"><label>' + label + '</label><input class="cfg-input" type="' + (type || 'number') + '" id="' + id + '" value="' + esc(val) + '" ' + (attrs || 'min="0" max="100"') + '></div>';
   }
-  var wsum = w.video + w.exam + w.improvement + w.firstTry + w.bonus;
+  var wsum = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task) + _f(w.bonus);
   var dsum = dw.coverage + dw.bonus + dw.firstAid + dw.ppe;
   function sumBox(id, sum) {
     return '<div id="' + id + '" class="weight-total" style="background:' + (sum === 100 ? 'var(--emerald-light)' : 'var(--amber-light)') + ';color:' + (sum === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)') + '">Нийт: <strong>' + sum + '%</strong>' + (sum === 100 ? ' ✓' : ' (100 байх ёстой)') + '</div>';
@@ -3085,9 +3152,9 @@ function renderSettings() {
     '<div class="form-row">' + inp('Регистрийн дугаар', 'setOrgReg', o.regNo || '', 'text', '') + inp('Ажилтны тоо', 'setOrgHc', o.headcount || 0, 'number', 'min="0" max="100000"') + '</div>' +
     '<div class="form-actions"><button class="btn btn-primary" data-saveorg="1">Хадгалах</button></div></div></div>' +
 
-    '<div class="card"><h3>KPI үнэлгээний жин</h3><p class="card-subtitle">Суурь үзүүлэлт + бонусын жин. Нийт 100% байх ёстой. Бонус зөвхөн нэмнэ, хэзээ ч хасахгүй.</p><div class="form">' +
-    '<div class="form-row">' + inp('Видео үзэлт', 'wVideo', w.video) + inp('Шалгалт', 'wExam', w.exam) + inp('Ахиц', 'wImp', w.improvement) + '</div>' +
-    '<div class="form-row">' + inp('Анх тэнцсэн', 'wFt', w.firstTry) + inp('Бонус', 'wBonus', w.bonus) + '</div>' +
+    '<div class="card"><h3>KPI үнэлгээний жин</h3><p class="card-subtitle">Давтан сургалт + шалгалт + видео(LMS) + даалгавар + бонус. Нийт 100% байх ёстой. (Урьдчилсан/анхан зааварчилгаа KPI-д ороогүй.)</p><div class="form">' +
+    '<div class="form-row">' + inp('Давтан сургалт', 'wDavtan', w.davtan) + inp('Шалгалтын дүн', 'wExam', w.exam) + '</div>' +
+    '<div class="form-row">' + inp('Видео сургалт (LMS)', 'wVideo', w.video) + inp('Даалгавар', 'wTask', w.task) + inp('Аюул/NM бонус', 'wBonus', w.bonus) + '</div>' +
     sumBox('wsum', wsum) +
     '<div class="form-actions"><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
 
@@ -3123,7 +3190,7 @@ function renderSettings() {
 }
 function updateConfigSums() {
   function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
-  [['wsum', gv('wVideo') + gv('wExam') + gv('wImp') + gv('wFt') + gv('wBonus')], ['dsum', gv('dCov') + gv('dBon') + gv('dFa') + gv('dPpe')]].forEach(function (p) {
+  [['wsum', gv('wDavtan') + gv('wExam') + gv('wVideo') + gv('wTask') + gv('wBonus')], ['dsum', gv('dCov') + gv('dBon') + gv('dFa') + gv('dPpe')]].forEach(function (p) {
     var el = $('#' + p[0]); if (!el) return; var s = p[1];
     el.innerHTML = 'Нийт: <strong>' + s + '%</strong>' + (s === 100 ? ' ✓' : ' (100 байх ёстой)');
     el.style.background = s === 100 ? 'var(--emerald-light)' : 'var(--amber-light)';
@@ -3139,8 +3206,8 @@ function saveOrgConfig() {
 function saveKpiConfig() {
   var c = kpiCfg();
   function gv(id, d) { var el = $('#' + id); return el ? clamp(num(el.value, d), 0, 100000) : d; }
-  var nw = { video: gv('wVideo', 50), exam: gv('wExam', 22), improvement: gv('wImp', 8), firstTry: gv('wFt', 5), bonus: gv('wBonus', 15) };
-  var wsum = nw.video + nw.exam + nw.improvement + nw.firstTry + nw.bonus;
+  var nw = { davtan: gv('wDavtan', 30), exam: gv('wExam', 25), video: gv('wVideo', 25), task: gv('wTask', 20), bonus: gv('wBonus', 15) };
+  var wsum = nw.davtan + nw.exam + nw.video + nw.task + nw.bonus;
   if (wsum !== 100) { toast('KPI жингийн нийлбэр 100% байх ёстой (одоо ' + wsum + '%)', 'warn'); return; }
   var nd = { coverage: gv('dCov', 55), bonus: gv('dBon', 15), firstAid: gv('dFa', 15), ppe: gv('dPpe', 15) };
   var dsum = nd.coverage + nd.bonus + nd.firstAid + nd.ppe;
@@ -4102,12 +4169,12 @@ function renderCharts() {
   if (radarEl) {
     if (charts.radar) charts.radar.destroy();
     var cat = categoryAverages();
-    var cur = [cat.video, cat.exam, cat.improvement, cat.firstTry, cat.bonus];
+    var cur = [cat.davtan, cat.exam, cat.video, cat.task, cat.bonus];
     var prev = cur.map(function (v) { return Math.max(0, v - 3 - Math.round(Math.random() * 2)); });
     charts.radar = new Chart(radarEl.getContext('2d'), {
       type: 'radar',
       data: {
-        labels: [['Видео'], ['Шалгалт'], ['Ахиц'], ['Анх', 'тэнцсэн'], ['Бонус']],
+        labels: [['Давтан'], ['Шалгалт'], ['Видео'], ['Даалгавар'], ['Бонус']],
         datasets: [
           { label: 'Энэ сар', data: cur, backgroundColor: 'rgba(4,120,87,0.15)', borderColor: 'rgba(4,120,87,1)',
             borderWidth: 2, pointBackgroundColor: 'rgba(4,120,87,1)', pointRadius: 4, pointHoverRadius: 6 },
@@ -4830,11 +4897,11 @@ function openEmployeeDetail(id) {
   if (!e) return;
   var w = kpiCfg().weights;
   var cats = [
-    ['Видео сургалтын үзэлт', kpiVideo(e), w.video],
-    ['Танхим шалгалтын дүн', kpiExam(e), w.exam],
-    ['Шалгалтын ахиц', kpiImprovement(e), w.improvement],
-    ['Дахин шалгалтгүй тэнцсэн', kpiFirstTry(e), w.firstTry]
-  ];
+    ['Давтан сургалт (3 сар)', kpiDavtan(e), w.davtan],
+    ['Шалгалтын дүн', kpiExam(e), w.exam],
+    ['Видео сургалт (LMS)', kpiVideo(e), w.video],
+    ['Даалгаврын биелэлт', kpiTask(e), w.task]
+  ].map(function (c) { return [c[0], (c[1] == null ? 0 : c[1]), c[2], c[1] == null]; });
   var bp = empBonusPoints(e);
   var html = '<div class="detail-grid">' +
     '<div class="detail-row"><span>Албан тушаал</span><b>' + esc(e.role) + '</b></div>' +
@@ -4844,9 +4911,10 @@ function openEmployeeDetail(id) {
     '<div class="detail-row"><span>Төлөв</span><b>' + (e.onLeave ? 'Чөлөөтэй' : 'Идэвхтэй') + '</b></div></div>' +
     '<div style="font-size:12px;color:#8A94A6;margin:12px 2px 4px;font-weight:600">СУУРЬ ҮЗҮҮЛЭЛТ · ' + empBase(e) + '/100</div>' +
     '<div class="kpi-breakdown">' + cats.map(function (c) {
-      return '<div class="kb-row"><div class="kb-name">' + esc(c[0]) + ' <small>· жин ' + c[2] + '%</small></div>' +
-        '<div class="kb-bar"><div class="kb-fill" style="width:' + c[1] + '%"></div></div>' +
-        '<div class="kb-val">' + c[1] + '</div></div>';
+      var noData = c[3];
+      return '<div class="kb-row"><div class="kb-name">' + esc(c[0]) + ' <small>· жин ' + c[2] + '%' + (noData ? ' · дата алга' : '') + '</small></div>' +
+        '<div class="kb-bar"><div class="kb-fill" style="width:' + c[1] + '%' + (noData ? ';opacity:.3' : '') + '"></div></div>' +
+        '<div class="kb-val">' + (noData ? '—' : c[1]) + '</div></div>';
     }).join('') + '</div>' +
     '<div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;background:#F0FDF4;border-radius:10px">' +
     '<i class="ti ti-gift" style="color:#16A34A;font-size:18px"></i>' +
@@ -5037,10 +5105,11 @@ function download(filename, content, mime) {
   setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
 function exportEmployeesCSV() {
-  var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Видео %', 'Шалгалт', 'Ахиц', 'Анх тэнцсэн', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
+  var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Давтан сургалт', 'Шалгалт', 'Видео(LMS)', 'Даалгавар', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
   var lines = [head];
+  function _n(v) { return v == null ? '' : v; }
   filteredEmployees().forEach(function (e) {
-    lines.push([e.id, e.name, e.role, e.dept, kpiVideo(e), kpiExam(e), kpiImprovement(e), kpiFirstTry(e), empBase(e), empBonusPoints(e), empTotal(e)]);
+    lines.push([e.id, e.name, e.role, e.dept, _n(kpiDavtan(e)), _n(kpiExam(e)), _n(kpiVideo(e)), _n(kpiTask(e)), empBase(e), empBonusPoints(e), empTotal(e)]);
   });
   var csv = '﻿' + lines.map(function (r) {
     return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
@@ -5073,11 +5142,11 @@ function downloadReport() {
     '<tr><td>Осолгүй өдөр</td><td>' + dayCounter() + '</td></tr>' +
     '<tr><td>Сайжруулалтын санал</td><td>' + DB.suggestions.length + '</td></tr></table>' +
     '<h2>Суурь үзүүлэлтийн дундаж</h2><table><tr><th>Үзүүлэлт</th><th>Оноо</th></tr>' +
-    '<tr><td>Видео сургалтын үзэлт</td><td>' + cat.video + '</td></tr>' +
-    '<tr><td>Танхим шалгалтын дүн</td><td>' + cat.exam + '</td></tr>' +
-    '<tr><td>Шалгалтын ахиц</td><td>' + cat.improvement + '</td></tr>' +
-    '<tr><td>Дахин шалгалтгүй тэнцсэн</td><td>' + cat.firstTry + '</td></tr>' +
-    '<tr><td>Нэмэгдэх бонус (дундаж)</td><td>' + cat.bonus + '</td></tr></table>' +
+    '<tr><td>Давтан зааварчилгаа</td><td>' + cat.davtan + '</td></tr>' +
+    '<tr><td>Шалгалтын дүн</td><td>' + cat.exam + '</td></tr>' +
+    '<tr><td>Видео сургалт (LMS)</td><td>' + cat.video + '</td></tr>' +
+    '<tr><td>Даалгаврын биелэлт</td><td>' + cat.task + '</td></tr>' +
+    '<tr><td>Аюул/NM бонус (дундаж)</td><td>' + cat.bonus + '</td></tr></table>' +
     '<h2>Албадын оноо</h2><table><tr><th>Алба</th><th>Ажилтан</th><th>Coverage %</th><th>Нийт оноо</th></tr>' +
     deptRows.map(function (r) { return '<tr><td>' + esc(r.d) + '</td><td>' + r.n + '</td><td>' + r.cov + '%</td><td>' + r.s + '</td></tr>'; }).join('') +
     '</table><p class="muted" style="margin-top:30px">Энэхүү тайланг SafeWork ХАБЭА систем автоматаар үүсгэв.</p>' +
