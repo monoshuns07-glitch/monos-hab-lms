@@ -282,8 +282,8 @@ function seedDB() {
       weights: { training: 20, participation: 30, discipline: 25, health: 15, leadership: 10 },
       /* ====== Шинэ KPI арга зүйн тохиргоо — бүгд эндээс өөрчлөгдөнө ====== */
       kpi: {
-        // Давтан сургалт + шалгалт + видео(LMS) + даалгавар (урьдчилсан/анхан ОРОХГҮЙ) + аюул бонус. Нийлбэр = 100
-        weights: { davtan: 30, exam: 25, video: 25, task: 20, bonus: 15 },
+        // Босго(осол/зөрчилгүй) + давтан+шалгалт + видео(LMS, давтангүй сард 0.45) + даалгавар + аюул бонус
+        weights: { bosgo: 30, davtan: 20, video: 25, task: 20, bonus: 15 },
         baseThreshold: 75,   // албаны coverage-д тооцох суурь оноо (бонусгүй) босго
         bonusTarget: 30,     // энэ хэмжээний бонус оноо = бонус жингийн 100%
         bonus: {
@@ -299,6 +299,8 @@ function seedDB() {
     employees: [],
     extTrainings: [],
     extAttendance: {},
+    davtanMonths: {},   // { 'YYYY-M': ['Алба1', ...] } — тухайн цалингийн сард давтантай албад
+    violations: [],     // [{ id, empId, date, desc, points, by }] — босго онооноос хасагдах зөрчлүүд
     hazards: [],
     suggestions: [],
     incidents: [],
@@ -582,14 +584,16 @@ function migrateDB() {
   if (!DB.empProgress) DB.empProgress = {};
   if (!Array.isArray(DB.extTrainings)) DB.extTrainings = [];
   if (!DB.extAttendance || typeof DB.extAttendance !== 'object') DB.extAttendance = {};
+  if (!DB.davtanMonths || typeof DB.davtanMonths !== 'object') DB.davtanMonths = {};
+  if (!Array.isArray(DB.violations)) DB.violations = [];
   if (!DB.settings) DB.settings = seedDB().settings;
   if (!DB.settings.kpi) DB.settings.kpi = seedDB().settings.kpi;
   // Дутуу дэд тохиргоог нөхөх (хэрэглэгчийн өөрчилснийг хадгална)
   var def = seedDB().settings.kpi, k = DB.settings.kpi;
   if (!k.weights) k.weights = def.weights;
-  // Хуучин жингийн бүтэц (video/exam/improvement/firstTry) → шинэ (davtan/exam/video/task) руу шилжүүлнэ
-  if (k.weights && (k.weights.improvement != null || k.weights.firstTry != null || k.weights.davtan == null || k.weights.task == null)) {
-    k.weights = { davtan: def.weights.davtan, exam: def.weights.exam, video: def.weights.video, task: def.weights.task, bonus: (k.weights.bonus != null ? k.weights.bonus : def.weights.bonus) };
+  // Хуучин жингийн бүтцүүдийг шинэ (bosgo/davtan/video/task/bonus) руу шилжүүлнэ
+  if (k.weights && (k.weights.improvement != null || k.weights.firstTry != null || k.weights.exam != null || k.weights.bosgo == null || k.weights.task == null)) {
+    k.weights = { bosgo: def.weights.bosgo, davtan: def.weights.davtan, video: def.weights.video, task: def.weights.task, bonus: (k.weights.bonus != null ? k.weights.bonus : def.weights.bonus) };
   }
   if (k.baseThreshold == null) k.baseThreshold = def.baseThreshold;
   if (k.bonusTarget == null) k.bonusTarget = def.bonusTarget;
@@ -698,49 +702,78 @@ function empTrainingCoverage(e) {
 }
 
 /* ============================================================
-   ШИНЭ KPI АРГА ЗҮЙ (2026-07): урьдчилсан/анхан зааварчилгаа KPI-д ОРОХГҮЙ.
-   Зөвхөн ДАВТАН зааварчилгаа + шалгалтын дүн + видео сургалт (LMS) + даалгавар.
-   Ажилтан 3 сар тутам давтан сургалтад хамрагдаж, шалгалт тэнцсэн байх ёстой.
+   KPI АРГА ЗҮЙ (2026-07, цалингийн сар дээр суурилсан):
+   Цалингийн сар = өмнөх сарын 25-наас энэ сарын 24 хүртэл.
+   1) Босго оноо (0.30) — осол/зөрчилгүй бол автоматаар 100; өөрийн буруутай
+      холбогдол бүрт хасагдана (DB.violations).
+   2) Давтан+шалгалт (0.20) — ЗӨВХӨН тухайн албанд энэ цалингийн сард давтан
+      товлогдсон бол (DB.davtanMonths). Дотроо: суусан 1/3 + шалгалтын дүн 2/3.
+   3) Видео сургалт (0.25) — давтангүй сард давтангийн жин нэмэгдэж 0.45 болно.
+   4) Даалгавар (0.20). + Аюул/NM бонус (0.15, зөвхөн нэмнэ).
+   Урьдчилсан/анхан зааварчилгаа KPI-д ОРОХГҮЙ.
    ============================================================ */
 var KPI_DAVTAN_KEYS = ['davtan_eeljit', 'davtan_eeljit_bus', 'davtan_odor_tutmiin'];
-var DAVTAN_VALID_DAYS = 90; // 3 сар — үүнээс хэтэрвэл дахин хамрагдах шаардлагатай
 
-function _daysAgo(iso) {
-  if (!iso) return Infinity;
-  var t = new Date(iso).getTime();
-  if (isNaN(t)) return Infinity;
-  return (Date.now() - t) / 86400000;
+/* Цалингийн сарын түлхүүр: 25-наас эхлэн ДАРААГИЙН сарын тооцоонд орно */
+function salaryMonthKey(iso) {
+  var d = iso ? new Date(iso) : new Date();
+  if (isNaN(d.getTime())) return '';
+  var y = d.getFullYear(), m = d.getMonth();
+  if (d.getDate() >= 25) { m++; if (m > 11) { m = 0; y++; } }
+  return y + '-' + (m + 1);
 }
-/* Нэг давтан модулийн оноо (0-100): тэнцсэн + сүүлийн 3 сард = 100 */
-function davtanModScore(p) {
-  if (!p) return 0;
-  var when = p.examTakenAt || p.trainingCompletedAt;
-  var recent = _daysAgo(when) <= DAVTAN_VALID_DAYS;
-  if (p.examPassed && recent) return 100;   // тэнцсэн + хугацаандаа
-  if (p.examPassed && !recent) return 40;   // тэнцсэн ч 3 сар хэтэрсэн — шинэчлэх хэрэгтэй
-  if (p.trainingCompleted) return 55;       // сургалтаа үзсэн, шалгалт тэнцээгүй
-  if (p.trainingStarted) return 20;
-  return 0;
+function currentSalaryKey() { return salaryMonthKey(); }
+function salaryKeyLabel(key) {
+  var p = String(key || '').split('-');
+  return p.length === 2 ? p[0] + ' оны ' + p[1] + '-р сар (' + p[1] + '/24 хүртэл)' : key;
 }
-/* 1) Давтан сургалтын хамралт (сүүлийн 3 сард тэнцсэн эсэх). Нээгдээгүй бол null */
+/* Тухайн алба энэ цалингийн сард давтан зааварчилгаатай эсэх (админ урьдчилан тэмдэглэнэ) */
+function deptHasDavtan(dept, key) {
+  var m = (DB.davtanMonths || {})[key || currentSalaryKey()];
+  return !!(m && m.indexOf(dept) > -1);
+}
+
+/* 1) БОСГО ОНОО: осол/зөрчилгүй бол 100. Буруутай холбогдол бүрийн оноог хасна */
+function kpiBosgo(e) {
+  var key = currentSalaryKey(), ded = 0;
+  (DB.violations || []).forEach(function (v) {
+    if (v.empId === e.id && salaryMonthKey(v.date || v.createdAt) === key) ded += _f(v.points, 50);
+  });
+  return clamp(100 - ded, 0, 100);
+}
+/* Ажилтны энэ цалингийн сарын зөрчлүүд (дэлгэрэнгүйд харуулна) */
+function empViolations(e, key) {
+  key = key || currentSalaryKey();
+  return (DB.violations || []).filter(function (v) {
+    return v.empId === e.id && salaryMonthKey(v.date || v.createdAt) === key;
+  });
+}
+
+/* 2) ДАВТАН+ШАЛГАЛТ (нэг үзүүлэлт дотроо: суусан 1/3 + шалгалтын дүн 2/3).
+   Алба энэ сард давтангүй бол null → жин нь видео руу шилжинэ */
 function kpiDavtan(e) {
-  var keys = KPI_DAVTAN_KEYS.filter(function (k) { return isModTrainingVisible(e, k); });
-  if (!keys.length) return null;
-  var sum = 0;
-  keys.forEach(function (k) { sum += davtanModScore(getEmpProg(e.id, k)); });
-  return Math.round(sum / keys.length);
+  var key = currentSalaryKey();
+  if (!deptHasDavtan(e.dept, key)) return null;
+  var attended = false, scores = [];
+  KPI_DAVTAN_KEYS.forEach(function (k) {
+    var p = getEmpProg(e.id, k) || {};
+    if (p.trainingCompletedAt && salaryMonthKey(p.trainingCompletedAt) === key) attended = true;
+    if (p.examTakenAt && salaryMonthKey(p.examTakenAt) === key) {
+      attended = true;
+      if (p.examScore != null) scores.push(_f(p.examScore));
+    }
+  });
+  var att = attended ? 100 : 0;
+  var ex = scores.length ? avg(scores) : 0;
+  return clamp(Math.round(att / 3 + ex * 2 / 3), 0, 100);
 }
-/* 2) Шалгалтын дүн: давтан модулиудын шалгалтын дундаж оноо. Өгөөгүй бол null */
+/* Шалгалтын дүн (лавлагаанд — давтан модулиудын дундаж, KPI-д тусдаа жингүй) */
 function kpiExam(e) {
   var scores = [];
   KPI_DAVTAN_KEYS.forEach(function (k) {
     var p = getEmpProg(e.id, k);
     if (p && p.examTaken && p.examScore != null) scores.push(_f(p.examScore));
   });
-  // Гадаад ХАБЭА шалгалтын дүн байвал (урьдчилсан/анхан бус) нэмж тооцно
-  if (e.examScore != null && e.habeaExams && e.habeaExams.length) {
-    // habeaExams-с зөвхөн давтан төрлийг оруулах боломжгүй тул нийт дүнг нэмнэ
-  }
   if (!scores.length) return null;
   return clamp(Math.round(avg(scores)), 0, 100);
 }
@@ -758,14 +791,17 @@ function kpiTask(e) {
   return Math.round(t.done / t.total * 100);
 }
 
-/* KPI-ийн хүчин зүйлс (тохиргооны жинтэй). Дата байхгүй зүйлийг алгасаж жинг дахин хуваарилна */
+/* KPI-ийн хүчин зүйлс. Давтангүй сард давтангийн жин ВИДЕО руу автоматаар шилжинэ.
+   Дата байхгүй үзүүлэлтийг алгасаж жинг дахин хуваарилна */
 function empKpiFactors(e) {
   var w = kpiCfg().weights;
+  var hasDavtan = deptHasDavtan(e.dept, currentSalaryKey());
+  var videoW = _f(w.video) + (hasDavtan ? 0 : _f(w.davtan)); // 0.25 → 0.45
   return [
-    { key: 'davtan', label: 'Давтан сургалт', v: kpiDavtan(e), w: _f(w.davtan) },
-    { key: 'exam',   label: 'Шалгалтын дүн',  v: kpiExam(e),   w: _f(w.exam) },
-    { key: 'video',  label: 'Видео сургалт',  v: kpiVideo(e),  w: _f(w.video) },
-    { key: 'task',   label: 'Даалгавар',      v: kpiTask(e),   w: _f(w.task) }
+    { key: 'bosgo',  label: 'Босго оноо',        v: kpiBosgo(e),  w: _f(w.bosgo) },
+    { key: 'davtan', label: 'Давтан + шалгалт',  v: hasDavtan ? kpiDavtan(e) : null, w: hasDavtan ? _f(w.davtan) : 0 },
+    { key: 'video',  label: 'Видео сургалт',     v: kpiVideo(e),  w: videoW },
+    { key: 'task',   label: 'Даалгавар',         v: kpiTask(e),   w: _f(w.task) }
   ];
 }
 
@@ -791,12 +827,13 @@ function reportBelongsTo(r, e) {
 }
 function monthKey(iso) { var d = new Date(iso || Date.now()); return d.getFullYear() + '-' + (d.getMonth() + 1); }
 
-/* Ажилтны бонус оноо: сар бүр дээд тоо (cap), өндөр оноотойг нь эхэлж тооцно */
+/* Ажилтны бонус оноо: ЦАЛИНГИЙН сар бүр дээд тоо (cap), өндөр оноотойг нь эхэлж тооцно */
 function empBonusPoints(e) {
   var cap = kpiCfg().bonus.monthlyCap || 99, byMonth = {};
   (DB.reports || []).forEach(function (r) {
     if (r.status !== 'verified' || !reportBelongsTo(r, e)) return;
-    (byMonth[monthKey(r.verifiedAt || r.createdAt)] = byMonth[monthKey(r.verifiedAt || r.createdAt)] || []).push(reportPoints(r));
+    var mk2 = salaryMonthKey(r.verifiedAt || r.createdAt);
+    (byMonth[mk2] = byMonth[mk2] || []).push(reportPoints(r));
   });
   var total = 0;
   Object.keys(byMonth).forEach(function (mk) {
@@ -809,7 +846,7 @@ function empBonusScore(e) { return clamp(Math.round(empBonusPoints(e) / (kpiCfg(
 
 /* Нийт оноо (0–100): суурь хувь + бонус хувь. Бонус зөвхөн НЭМНЭ, хэзээ ч хасахгүй */
 function empTotal(e) {
-  var w = kpiCfg().weights, bw = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task);
+  var w = kpiCfg().weights, bw = _f(w.bosgo) + _f(w.davtan) + _f(w.video) + _f(w.task);
   var bonusW = _f(w.bonus);
   return Math.round((empBase(e) * bw + empBonusScore(e) * bonusW) / (bw + bonusW || 1));
 }
@@ -822,7 +859,7 @@ function _avgFactor(fn) {
 }
 function categoryAverages() {
   return {
-    davtan: _avgFactor(kpiDavtan), exam: _avgFactor(kpiExam),
+    bosgo: _avgFactor(kpiBosgo), davtan: _avgFactor(kpiDavtan),
     video: _avgFactor(kpiVideo), task: _avgFactor(kpiTask),
     bonus: _avgFactor(empBonusScore)
   };
@@ -1800,16 +1837,18 @@ function renderEmployeeDashboard() {
 
   /* ---- KPI задаргаа ---- */
   var w = kpiCfg().weights;
-  var bw = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task);
+  var _hasD = deptHasDavtan(e.dept, currentSalaryKey());
+  var _vidW = _f(w.video) + (_hasD ? 0 : _f(w.davtan));
+  var bw = _f(w.bosgo) + (_hasD ? _f(w.davtan) : 0) + _vidW + _f(w.task);
   var bonusW = _f(w.bonus);
   var totalW = bw + bonusW;
   var components = [
-    { label: 'Давтан сургалт', icon: 'ti-refresh', score: kpiDavtan(e), weight: w.davtan, color: '#3730A3' },
-    { label: 'Шалгалтын дүн', icon: 'ti-clipboard-check', score: kpiExam(e), weight: w.exam, color: '#0891B2' },
-    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: w.video, color: '#C2410C' },
+    { label: 'Босго оноо', icon: 'ti-shield-check', score: kpiBosgo(e), weight: w.bosgo, color: '#3730A3' },
+    _hasD ? { label: 'Давтан + шалгалт', icon: 'ti-refresh', score: kpiDavtan(e), weight: w.davtan, color: '#0891B2' } : null,
+    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: _vidW, color: '#C2410C' },
     { label: 'Даалгавар', icon: 'ti-checkbox', score: kpiTask(e), weight: w.task, color: '#16A34A' },
     { label: 'Аюул/NM бонус', icon: 'ti-gift', score: empBonusScore(e), weight: bonusW, color: '#DC2626' }
-  ].map(function (c) { if (c.score == null) c.score = 0; return c; });
+  ].filter(function (c) { return !!c; }).map(function (c) { if (c.score == null) c.score = 0; return c; });
   var firstName = (e.name || '').split(/\s+/).pop();
 
   sec.innerHTML =
@@ -1916,8 +1955,8 @@ function renderDashboard() {
 
   /* Радар легенд — шинэ үзүүлэлтээр динамик */
   var cat = categoryAverages();
-  var legVals = [cat.davtan, cat.exam, cat.video, cat.task, cat.bonus];
-  var legLabels = ['Давтан', 'Шалгалт', 'Видео', 'Даалгавар', 'Бонус'];
+  var legVals = [cat.bosgo, cat.davtan, cat.video, cat.task, cat.bonus];
+  var legLabels = ['Босго', 'Давтан', 'Видео', 'Даалгавар', 'Бонус'];
   $$('.page[data-page="dashboard"] .legend-item').forEach(function (li, i) {
     if (legVals[i] == null) return;
     var dot = li.querySelector('.dot') ? li.querySelector('.dot').outerHTML : '';
@@ -2010,7 +2049,7 @@ function renderDashEmployees() {
       (e.onLeave ? ' <span class="tag tag-warn" style="font-size:9px">Чөлөөтэй</span>' : '') + '</div>' +
       '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:5px">' + esc(e.dept || '') + (e.role ? ' · ' + esc(e.role) : '') + '</div>' +
       '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
-      chip('Давтан', kpiDavtan(e)) + chip('Шалг', kpiExam(e)) + chip('Видео', kpiVideo(e)) +
+      chip('Босго', kpiBosgo(e)) + chip('Давтан', kpiDavtan(e)) + chip('Видео', kpiVideo(e)) +
       chip('Даалг', kpiTask(e)) + chip('Аюул/NM', empBonusScore(e)) + '</div></div>' +
       '<div style="text-align:center;flex-shrink:0"><div style="font-size:20px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif;color:' + tc + '">' + tot + '</div>' +
       '<div style="font-size:10px;color:#94A3B8">KPI</div></div>' +
@@ -2491,9 +2530,9 @@ function wireEmployeesPage() {
 
 /* ============ KPI хуудас (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
 var KPI_BASE_META = [
-  { key: 'davtan', label: 'Давтан зааварчилгаа', icon: 'ti-refresh', color: ['#E0E7FF', '#3730A3'], desc: '3 сар тутам давтан сургалтад хамрагдаж шалгалт тэнцсэн эсэх', fn: kpiDavtan },
-  { key: 'exam', label: 'Шалгалтын дүн', icon: 'ti-clipboard-check', color: ['#D1FAE5', '#065F46'], desc: 'Давтан зааварчилгааны шалгалтын дундаж оноо', fn: kpiExam },
-  { key: 'video', label: 'Видео сургалт (LMS)', icon: 'ti-player-play', color: ['#FFEDD5', '#9A3412'], desc: 'Оногдсон видео сургалтаас тэнцсэн хувь', fn: kpiVideo },
+  { key: 'bosgo', label: 'Босго оноо', icon: 'ti-shield-check', color: ['#E0E7FF', '#3730A3'], desc: 'Осол/зөрчилгүй ажилласан бол автоматаар бүтэн; буруутай холбогдвол хасагдана', fn: kpiBosgo },
+  { key: 'davtan', label: 'Давтан + шалгалт', icon: 'ti-refresh', color: ['#D1FAE5', '#065F46'], desc: 'Давтантай сард: суусан 1/3 + шалгалтын дүн 2/3. Давтангүй сард жин нь видео руу шилжинэ', fn: kpiDavtan },
+  { key: 'video', label: 'Видео сургалт (LMS)', icon: 'ti-player-play', color: ['#FFEDD5', '#9A3412'], desc: 'Оногдсон видео сургалтаас тэнцсэн хувь (давтангүй сард жин 0.45 болно)', fn: kpiVideo },
   { key: 'task', label: 'Даалгаврын биелэлт', icon: 'ti-checkbox', color: ['#DBEAFE', '#1E40AF'], desc: 'Ажилтанд оногдсон даалгаврын биелэлт', fn: kpiTask }
 ];
 function scoreTone(v) { return v >= 88 ? '' : (v >= 75 ? ' warn' : ' danger'); }
@@ -2506,7 +2545,7 @@ function miniBar(v, color) {
 function renderKpiPage() {
   var w = kpiCfg().weights, b = kpiCfg().bonus, emps = DB.employees || [];
   var sub = $('.page[data-page="kpi"] .page-subtitle');
-  if (sub) sub.textContent = 'Суурь үзүүлэлт + нэмэгдэх бонус · leading indicator загвар';
+  if (sub) sub.textContent = 'Цалингийн сар (25→24) · Босго + давтан/видео + даалгавар + бонус';
 
   // page-actions товчнуудыг утга оноох
   var editBtn = $('.page[data-page="kpi"] .page-actions .btn-primary');
@@ -2517,11 +2556,12 @@ function renderKpiPage() {
   // Динамик томьёо
   var fr = $('.page[data-page="kpi"] .formula');
   if (fr) {
-    var terms = [['f-blue', 'Давтан', w.davtan], ['f-teal', 'Шалгалт', w.exam], ['f-amber', 'Видео', w.video],
-      ['f-emerald', 'Даалгавар', w.task], ['f-coral', 'Бонус', w.bonus]];
+    var terms = [['f-blue', 'Босго', (w.bosgo / 100).toFixed(2)], ['f-teal', 'Давтан+шалгалт', (w.davtan / 100).toFixed(2) + '*'],
+      ['f-amber', 'Видео', (w.video / 100).toFixed(2) + '~' + ((w.video + w.davtan) / 100).toFixed(2)],
+      ['f-emerald', 'Даалгавар', (w.task / 100).toFixed(2)], ['f-coral', 'Бонус', (w.bonus / 100).toFixed(2)]];
     fr.innerHTML = '<span>Нийт =</span>' + terms.map(function (t, i) {
-      return (i ? '<span>+</span>' : '') + '<span class="f-term ' + t[0] + '">' + t[1] + ' × <strong>' + (t[2] / 100).toFixed(2) + '</strong></span>';
-    }).join('') + '<span style="margin-left:8px;font-size:12px;color:#16A34A;font-weight:600">бонус зөвхөн нэмнэ ↑</span>';
+      return (i ? '<span>+</span>' : '') + '<span class="f-term ' + t[0] + '">' + t[1] + ' × <strong>' + t[2] + '</strong></span>';
+    }).join('') + '<span style="margin-left:8px;font-size:12px;color:#64748B;font-weight:600">* давтангүй сард жин нь видео руу шилжинэ · бонус зөвхөн нэмнэ ↑</span>';
   }
 
   var grid = $('.page[data-page="kpi"] .kpi-cat-grid');
@@ -2591,8 +2631,10 @@ function kpiMethodologyHtml() {
   var c = kpiCfg();
   return '<div style="line-height:1.6;font-size:14px">' +
     '<p><strong>Зарчим:</strong> Энэ систем ажилтан <strong>идэвхтэй оролцож байгааг</strong> хэмжинэ. <strong>Урьдчилсан ба анхан шатны зааварчилгаа KPI-д ОРОХГҮЙ</strong> (нэг удаагийн шинэ ажилтны танилцуулга тул). Бонус зөвхөн <strong>нэмэгдэнэ</strong>, хэзээ ч хасагдахгүй.</p>' +
-    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Давтан сургалт ' + c.weights.davtan + '% + Шалгалтын дүн ' + c.weights.exam + '% + Видео сургалт(LMS) ' + c.weights.video + '% + Даалгавар ' + c.weights.task + '% + Аюул/NM бонус ' + c.weights.bonus + '%.</p>' +
-    '<p style="margin-top:10px"><strong>Давтан зааварчилгаа:</strong> Ажилтан бүр <strong>3 сар тутам</strong> давтан зааварчилгааны сургалтад хамрагдаж, шалгалт өгч тэнцсэн байх ёстой. 3 сар хэтэрвэл оноо буурч, дахин хамрагдах шаардлагатай.</p>' +
+    '<p style="margin-top:10px"><strong>Тооцооны хугацаа:</strong> Цалингийн сараар — өмнөх сарын <strong>25</strong>-наас энэ сарын <strong>24</strong> хүртэл.</p>' +
+    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Босго ' + c.weights.bosgo + '% + Давтан+шалгалт ' + c.weights.davtan + '% + Видео сургалт(LMS) ' + c.weights.video + '% + Даалгавар ' + c.weights.task + '% + Аюул/NM бонус ' + c.weights.bonus + '%.</p>' +
+    '<p style="margin-top:10px"><strong>Босго оноо:</strong> Осол/зөрчилгүй ажилласан бол автоматаар бүтэн олгогдоно. Өөрийн буруутайгаас осол/зөрчилд холбогдвол бүртгэсэн оноогоор хасагдана (Ажилтнууд → ажилтны дэлгэрэнгүйгээс админ бүртгэнэ).</p>' +
+    '<p style="margin-top:10px"><strong>Давтан + шалгалт:</strong> Тухайн албанд энэ цалингийн сард давтан зааварчилгаа товлогдсон бол л тооцогдоно (дотроо: суусан 1/3, шалгалтын дүн 2/3). Давтангүй сард энэ жин <strong>видео сургалт руу автоматаар шилжиж</strong>, видео ' + c.weights.video + '% → ' + (c.weights.video + c.weights.davtan) + '% болно. Аль алба давтантайг Тохиргооноос сар бүр тэмдэглэнэ.</p>' +
     '<p style="margin-top:10px"><strong>Бонус</strong> зөвхөн ХАБ ажилтан <strong>баталгаажуулсны дараа</strong> тооцогдоно. Аюул +' + c.bonus.hazard + '. Near-miss эрсдэлээр: бага ' + c.bonus.nearMiss.low + ', дунд ' + c.bonus.nearMiss.mid + ', өндөр ' + c.bonus.nearMiss.high + '. Нэг хүн сард дээд тал нь ' + c.bonus.monthlyCap + ' мэдээллээр бонус авна (тоо биш чанарыг урамшуулна).</p>' +
     '<p style="margin-top:10px"><strong>Албаны оноо</strong> = босго (' + c.baseThreshold + ') давсан гишүүдийн хувь (coverage) + албаны бонус + анхны тусламжийн хайрцгийн бүрэн бүтэн байдал + PPE мөрдөлтийн %. <em>Нэг хүний хоцрогдол бүхэл албыг унагаахгүй.</em></p>' +
     '<p style="margin-top:10px;color:#64748B;font-size:13px">Бүх жин, босго, бонус оноо, cap-ыг <strong>Тохиргоо</strong> хэсгээс өөрчилж болно — кодонд хатуу бичээгүй.</p>' +
@@ -3197,9 +3239,10 @@ function renderSettings() {
   function inp(label, id, val, type, attrs) {
     return '<div class="form-group flex-grow"><label>' + label + '</label><input class="cfg-input" type="' + (type || 'number') + '" id="' + id + '" value="' + esc(val) + '" ' + (attrs || 'min="0" max="100"') + '></div>';
   }
-  var wsum = _f(w.davtan) + _f(w.exam) + _f(w.video) + _f(w.task) + _f(w.bonus);
+  var wsum = _f(w.bosgo) + _f(w.davtan) + _f(w.video) + _f(w.task) + _f(w.bonus);
   var dsum = dw.coverage + dw.bonus + dw.firstAid + dw.ppe;
-  function sumBox(id, sum) {
+  function sumBox(id, sum, soft) {
+    if (soft) return '<div id="' + id + '" class="weight-total" style="background:var(--emerald-light);color:var(--emerald-dark)">Нийт: <strong>' + sum + '%</strong> — систем харьцаагаар нь автоматаар тооцно ✓</div>';
     return '<div id="' + id + '" class="weight-total" style="background:' + (sum === 100 ? 'var(--emerald-light)' : 'var(--amber-light)') + ';color:' + (sum === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)') + '">Нийт: <strong>' + sum + '%</strong>' + (sum === 100 ? ' ✓' : ' (100 байх ёстой)') + '</div>';
   }
   var _demoN = demoDataCount(), _empN = (DB.employees || []).length;
@@ -3214,11 +3257,21 @@ function renderSettings() {
     '<div class="form-row">' + inp('Регистрийн дугаар', 'setOrgReg', o.regNo || '', 'text', '') + inp('Ажилтны тоо', 'setOrgHc', o.headcount || 0, 'number', 'min="0" max="100000"') + '</div>' +
     '<div class="form-actions"><button class="btn btn-primary" data-saveorg="1">Хадгалах</button></div></div></div>' +
 
-    '<div class="card"><h3>KPI үнэлгээний жин</h3><p class="card-subtitle">Давтан сургалт + шалгалт + видео(LMS) + даалгавар + бонус. Нийт 100% байх ёстой. (Урьдчилсан/анхан зааварчилгаа KPI-д ороогүй.)</p><div class="form">' +
-    '<div class="form-row">' + inp('Давтан сургалт', 'wDavtan', w.davtan) + inp('Шалгалтын дүн', 'wExam', w.exam) + '</div>' +
+    '<div class="card"><h3>KPI үнэлгээний жин</h3><p class="card-subtitle">Босго(осол/зөрчилгүй) + давтан+шалгалт + видео(LMS) + даалгавар + бонус. Давтангүй сард давтангийн жин видео руу автоматаар шилжинэ. (Урьдчилсан/анхан зааварчилгаа KPI-д ороогүй.)</p><div class="form">' +
+    '<div class="form-row">' + inp('Босго оноо', 'wBosgo', w.bosgo) + inp('Давтан + шалгалт', 'wDavtan', w.davtan) + '</div>' +
     '<div class="form-row">' + inp('Видео сургалт (LMS)', 'wVideo', w.video) + inp('Даалгавар', 'wTask', w.task) + inp('Аюул/NM бонус', 'wBonus', w.bonus) + '</div>' +
-    sumBox('wsum', wsum) +
+    sumBox('wsum', wsum, true) +
     '<div class="form-actions"><button class="btn btn-primary" data-savekpi="1">Хадгалах</button></div></div></div>' +
+
+    '<div class="card" id="davtanSchedCard"><h3><i class="ti ti-calendar-event" style="color:#0891B2;margin-right:6px"></i>Давтан зааварчилгааны хуваарь</h3>' +
+    '<p class="card-subtitle">Энэ цалингийн сард (' + esc(salaryKeyLabel(currentSalaryKey())) + ') аль албад давтан зааварчилгаатайг тэмдэглэнэ. Тэмдэглэсэн албаны ажилтдад Давтан+шалгалт жин идэвхжиж, бусдад нь видео жин 0.' + (_f(w.video) + _f(w.davtan)) + ' болно.</p>' +
+    '<div id="davtanDeptList" style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 14px">' +
+    deptList().map(function (d) {
+      var on = deptHasDavtan(d, currentSalaryKey());
+      return '<label style="display:flex;align-items:center;gap:7px;background:' + (on ? '#E0F2FE' : '#F8FAFC') + ';border:1.5px solid ' + (on ? '#7DD3FC' : '#E2E8F0') + ';border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;color:' + (on ? '#0369A1' : '#475569') + '">' +
+        '<input type="checkbox" class="davtan-dept-cb" value="' + esc(d) + '"' + (on ? ' checked' : '') + ' style="width:15px;height:15px;accent-color:#0891B2;cursor:pointer">' + esc(d) + '</label>';
+    }).join('') + '</div>' +
+    '<div class="form-actions"><button class="btn btn-primary" id="saveDavtanSched"><i class="ti ti-check"></i> Хуваарь хадгалах</button></div></div>' +
 
     '<div class="card"><h3>Босго ба бонус оноо</h3><p class="card-subtitle">Near-miss эрсдэлийн зэргээр өөр оноо. Сарын дээд хязгаар (cap) — тоо биш чанарыг урамшуулна.</p><div class="form">' +
     '<div class="form-row">' + inp('Албаны coverage босго', 'tBase', c.baseThreshold) + inp('Бонус 100%-ийн оноо', 'tTarget', c.bonusTarget, 'number', 'min="1" max="200"') + '</div>' +
@@ -3248,12 +3301,32 @@ function renderSettings() {
         if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу?\n\nАжилтан, аюул, санал, осол, near-miss бүгд устана. Жинхэнэ бүртгэлтэй ажилтнууд эргэн нэмэгдэнэ. Энэ үйлдлийг буцаах боломжгүй.')) clearAllDemoData();
       });
     }
+    // Давтан зааварчилгааны хуваарь хадгалах
+    var dsb = document.getElementById('saveDavtanSched');
+    if (dsb && !dsb._wired) {
+      dsb._wired = true;
+      dsb.addEventListener('click', function () {
+        var sel = [];
+        document.querySelectorAll('.davtan-dept-cb').forEach(function (cb) { if (cb.checked) sel.push(cb.value); });
+        DB.davtanMonths = DB.davtanMonths || {};
+        DB.davtanMonths[currentSalaryKey()] = sel;
+        saveDB();
+        toast('Давтан хуваарь хадгалагдлаа (' + sel.length + ' алба)', 'success');
+        renderSettings(); renderKpiPage(); renderEmployees(); renderDashboard();
+        if (charts.radar) renderCharts();
+      });
+    }
   }, 0);
 }
 function updateConfigSums() {
   function gv(id) { var el = $('#' + id); return el ? num(el.value) : 0; }
-  [['wsum', gv('wDavtan') + gv('wExam') + gv('wVideo') + gv('wTask') + gv('wBonus')], ['dsum', gv('dCov') + gv('dBon') + gv('dFa') + gv('dPpe')]].forEach(function (p) {
-    var el = $('#' + p[0]); if (!el) return; var s = p[1];
+  [['wsum', gv('wBosgo') + gv('wDavtan') + gv('wVideo') + gv('wTask') + gv('wBonus'), true], ['dsum', gv('dCov') + gv('dBon') + gv('dFa') + gv('dPpe'), false]].forEach(function (p) {
+    var el = $('#' + p[0]); if (!el) return; var s = p[1], soft = p[2];
+    if (soft) {
+      el.innerHTML = 'Нийт: <strong>' + s + '%</strong> — систем харьцаагаар нь автоматаар тооцно ✓';
+      el.style.background = 'var(--emerald-light)'; el.style.color = 'var(--emerald-dark)';
+      return;
+    }
     el.innerHTML = 'Нийт: <strong>' + s + '%</strong>' + (s === 100 ? ' ✓' : ' (100 байх ёстой)');
     el.style.background = s === 100 ? 'var(--emerald-light)' : 'var(--amber-light)';
     el.style.color = s === 100 ? 'var(--emerald-dark)' : 'var(--amber-dark)';
@@ -3268,9 +3341,10 @@ function saveOrgConfig() {
 function saveKpiConfig() {
   var c = kpiCfg();
   function gv(id, d) { var el = $('#' + id); return el ? clamp(num(el.value, d), 0, 100000) : d; }
-  var nw = { davtan: gv('wDavtan', 30), exam: gv('wExam', 25), video: gv('wVideo', 25), task: gv('wTask', 20), bonus: gv('wBonus', 15) };
-  var wsum = nw.davtan + nw.exam + nw.video + nw.task + nw.bonus;
-  if (wsum !== 100) { toast('KPI жингийн нийлбэр 100% байх ёстой (одоо ' + wsum + '%)', 'warn'); return; }
+  var nw = { bosgo: gv('wBosgo', 30), davtan: gv('wDavtan', 20), video: gv('wVideo', 25), task: gv('wTask', 20), bonus: gv('wBonus', 15) };
+  var wsum = nw.bosgo + nw.davtan + nw.video + nw.task + nw.bonus;
+  if (wsum <= 0) { toast('KPI жин оруулна уу', 'warn'); return; }
+  // Нийлбэр 100 биш байж болно — систем жинг автоматаар хэвийн болгоно (давтангүй сард видео руу шилждэг учир)
   var nd = { coverage: gv('dCov', 55), bonus: gv('dBon', 15), firstAid: gv('dFa', 15), ppe: gv('dPpe', 15) };
   var dsum = nd.coverage + nd.bonus + nd.firstAid + nd.ppe;
   if (dsum !== 100) { toast('Албаны жингийн нийлбэр 100% байх ёстой (одоо ' + dsum + '%)', 'warn'); return; }
@@ -4347,12 +4421,12 @@ function renderCharts() {
   if (radarEl) {
     if (charts.radar) charts.radar.destroy();
     var cat = categoryAverages();
-    var cur = [cat.davtan, cat.exam, cat.video, cat.task, cat.bonus];
+    var cur = [cat.bosgo, cat.davtan, cat.video, cat.task, cat.bonus];
     var prev = cur.map(function (v) { return Math.max(0, v - 3 - Math.round(Math.random() * 2)); });
     charts.radar = new Chart(radarEl.getContext('2d'), {
       type: 'radar',
       data: {
-        labels: [['Давтан'], ['Шалгалт'], ['Видео'], ['Даалгавар'], ['Бонус']],
+        labels: [['Босго'], ['Давтан'], ['Видео'], ['Даалгавар'], ['Бонус']],
         datasets: [
           { label: 'Энэ сар', data: cur, backgroundColor: 'rgba(4,120,87,0.15)', borderColor: 'rgba(4,120,87,1)',
             borderWidth: 2, pointBackgroundColor: 'rgba(4,120,87,1)', pointRadius: 4, pointHoverRadius: 6 },
@@ -5092,10 +5166,12 @@ function openEmployeeDetail(id) {
   var e = DB.employees.filter(function (x) { return x.id === id; })[0];
   if (!e) return;
   var w = kpiCfg().weights;
+  var _hasD2 = deptHasDavtan(e.dept, currentSalaryKey());
+  var _vidW2 = _f(w.video) + (_hasD2 ? 0 : _f(w.davtan));
   var cats = [
-    ['Давтан сургалт (3 сар)', kpiDavtan(e), w.davtan],
-    ['Шалгалтын дүн', kpiExam(e), w.exam],
-    ['Видео сургалт (LMS)', kpiVideo(e), w.video],
+    ['Босго оноо (осол/зөрчилгүй)', kpiBosgo(e), w.bosgo],
+    ['Давтан + шалгалт' + (_hasD2 ? '' : ' (энэ сард давтангүй)'), _hasD2 ? kpiDavtan(e) : null, _hasD2 ? w.davtan : 0],
+    ['Видео сургалт (LMS)', kpiVideo(e), _vidW2],
     ['Даалгаврын биелэлт', kpiTask(e), w.task]
   ].map(function (c) { return [c[0], (c[1] == null ? 0 : c[1]), c[2], c[1] == null]; });
   var bp = empBonusPoints(e);
@@ -5118,6 +5194,25 @@ function openEmployeeDetail(id) {
     '<div style="font-size:12px;color:#64748B">Баталгаажсан аюул / near-miss мэдээллээс</div></div>' +
     '<div style="font-weight:700;color:#16A34A;font-size:18px">+' + bp + '</div></div>' +
     habeaExamsHTML(e) +
+    // Энэ цалингийн сарын зөрчлүүд (босго онооноос хасагдсан)
+    (function () {
+      var vlist = empViolations(e);
+      var rows = vlist.map(function (v) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #FEE2E2">' +
+          '<i class="ti ti-alert-octagon" style="color:#DC2626"></i>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:#991B1B">' + esc(v.desc || 'Зөрчил') + '</div>' +
+          '<div style="font-size:11px;color:#B91C1C">' + esc((v.date || '').slice(0, 10)) + '</div></div>' +
+          '<span style="font-weight:700;color:#DC2626">-' + _f(v.points, 50) + '</span>' +
+          (isAdmin() ? '<button class="icon-btn-sm" data-del-viol="' + esc(v.id) + '" title="Устгах" style="color:#DC2626">✕</button>' : '') +
+          '</div>';
+      }).join('');
+      return '<div style="margin-top:10px;padding:10px 12px;background:#FEF2F2;border-radius:10px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:' + (rows ? '6px' : '0') + '">' +
+        '<i class="ti ti-shield-x" style="color:#DC2626;font-size:16px"></i>' +
+        '<div style="flex:1;font-weight:600;font-size:13px">Энэ сарын осол/зөрчил (босго оноо: ' + kpiBosgo(e) + ')</div>' +
+        (isAdmin() ? '<button class="btn btn-sm" data-add-viol="1" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA"><i class="ti ti-plus"></i> Бүртгэх</button>' : '') +
+        '</div>' + (rows || '<div style="font-size:12px;color:#16A34A">Зөрчилгүй — босго оноо бүтэн ✓</div>') + '</div>';
+    })() +
     '<div class="kb-total">Нийт KPI оноо: <strong>' + empTotal(e) + ' / 100</strong></div>' +
     (isAdmin() ? '<div class="detail-actions">' +
     '<button class="btn btn-secondary" data-emp-leave="' + e.id + '">' +
@@ -5131,9 +5226,49 @@ function openEmployeeDetail(id) {
     var ed = ev.target.closest('[data-emp-edit]');
     if (ed) { closeModal(); editEmployeeScores(e.id); return; }
     var er = ev.target.closest('[data-emp-role]');
-    if (er) { closeModal(); actionSetEmpRole(e.id); }
+    if (er) { closeModal(); actionSetEmpRole(e.id); return; }
+    var av = ev.target.closest('[data-add-viol]');
+    if (av) { closeModal(); openAddViolationModal(e.id); return; }
+    var dv = ev.target.closest('[data-del-viol]');
+    if (dv) {
+      if (!confirm('Энэ зөрчлийн бүртгэлийг устгах уу? Босго оноо сэргэнэ.')) return;
+      var vid = dv.getAttribute('data-del-viol');
+      DB.violations = (DB.violations || []).filter(function (v) { return v.id !== vid; });
+      saveDB(); closeModal(); renderEmployees(); renderDashboard();
+      toast('Зөрчил устгагдлаа', 'success');
+      openEmployeeDetail(e.id);
+    }
   });
   buildModal(esc(e.name), node, { width: '480px' });
+}
+
+/* Осол/зөрчил бүртгэх — босго онооноос хасагдана (зөвхөн админ) */
+function openAddViolationModal(empId) {
+  var e = DB.employees.filter(function (x) { return x.id === empId; })[0];
+  if (!e || !isAdmin()) return;
+  formModal({
+    title: 'Осол/зөрчил бүртгэх — ' + e.name,
+    width: '480px',
+    fields: [
+      { name: 'desc', label: 'Зөрчлийн тайлбар', type: 'text', value: '', placeholder: 'жишээ: ХХХ-гүй ажилласан / ослын буруутай тал' },
+      { name: 'date', label: 'Огноо', type: 'date', value: todayISO() },
+      { name: 'points', label: 'Хасах оноо', type: 'select', value: '50',
+        options: [{ value: '25', label: '-25 (хөнгөн зөрчил)' }, { value: '50', label: '-50 (дунд зөрчил)' }, { value: '100', label: '-100 (ноцтой осол/зөрчил)' }] }
+    ],
+    submitLabel: 'Бүртгэх',
+    onSubmit: function (v) {
+      DB.violations = DB.violations || [];
+      DB.violations.push({
+        id: 'VL-' + Date.now(), empId: empId,
+        date: v.date || todayISO(), desc: (v.desc || '').trim() || 'Зөрчил',
+        points: clamp(num(v.points, 50), 0, 100),
+        by: (SESSION && SESSION.email) || 'admin', createdAt: new Date().toISOString()
+      });
+      saveDB();
+      renderEmployees(); renderDashboard(); renderKpiPage();
+      toast(esc(e.name) + ' — зөрчил бүртгэгдэж, босго оноо хасагдлаа', 'warn');
+    }
+  });
 }
 function editEmployeeScores(id) {
   var e = DB.employees.filter(function (x) { return x.id === id; })[0];
@@ -5301,11 +5436,11 @@ function download(filename, content, mime) {
   setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
 function exportEmployeesCSV() {
-  var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Давтан сургалт', 'Шалгалт', 'Видео(LMS)', 'Даалгавар', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
+  var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Босго', 'Давтан+шалгалт', 'Видео(LMS)', 'Даалгавар', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
   var lines = [head];
   function _n(v) { return v == null ? '' : v; }
   filteredEmployees().forEach(function (e) {
-    lines.push([e.id, e.name, e.role, e.dept, _n(kpiDavtan(e)), _n(kpiExam(e)), _n(kpiVideo(e)), _n(kpiTask(e)), empBase(e), empBonusPoints(e), empTotal(e)]);
+    lines.push([e.id, e.name, e.role, e.dept, _n(kpiBosgo(e)), _n(kpiDavtan(e)), _n(kpiVideo(e)), _n(kpiTask(e)), empBase(e), empBonusPoints(e), empTotal(e)]);
   });
   var csv = '﻿' + lines.map(function (r) {
     return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',');
@@ -5338,8 +5473,8 @@ function downloadReport() {
     '<tr><td>Осолгүй өдөр</td><td>' + dayCounter() + '</td></tr>' +
     '<tr><td>Сайжруулалтын санал</td><td>' + DB.suggestions.length + '</td></tr></table>' +
     '<h2>Суурь үзүүлэлтийн дундаж</h2><table><tr><th>Үзүүлэлт</th><th>Оноо</th></tr>' +
-    '<tr><td>Давтан зааварчилгаа</td><td>' + cat.davtan + '</td></tr>' +
-    '<tr><td>Шалгалтын дүн</td><td>' + cat.exam + '</td></tr>' +
+    '<tr><td>Босго оноо (осол/зөрчилгүй)</td><td>' + cat.bosgo + '</td></tr>' +
+    '<tr><td>Давтан + шалгалт</td><td>' + cat.davtan + '</td></tr>' +
     '<tr><td>Видео сургалт (LMS)</td><td>' + cat.video + '</td></tr>' +
     '<tr><td>Даалгаврын биелэлт</td><td>' + cat.task + '</td></tr>' +
     '<tr><td>Аюул/NM бонус (дундаж)</td><td>' + cat.bonus + '</td></tr></table>' +
