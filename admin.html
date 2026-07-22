@@ -3535,10 +3535,22 @@ window.openInviteModal=async function(trainingId){
 
   if(allEmployeesCache.length===0){
     document.getElementById('inviteEmpList').innerHTML='<div style="padding:20px;text-align:center;color:var(--muted)">Ачаалж байна...</div>';
-    /* Load all users, exclude admins */
-    const snap=await db.collection('users').get();
-    allEmployeesCache=snap.docs.map(d=>({id:d.id,...d.data()}))
-      .filter(u=>u.role!=='admin');
+    try{
+      /* Load all users. Зөвхөн нэргүй систем-админыг алгасна (жинхэнэ ажилтдыг бүгдийг харуулна) */
+      const snap=await db.collection('users').get();
+      allEmployeesCache=snap.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(u=>!(u.role==='admin' && !u.firstName && !u.lastName));
+    }catch(e){
+      document.getElementById('inviteEmpList').innerHTML='<div style="padding:16px;color:var(--red);font-size:12px">Ажилтан ачаалахад алдаа: '+e.message+'</div>';
+      return;
+    }
+  }
+  // Алба шүүлтийг жинхэнэ ажилтнуудын албаас динамикаар бүрдүүлэх
+  const sel=document.getElementById('inviteDeptFilter');
+  if(sel){
+    const depts=[...new Set(allEmployeesCache.map(u=>u.department).filter(Boolean))].sort();
+    sel.innerHTML='<option value="">Бүх алба</option>'+depts.map(d=>`<option>${escapeHtml(d)}</option>`).join('');
+    sel.value='';
   }
   renderInviteList();
 };
@@ -3746,12 +3758,8 @@ ${d.trainingStats.map((t,i)=>`<tr>
         <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Ажилтнуудын жагсаалт</div>
         <div style="display:flex;gap:8px">
           <input type="text" id="inviteSearch" class="form-input" placeholder="Нэрээр хайх..." style="flex:1;padding:8px 12px;font-size:12px" />
-          <select id="inviteDeptFilter" class="form-input" style="width:130px;padding:8px 10px;font-size:12px">
+          <select id="inviteDeptFilter" class="form-input" style="width:150px;padding:8px 10px;font-size:12px">
             <option value="">Бүх алба</option>
-            <option>Захиргаа</option><option>Санхүү</option><option>Хүний нөөц</option>
-            <option>Мэдээллийн технологи</option><option>Маркетинг</option>
-            <option>Борлуулалт</option><option>Үйлдвэрлэл</option>
-            <option>Чанарын хяналт</option><option>ХАБЭА</option>
           </select>
         </div>
         <div id="inviteEmpList" style="overflow-y:auto;max-height:360px;display:flex;flex-direction:column;gap:4px"></div>
