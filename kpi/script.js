@@ -49,9 +49,9 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
    - depthead (Албаны дарга): зөвхөн өөрийн алба
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
-var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin'];
+var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'violations'];
 var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
-var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe'];
+var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe', 'violations'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -1121,6 +1121,7 @@ function switchPage(pageId) {
   if (pageId === 'dashboard') setTimeout(renderCharts, 60);
   // Динамикаар зурагддаг хуудсуудыг шинэчилнэ
   if (pageId === 'reportflow') renderReportflow();
+  else if (pageId === 'violations') renderViolationsPage();
   else if (pageId === 'myresults') renderMyResults();
   else if (pageId === 'daatgal') renderDaatgal();
   else if (pageId === 'adminpanel') renderAdminPanel();
@@ -4992,7 +4993,7 @@ function renderAll() {
   [renderSidebar, renderDashboard, renderEmployees, renderKpiPage,
    renderHazards, renderIncidents, renderReportflow, renderSuggestions,
    renderSettings, renderNotifBadge, renderPpe, renderInspections,
-   renderDataflow, renderVideoTracking, renderTasks].forEach(function (fn) {
+   renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage].forEach(function (fn) {
     try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
   });
 }
@@ -5244,31 +5245,129 @@ function openEmployeeDetail(id) {
 
 /* Осол/зөрчил бүртгэх — босго онооноос хасагдана (зөвхөн админ) */
 function openAddViolationModal(empId) {
-  var e = DB.employees.filter(function (x) { return x.id === empId; })[0];
-  if (!e || !isAdmin()) return;
+  if (!isAdmin() && !isDeptHead()) return;
+  var locked = empId ? DB.employees.filter(function (x) { return x.id === empId; })[0] : null;
+  // Ажилтан сонгох жагсаалт (depthead бол зөвхөн өөрийн алба)
+  var pickable = (DB.employees || []).filter(function (e) {
+    return !isDeptHead() || (SESSION && e.dept === SESSION.dept);
+  }).slice().sort(function (a, b) { return (a.dept || '').localeCompare(b.dept || '', 'mn') || (a.name || '').localeCompare(b.name || '', 'mn'); });
+  var fields = [];
+  if (locked) {
+    fields.push({ name: 'empId', label: 'Ажилтан', type: 'select', value: locked.id, options: [{ value: locked.id, label: locked.name + ' · ' + (locked.dept || '') }] });
+  } else {
+    fields.push({ name: 'empId', label: 'Ажилтан сонгох', type: 'select', value: (pickable[0] && pickable[0].id) || '',
+      options: pickable.map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; }) });
+  }
+  fields.push({ name: 'desc', label: 'Осол/зөрчлийн тайлбар', type: 'text', value: '', placeholder: 'жишээ: ХХХ-гүй ажилласан / ослын буруутай тал / аюулгүй ажиллагааны зөрчил' });
+  fields.push({ name: 'date', label: 'Огноо', type: 'date', value: todayISO() });
+  fields.push({ name: 'points', label: 'Хасах оноо', type: 'select', value: '50',
+    options: [{ value: '25', label: '-25 (хөнгөн зөрчил)' }, { value: '50', label: '-50 (дунд зөрчил)' }, { value: '100', label: '-100 (ноцтой осол/зөрчил)' }] });
   formModal({
-    title: 'Осол/зөрчил бүртгэх — ' + e.name,
+    title: 'Осол/зөрчил бүртгэх',
     width: '480px',
-    fields: [
-      { name: 'desc', label: 'Зөрчлийн тайлбар', type: 'text', value: '', placeholder: 'жишээ: ХХХ-гүй ажилласан / ослын буруутай тал' },
-      { name: 'date', label: 'Огноо', type: 'date', value: todayISO() },
-      { name: 'points', label: 'Хасах оноо', type: 'select', value: '50',
-        options: [{ value: '25', label: '-25 (хөнгөн зөрчил)' }, { value: '50', label: '-50 (дунд зөрчил)' }, { value: '100', label: '-100 (ноцтой осол/зөрчил)' }] }
-    ],
+    fields: fields,
     submitLabel: 'Бүртгэх',
     onSubmit: function (v) {
+      var eid = v.empId || (locked && locked.id);
+      var e = DB.employees.filter(function (x) { return x.id === eid; })[0];
+      if (!e) { toast('Ажилтан сонгоно уу', 'warn'); return; }
       DB.violations = DB.violations || [];
       DB.violations.push({
-        id: 'VL-' + Date.now(), empId: empId,
+        id: 'VL-' + Date.now(), empId: eid,
         date: v.date || todayISO(), desc: (v.desc || '').trim() || 'Зөрчил',
         points: clamp(num(v.points, 50), 0, 100),
         by: (SESSION && SESSION.email) || 'admin', createdAt: new Date().toISOString()
       });
       saveDB();
-      renderEmployees(); renderDashboard(); renderKpiPage();
-      toast(esc(e.name) + ' — зөрчил бүртгэгдэж, босго оноо хасагдлаа', 'warn');
+      renderEmployees(); renderDashboard(); renderKpiPage(); renderViolationsPage();
+      toast(esc(e.name) + ' — осол/зөрчил бүртгэгдэж, босго оноо хасагдлаа', 'warn');
     }
   });
+}
+
+/* Осол/зөрчлийн бүртгэлийн хуудас — админ/албаны дарга */
+function renderViolationsPage() {
+  var sec = pageEl('violations'); if (!sec) return;
+  if (!isAdmin() && !isDeptHead()) { sec.innerHTML = ''; return; }
+  var key = currentSalaryKey();
+  var dh = isDeptHead();
+  var emps = (DB.employees || []).filter(function (e) { return !dh || (SESSION && e.dept === SESSION.dept); });
+  var vios = (DB.violations || []).filter(function (v) {
+    if (salaryMonthKey(v.date || v.createdAt) !== key) return false;
+    var e = DB.employees.filter(function (x) { return x.id === v.empId; })[0];
+    return e && (!dh || (SESSION && e.dept === SESSION.dept));
+  }).sort(function (a, b) { return new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt); });
+
+  var withViol = {};
+  vios.forEach(function (v) { withViol[v.empId] = 1; });
+  var affectedCnt = Object.keys(withViol).length;
+  var cleanCnt = emps.filter(function (e) { return !e.onLeave; }).length - affectedCnt;
+
+  var html = '<div class="page-header"><div><h1>Осол/зөрчлийн бүртгэл</h1>' +
+    '<p class="page-subtitle">Цалингийн сар: ' + esc(salaryKeyLabel(key)) + ' · Осол/зөрчил бүртгэхэд босго оноо хасагдана. Осолгүй ажилтан автоматаар бүтэн босго авна.</p></div>' +
+    '<div class="page-actions"><button class="btn btn-primary" id="vioAdd"><i class="ti ti-shield-plus"></i> Осол/зөрчил бүртгэх</button></div></div>';
+
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
+    statCard('Осолгүй ажилтан', Math.max(0, cleanCnt), 'ti-shield-check', '#16A34A') +
+    statCard('Зөрчилтэй ажилтан', affectedCnt, 'ti-shield-x', '#DC2626') +
+    statCard('Энэ сарын бүртгэл', vios.length, 'ti-clipboard-list', '#D97706') +
+    '</div>';
+
+  // Энэ сарын зөрчлийн жагсаалт
+  html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px">' +
+    '<div style="padding:14px 18px;border-bottom:1px solid #F1F5F9;font-weight:700">Энэ сарын осол/зөрчил (' + vios.length + ')</div>';
+  if (!vios.length) {
+    html += '<div style="padding:24px">' + emptyBox('Энэ сард осол/зөрчил бүртгэгдээгүй — бүх ажилтан цэвэр ✓') + '</div>';
+  } else {
+    html += '<div>' + vios.map(function (v) {
+      var e = DB.employees.filter(function (x) { return x.id === v.empId; })[0] || {};
+      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid #F5F5F5">' +
+        '<div style="width:36px;height:36px;border-radius:9px;background:#FEE2E2;color:#DC2626;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-alert-octagon"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">' + esc(e.name || v.empId) + ' <span style="font-size:11px;color:#94A3B8;font-weight:400">· ' + esc(e.dept || '') + '</span></div>' +
+        '<div style="font-size:12.5px;color:#64748B">' + esc(v.desc || 'Зөрчил') + '</div>' +
+        '<div style="font-size:11px;color:#94A3B8">' + esc((v.date || '').slice(0, 10)) + ' · ' + esc(v.by || '') + '</div></div>' +
+        '<span style="font-weight:800;font-size:16px;color:#DC2626;flex-shrink:0">-' + _f(v.points, 50) + '</span>' +
+        '<button class="btn btn-sm" data-del-vio="' + esc(v.id) + '" style="background:#F1F5F9;color:#64748B;flex-shrink:0"><i class="ti ti-trash"></i></button>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+  html += '</div>';
+
+  // Ажилтнуудын босго төлөв
+  html += '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div style="padding:14px 18px;border-bottom:1px solid #F1F5F9;font-weight:700">Ажилтнуудын босго оноо (энэ сар)</div>' +
+    '<div style="max-height:420px;overflow-y:auto">' +
+    emps.slice().sort(function (a, b) { return kpiBosgo(a) - kpiBosgo(b); }).map(function (e) {
+      var bs = kpiBosgo(e), c = bs >= 100 ? '#16A34A' : bs >= 50 ? '#D97706' : '#DC2626';
+      var vc = empViolations(e, key).length;
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid #F5F5F5">' +
+        '<div class="avatar avatar-sm" style="width:32px;height:32px;flex-shrink:0">' + esc(e.initials || '') + '</div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(e.name) + '</div>' +
+        '<div style="font-size:11px;color:#94A3B8">' + esc(e.dept || '') + (vc ? ' · <span style="color:#DC2626">' + vc + ' зөрчил</span>' : ' · зөрчилгүй') + '</div></div>' +
+        '<div style="width:80px;height:8px;background:#F1F5F9;border-radius:5px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:' + bs + '%;background:' + c + ';border-radius:5px"></div></div>' +
+        '<div style="width:34px;text-align:right;font-weight:700;color:' + c + ';flex-shrink:0">' + bs + '</div>' +
+        '<button class="btn btn-sm" data-vio-emp="' + e.id + '" style="background:#FEE2E2;color:#991B1B;flex-shrink:0"><i class="ti ti-plus"></i></button>' +
+        '</div>';
+    }).join('') + '</div></div>';
+
+  sec.innerHTML = html;
+  if (!sec._vioWired) {
+    sec._vioWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('#vioAdd')) { openAddViolationModal(); return; }
+      var ae = ev.target.closest('[data-vio-emp]');
+      if (ae) { openAddViolationModal(ae.getAttribute('data-vio-emp')); return; }
+      var de = ev.target.closest('[data-del-vio]');
+      if (de) {
+        if (!confirm('Энэ осол/зөрчлийн бүртгэлийг устгах уу? Босго оноо сэргэнэ.')) return;
+        var vid = de.getAttribute('data-del-vio');
+        DB.violations = (DB.violations || []).filter(function (v) { return v.id !== vid; });
+        saveDB();
+        renderViolationsPage(); renderEmployees(); renderDashboard(); renderKpiPage();
+        toast('Бүртгэл устгагдлаа', 'success');
+      }
+    });
+  }
 }
 function editEmployeeScores(id) {
   var e = DB.employees.filter(function (x) { return x.id === id; })[0];
