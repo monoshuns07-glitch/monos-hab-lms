@@ -2743,7 +2743,10 @@ function renderQSection(trainingId){
   if(!loaded) return '<div style="font-size:12px;color:var(--muted);padding:4px 0">Ачаалж байна…</div>';
   return `<div class="lms-q-hdr">
     <span style="font-size:12px;font-weight:700;color:var(--white)">❓ Шалгалтын асуулт (${qList.length})</span>
-    <button class="btn btn-primary btn-sm" onclick="lmsAddQuestion('${trainingId}')">+ Асуулт нэмэх</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-secondary btn-sm" onclick="lmsImportQuestions('${trainingId}')" title="CSV файлаас олон асуулт нэг дор оруулах">📄 Файлаас оруулах</button>
+      <button class="btn btn-primary btn-sm" onclick="lmsAddQuestion('${trainingId}')">+ Асуулт нэмэх</button>
+    </div>
   </div>
   <div class="lms-q-list">
     ${qList.length?qList.map((q,qi)=>`
@@ -2797,6 +2800,129 @@ function lmsAddTraining(topicId){
   openTrainingModal(null);
 }
 function lmsAddQuestion(trainingId){ selTrainingId=trainingId; openQuestionModal(null); }
+
+/* ===== ШАЛГАЛТЫН АСУУЛТ CSV-ЭЭР БӨӨНӨӨР ОРУУЛАХ ===== */
+// CSV мөр задлагч (хашилттай талбар, таслалыг зөв ойлгоно)
+function _parseCsvLine(line){
+  const out=[]; let cur='', inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(inQ){
+      if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else inQ=false; }
+      else cur+=ch;
+    } else {
+      if(ch==='"') inQ=true;
+      else if(ch===',') { out.push(cur); cur=''; }
+      else cur+=ch;
+    }
+  }
+  out.push(cur);
+  return out.map(s=>s.trim());
+}
+function downloadQuestionTemplate(){
+  const rows=[
+    'асуулт,хариулт1,хариулт2,хариулт3,хариулт4,зөв_дугаар',
+    '"Галын анхан шатны хор хаана байрлах ёстой вэ?","Гарц/гарцын ойролцоо","Агуулахын гүнд","Дээвэр дээр","Газар доор",1',
+    '"ХХХ хэрэгсэлд аль нь орох вэ? (олон зөв)","Хамгаалалтын малгай","Гар утас","Ажлын бээлий","Хамгаалалтын шил","1,3,4"',
+    '"Осол гарвал хамгийн түрүүнд юу хийх вэ?","Даргадаа мэдэгдэх","Зураг авах","Гэртээ харих","Юу ч хийхгүй",1'
+  ];
+  const csv='﻿'+rows.join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='shalgaltiin-asuult-zagvar.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},100);
+}
+window.lmsImportQuestions=function(trainingId){
+  selTrainingId=trainingId;
+  // Динамик modal үүсгэх
+  let m=document.getElementById('qImportModal');
+  if(m) m.remove();
+  m=document.createElement('div');
+  m.className='modal-overlay show'; m.id='qImportModal';
+  m.innerHTML=`<div class="modal" style="max-width:560px">
+    <div class="modal-header"><h2>📄 Асуулт файлаас оруулах</h2>
+      <button class="modal-close" onclick="document.getElementById('qImportModal').remove()">✕</button></div>
+    <div style="padding:4px 2px 0">
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:12px">
+        <b style="color:var(--white)">CSV файл</b> байршуулна. Баганууд:<br>
+        <code style="background:var(--input-bg);padding:3px 8px;border-radius:6px;font-size:12px;color:var(--cyan);display:inline-block;margin-top:4px">асуулт, хариулт1, хариулт2, хариулт3, хариулт4, зөв_дугаар</code><br>
+        <span style="font-size:12px">• <b>зөв_дугаар</b>: зөв хариултын дугаар (1-4). Олон зөв бол таслалаар: <code style="color:var(--cyan)">1,3</code><br>
+        • Хариулт 2-6 байж болно. Хоосон хариултыг алгасна.</span>
+      </p>
+      <button class="btn btn-secondary btn-sm" onclick="downloadQuestionTemplate()" style="margin-bottom:14px">⬇ Загвар татах</button>
+      <label style="display:block;background:var(--input-bg);border:1.5px dashed var(--input-border);border-radius:12px;padding:20px;text-align:center;cursor:pointer">
+        <input type="file" id="qImportFile" accept=".csv,text/csv" style="display:none">
+        <div style="font-size:13px;color:var(--muted)">📎 CSV файл сонгох эсвэл энд чирж оруулна</div>
+      </label>
+      <div id="qImportStatus" style="font-size:13px;margin-top:12px;min-height:18px"></div>
+    </div>
+    <div class="modal-footer" style="margin-top:14px">
+      <button class="btn btn-secondary" onclick="document.getElementById('qImportModal').remove()">Хаах</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+  document.getElementById('qImportFile').addEventListener('change',function(){
+    const file=this.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=e=>processQuestionCsv(e.target.result,trainingId);
+    reader.readAsText(file,'utf-8');
+  });
+};
+async function processQuestionCsv(text,trainingId){
+  const status=document.getElementById('qImportStatus');
+  status.innerHTML='<span style="color:var(--muted)">Уншиж байна…</span>';
+  // Мөрүүдэд хуваах (\r\n эсвэл \n)
+  let lines=text.replace(/^﻿/,'').split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2){ status.innerHTML='<span style="color:var(--red)">Файл хоосон эсвэл зөвхөн толгойтой байна</span>'; return; }
+  // Толгой мөрийг алгасах (эхний талбар "асуулт" агуулж байвал)
+  const first=_parseCsvLine(lines[0]).map(s=>s.toLowerCase());
+  if(first[0] && (first[0].includes('асуул')||first[0].includes('question'))) lines=lines.slice(1);
+  const existing=lmsQuestions[trainingId]||[];
+  let order=existing.reduce((mx,q)=>Math.max(mx,q.order||0),0);
+  const parsed=[];
+  const errors=[];
+  lines.forEach((line,li)=>{
+    const cells=_parseCsvLine(line);
+    const q=(cells[0]||'').trim();
+    if(!q) return;
+    // Хариултууд: 2-р баганаас эхлэн, сүүлийн багана нь зөв_дугаар
+    const correctRaw=(cells[cells.length-1]||'').trim();
+    const options=cells.slice(1,cells.length-1).map(s=>s.trim()).filter(s=>s);
+    if(options.length<2){ errors.push(`Мөр ${li+1}: 2-оос доошгүй хариулт хэрэгтэй`); return; }
+    // Зөв дугаарууд (1-based → 0-based)
+    const correctIdxs=correctRaw.split(/[,;]/).map(s=>parseInt(s.trim(),10)-1).filter(n=>!isNaN(n)&&n>=0&&n<options.length);
+    if(!correctIdxs.length){ errors.push(`Мөр ${li+1}: зөв хариултын дугаар буруу`); return; }
+    const type=correctIdxs.length>1?'multiple':'single';
+    order++;
+    const data={ question:q, options, type, isActive:true, order, trainingId,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp(), createdAt:firebase.firestore.FieldValue.serverTimestamp() };
+    if(type==='multiple') data.correctAnswers=correctIdxs; else data.correctAnswer=correctIdxs[0];
+    parsed.push(data);
+  });
+  if(!parsed.length){ status.innerHTML=`<span style="color:var(--red)">Оруулах асуулт олдсонгүй.<br>${errors.slice(0,5).join('<br>')}</span>`; return; }
+  status.innerHTML=`<span style="color:var(--muted)">${parsed.length} асуулт байршуулж байна…</span>`;
+  try{
+    if(!lmsQuestions[trainingId]) lmsQuestions[trainingId]=[];
+    // Firestore batch (500 хязгаар — 400-аар хуваана)
+    for(let i=0;i<parsed.length;i+=400){
+      const batch=db.batch();
+      const chunk=parsed.slice(i,i+400);
+      const refs=chunk.map(()=>db.collection('questions').doc());
+      chunk.forEach((d,j)=>batch.set(refs[j],d));
+      await batch.commit();
+      chunk.forEach((d,j)=>lmsQuestions[trainingId].push({id:refs[j].id,...d}));
+    }
+    openTrainings.add(trainingId); loadedQTrainings.add(trainingId);
+    lmsQuestions[trainingId].sort((a,b)=>(a.order||0)-(b.order||0));
+    updateLMSStats(); renderLMSTree();
+    let msg=`✅ ${parsed.length} асуулт амжилттай нэмэгдлээ`;
+    if(errors.length) msg+=` · ${errors.length} мөр алгассан`;
+    status.innerHTML=`<span style="color:var(--green)">${msg}</span>`;
+    toast(`${parsed.length} асуулт нэмэгдлээ`,'success');
+    setTimeout(()=>{const mm=document.getElementById('qImportModal');if(mm)mm.remove();},1800);
+  } catch(e){ status.innerHTML=`<span style="color:var(--red)">Алдаа: ${e.message}</span>`; }
+}
 
 /* ── Chapter CRUD ── */
 window.openChapterModal=function(id=null){
