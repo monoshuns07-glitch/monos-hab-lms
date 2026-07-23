@@ -1791,18 +1791,39 @@ function actionEditCourse(cat) {
   buildModal(cat + ' — агуулга засах', node, { width: '480px' });
 }
 
-/* Шалгалт тус бүрийн дүнг (нэр + Урьдчилсан/Дараах) тусад нь харуулах HTML */
+/* Шалгалтын дүнг шалгалт тус бүрээр бүлэглэж, ХАМГИЙН ӨНДӨР дүн + оролдлогын тоог харуулна */
 function habeaExamsHTML(e) {
   var list = (e && e.habeaExams) || [];
   if (!list.length) return '';
-  function tl(t) { return t === 'pre' ? 'Урьдчилсан' : (t === 'post' ? 'Сургалтын дараах' : 'Шалгалт'); }
+  // Шалгалт бүрээр (key, байхгүй бол нэрээр) бүлэглэнэ
+  var byExam = {};
+  list.forEach(function (x) {
+    var k = x.key || x.title || '?';
+    var g = byExam[k];
+    if (!g) { byExam[k] = { title: x.title || 'ХАБЭА шалгалт', best: (x.percent || 0), passed: !!x.passed, count: 1, lastTs: (x.ts || 0) }; }
+    else {
+      g.count++;
+      if ((x.percent || 0) > g.best) { g.best = (x.percent || 0); g.passed = !!x.passed; }
+      if ((x.ts || 0) > g.lastTs) g.lastTs = (x.ts || 0);
+    }
+  });
+  var groups = Object.keys(byExam).map(function (k) { return byExam[k]; })
+    .sort(function (a, b) { return b.lastTs - a.lastTs; });
+  function fmtD(ts) {
+    if (!ts) return '';
+    var d = new Date(ts * 1000), p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
   return '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Шалгалтын дүнгүүд</h3>' +
-    '<div style="font-size:12px;color:#8A94A6;margin-bottom:6px">Өгсөн шалгалт тус бүрийн дүн</div>' +
-    list.map(function (x) {
+    '<div style="font-size:12px;color:#8A94A6;margin-bottom:6px">Шалгалт тус бүрийн хамгийн өндөр дүн</div>' +
+    groups.map(function (g) {
+      var sub = (g.count > 1 ? g.count + ' оролдлого · ' : '') +
+        (g.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') +
+        (g.lastTs ? ' · сүүлд ' + fmtD(g.lastTs) : '');
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #F1F5F9">' +
-        '<div style="min-width:0"><div style="font-weight:600;font-size:14px">' + esc(x.title) + '</div>' +
-        '<div style="font-size:12px;color:#8A94A6">' + tl(x.type) + ' · ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + '</div></div>' +
-        '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
+        '<div style="min-width:0"><div style="font-weight:600;font-size:14px">' + esc(g.title) + '</div>' +
+        '<div style="font-size:12px;color:#8A94A6">' + sub + '</div></div>' +
+        '<span class="score-pill ' + scoreClass(g.best) + '">' + g.best + '%</span></div>';
     }).join('') + '</div>';
 }
 
