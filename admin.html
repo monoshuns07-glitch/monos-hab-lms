@@ -1236,12 +1236,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
         <textarea class="form-textarea" id="trainingDesc" placeholder="Сургалтын тайлбар..." style="min-height:70px"></textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">Видео холбоос (YouTube / Vimeo) — ОЛОН ТОМ ВИДЕОНД ЗӨВЛӨНӨ</label>
-        <input type="text" class="form-input" id="trainingVideoUrl" placeholder="https://youtu.be/... эсвэл https://vimeo.com/..." />
-        <div class="form-hint">💡 Видеогоо YouTube-д <b>unlisted</b> (нууц) байршуулаад холбоосыг энд наана. Ямар ч хэмжээ, үнэгүй, хурдан. Ажилтан сайт дээрээ шууд үзнэ.</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">ЭСВЭЛ видео файл байршуулах</label>
+        <label class="form-label">🎬 Видео файл байршуулах (аюулгүй — татах/гүйлгэхээс хамгаалагдсан)</label>
         <input type="file" class="form-input" id="trainingVideoFile" accept="video/mp4,video/webm,video/quicktime" />
         <div id="trainingUploadProgress" style="display:none;margin-top:8px">
           <div style="background:var(--input-border);border-radius:6px;height:7px;overflow:hidden">
@@ -1250,7 +1245,12 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
           <div id="trainingUploadText" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
         </div>
         <input type="hidden" id="trainingVideoPath" />
-        <div class="form-hint">🔒 Cloudflare R2-д хадгална (5GB хүртэл). Олон видео бол сангийн зай төлбөртэй болж болзошгүй — тийм бол дээрх YouTube холбоосыг ашигла.</div>
+        <div class="form-hint">🔒 Cloudflare R2-д хадгална (5GB хүртэл). Ажилтан <b>татаж авах, урагш гүйлгэхээс хамгаалагдсан</b>. Том файлыг хэсэгчлэн илгээнэ.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ЭСВЭЛ видео холбоос (YouTube/Vimeo) — заавал биш</label>
+        <input type="text" class="form-input" id="trainingVideoUrl" placeholder="https://youtu.be/... (гадаад видео ашиглах бол)" />
+        <div class="form-hint">⚠️ Холбоосоор оруулбал татах/гүйлгэх хамгаалалт бүрэн үйлчлэхгүй. Аюулгүй байдлын үүднээс <b>видео файл байршуулахыг зөвлөнө</b>.</div>
       </div>
 
       <!-- Attachments (PDF / image) -->
