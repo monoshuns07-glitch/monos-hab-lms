@@ -1338,7 +1338,7 @@ function renderModAdmin(sec, key, mod, title) {
     return '<tr>' +
       '<td style="font-weight:500;font-size:13px">' + esc(dept) + ' <span style="color:#94A3B8;font-weight:400;font-size:11px">' + dEmps.length + ' хүн</span></td>' +
       '<td style="text-align:center">' + modTog(!!(mod.releasedToAll || rel.trainingReleased), !hasContent, 'data-modact="train" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
-      '<td style="text-align:center">' + modTog(!!(rel.examForceUnlocked), !hasExam, 'data-modact="exam" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
+      '<td style="text-align:center">' + modTog(!!(rel.examForceUnlocked), false, 'data-modact="exam" data-modkey="' + esc(key) + '" data-moddept="' + esc(dept) + '"') + '</td>' +
       '<td style="text-align:center;font-size:13px"><span style="color:#16A34A;font-weight:600">' + dDone + '</span><span style="color:#94A3B8">/' + dEmps.length + '</span></td>' +
       '<td style="font-size:11px;color:#94A3B8">' + (rel.updatedAt ? timeAgo(rel.updatedAt) : '—') + '</td>' +
       '</tr>';
@@ -1361,7 +1361,7 @@ function renderModAdmin(sec, key, mod, title) {
     '<p style="font-size:12px;color:#64748B;margin:0">Дотоод сургалт · Ерөнхий админ</p></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     '<button class="btn btn-secondary btn-sm" id="mBtnContent"><i class="ti ti-edit"></i> Агуулга засах</button>' +
-    '<button class="btn btn-secondary btn-sm" id="mBtnExam"><i class="ti ti-clipboard-list"></i> Шалгалт засах' + (hasExam ? ' (' + examQs.length + ')' : '') + '</button>' +
+    '<button class="btn btn-secondary btn-sm" id="mBtnExam"><i class="ti ti-clipboard-list"></i> Шалгалтын асуулт засах</button>' +
     '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border:1.5px solid #6EE7B7" id="mBtnOpenAll"><i class="ti ti-lock-open"></i> Бүх сургалт нэгдэж нээх</button>' +
     '</div></div>' +
 
@@ -1394,7 +1394,7 @@ function renderModAdmin(sec, key, mod, title) {
     sec._mAdminWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#mBtnContent')) { actionModEditContent(CURRENT_MOD); }
-      if (ev.target.closest('#mBtnExam')) { actionModEditExam(CURRENT_MOD); }
+      if (ev.target.closest('#mBtnExam')) { window.open('/habea-admin.html?exam=' + encodeURIComponent(CURRENT_MOD), '_blank'); }
       if (ev.target.closest('#mBtnOpenAll')) {
         DB.trainingModules = DB.trainingModules || {};
         Object.keys(TRAINING_MODULES).forEach(function (k) {
@@ -1437,8 +1437,8 @@ function renderModSubadmin(sec, key, mod, title, myDept) {
     modTog(!!(rel.trainingReleased), !hasContent, 'data-modact="train" data-modkey="' + esc(key) + '" data-moddept="' + esc(myDept) + '"') + '</div>' +
     '<div class="card" style="padding:12px 16px;flex:1;min-width:220px;display:flex;align-items:center;justify-content:space-between;gap:12px">' +
     '<div><div style="font-size:13px;font-weight:600">Шалгалт нээх</div>' +
-    '<div style="font-size:11px;color:' + (!hasExam ? '#DC2626' : '#64748B') + '">' + (!hasExam ? '⚠ Шалгалтын асуулт байхгүй' : 'Сургалт дүүргэлгүйгээр нээнэ') + '</div></div>' +
-    modTog(!!(rel.examForceUnlocked), !hasExam, 'data-modact="exam" data-modkey="' + esc(key) + '" data-moddept="' + esc(myDept) + '"') + '</div>' +
+    '<div style="font-size:11px;color:#64748B">Сургалт дүүргэлгүйгээр шууд нээнэ</div></div>' +
+    modTog(!!(rel.examForceUnlocked), false, 'data-modact="exam" data-modkey="' + esc(key) + '" data-moddept="' + esc(myDept) + '"') + '</div>' +
     '</div></div>' +
 
     '<div style="padding:0 26px 26px">' +
@@ -1551,8 +1551,7 @@ function handleModToggle(act, key, dept) {
     setModRelData(key, dept, { trainingReleased: !rel.trainingReleased });
     toast(dept + (rel.trainingReleased ? ' — сургалт хаагдлаа' : ' — сургалт нээгдлаа'), rel.trainingReleased ? 'warn' : 'success');
   } else if (act === 'exam') {
-    var mod2 = getMod(key);
-    if (!mod2.examQuestions || !mod2.examQuestions.length) { toast('Эхлээд шалгалтын асуулт оруулна уу', 'warn'); return; }
+    // Асуултууд гадаад habea-shalgalt project-д (questions_<key>) — локал шалгалт хийхгүй
     var rel2 = getModRel(key, dept);
     setModRelData(key, dept, { examForceUnlocked: !rel2.examForceUnlocked });
     toast(dept + (rel2.examForceUnlocked ? ' — шалгалт хаагдлаа' : ' — шалгалт нээгдлаа'), rel2.examForceUnlocked ? 'warn' : 'success');
