@@ -844,11 +844,12 @@ function empBonusPoints(e) {
 }
 function empBonusScore(e) { return clamp(Math.round(empBonusPoints(e) / (kpiCfg().bonusTarget || 30) * 100), 0, 100); }
 
-/* Нийт оноо (0–100): суурь хувь + бонус хувь. Бонус зөвхөн НЭМНЭ, хэзээ ч хасахгүй */
+/* Нийт оноо (0–100): СУУРЬ (0-100) + бонус НЭМЭГДЭНЭ (дээд тал нь бонусын жин),
+   100-аас хэтрэхгүй. Бонус ЗӨВХӨН НЭМНЭ — байхгүй бол оноог бууруулахгүй. */
 function empTotal(e) {
-  var w = kpiCfg().weights, bw = _f(w.bosgo) + _f(w.davtan) + _f(w.video) + _f(w.task);
-  var bonusW = _f(w.bonus);
-  return Math.round((empBase(e) * bw + empBonusScore(e) * bonusW) / (bw + bonusW || 1));
+  var bonusW = _f(kpiCfg().weights.bonus);
+  var boost = Math.round(empBonusScore(e) * bonusW / 100); // 0..bonusW нэмэгдэнэ
+  return Math.min(100, empBase(e) + boost);
 }
 function avgKpi() { return avg(DB.employees.map(empTotal)); }
 
@@ -1836,20 +1837,21 @@ function renderEmployeeDashboard() {
       '<div style="font-size:11px;color:#94A3B8;margin-top:2px">нийт ' + total + '</div></div>';
   }
 
-  /* ---- KPI задаргаа ---- */
+  /* ---- KPI задаргаа (суурь үзүүлэлтүүд → суурь оноо, дээр нь бонус НЭМЭГДЭНЭ) ---- */
   var w = kpiCfg().weights;
   var _hasD = deptHasDavtan(e.dept, currentSalaryKey());
   var _vidW = _f(w.video) + (_hasD ? 0 : _f(w.davtan));
-  var bw = _f(w.bosgo) + (_hasD ? _f(w.davtan) : 0) + _vidW + _f(w.task);
-  var bonusW = _f(w.bonus);
-  var totalW = bw + bonusW;
-  var components = [
-    { label: 'Босго оноо', icon: 'ti-shield-check', score: kpiBosgo(e), weight: w.bosgo, color: '#3730A3' },
-    _hasD ? { label: 'Давтан + шалгалт', icon: 'ti-refresh', score: kpiDavtan(e), weight: w.davtan, color: '#0891B2' } : null,
-    { label: 'Видео сургалт', icon: 'ti-player-play', score: kpiVideo(e), weight: _vidW, color: '#C2410C' },
-    { label: 'Даалгавар', icon: 'ti-checkbox', score: kpiTask(e), weight: w.task, color: '#16A34A' },
-    { label: 'Аюул/NM бонус', icon: 'ti-gift', score: empBonusScore(e), weight: bonusW, color: '#DC2626' }
-  ].filter(function (c) { return !!c; }).map(function (c) { if (c.score == null) c.score = 0; return c; });
+  // Зөвхөн ДАТАТАЙ суурь үзүүлэлт (оногдоогүйг харуулахгүй)
+  var baseFactors = [
+    { label: 'Босго оноо', desc: 'осол/зөрчилгүй', icon: 'ti-shield-check', score: kpiBosgo(e), weight: _f(w.bosgo), color: '#3730A3' },
+    _hasD ? { label: 'Давтан + шалгалт', desc: 'энэ сарын давтан', icon: 'ti-refresh', score: kpiDavtan(e), weight: _f(w.davtan), color: '#0891B2' } : null,
+    { label: 'Видео сургалт', desc: 'тэнцсэн хувь', icon: 'ti-player-play', score: kpiVideo(e), weight: _vidW, color: '#C2410C' },
+    { label: 'Даалгавар', desc: 'биелэлт', icon: 'ti-checkbox', score: kpiTask(e), weight: _f(w.task), color: '#16A34A' }
+  ].filter(function (c) { return c && c.score != null; });
+  var baseWsum = baseFactors.reduce(function (a, c) { return a + c.weight; }, 0) || 1;
+  var baseScore = empBase(e);
+  var bonusScore = empBonusScore(e);
+  var bonusBoost = Math.round(bonusScore * _f(w.bonus) / 100);
   var firstName = (e.name || '').split(/\s+/).pop();
 
   sec.innerHTML =
@@ -1873,17 +1875,24 @@ function renderEmployeeDashboard() {
     '</div></div>' +
 
     /* KPI задаргаа */
-    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 14px">KPI оноо хэрхэн бүрдсэн</h3>' +
-    components.map(function (c) {
-      var contrib = totalW > 0 ? (c.score * c.weight / 100).toFixed(1) : '0';
-      var pct = totalW > 0 ? Math.round(c.weight / totalW * 100) : 0;
+    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 4px">KPI оноо хэрхэн бүрдсэн</h3>' +
+    '<p style="font-size:12px;color:#94A3B8;margin:0 0 14px">Суурь үзүүлэлтүүдийн нийлбэр = суурь оноо. Дээр нь Аюул/NM бонус нэмэгдэнэ (100-аас хэтрэхгүй).</p>' +
+    baseFactors.map(function (c) {
+      var share = Math.round(c.weight / baseWsum * 100);
+      var contrib = (c.score * c.weight / baseWsum).toFixed(1);
       return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:11px">' +
         '<div style="width:28px;height:28px;border-radius:7px;background:' + c.color + '1A;color:' + c.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + c.icon + '" style="font-size:14px"></i></div>' +
-        '<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px">' + c.label + '</span>' +
-        '<span style="font-size:12px;color:#94A3B8">дүн: <strong style="color:#334155">' + c.score + '</strong> × жин ' + pct + '% = <strong style="color:' + c.color + '">' + contrib + '</strong></span></div>' +
+        '<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px">' + c.label + ' <span style="color:#CBD5E1;font-size:11px">' + c.desc + '</span></span>' +
+        '<span style="font-size:12px;color:#94A3B8">оноо <strong style="color:#334155">' + c.score + '</strong> · эзлэх <strong>' + share + '%</strong> → <strong style="color:' + c.color + '">' + contrib + '</strong></span></div>' +
         miniBar(c.score, c.color) + '</div></div>';
     }).join('') +
-    '<div style="border-top:2px solid #F1F5F9;margin-top:10px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">' +
+    '<div style="border-top:1px solid #F1F5F9;margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;align-items:center">' +
+    '<span style="font-size:13px;font-weight:600;color:#475569">Суурь оноо</span>' +
+    '<span style="font-size:16px;font-weight:800;color:#334155">' + baseScore + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;color:#16A34A">' +
+    '<span style="font-size:13px;font-weight:600"><i class="ti ti-gift"></i> Аюул/NM бонус' + (bonusScore ? '' : ' (мэдээлэл алга)') + '</span>' +
+    '<span style="font-size:16px;font-weight:800">+' + bonusBoost + '</span></div>' +
+    '<div style="border-top:2px solid #F1F5F9;margin-top:2px;padding-top:12px;display:flex;justify-content:space-between;align-items:center">' +
     '<span style="font-weight:700;font-size:14px">Нийт KPI оноо</span>' +
     '<span style="font-size:22px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span></div></div>' +
 
