@@ -365,10 +365,11 @@ function syncHabeaToModProgress(habeaByEmail, employees) {
     var hx = habeaByEmail[email];
     if (!hx || !hx.list) return;
     // Модуль тус бүрийн ХАМГИЙН СҮҮЛИЙН оролдлогыг олно (ts max)
-    var latest = {};
+    var latest = {}, counts = {};
     hx.list.forEach(function (item) {
       var mkey = item.key;
       if (!mkey || modKeys.indexOf(mkey) === -1) return;
+      counts[mkey] = (counts[mkey] || 0) + 1; // оролдлогын тоо
       if (!latest[mkey] || (item.ts || 0) > (latest[mkey].ts || 0)) latest[mkey] = item;
     });
     Object.keys(latest).forEach(function (mkey) {
@@ -377,9 +378,10 @@ function syncHabeaToModProgress(habeaByEmail, employees) {
       DB.empProgress = DB.empProgress || {};
       var cur = DB.empProgress[progKey] || {};
       var pct = Math.round(item.percent || 0);
+      var cnt = counts[mkey] || 1;
       // Зөвхөн сүүлийн дүнгээр — өөрчлөгдсөн үед л бичнэ (илүү зураалт/фликер саармагжуулна)
-      if (!cur.examTaken || cur.examScore !== pct || cur.examPassed !== !!item.passed) {
-        DB.empProgress[progKey] = _merge(cur, { examTaken: true, examScore: pct, examPassed: !!item.passed, examTakenAt: item.ts ? new Date(item.ts * 1000).toISOString() : new Date().toISOString() });
+      if (!cur.examTaken || cur.examScore !== pct || cur.examPassed !== !!item.passed || cur.examAttemptCount !== cnt) {
+        DB.empProgress[progKey] = _merge(cur, { examTaken: true, examScore: pct, examPassed: !!item.passed, examAttemptCount: cnt, examTakenAt: item.ts ? new Date(item.ts * 1000).toISOString() : new Date().toISOString() });
         changed = true;
       }
     });
@@ -1211,17 +1213,24 @@ function renderMyExams() {
     return isModExamUnlocked(me, ep.key);
   }).map(function (ep) {
     var prog = me ? getEmpProg(me.id, ep.key) : {};
-    var scoreHtml = prog.examTaken
+    var canTake = canTakeExam(ep.key, prog);
+    var scoreHtml = (prog.examTaken
       ? '<div style="margin-top:10px;display:inline-block;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '% · ' + (prog.examPassed ? 'Тэнцсэн ✓' : 'Тэнцээгүй') + '</div>'
-      : '<div style="margin-top:10px;font-size:12px;color:#94A3B8">Шалгалт өгөөгүй</div>';
+      : '<div style="margin-top:10px;font-size:12px;color:#94A3B8">Шалгалт өгөөгүй</div>') +
+      (examAttemptLabel(ep.key, prog) ? '<div style="margin-top:6px;font-size:11px">' + examAttemptLabel(ep.key, prog) + '</div>' : '');
+    var cardInner =
+      '<div style="width:52px;height:52px;border-radius:14px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:14px"><i class="ti ' + ep.icon + '"></i></div>' +
+      '<div style="font-size:16px;font-weight:700;color:#1E293B;margin-bottom:4px">' + esc(ep.label) + '</div>' +
+      '<div style="font-size:12px;color:#64748B">' + (canTake ? 'Шалгалт өгөх · Дүн автоматаар бүртгэгдэнэ' : 'Боломжит оролдлого дууссан') + '</div>' +
+      scoreHtml;
+    if (!canTake) {
+      return '<div class="card" style="padding:24px;border:1.5px solid #E2E8F0;opacity:.75">' + cardInner + '</div>';
+    }
     var url = '/habea-exam.html?exam=' + encodeURIComponent(ep.key) + '&title=' + encodeURIComponent(ep.label) +
       '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') + (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '');
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
-      '<div style="width:52px;height:52px;border-radius:14px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:14px"><i class="ti ' + ep.icon + '"></i></div>' +
-      '<div style="font-size:16px;font-weight:700;color:#1E293B;margin-bottom:4px">' + esc(ep.label) + '</div>' +
-      '<div style="font-size:12px;color:#64748B">Шалгалт өгөх · Дүн автоматаар бүртгэгдэнэ</div>' +
-      scoreHtml +
+      cardInner +
       '</div></a>';
   }).join('');
   sec.innerHTML =
@@ -1274,6 +1283,37 @@ var CURRENT_MOD = '';
 function getMod(key) { return ((DB.trainingModules || {})[key]) || {}; }
 function getModRel(key, dept) { return ((DB.moduleReleases || {})[key + '_' + (dept || '')]) || {}; }
 function getEmpProg(empId, key) { return ((DB.empProgress || {})[empId + '_' + key]) || {}; }
+
+/* ---- Шалгалт өгөх оролдлогын тоо (админ тохируулна) ---- */
+var EXAM_ATTEMPT_OPTS = [
+  { v: 1, label: '1 удаа' },
+  { v: 2, label: '2 удаа' },
+  { v: 3, label: '3 удаа' },
+  { v: 0, label: 'Хязгааргүй' }
+];
+function modMaxAttempts(key) {
+  var n = getMod(key).examAttempts;
+  if (n == null) return 0;            // анхдагч: хязгааргүй
+  n = parseInt(n, 10);
+  return (isNaN(n) || n < 0) ? 0 : n; // 0 = хязгааргүй
+}
+function examAttemptsUsed(prog) {
+  if (prog && prog.examAttemptCount != null) return prog.examAttemptCount;
+  return (prog && prog.examTaken) ? 1 : 0;
+}
+function canTakeExam(key, prog) {
+  var max = modMaxAttempts(key);
+  if (max === 0) return true;         // хязгааргүй
+  return examAttemptsUsed(prog) < max;
+}
+function examAttemptLabel(key, prog) {
+  var max = modMaxAttempts(key);
+  if (max === 0) return '';           // хязгааргүй бол мэдээлэл харуулахгүй
+  var used = examAttemptsUsed(prog);
+  var left = Math.max(0, max - used);
+  if (left <= 0) return '<span style="color:#DC2626;font-weight:600">Боломжит оролдлого дууссан (' + used + '/' + max + ')</span>';
+  return '<span style="color:#64748B">Үлдсэн оролдлого: ' + left + ' (' + used + '/' + max + ')</span>';
+}
 
 function _merge(target, src) {
   var ks = Object.keys(src); for (var i = 0; i < ks.length; i++) target[ks[i]] = src[ks[i]]; return target;
@@ -1403,6 +1443,12 @@ function renderModAdmin(sec, key, mod, title) {
     '<div><div style="font-size:13px;font-weight:600;color:#1E293B">Бүх хэлтэст нэгэн зэрэг нээх</div>' +
     '<div style="font-size:11px;color:' + (!hasContent ? '#DC2626' : '#64748B') + '">' + (!hasContent ? '⚠ Эхлээд агуулга оруулна уу' : 'Нэг дор бүх ажилтнуудад нээнэ') + '</div></div>' +
     modTog(!!(mod.releasedToAll), !hasContent, 'data-modact="relall" data-modkey="' + esc(key) + '"') + '</div>' +
+    '<div class="card" style="padding:12px 16px;flex:1;min-width:220px;display:flex;align-items:center;justify-content:space-between;gap:12px">' +
+    '<div><div style="font-size:13px;font-weight:600;color:#1E293B"><i class="ti ti-repeat" style="color:#0891B2"></i> Шалгалт өгөх давтамж</div>' +
+    '<div style="font-size:11px;color:#64748B">Ажилтан хэдэн удаа өгч болох вэ</div></div>' +
+    '<select id="mExamAttempts" style="padding:7px 10px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:13px;font-weight:600;color:#1E293B;cursor:pointer;background:#fff">' +
+    EXAM_ATTEMPT_OPTS.map(function (o) { return '<option value="' + o.v + '"' + (modMaxAttempts(key) === o.v ? ' selected' : '') + '>' + esc(o.label) + '</option>'; }).join('') +
+    '</select></div>' +
     '</div></div>' +
 
     '<div style="padding:0 26px 26px">' +
@@ -1421,6 +1467,15 @@ function renderModAdmin(sec, key, mod, title) {
 
   if (!sec._mAdminWired) {
     sec._mAdminWired = true;
+    sec.addEventListener('change', function (ev) {
+      var iv = ev.target.closest && ev.target.closest('#mExamAttempts');
+      if (iv) {
+        var n = parseInt(iv.value, 10) || 0;
+        setModData(CURRENT_MOD, { examAttempts: n });
+        toast('Шалгалт өгөх давтамж: ' + (n === 0 ? 'Хязгааргүй' : n + ' удаа'), 'success');
+        renderTrainingModule(CURRENT_MOD);
+      }
+    });
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#mBtnContent')) { actionModEditContent(CURRENT_MOD); }
       if (ev.target.closest('#mBtnExam')) { window.open('/habea-admin.html?exam=' + encodeURIComponent(CURRENT_MOD), '_blank'); }
@@ -1485,6 +1540,7 @@ function renderModEmployee(sec, key, mod, title, me) {
   var prog = getEmpProg(me.id, key);
   var examUnlocked = isModExamUnlocked(me, key);
   var hasContent = !!(mod.videoUrl || mod.pptUrl || mod.desc);
+  var canTake = canTakeExam(key, prog);
 
   var examSection;
   if (examUnlocked) {
@@ -1494,9 +1550,12 @@ function renderModEmployee(sec, key, mod, title, me) {
       '<h3 style="margin:0 0 6px;color:#065F46">Шалгалт нээлттэй байна</h3>' +
       (prog.examTaken ?
         '<div style="margin:8px 0 14px"><div style="display:inline-block;padding:6px 20px;border-radius:14px;font-size:22px;font-weight:800;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '%</div>' +
-        '<div style="font-size:13px;margin-top:6px;color:' + (prog.examPassed ? '#16A34A' : '#DC2626') + '">' + (prog.examPassed ? '✓ Тэнцсэн' : '✗ Тэнцээгүй — дахин оролдоно уу') + '</div></div>' :
-        '<p style="color:#64748B;font-size:14px;margin:0 0 14px">Сургалтыг үзэж дуусаад шалгалтаа өгнө үү.</p>') +
-      '<button class="btn btn-primary" style="padding:10px 28px" data-modact="takeexam" data-modkey="' + esc(key) + '" data-empid="' + esc(me.id) + '"><i class="ti ti-pencil"></i> ' + (prog.examTaken ? 'Дахин шалгалт өгөх' : 'Шалгалт өгөх') + '</button>' +
+        '<div style="font-size:13px;margin-top:6px;color:' + (prog.examPassed ? '#16A34A' : '#DC2626') + '">' + (prog.examPassed ? '✓ Тэнцсэн' : '✗ Тэнцээгүй' + (canTake ? ' — дахин оролдоно уу' : '')) + '</div>' +
+        (examAttemptLabel(key, prog) ? '<div style="font-size:12px;margin-top:6px">' + examAttemptLabel(key, prog) + '</div>' : '') + '</div>' :
+        '<p style="color:#64748B;font-size:14px;margin:0 0 14px">Сургалтыг үзэж дуусаад шалгалтаа өгнө үү.' + (examAttemptLabel(key, prog) ? '<br>' + examAttemptLabel(key, prog) : '') + '</p>') +
+      (canTake
+        ? '<button class="btn btn-primary" style="padding:10px 28px" data-modact="takeexam" data-modkey="' + esc(key) + '" data-empid="' + esc(me.id) + '"><i class="ti ti-pencil"></i> ' + (prog.examTaken ? 'Дахин шалгалт өгөх' : 'Шалгалт өгөх') + '</button>'
+        : '<button class="btn" disabled style="padding:10px 28px;background:#F1F5F9;color:#94A3B8;border:1.5px solid #E2E8F0;cursor:not-allowed"><i class="ti ti-lock"></i> Боломжит оролдлого дууссан</button>') +
       '</div>';
   } else {
     examSection =
@@ -1719,6 +1778,8 @@ function actionModEditExam(key) {
 /* ---- Ажилтны шалгалт өгөх inline модал ---- */
 function actionTakeModExam(key, empId) {
   var me = myEmployeeRecord();
+  var prog = me ? getEmpProg(me.id, key) : {};
+  if (!canTakeExam(key, prog)) { toast('Энэ шалгалтын боломжит оролдлого дууссан байна', 'warn'); return; }
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
   var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
   var exam = encodeURIComponent(key);
