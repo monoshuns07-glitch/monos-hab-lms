@@ -1012,6 +1012,20 @@ function initHTML5Tracking(){
   video.addEventListener('pause', ()=>VideoTracker.stop());
   video.addEventListener('ended', ()=>{ VideoTracker.complete(); });
 
+  /* ── Anti-scrub: урагш гүйлгэхийг хориглоно (үзсэн хэсэг хүртэл л) ── */
+  let maxWatched = VideoTracker.watchedSecs || 0;
+  video.addEventListener('timeupdate', ()=>{
+    if(!video.seeking && video.currentTime > maxWatched) maxWatched = video.currentTime;
+  });
+  video.addEventListener('seeking', ()=>{
+    // Буцаах зөвшөөрнө, урагшлах (үзээгүй хэсэг рүү) хориглоно
+    if(video.currentTime > maxWatched + 1.5){
+      video.currentTime = maxWatched;
+      showProtectionWarning('⏩ Урагш гүйлгэж болохгүй — видеог дараалан бүтэн үзнэ үү.');
+      setTimeout(hideProtectionWarning, 2600);
+    }
+  });
+
   /* ── Anti-download / anti-screenshot protections ── */
 
   // Block right-click on video and surrounding wrap
