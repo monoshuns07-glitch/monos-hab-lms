@@ -1876,7 +1876,17 @@ function actionEditCourse(cat) {
   buildModal(cat + ' — агуулга засах', node, { width: '480px' });
 }
 
-/* Шалгалтын дүнг МОДУЛИАР бүлэглэж, дотор нь урьдчилсан ба дараах шалгалтын СҮҮЛИЙН дүнг харуулна */
+/* Модуль бүрийн өнгө/дүрс — зааварчилгаануудыг өнгөөр ялгана */
+var MOD_STYLE = {
+  urdchilsan:          { c: '#4F46E5', bg: '#EEF2FF', icon: 'ti-clipboard-list' },
+  ankhan:              { c: '#059669', bg: '#ECFDF5', icon: 'ti-school' },
+  davtan_eeljit:       { c: '#0891B2', bg: '#ECFEFF', icon: 'ti-refresh' },
+  davtan_eeljit_bus:   { c: '#7C3AED', bg: '#F5F3FF', icon: 'ti-bolt' },
+  davtan_odor_tutmiin: { c: '#EA580C', bg: '#FFF7ED', icon: 'ti-calendar-event' }
+};
+function modStyle(key) { return MOD_STYLE[key] || { c: '#64748B', bg: '#F8FAFC', icon: 'ti-clipboard-check' }; }
+
+/* Шалгалтын дүнг МОДУЛИАР бүлэглэж, өнгөт хайрцаг бүрд урьдчилсан ба дараахын СҮҮЛИЙН дүнг харуулна */
 function habeaExamsHTML(e) {
   var list = (e && e.habeaExams) || [];
   if (!list.length) return '';
@@ -1884,7 +1894,7 @@ function habeaExamsHTML(e) {
   var mods = {};
   list.forEach(function (x) {
     var k = x.key || x.title || '?';
-    var m = mods[k] || (mods[k] = { title: x.title || 'ХАБЭА шалгалт', pre: null, post: null, other: null, lastTs: 0 });
+    var m = mods[k] || (mods[k] = { key: x.key || '', title: x.title || 'ХАБЭА шалгалт', pre: null, post: null, other: null, lastTs: 0 });
     var slot = x.type === 'post' ? 'post' : (x.type === 'pre' ? 'pre' : 'other');
     if (!m[slot] || (x.ts || 0) > (m[slot].ts || 0)) m[slot] = x; // сүүлийн оролдлого ялна
     if ((x.ts || 0) > m.lastTs) m.lastTs = (x.ts || 0);
@@ -1896,24 +1906,30 @@ function habeaExamsHTML(e) {
   }
   function subRow(label, x) {
     if (!x) return '';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0 7px 16px;border-top:1px dashed #EEF2F7">' +
-      '<div style="font-size:13px;color:#475569">' + label +
-      ' <span style="font-size:11px;color:#94A3B8">· ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + (x.ts ? ' · ' + fmtD(x.ts) : '') + '</span></div>' +
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 2px">' +
+      '<div style="font-size:13px;color:#334155;font-weight:500">' + label +
+      ' <span style="font-size:11px;color:#94A3B8;font-weight:400">· ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + (x.ts ? ' · ' + fmtD(x.ts) : '') + '</span></div>' +
       '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
   }
   var groups = Object.keys(mods).map(function (k) { return mods[k]; }).sort(function (a, b) { return b.lastTs - a.lastTs; });
   return '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Шалгалтын дүнгүүд</h3>' +
-    '<div style="font-size:12px;color:#8A94A6;margin-bottom:8px">Шалгалт бүрийн сүүлийн дүн (сургалтын өмнөх ба дараах)</div>' +
+    '<div style="font-size:12px;color:#8A94A6;margin-bottom:12px">Шалгалт бүрийн сүүлийн дүн (сургалтын өмнөх ба дараах)</div>' +
     groups.map(function (m) {
+      var st = modStyle(m.key);
       var impr = (m.pre && m.post) ? (m.post.percent - m.pre.percent) : null; // ахиц
       var imprHTML = (impr != null)
-        ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:' + (impr >= 0 ? '#ECFDF5' : '#FEF2F2') + ';color:' + (impr >= 0 ? '#0e8e59' : '#dc2626') + '">Ахиц ' + (impr >= 0 ? '+' : '') + impr + '%</span>'
+        ? '<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;white-space:nowrap;background:' + (impr >= 0 ? '#ECFDF5' : '#FEF2F2') + ';color:' + (impr >= 0 ? '#0e8e59' : '#dc2626') + '">Ахиц ' + (impr >= 0 ? '+' : '') + impr + '%</span>'
         : '';
-      return '<div style="padding:10px 0;border-top:1px solid #F1F5F9">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600;font-size:14px"><span>' + esc(m.title) + '</span>' + imprHTML + '</div>' +
-        subRow('Сургалтын өмнөх', m.pre) +
-        subRow('Сургалтын дараах', m.post) +
-        (!m.pre && !m.post ? subRow('Дүн', m.other) : '') +
+      var rows = [];
+      if (m.pre) rows.push(subRow('Сургалтын өмнөх', m.pre));
+      if (m.post) rows.push(subRow('Сургалтын дараах', m.post));
+      if (!m.pre && !m.post && m.other) rows.push(subRow('Дүн', m.other));
+      return '<div style="border:1px solid ' + st.c + '2E;border-left:4px solid ' + st.c + ';border-radius:12px;overflow:hidden;margin-bottom:12px;background:#fff">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;background:' + st.bg + '">' +
+        '<div style="display:flex;align-items:center;gap:9px;font-weight:700;font-size:14px;color:' + st.c + ';min-width:0"><i class="ti ' + st.icon + '" style="font-size:18px;flex-shrink:0"></i><span style="min-width:0">' + esc(m.title) + '</span></div>' +
+        imprHTML +
+        '</div>' +
+        '<div style="padding:3px 14px 6px">' + rows.join('<div style="height:1px;background:#F1F5F9"></div>') + '</div>' +
         '</div>';
     }).join('') + '</div>';
 }
