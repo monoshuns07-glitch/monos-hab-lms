@@ -1185,7 +1185,8 @@ function renderMyExams() {
     var scoreHtml = prog.examTaken
       ? '<div style="margin-top:10px;display:inline-block;padding:4px 14px;border-radius:20px;font-size:13px;font-weight:700;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '% · ' + (prog.examPassed ? 'Тэнцсэн ✓' : 'Тэнцээгүй') + '</div>'
       : '<div style="margin-top:10px;font-size:12px;color:#94A3B8">Шалгалт өгөөгүй</div>';
-    var url = ep.url + '?email=' + email + '&name=' + name;
+    var url = '/habea-exam.html?exam=' + encodeURIComponent(ep.key) + '&title=' + encodeURIComponent(ep.label) +
+      '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') + (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '');
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       '<div style="width:52px;height:52px;border-radius:14px;background:' + ep.bg + ';color:' + ep.color + ';display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:14px"><i class="ti ' + ep.icon + '"></i></div>' +
@@ -1276,10 +1277,12 @@ function isModTrainingVisible(emp, key) {
   return !!(getModRel(key, emp.dept).trainingReleased);
 }
 function isModExamUnlocked(emp, key) {
-  if (!isModTrainingVisible(emp, key)) return false;
   if (!emp) return false;
-  if (getEmpProg(emp.id, key).trainingCompleted) return true;
-  return !!(emp.dept && getModRel(key, emp.dept).examForceUnlocked);
+  // Админ "Шалгалт нээх" дарсан бол — сургалт нээгээгүй/дуусгаагүй ч шалгалт шууд нээгдэнэ
+  if (emp.dept && getModRel(key, emp.dept).examForceUnlocked) return true;
+  // Байгалийн урсгал: сургалт нээгдсэн + ажилтан үзэж дуусгасан үед шалгалт нээгдэнэ
+  if (!isModTrainingVisible(emp, key)) return false;
+  return !!getEmpProg(emp.id, key).trainingCompleted;
 }
 
 /* ---- Toggle товч ---- */
@@ -1692,7 +1695,9 @@ function actionTakeModExam(key, empId) {
   var name = encodeURIComponent((me && me.name) || (SESSION && SESSION.email) || '');
   var exam = encodeURIComponent(key);
   var title = encodeURIComponent(TRAINING_MODULES[key] || key);
-  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title, '_blank');
+  var eid = encodeURIComponent((me && me.id) || empId || '');
+  var dept = encodeURIComponent((me && me.dept) || '');
+  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title + '&eid=' + eid + '&dept=' + dept, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
@@ -2253,10 +2258,19 @@ function renderEmployees() {
   function empIntCells(e) {
     return intKeys.map(function (k) {
       var prog = getEmpProg(e.id, k);
+      // Шалгалт өгсөн бол — оноог шууд харуулна (тэнцсэн=ногоон, тэнцээгүй=улаан)
+      if (prog.examTaken) {
+        var sc = Math.round(prog.examScore || 0);
+        var col = prog.examPassed ? '#16A34A' : '#DC2626';
+        var mk = prog.examPassed ? '✓' : '✗';
+        return '<td style="text-align:center" title="Шалгалт: ' + sc + '% · ' + (prog.examPassed ? 'тэнцсэн' : 'тэнцээгүй') + '"><span style="color:' + col + ';font-size:12px;font-weight:800">' + mk + sc + '</span></td>';
+      }
       var vis = isModTrainingVisible(e, k);
-      if (!vis) return '<td style="text-align:center;color:#E2E8F0">—</td>';
-      if (prog.trainingCompleted) return '<td style="text-align:center" title="Дуусгасан"><span style="color:#16A34A;font-size:15px">✓</span></td>';
+      var examOpen = !!(e.dept && getModRel(k, e.dept).examForceUnlocked);
+      if (!vis && !examOpen) return '<td style="text-align:center;color:#E2E8F0">—</td>';
+      if (prog.trainingCompleted) return '<td style="text-align:center" title="Сургалт дуусгасан · шалгалт өгөөгүй"><span style="color:#16A34A;font-size:15px">✓</span></td>';
       if (prog.trainingStarted)   return '<td style="text-align:center" title="Эхэлсэн"><span style="color:#F59E0B;font-size:13px">⌛</span></td>';
+      if (examOpen)               return '<td style="text-align:center" title="Шалгалт нээлттэй · өгөөгүй"><span style="color:#6366F1;font-size:12px;font-weight:700">◔</span></td>';
       return '<td style="text-align:center" title="Эхлээгүй"><span style="color:#CBD5E1;font-size:13px">○</span></td>';
     }).join('');
   }
