@@ -622,6 +622,107 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 .q-option-del{width:26px;height:26px;border-radius:7px;background:rgba(255,255,255,.04);border:1px solid var(--card-border);cursor:pointer;display:grid;place-items:center;color:var(--muted);transition:all .2s;flex-shrink:0}
 .q-option-del:hover{background:rgba(227,6,19,.14);color:#FF6B6B;border-color:rgba(227,6,19,.28)}
 .q-option-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* ============================================================
+   ☀️ AURORA LIGHT — гэрэлтэй загвар (override: хар → цайвар)
+   Монос улаан = брэнд аксент, цайвар aurora дэвсгэр
+   ============================================================ */
+:root{
+  --bg:#F5F6FE; --bg2:#EEF0FB; --bg3:#FFFFFF;
+  --white:#151A2E;              /* light дээр текстийн үндсэн (бараан) өнгө */
+  --muted:#6B7189;              /* бүдэг текст */
+  --card-bg:#FFFFFF;
+  --card-border:#E6E9F5;
+  --input-bg:#FFFFFF;
+  --input-border:#E1E5F2;
+  --line:#EEF0F8;
+}
+body{
+  color:#151A2E !important;
+  background:
+    radial-gradient(900px 520px at 8% -6%, rgba(227,6,19,.055), transparent 60%),
+    radial-gradient(820px 480px at 96% -4%, rgba(79,70,229,.06), transparent 60%),
+    radial-gradient(900px 600px at 50% 112%, rgba(245,180,0,.05), transparent 62%),
+    #F5F6FE !important;
+}
+#bgCanvas{ display:none !important; }
+.bg-orb1{ background:radial-gradient(circle,rgba(227,6,19,.10),transparent 65%) !important; }
+.bg-orb2{ background:radial-gradient(circle,rgba(79,70,229,.09),transparent 65%) !important; }
+.bg-orb3{ background:radial-gradient(circle,rgba(6,182,212,.07),transparent 65%) !important; }
+
+/* Толгой ба tab bar */
+.admin-header{ background:rgba(255,255,255,.82) !important; border-bottom:1px solid var(--card-border) !important; }
+.tab-nav{ background:rgba(255,255,255,.78) !important; border-bottom:1px solid var(--card-border) !important; }
+.tab-btn:hover{ color:#1A2039 !important; }
+.tab-btn.active{ color:#111528 !important; text-shadow:none !important; }
+.admin-user-email{ color:#5B6178 !important; background:#F4F5FC !important; border-color:var(--card-border) !important; }
+.admin-header::after, .modal-header::after, .stat-card::before{ display:none !important; }
+
+/* Shimmer/gradient текстүүд → бараан тод */
+.admin-logo-text, .login-box h1{ -webkit-text-fill-color:initial !important; background:none !important; color:#111528 !important; animation:none !important; }
+.stat-value{ color:#151A2E; }
+.empty h3{ color:#2A3350 !important; }
+
+/* Картууд ба glass гадаргуу → цагаан, зөөлөн сүүдэр */
+.stat-card, .toolbar, .kb-table-wrap, .user-table-wrap, .sheet-container, .lms-ch{
+  box-shadow:0 1px 2px rgba(23,25,60,.05), 0 8px 22px rgba(23,25,60,.06) !important;
+}
+.stat-card:hover{ border-color:rgba(227,6,19,.2) !important; box-shadow:0 12px 30px rgba(23,25,60,.11) !important; }
+
+/* Хүснэгт */
+.kb-table thead th, .user-table thead th, .prev-table th, .sheet-head-row{ background:#F4F5FC !important; color:#6B7189 !important; }
+.kb-table tbody tr:hover, .user-table tbody tr:hover, .sheet-row:hover, .lms-ch-head:hover, .lms-tp-head:hover{ background:#F6F7FF !important; }
+.kb-q{ color:#151A2E !important; }
+.kb-a, .prev-table td{ color:#4B5268 !important; }
+
+/* Оролтын талбарууд → цагаан дэвсгэр, бараан текст */
+.form-input,.form-textarea,.form-select,.search-input,.category-filter,.map-select,.q-option-input,.login-input,.sheet-input{
+  background:#FFFFFF !important; border-color:var(--input-border) !important; color:#151A2E !important;
+}
+.form-input::placeholder,.form-textarea::placeholder,.search-input::placeholder,.login-input::placeholder,.sheet-input::placeholder{ color:#9AA1B8 !important; }
+.category-filter option,.form-select option,.map-select option{ background:#fff !important; color:#151A2E !important; }
+.form-label{ color:#3B4363 !important; }
+.form-check, .map-label, .drop-zone h4{ color:#2A3350 !important; }
+.form-input:focus,.form-textarea:focus,.form-select:focus,.search-input:focus{ background:#fff !important; box-shadow:0 0 0 3px rgba(227,6,19,.1) !important; }
+.sheet-input:focus{ background:#F4F5FC !important; box-shadow:0 0 0 2px rgba(227,6,19,.25) !important; }
+
+/* Modal + toast → цайвар */
+.modal{ background:#FFFFFF !important; border:1px solid var(--card-border) !important; box-shadow:0 24px 70px rgba(23,25,60,.22) !important; }
+.modal-header{ background:#FAFBFF !important; }
+.modal-header h2, .lms-ch-title, .lms-tp-title, .lms-tr-title, .lms-q-text{ color:#1A2039 !important; }
+.modal-overlay{ background:rgba(21,25,55,.42) !important; }
+.toast{ background:rgba(255,255,255,.96) !important; color:#151A2E !important; border:1px solid var(--card-border) !important; box-shadow:0 20px 50px rgba(23,25,60,.2) !important; }
+.toast.success{ background:#F0FDF7 !important; border-color:rgba(16,185,129,.35) !important; }
+.toast.error{ background:#FFF1F2 !important; border-color:rgba(227,6,19,.3) !important; }
+
+/* Жижиг товч ба glass элементүүд */
+.action-btn,.btn-xs,.modal-close,.q-option-del,.code-fmt-btn{ background:#F4F5FC !important; border-color:var(--card-border) !important; }
+.btn-secondary{ background:#FFFFFF !important; box-shadow:0 1px 2px rgba(23,25,60,.05) !important; }
+.btn-secondary:hover{ background:#F5F6FF !important; border-color:#D6DBEE !important; }
+.view-toggle{ background:#F1F3FB !important; }
+.lms-tp{ background:#F8F9FE !important; border-color:#ECEFF9 !important; }
+.lms-q-section{ background:#F7F8FD !important; border-color:#ECEFF9 !important; }
+.lms-q-row{ background:#F4F5FC !important; }
+.lms-q-num{ background:#E9ECF7 !important; }
+.lms-tr-icon{ background:#EEF0FA !important; }
+.lms-tr-row:hover{ background:#F5F6FF !important; border-color:#E5E8F5 !important; }
+.lms-badge.off{ background:#EEF0F8 !important; }
+.spinner,.spinner-sm{ border-color:#E6E9F5 !important; border-top-color:var(--red) !important; }
+.drop-zone{ border-color:#D6DBEE !important; }
+.drop-zone:hover,.drop-zone.drag{ background:rgba(227,6,19,.05) !important; }
+
+/* Нэвтрэх дэлгэц → гэрэлтэй aurora */
+#loginScreen{ background:
+    radial-gradient(1000px 640px at 15% -8%, rgba(227,6,19,.26), transparent 60%),
+    radial-gradient(900px 560px at 88% 6%, rgba(79,70,229,.22), transparent 58%),
+    radial-gradient(900px 620px at 50% 112%, rgba(245,180,0,.16), transparent 62%),
+    linear-gradient(135deg,#EEF1FF,#FBF0F2) !important; }
+.login-box{ background:rgba(255,255,255,.82) !important; border:1px solid rgba(255,255,255,.7) !important; box-shadow:0 30px 80px rgba(46,16,101,.24), inset 0 1px 0 rgba(255,255,255,.85) !important; }
+.login-box p, .login-company{ color:#6B7189 !important; }
+.login-box-logo{ background:linear-gradient(145deg,#E30613,#FF3350) !important; box-shadow:0 12px 28px rgba(227,6,19,.4) !important; }
+.login-input{ color:#151A2E !important; }
+.login-input::placeholder{ color:#9AA1B8 !important; }
+.login-err, .toast, .stat-label{ }
 </style>
 </head>
 <body>
