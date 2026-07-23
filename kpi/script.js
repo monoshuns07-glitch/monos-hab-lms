@@ -1124,6 +1124,9 @@ function openMenu(anchor, items, onSelect) {
   if (left + 230 > window.innerWidth) left = window.innerWidth - 240;
   menu.style.left = Math.max(8, left) + 'px';
   menu.style.top = (r.bottom + 6 + window.scrollY) + 'px';
+  // Урт жагсаалтыг цэс дотроо гүйлгэдэг болгоно (хуудсаар гүйлгэхэд хаагдахаас сэргийлнэ)
+  menu.style.maxHeight = Math.max(160, window.innerHeight - r.bottom - 16) + 'px';
+  menu.style.overflowY = 'auto';
   activeMenu = menu;
 }
 
@@ -6498,7 +6501,11 @@ async function init() {
     }
   });
   window.addEventListener('resize', closeMenu);
-  window.addEventListener('scroll', closeMenu, true);
+  window.addEventListener('scroll', function (e) {
+    // Цэсний дотор гүйлгэж байвал хаахгүй — зөвхөн хуудас/бусад гүйлгэлтэд хаана
+    if (activeMenu && e.target && e.target.nodeType === 1 && (e.target === activeMenu || activeMenu.contains(e.target))) return;
+    closeMenu();
+  }, true);
 
   /* Ажилтан шалгалтыг шинэ табд өгөөд буцаж ирэхэд дүнг автоматаар шинэчилж, идэвхтэй хуудсыг дахин зурна */
   document.addEventListener('visibilitychange', function () {
