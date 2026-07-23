@@ -331,7 +331,7 @@ function getHabeaDb() {
 async function readHabeaExamsByEmail() {
   var map = {};
   try {
-    var hdb = getHabeaDb(); if (!hdb) return map;
+    var hdb = getHabeaDb(); if (!hdb) return null;
     var snap = await hdb.collection('habea_exam_results').get();
     snap.forEach(function (d) {
       var x = d.data() || {};
@@ -339,32 +339,46 @@ async function readHabeaExamsByEmail() {
       if (!email) return;
       var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
       var pct = num(x.percent);
-      if (x.examType === 'pre') { if (rec.pre == null) rec.pre = pct; }
-      else { if (rec.post == null) rec.post = pct; }
       if (x.passed) rec.anyPassed = true;
       rec.list.push({ title: x.examTitle || 'ХАБЭА шалгалт', key: x.examKey || '', type: x.examType || '', percent: pct, passed: !!x.passed, ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0 });
     });
-    Object.keys(map).forEach(function (k) { map[k].list.sort(function (a, b) { return b.ts - a.ts; }); });
-  } catch (e) {}
-  return map;
+    Object.keys(map).forEach(function (k) {
+      var rec = map[k];
+      rec.list.sort(function (a, b) { return b.ts - a.ts; }); // сүүлийнх нь эхэнд
+      for (var i = 0; i < rec.list.length; i++) { // pre/post — СҮҮЛИЙН оролдлогоор
+        var it = rec.list[i];
+        if (it.type === 'pre') { if (rec.pre == null) rec.pre = it.percent; }
+        else if (it.type === 'post') { if (rec.post == null) rec.post = it.percent; }
+      }
+    });
+    return map;
+  } catch (e) { return null; } // алдаа — null (дуудагч өгөгдлийг арилгахгүй)
 }
 
 /* habea exam дүнг KPI-ийн empProgress-д бичих (examKey → training module key тааруулна) */
 function syncHabeaToModProgress(habeaByEmail, employees) {
+  if (!habeaByEmail) return false;
   var modKeys = Object.keys(TRAINING_MODULES);
   var changed = false;
   (employees || []).forEach(function (emp) {
     var email = String(emp.email || '').toLowerCase().trim();
     var hx = habeaByEmail[email];
     if (!hx || !hx.list) return;
+    // Модуль тус бүрийн ХАМГИЙН СҮҮЛИЙН оролдлогыг олно (ts max)
+    var latest = {};
     hx.list.forEach(function (item) {
       var mkey = item.key;
       if (!mkey || modKeys.indexOf(mkey) === -1) return;
+      if (!latest[mkey] || (item.ts || 0) > (latest[mkey].ts || 0)) latest[mkey] = item;
+    });
+    Object.keys(latest).forEach(function (mkey) {
+      var item = latest[mkey];
       var progKey = emp.id + '_' + mkey;
       DB.empProgress = DB.empProgress || {};
       var cur = DB.empProgress[progKey] || {};
       var pct = Math.round(item.percent || 0);
-      if (!cur.examTaken || pct > (cur.examScore || 0)) {
+      // Зөвхөн сүүлийн дүнгээр — өөрчлөгдсөн үед л бичнэ (илүү зураалт/фликер саармагжуулна)
+      if (!cur.examTaken || cur.examScore !== pct || cur.examPassed !== !!item.passed) {
         DB.empProgress[progKey] = _merge(cur, { examTaken: true, examScore: pct, examPassed: !!item.passed, examTakenAt: item.ts ? new Date(item.ts * 1000).toISOString() : new Date().toISOString() });
         changed = true;
       }
@@ -382,16 +396,23 @@ async function refreshMyExams() {
     })[0];
     if (!me || !me.email) return false;
     var map = await readHabeaExamsByEmail();
+    if (!map) return false; // унших алдаа — өгөгдлийг арилгахгүй (фликерээс сэргийлнэ)
     // Модуль шалгалтын дүнг empProgress-д синк — "ХАБЭА Шалгалт" карт болон модуль хуудас эндээс уншина
     try { syncHabeaToModProgress(map, DB.employees); } catch (e) {}
     var hx = map[String(me.email).toLowerCase().trim()];
-    if (!hx) { me.habeaExams = []; return true; }
-    if (hx.post != null && hx.pre != null) { me.examPrev = hx.pre; me.examScore = hx.post; }
-    else if (hx.post != null) { me.examScore = hx.post; }
-    else if (hx.pre != null) { me.examScore = hx.pre; me.examPrev = null; }
-    if (hx.anyPassed) me.firstTry = 1;
-    me.habeaExams = hx.list || [];
-    return true;
+    var newList = (hx && hx.list) ? hx.list : [];
+    // Өгөгдөл үнэхээр өөрчлөгдсөн эсэхийг шалгаж, өөрчлөгдсөн үед л дахин зурна (фликер саармагжуулна)
+    var sig = newList.map(function (x) { return (x.key || '') + ':' + (x.type || '') + ':' + x.percent + ':' + (x.ts || 0); }).join('|');
+    var changed = (sig !== me._examSig);
+    me._examSig = sig;
+    me.habeaExams = newList;
+    if (hx) {
+      if (hx.post != null && hx.pre != null) { me.examPrev = hx.pre; me.examScore = hx.post; }
+      else if (hx.post != null) { me.examScore = hx.post; }
+      else if (hx.pre != null) { me.examScore = hx.pre; me.examPrev = null; }
+      if (hx.anyPassed) me.firstTry = 1;
+    }
+    return changed;
   } catch (e) { return false; }
 }
 
@@ -409,7 +430,7 @@ async function buildEmployeesFromRealData() {
       var progSnap = await fdb.collection('training_progress').get();
       progSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
     } catch (e) {}
-    var habeaByEmail = await readHabeaExamsByEmail(); // ХАБЭА шалгалтын дүн (имэйлээр)
+    var habeaByEmail = await readHabeaExamsByEmail() || {}; // ХАБЭА шалгалтын дүн (имэйлээр)
 
     // Эрсдэл/санал тоо (KPI системд тухайн ажилтны оруулсан) — оролцоонд нэмнэ
     var reportByUid = {};
@@ -486,7 +507,7 @@ async function syncEmployeesWithRealData() {
   });
   try {
     var habeaMap = await readHabeaExamsByEmail();
-    if (syncHabeaToModProgress(habeaMap, DB.employees)) saveDB();
+    if (habeaMap && syncHabeaToModProgress(habeaMap, DB.employees)) saveDB();
   } catch (e) {}
   return true;
 }
@@ -1535,7 +1556,7 @@ function renderTrainingModule(key) {
     _trnSyncInProgress = true;
     readHabeaExamsByEmail().then(function (habeaMap) {
       _trnSyncInProgress = false;
-      if (syncHabeaToModProgress(habeaMap, DB.employees)) {
+      if (habeaMap && syncHabeaToModProgress(habeaMap, DB.employees)) {
         saveDB();
         if (CURRENT_MOD === key) renderTrainingModule(key);
       }
@@ -1791,39 +1812,45 @@ function actionEditCourse(cat) {
   buildModal(cat + ' — агуулга засах', node, { width: '480px' });
 }
 
-/* Шалгалтын дүнг шалгалт тус бүрээр бүлэглэж, ХАМГИЙН ӨНДӨР дүн + оролдлогын тоог харуулна */
+/* Шалгалтын дүнг МОДУЛИАР бүлэглэж, дотор нь урьдчилсан ба дараах шалгалтын СҮҮЛИЙН дүнг харуулна */
 function habeaExamsHTML(e) {
   var list = (e && e.habeaExams) || [];
   if (!list.length) return '';
-  // Шалгалт бүрээр (key, байхгүй бол нэрээр) бүлэглэнэ
-  var byExam = {};
+  // Модуль тус бүрээр бүлэглэж, урьдчилсан(pre)/дараах(post)-ийн сүүлийн оролдлогыг авна
+  var mods = {};
   list.forEach(function (x) {
     var k = x.key || x.title || '?';
-    var g = byExam[k];
-    if (!g) { byExam[k] = { title: x.title || 'ХАБЭА шалгалт', best: (x.percent || 0), passed: !!x.passed, count: 1, lastTs: (x.ts || 0) }; }
-    else {
-      g.count++;
-      if ((x.percent || 0) > g.best) { g.best = (x.percent || 0); g.passed = !!x.passed; }
-      if ((x.ts || 0) > g.lastTs) g.lastTs = (x.ts || 0);
-    }
+    var m = mods[k] || (mods[k] = { title: x.title || 'ХАБЭА шалгалт', pre: null, post: null, other: null, lastTs: 0 });
+    var slot = x.type === 'post' ? 'post' : (x.type === 'pre' ? 'pre' : 'other');
+    if (!m[slot] || (x.ts || 0) > (m[slot].ts || 0)) m[slot] = x; // сүүлийн оролдлого ялна
+    if ((x.ts || 0) > m.lastTs) m.lastTs = (x.ts || 0);
   });
-  var groups = Object.keys(byExam).map(function (k) { return byExam[k]; })
-    .sort(function (a, b) { return b.lastTs - a.lastTs; });
   function fmtD(ts) {
     if (!ts) return '';
     var d = new Date(ts * 1000), p = function (n) { return String(n).padStart(2, '0'); };
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
+  function subRow(label, x) {
+    if (!x) return '';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0 7px 16px;border-top:1px dashed #EEF2F7">' +
+      '<div style="font-size:13px;color:#475569">' + label +
+      ' <span style="font-size:11px;color:#94A3B8">· ' + (x.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') + (x.ts ? ' · ' + fmtD(x.ts) : '') + '</span></div>' +
+      '<span class="score-pill ' + scoreClass(x.percent) + '">' + x.percent + '%</span></div>';
+  }
+  var groups = Object.keys(mods).map(function (k) { return mods[k]; }).sort(function (a, b) { return b.lastTs - a.lastTs; });
   return '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Шалгалтын дүнгүүд</h3>' +
-    '<div style="font-size:12px;color:#8A94A6;margin-bottom:6px">Шалгалт тус бүрийн хамгийн өндөр дүн</div>' +
-    groups.map(function (g) {
-      var sub = (g.count > 1 ? g.count + ' оролдлого · ' : '') +
-        (g.passed ? '<span style="color:#0e8e59">тэнцсэн ✓</span>' : '<span style="color:#dc2626">тэнцээгүй</span>') +
-        (g.lastTs ? ' · сүүлд ' + fmtD(g.lastTs) : '');
-      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #F1F5F9">' +
-        '<div style="min-width:0"><div style="font-weight:600;font-size:14px">' + esc(g.title) + '</div>' +
-        '<div style="font-size:12px;color:#8A94A6">' + sub + '</div></div>' +
-        '<span class="score-pill ' + scoreClass(g.best) + '">' + g.best + '%</span></div>';
+    '<div style="font-size:12px;color:#8A94A6;margin-bottom:8px">Шалгалт бүрийн сүүлийн дүн (сургалтын өмнөх ба дараах)</div>' +
+    groups.map(function (m) {
+      var impr = (m.pre && m.post) ? (m.post.percent - m.pre.percent) : null; // ахиц
+      var imprHTML = (impr != null)
+        ? '<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:' + (impr >= 0 ? '#ECFDF5' : '#FEF2F2') + ';color:' + (impr >= 0 ? '#0e8e59' : '#dc2626') + '">Ахиц ' + (impr >= 0 ? '+' : '') + impr + '%</span>'
+        : '';
+      return '<div style="padding:10px 0;border-top:1px solid #F1F5F9">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:600;font-size:14px"><span>' + esc(m.title) + '</span>' + imprHTML + '</div>' +
+        subRow('Сургалтын өмнөх', m.pre) +
+        subRow('Сургалтын дараах', m.post) +
+        (!m.pre && !m.post ? subRow('Дүн', m.other) : '') +
+        '</div>';
     }).join('') + '</div>';
 }
 
