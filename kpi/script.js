@@ -894,14 +894,11 @@ function deptPpe(dept) {
   var comp = obs.reduce(function (a, o) { return a + _f(o.compliant); }, 0);
   return tot ? Math.round(comp / tot * 100) : null;
 }
+/* Албаны KPI = тухайн албаны идэвхтэй ажилтнуудын KPI-ийн дундаж (ажилтны онооны логиктой тохирно).
+   ХХХ/анхны тусламж/coverage нь тусдаа дэлгэрэнгүй үзүүлэлт болж KPI хуудсанд харагдана. */
 function deptScore(dept) {
-  var dw = kpiCfg().dept;
-  var parts = [
-    { v: deptCoverage(dept), w: dw.coverage }, { v: deptBonusScore(dept), w: dw.bonus },
-    { v: deptFirstAid(dept), w: dw.firstAid }, { v: deptPpe(dept), w: dw.ppe }
-  ].filter(function (p) { return p.v != null; });
-  var ws = parts.reduce(function (a, p) { return a + p.w; }, 0);
-  return ws ? Math.round(parts.reduce(function (a, p) { return a + p.v * p.w; }, 0) / ws) : 0;
+  var m = deptMembers(dept);
+  return m.length ? Math.round(avg(m.map(empTotal))) : 0;
 }
 function dayCounter() {
   var acc = DB.incidents.filter(function (i) { return i.type !== 'near-miss'; });
@@ -2568,10 +2565,11 @@ function renderKpiPage() {
   if (fr) {
     var terms = [['f-blue', 'Босго', (w.bosgo / 100).toFixed(2)], ['f-teal', 'Давтан+шалгалт', (w.davtan / 100).toFixed(2) + '*'],
       ['f-amber', 'Видео', (w.video / 100).toFixed(2) + '~' + ((w.video + w.davtan) / 100).toFixed(2)],
-      ['f-emerald', 'Даалгавар', (w.task / 100).toFixed(2)], ['f-coral', 'Бонус', (w.bonus / 100).toFixed(2)]];
-    fr.innerHTML = '<span>Нийт =</span>' + terms.map(function (t, i) {
+      ['f-emerald', 'Даалгавар', (w.task / 100).toFixed(2)]];
+    fr.innerHTML = '<span>Суурь =</span>' + terms.map(function (t, i) {
       return (i ? '<span>+</span>' : '') + '<span class="f-term ' + t[0] + '">' + t[1] + ' × <strong>' + t[2] + '</strong></span>';
-    }).join('') + '<span style="margin-left:8px;font-size:12px;color:#64748B;font-weight:600">* давтангүй сард жин нь видео руу шилжинэ · бонус зөвхөн нэмнэ ↑</span>';
+    }).join('') + '<span style="margin:0 6px;font-weight:700">+</span><span class="f-term f-coral">Аюул/NM бонус (нэмэгдэнэ ↑)</span>' +
+      '<span style="margin-left:8px;font-size:12px;color:#64748B;font-weight:600">* давтангүй сард жин нь видео руу шилжинэ · дүн 100-аас хэтрэхгүй</span>';
   }
 
   var grid = $('.page[data-page="kpi"] .kpi-cat-grid');
@@ -2622,7 +2620,7 @@ function renderKpiPage() {
   }).join('');
   html += '<div class="kpi-cat-card" style="grid-column:1/-1"><div class="kpi-cat-head" style="margin-bottom:6px">' +
     '<div class="kpi-cat-icon" style="background:#F1F5F9;color:#334155"><i class="ti ti-building-community"></i></div>' +
-    '<div><h3>Албадын оноо</h3><p>Coverage % + бонус + анхны тусламж + PPE мөрдөлт</p></div></div>' +
+    '<div><h3>Албадын оноо</h3><p>Оноо = ажилтнуудын KPI дундаж · баруун талд албаны дэлгэрэнгүй үзүүлэлт</p></div></div>' +
     '<div style="margin-top:6px">' + (deptRows || '<div class="empty-state" style="padding:18px"><i class="ti ti-info-circle"></i><div>Дата алга</div></div>') + '</div></div>';
 
   // — Үнэлгээний түвшин (эерэг хүрээ) —
@@ -2642,11 +2640,11 @@ function kpiMethodologyHtml() {
   return '<div style="line-height:1.6;font-size:14px">' +
     '<p><strong>Зарчим:</strong> Энэ систем ажилтан <strong>идэвхтэй оролцож байгааг</strong> хэмжинэ. <strong>Урьдчилсан ба анхан шатны зааварчилгаа KPI-д ОРОХГҮЙ</strong> (нэг удаагийн шинэ ажилтны танилцуулга тул). Бонус зөвхөн <strong>нэмэгдэнэ</strong>, хэзээ ч хасагдахгүй.</p>' +
     '<p style="margin-top:10px"><strong>Тооцооны хугацаа:</strong> Цалингийн сараар — өмнөх сарын <strong>25</strong>-наас энэ сарын <strong>24</strong> хүртэл.</p>' +
-    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = Босго ' + c.weights.bosgo + '% + Давтан+шалгалт ' + c.weights.davtan + '% + Видео сургалт(LMS) ' + c.weights.video + '% + Даалгавар ' + c.weights.task + '% + Аюул/NM бонус ' + c.weights.bonus + '%.</p>' +
+    '<p style="margin-top:10px"><strong>Хувь хүний оноо</strong> = <u>Суурь оноо</u> (Босго ' + c.weights.bosgo + '% + Давтан+шалгалт ' + c.weights.davtan + '% + Видео ' + c.weights.video + '% + Даалгавар ' + c.weights.task + '%) <strong>дээр Аюул/NM бонус нэмэгдэнэ</strong> (дээд тал нь +' + c.weights.bonus + ', 100-аас хэтрэхгүй). Оногдоогүй үзүүлэлт байвал үлдсэн үзүүлэлтээр дахин жинлэнэ.</p>' +
     '<p style="margin-top:10px"><strong>Босго оноо:</strong> Осол/зөрчилгүй ажилласан бол автоматаар бүтэн олгогдоно. Өөрийн буруутайгаас осол/зөрчилд холбогдвол бүртгэсэн оноогоор хасагдана (Ажилтнууд → ажилтны дэлгэрэнгүйгээс админ бүртгэнэ).</p>' +
     '<p style="margin-top:10px"><strong>Давтан + шалгалт:</strong> Тухайн албанд энэ цалингийн сард давтан зааварчилгаа товлогдсон бол л тооцогдоно (дотроо: суусан 1/3, шалгалтын дүн 2/3). Давтангүй сард энэ жин <strong>видео сургалт руу автоматаар шилжиж</strong>, видео ' + c.weights.video + '% → ' + (c.weights.video + c.weights.davtan) + '% болно. Аль алба давтантайг Тохиргооноос сар бүр тэмдэглэнэ.</p>' +
     '<p style="margin-top:10px"><strong>Бонус</strong> зөвхөн ХАБ ажилтан <strong>баталгаажуулсны дараа</strong> тооцогдоно. Аюул +' + c.bonus.hazard + '. Near-miss эрсдэлээр: бага ' + c.bonus.nearMiss.low + ', дунд ' + c.bonus.nearMiss.mid + ', өндөр ' + c.bonus.nearMiss.high + '. Нэг хүн сард дээд тал нь ' + c.bonus.monthlyCap + ' мэдээллээр бонус авна (тоо биш чанарыг урамшуулна).</p>' +
-    '<p style="margin-top:10px"><strong>Албаны оноо</strong> = босго (' + c.baseThreshold + ') давсан гишүүдийн хувь (coverage) + албаны бонус + анхны тусламжийн хайрцгийн бүрэн бүтэн байдал + PPE мөрдөлтийн %. <em>Нэг хүний хоцрогдол бүхэл албыг унагаахгүй.</em></p>' +
+    '<p style="margin-top:10px"><strong>Албаны KPI</strong> = тухайн албаны ажилтнуудын KPI-ийн дундаж. ХХХ мөрдөлт, анхны тусламжийн хайрцаг, coverage зэрэг албаны түвшний үзүүлэлтийг дэлгэрэнгүйд тусдаа харуулна.</p>' +
     '<p style="margin-top:10px;color:#64748B;font-size:13px">Бүх жин, босго, бонус оноо, cap-ыг <strong>Тохиргоо</strong> хэсгээс өөрчилж болно — кодонд хатуу бичээгүй.</p>' +
     '</div>';
 }
