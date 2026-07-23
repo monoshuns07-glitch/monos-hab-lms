@@ -382,6 +382,8 @@ async function refreshMyExams() {
     })[0];
     if (!me || !me.email) return false;
     var map = await readHabeaExamsByEmail();
+    // Модуль шалгалтын дүнг empProgress-д синк — "ХАБЭА Шалгалт" карт болон модуль хуудас эндээс уншина
+    try { syncHabeaToModProgress(map, DB.employees); } catch (e) {}
     var hx = map[String(me.email).toLowerCase().trim()];
     if (!hx) { me.habeaExams = []; return true; }
     if (hx.post != null && hx.pre != null) { me.examPrev = hx.pre; me.examScore = hx.post; }
@@ -1146,6 +1148,12 @@ var EXAM_PAGES = [
 ];
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
+
+  // Ажилтан шалгалт өгөөд буцахад дүнг Firebase-ээс дахин татаж шинэчилнэ
+  if (!isAdmin() && fbReady && (Date.now() - (renderMyExams._lastRefresh || 0) > 4000)) {
+    renderMyExams._lastRefresh = Date.now();
+    refreshMyExams().then(function (ch) { if (ch) renderMyExams(); });
+  }
 
   if (isAdmin()) {
     var adminCards = EXAM_PAGES.map(function (ep) {
@@ -6382,6 +6390,23 @@ async function init() {
   });
   window.addEventListener('resize', closeMenu);
   window.addEventListener('scroll', closeMenu, true);
+
+  /* Ажилтан шалгалтыг шинэ табд өгөөд буцаж ирэхэд дүнг автоматаар шинэчилж, идэвхтэй хуудсыг дахин зурна */
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden || isAdmin() || !fbReady) return;
+    if (Date.now() - (window._lastVisRefresh || 0) < 3000) return;
+    window._lastVisRefresh = Date.now();
+    refreshMyExams().then(function (ch) {
+      if (!ch) return;
+      var active = document.querySelector('.page.active');
+      var pg = active ? active.getAttribute('data-page') : '';
+      try {
+        if (pg === 'myexams') renderMyExams();
+        else if (pg === 'dashboard') renderEmployeeDashboard();
+        else if (pg === 'trn-mod') renderTrainingModule(CURRENT_MOD);
+      } catch (e) {}
+    });
+  });
 
   setTimeout(renderCharts, 80);
   if (fresh) setTimeout(function () { toast('Тавтай морил! Жишээ өгөгдөл ачааллаа.', 'info'); }, 400);
