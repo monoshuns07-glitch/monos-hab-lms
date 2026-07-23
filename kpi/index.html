@@ -6,7 +6,7 @@
 <title>SafeWork · ХАБЭА удирдлагын систем</title>
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=65">
 <style>
   /* Сургалтын шатлалт мод цэс */
   .nav-tree { display: block; }
@@ -15,25 +15,33 @@
   .nav-tree > summary::marker { content: ""; }
   .nav-tree-head .tree-arrow { margin-left: auto; font-size: 15px; transition: transform .15s ease; opacity: .6; }
   .nav-tree[open] > summary .tree-arrow { transform: rotate(90deg); }
-  .nav-tree-body { padding-left: 16px; border-left: 1px solid rgba(0,0,0,.07); margin-left: 14px; }
+  .nav-tree-body { padding-left: 16px; border-left: 1.5px solid rgba(79,70,229,.14); margin-left: 14px; }
   .nav-item.leaf { font-size: 12.5px; padding-top: 7px; padding-bottom: 7px; }
   .nav-item.leaf span { white-space: normal; line-height: 1.3; }
-  .nav-item.leaf.active { background: rgba(16,142,89,.12); color: #0e8e59; font-weight: 600; border-radius: 8px; }
+  .nav-item.leaf.active { background: rgba(79,70,229,.12); color: #4F46E5; font-weight: 700; border-radius: 9px; }
   .nav-tree-head.sub span { font-size: 13px; }
   /* Гарах товч */
-  .kpi-logout-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 10px 14px; background: #fff; color: #dc2626; border: 1px solid rgba(220,38,38,.25); border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; font-family: inherit; }
-  .kpi-logout-btn:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .kpi-logout-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 11px 14px; background: #fff; color: #E11D48; border: 1.5px solid rgba(225,29,72,.22); border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; font-family: inherit; }
+  .kpi-logout-btn:hover { background: #E11D48; color: #fff; border-color: #E11D48; box-shadow: 0 6px 16px rgba(225,29,72,.26); }
   .kpi-logout-btn i { font-size: 16px; }
-  /* Апп доторх нэвтрэх дэлгэц */
-  .login-screen { position: fixed; inset: 0; background: linear-gradient(135deg,#0e8e59,#065f46); display: none; align-items: center; justify-content: center; z-index: 99999; padding: 16px; }
-  .login-card { background: #fff; border-radius: 20px; padding: 36px 32px; width: 360px; max-width: 92vw; box-shadow: 0 24px 70px rgba(0,0,0,.35); text-align: center; box-sizing: border-box; }
-  .login-logo { width: 64px; height: 64px; border-radius: 18px; background: #0e8e59; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 14px; }
-  .login-card h1 { margin: 0; font-size: 24px; font-family: 'Bricolage Grotesque', sans-serif; }
-  .login-sub { color: #64748b; margin: 4px 0 22px; font-size: 14px; }
-  .login-card input { width: 100%; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 12px; font-size: 15px; box-sizing: border-box; font-family: inherit; }
-  .login-card input:focus { outline: none; border-color: #0e8e59; }
-  .login-err { color: #dc2626; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
-  .login-card .btn-block { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
+  /* Апп доторх нэвтрэх дэлгэц — Aurora Light */
+  .login-screen { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 99999; padding: 16px;
+    background:
+      radial-gradient(1100px 700px at 12% -8%, rgba(79,70,229,.35), transparent 60%),
+      radial-gradient(1000px 640px at 92% 8%, rgba(124,58,237,.30), transparent 58%),
+      radial-gradient(1000px 700px at 50% 112%, rgba(236,72,153,.22), transparent 60%),
+      linear-gradient(135deg,#EEF1FF,#F5F0FF 55%,#FDF2FB); overflow: hidden; }
+  .login-screen::before { content:""; position:absolute; inset:0; background-image: radial-gradient(circle at 1px 1px, rgba(79,70,229,.10) 1px, transparent 0); background-size: 22px 22px; opacity:.5; pointer-events:none; }
+  .login-card { position: relative; background: rgba(255,255,255,.78); backdrop-filter: blur(26px) saturate(1.4); -webkit-backdrop-filter: blur(26px) saturate(1.4); border: 1px solid rgba(255,255,255,.7); border-radius: 26px; padding: 40px 34px; width: 380px; max-width: 92vw; box-shadow: 0 30px 80px rgba(46,16,101,.28), inset 0 1px 0 rgba(255,255,255,.85); text-align: center; box-sizing: border-box; animation: loginPop .5s cubic-bezier(.2,.8,.2,1) both; }
+  .login-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px; border-radius:26px 26px 0 0; background: linear-gradient(90deg,#4F46E5,#7C3AED,#EC4899); }
+  @keyframes loginPop { from { opacity:0; transform: translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+  .login-logo { width: 68px; height: 68px; border-radius: 20px; background: linear-gradient(135deg,#4F46E5,#7C3AED); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 34px; margin: 0 auto 16px; box-shadow: 0 12px 28px rgba(79,70,229,.42); }
+  .login-card h1 { margin: 0; font-size: 25px; font-family: 'Bricolage Grotesque', sans-serif; letter-spacing:-.02em; background: linear-gradient(135deg,#1E1B4B,#4F46E5); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .login-sub { color: #6B6F8A; margin: 5px 0 24px; font-size: 14px; }
+  .login-card input { width: 100%; padding: 13px 15px; border: 1.5px solid #E4E7F5; border-radius: 13px; margin-bottom: 12px; font-size: 15px; box-sizing: border-box; font-family: inherit; background:#fff; transition: border-color .15s, box-shadow .15s; }
+  .login-card input:focus { outline: none; border-color: #4F46E5; box-shadow: 0 0 0 4px rgba(79,70,229,.13); }
+  .login-err { color: #E11D48; font-size: 13px; min-height: 18px; margin-bottom: 8px; }
+  .login-card .btn-block { width: 100%; justify-content: center; padding: 13px; font-size: 15px; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -70,7 +78,7 @@
       <details class="nav-tree" open>
         <summary class="nav-item nav-tree-head"><i class="ti ti-school"></i><span>Сургалт</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
         <div class="nav-tree-body">
-          <a class="nav-item leaf" data-batch-training="1" data-admin="1" style="color:var(--emerald,#0e8e59);font-weight:600"><i class="ti ti-table-plus"></i><span>＋ Бүлэг сургалт нэмэх</span></a>
+          <a class="nav-item leaf" data-batch-training="1" data-admin="1" style="color:var(--primary,#4F46E5);font-weight:700"><i class="ti ti-table-plus"></i><span>＋ Бүлэг сургалт нэмэх</span></a>
           <details class="nav-tree">
             <summary class="nav-item nav-tree-head sub"><i class="ti ti-home"></i><span>Дотоод сургалт</span><i class="ti ti-chevron-right tree-arrow"></i></summary>
             <div class="nav-tree-body">
@@ -1829,11 +1837,11 @@
     </div>
     <div class="card" style="padding:28px;margin-top:18px">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-        <i class="ti ti-school" style="font-size:28px;color:#0e8e59"></i>
+        <i class="ti ti-school" style="font-size:28px;color:#4F46E5"></i>
         <h2 style="margin:0;font-size:18px" data-cat-title2>Сургалт</h2>
       </div>
       <p style="color:#64748b;line-height:1.6">Энэ ангиллын сургалтууд, хамрагдсан ажилчид, дүн энд харагдана. Бодит сургалтын мэдээллийг холбох ажил үргэлжилж байна.</p>
-      <div style="margin-top:16px;padding:14px 16px;background:rgba(16,142,89,.06);border-radius:10px;color:#0e8e59;font-size:13px">
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(79,70,229,.07);border-radius:12px;color:#4F46E5;font-size:13px">
         <i class="ti ti-info-circle"></i> Сургалт нэмэх, ажилтан хамруулах хэсэг удахгүй идэвхжинэ.
       </div>
     </div>
@@ -1845,6 +1853,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js?v=64"></script>
+<script src="script.js?v=65"></script>
 </body>
 </html>
