@@ -49,9 +49,9 @@ function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(functio
    - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
    - depthead (Албаны дарга): зөвхөн өөрийн алба
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
-var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'violations'];
+var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'violations'];
 var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
-var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'council', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe', 'violations'];
+var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe', 'violations'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -63,7 +63,7 @@ var pageLabels = {
   dashboard: 'Хяналтын самбар', employees: 'Ажилтнууд', kpi: 'KPI үнэлгээ',
   reportflow: 'Аюул/Near-miss мэдээлэл', hazards: 'Эрсдэлийн үнэлгээ', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
-  ppe: 'ХХХ хяналт', council: 'ХАБЭА-н зөвлөл', teams: 'Teams интеграц',
+  ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
   'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт'
 };
