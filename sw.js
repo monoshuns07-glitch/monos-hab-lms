@@ -3,7 +3,7 @@
    HTML/JS-ийг КЭШЛЭХГҮЙ — үргэлж сүлжээнээс шинийг авна (хуучин хувилбар үлдэхээс сэргийлнэ).
    Зөвхөн icon/manifest зэрэг статик жижиг файлыг кэшэлнэ. */
 
-const CACHE = 'monos-hab-static-v1';
+const CACHE = 'monos-hab-static-v2';
 const STATIC_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -35,18 +35,16 @@ self.addEventListener('fetch', (e) => {
   try { url = new URL(req.url); } catch (_) { return; }
   if (url.origin !== self.location.origin) return;   // гадны сервер (Firebase, CDN) — хөндөхгүй
 
-  // Статик icon/manifest — кэшээс хурдан, дараа нь шинэчилнэ
-  if (STATIC_ASSETS.indexOf(url.pathname) !== -1) {
-    e.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
-      }))
-    );
-    return;
-  }
+  // ⚠️ ЗӨВХӨН icon/manifest-ийг л зохицуулна.
+  // Бусад БҮХ хүсэлтэд respondWith дуудахгүй → браузер өөрөө шууд авна
+  // (service worker огт байхгүй үеийнхтэй ЯГ адил ажиллана).
+  if (STATIC_ASSETS.indexOf(url.pathname) === -1) return;
 
-  // Бусад бүхэн (HTML, JS, CSS, видео) — ҮРГЭЛЖ сүлжээнээс
-  e.respondWith(fetch(req).catch(() => caches.match(req)));
+  e.respondWith(
+    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+      return res;
+    }))
+  );
 });
