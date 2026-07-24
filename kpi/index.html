@@ -6,6 +6,7 @@
 <title>SafeWork · ХАБЭА удирдлагын систем</title>
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
+<link rel="stylesheet" href="/forest-theme.css">
 <link rel="stylesheet" href="style.css?v=65">
 <style>
   /* Сургалтын шатлалт мод цэс */
@@ -31,8 +32,14 @@
       radial-gradient(1000px 640px at 92% 8%, rgba(124,58,237,.30), transparent 58%),
       radial-gradient(1000px 700px at 50% 112%, rgba(236,72,153,.22), transparent 60%),
       linear-gradient(135deg,#EEF1FF,#F5F0FF 55%,#FDF2FB); overflow: hidden; }
-  .login-screen::before { content:""; position:absolute; inset:0; background-image: radial-gradient(circle at 1px 1px, rgba(79,70,229,.10) 1px, transparent 0); background-size: 22px 22px; opacity:.5; pointer-events:none; }
-  .login-card { position: relative; background: rgba(255,255,255,.78); backdrop-filter: blur(26px) saturate(1.4); -webkit-backdrop-filter: blur(26px) saturate(1.4); border: 1px solid rgba(255,255,255,.7); border-radius: 26px; padding: 40px 34px; width: 380px; max-width: 92vw; box-shadow: 0 30px 80px rgba(46,16,101,.28), inset 0 1px 0 rgba(255,255,255,.85); text-align: center; box-sizing: border-box; animation: loginPop .5s cubic-bezier(.2,.8,.2,1) both; }
+  .login-screen::before { content:""; position:absolute; inset:0; background-image: radial-gradient(circle at 1px 1px, rgba(79,70,229,.10) 1px, transparent 0); background-size: 22px 22px; opacity:.35; pointer-events:none; z-index:0; }
+  /* Видео арын дэвсгэр (forest-scene.js оруулна) */
+  #loginScreen .forest-scene { position:absolute; z-index:0; }
+  .login-veil { position:absolute; inset:0; z-index:1; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(14,12,44,.26) 0%, rgba(14,12,44,.44) 100%),
+      radial-gradient(1100px 700px at 50% 52%, rgba(79,70,229,.16), transparent 72%); }
+  .login-card { position: relative; z-index: 2; background: rgba(255,255,255,.82); backdrop-filter: blur(26px) saturate(1.4); -webkit-backdrop-filter: blur(26px) saturate(1.4); border: 1px solid rgba(255,255,255,.7); border-radius: 26px; padding: 40px 34px; width: 380px; max-width: 92vw; box-shadow: 0 30px 80px rgba(46,16,101,.28), inset 0 1px 0 rgba(255,255,255,.85); text-align: center; box-sizing: border-box; animation: loginPop .5s cubic-bezier(.2,.8,.2,1) both; }
   .login-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px; border-radius:26px 26px 0 0; background: linear-gradient(90deg,#4F46E5,#7C3AED,#EC4899); }
   @keyframes loginPop { from { opacity:0; transform: translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
   .login-logo { width: 68px; height: 68px; border-radius: 20px; background: linear-gradient(135deg,#4F46E5,#7C3AED); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 34px; margin: 0 auto 16px; box-shadow: 0 12px 28px rgba(79,70,229,.42); }
@@ -48,6 +55,7 @@
 
 <!-- ============ НЭВТРЭХ ДЭЛГЭЦ (апп дотор) ============ -->
 <div id="loginScreen" class="login-screen">
+  <div class="login-veil"></div>
   <div class="login-card">
     <div class="login-logo"><i class="ti ti-shield-check"></i></div>
     <h1>SafeWork</h1>
@@ -1853,6 +1861,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
-<script src="script.js?v=65"></script>
+<script src="/forest-scene.js"></script>
+<script src="script.js?v=66"></script>
 </body>
 </html>

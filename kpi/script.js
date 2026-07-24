@@ -6234,6 +6234,8 @@ function showLoginScreen() {
   var s = document.getElementById('loginScreen');
   if (!s) { try { location.replace('/index.html'); } catch (e) {} return; } // fallback
   s.style.display = 'flex';
+  // Видео арын дэвсгэр (МОНОС intro) — нэвтрэх дэлгэц дотор
+  try { if (window.renderForestScene && !s.querySelector('.forest-scene')) renderForestScene('#loginScreen', 'login'); } catch (e) {}
   var btn = document.getElementById('loginBtn'),
       em = document.getElementById('loginEmail'),
       pw = document.getElementById('loginPass'),

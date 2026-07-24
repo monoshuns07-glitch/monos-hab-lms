@@ -4,21 +4,22 @@
    Usage: <body data-forest="login|day|lake|sunlit|evening">
 */
 
+/* Замууд ҮНЭМЛЭХҮЙ ('/...') — /kpi/ зэрэг дэд хавтаснаас ч зөв ачаална */
 const FOREST_VIDEOS = {
-  login:   { src: 'img/video-compressed/login-intro.mp4',
+  login:   { src: '/img/video-compressed/login-intro.mp4',
              loop: false, bubbles: true },
-  day:     { src: 'img/video-compressed/login-mongolian-steppe.mp4', loop: true },
-  lake:    { src: 'img/video-compressed/dashboard-khovsgol.mp4', loop: true },
-  sunlit:  { src: 'img/video-compressed/nohon-sunlit-forest.mp4', loop: true },
-  evening: { src: 'img/video-compressed/admin-evening-mountain.mp4', loop: true }
+  day:     { src: '/img/video-compressed/login-mongolian-steppe.mp4', loop: true },
+  lake:    { src: '/img/video-compressed/dashboard-khovsgol.mp4', loop: true },
+  sunlit:  { src: '/img/video-compressed/nohon-sunlit-forest.mp4', loop: true },
+  evening: { src: '/img/video-compressed/admin-evening-mountain.mp4', loop: true }
 };
 
 const FOREST_POSTERS = {
-  login:   'img/bg/login-mongolian-steppe.jpg',
-  day:     'img/bg/login-mongolian-steppe.jpg',
-  lake:    'img/bg/dashboard-khovsgol.jpg',
-  sunlit:  'img/bg/nohon-sunlit-forest.jpg',
-  evening: 'img/bg/admin-evening-mountain.jpg'
+  login:   '/img/bg/login-mongolian-steppe.jpg',
+  day:     '/img/bg/login-mongolian-steppe.jpg',
+  lake:    '/img/bg/dashboard-khovsgol.jpg',
+  sunlit:  '/img/bg/nohon-sunlit-forest.jpg',
+  evening: '/img/bg/admin-evening-mountain.jpg'
 };
 
 function spawnBubbles(scene, count = 24){
