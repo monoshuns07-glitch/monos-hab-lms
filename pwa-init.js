@@ -5,6 +5,14 @@
 (function () {
   'use strict';
 
+  // ── 0. iframe дотор бол ЮУ Ч ХИЙХГҮЙ ──
+  // Даатгал (/nohon-tulbur.html), Контент удирдлага (/admin.html), Видео сургалт
+  // (/employee.html) зэрэг нь KPI апп дотор iframe-ээр ачаалагддаг.
+  // Тэдгээрийн дотор суулгах товч гаргавал хуудасны харагдацыг эвдэнэ.
+  var inFrame = false;
+  try { inFrame = (window.self !== window.top); } catch (e) { inFrame = true; }
+  if (inFrame) return;
+
   // ── 1. Service worker ──
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
