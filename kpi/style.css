@@ -599,6 +599,7 @@ code {
   margin-top: 4px;
 }
 .kpi-trend.up { color: var(--emerald); }
+.kpi-hero .kpi-trend, .kpi-hero .kpi-trend.up { color: rgba(255,255,255,.95); }
 .kpi-trend i { font-size: 13px; }
 .kpi-sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
 
@@ -2178,13 +2179,21 @@ code {
   .icon-btn { width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }
 
   /* — Хуудасны толгой ба үйлдлийн товчнууд — */
-  .page { padding: 16px 12px 46px; }
+  .page { padding: 16px 12px 96px; } /* доод зай — хөвөгч "Апп суулгах" товчны оронд */
   .page-header { gap: 12px; margin-bottom: 16px; align-items: flex-start; }
   h1 { font-size: 21px; }
   h2 { font-size: 17px; }
   .page-subtitle { font-size: 12.5px; }
   .page-actions { flex-wrap: wrap; width: 100%; gap: 8px; }
-  .page-actions .btn, .page-actions .select-pill { flex: 1 1 auto; min-width: 0; justify-content: center; }
+  .page-actions > .btn, .page-actions > .select-pill { flex: 1 1 44%; min-width: 0; justify-content: center; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Media/график хэзээ ч дэлгэцээс хэтрэхгүй */
+  img, video, canvas, svg, iframe, table { max-width: 100% !important; }
+  .kpi-mini-chart, .train-thumb, #trendChart { max-width: 100%; overflow: hidden; }
+  /* Flex/grid хүүхдүүд агшиж чадах болгоно (нэвтэрхий хальтрахаас сэргийлнэ) */
+  .page-header, .page-actions, .filter-bar, .card, .kpi-card, .card-header,
+  .detail-row, .kpi-cat-head, .kpi-cat-items li, .member-row, .activity-list li { min-width: 0; }
+  .card-header > *, .kpi-cat-items li > *, .detail-row > * { min-width: 0; }
   .btn { padding: 9px 13px; font-size: 12.5px; }
   .filter-bar { gap: 8px; }
   .filter-bar > * { flex: 1 1 auto; min-width: 0; }
