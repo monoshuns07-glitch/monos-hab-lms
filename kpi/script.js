@@ -6518,6 +6518,15 @@ async function init() {
       if (topSearch) topSearch.focus();
     }
   });
+  /* Гар утас: хажуугийн цэс нээлттэй үед гадуур дарахад хаана */
+  document.addEventListener('click', function (e) {
+    if (window.innerWidth >= 768) return;
+    var sb = $('#sidebar');
+    if (!sb || !sb.classList.contains('open')) return;
+    if (e.target.closest && (e.target.closest('#sidebar') || e.target.closest('.menu-toggle'))) return;
+    sb.classList.remove('open');
+  }, true);
+
   window.addEventListener('resize', closeMenu);
   window.addEventListener('scroll', function (e) {
     // Цэсний дотор гүйлгэж байвал хаахгүй — зөвхөн хуудас/бусад гүйлгэлтэд хаана

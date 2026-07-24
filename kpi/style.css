@@ -2158,3 +2158,101 @@ code {
   .toast { min-width: 0; max-width: none; }
   .kb-row { grid-template-columns: 1fr 60px 28px; }
 }
+
+/* ============================================================
+   📱 ГАР УТАС — бүрэн тохируулга (хэвтээ хальтрахыг зогсоох)
+   ============================================================ */
+@media (max-width: 900px) {
+  /* — Хэвтээ гүйлгэлт бүрмөсөн болиулах — */
+  html, body { max-width: 100%; overflow-x: hidden; }
+  .main { max-width: 100vw; overflow-x: hidden; }
+  .page { max-width: 100%; overflow-x: hidden; }
+  .card, .kpi-card, .stat-strip, .kpi-cat-card, .ppe-card, .report-card { max-width: 100%; }
+
+  /* — Дээд баар — */
+  .topbar { gap: 8px; padding: 0 12px; }
+  .search-box { display: none; }
+  .breadcrumb .bc-home, .breadcrumb .bc-sep { display: none; }
+  .bc-current { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48vw; display: block; }
+  .topbar-actions { gap: 6px; margin-left: auto; }
+  .icon-btn { width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }
+
+  /* — Хуудасны толгой ба үйлдлийн товчнууд — */
+  .page { padding: 16px 12px 46px; }
+  .page-header { gap: 12px; margin-bottom: 16px; align-items: flex-start; }
+  h1 { font-size: 21px; }
+  h2 { font-size: 17px; }
+  .page-subtitle { font-size: 12.5px; }
+  .page-actions { flex-wrap: wrap; width: 100%; gap: 8px; }
+  .page-actions .btn, .page-actions .select-pill { flex: 1 1 auto; min-width: 0; justify-content: center; }
+  .btn { padding: 9px 13px; font-size: 12.5px; }
+  .filter-bar { gap: 8px; }
+  .filter-bar > * { flex: 1 1 auto; min-width: 0; }
+
+  /* — Карт ба сүлжээ: бүгд нэг багана — */
+  .card { padding: 15px; border-radius: 14px; margin-bottom: 12px; }
+  .grid-2, .kpi-grid, .kpi-cat-grid, .training-grid, .ppe-grid,
+  .report-grid, .source-grid, .suggest-grid { grid-template-columns: 1fr; gap: 12px; }
+  .quick-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat-strip { grid-template-columns: repeat(2, 1fr); padding: 14px; gap: 12px; }
+  .stat-item { border-right: none; padding-right: 0; }
+  .kpi-value { font-size: 30px; }
+  .stat-num { font-size: 22px; }
+  .counter-big { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .counter-num { font-size: 54px; }
+
+  /* — Хүснэгт: хэвтээ гүйлгэдэг болгоно — */
+  .data-table { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .data-table th, .data-table td { padding: 9px 8px; font-size: 12px; }
+  .table-footer { flex-direction: column; gap: 10px; align-items: stretch; text-align: center; }
+  .pagination { justify-content: center; }
+
+  /* — Тогтмол өргөнтэй мөрүүд задлах — */
+  .dept-row { grid-template-columns: 1fr auto; gap: 6px 10px; }
+  .dept-bar-wrap { grid-column: 1 / -1; order: 3; }
+  .weight-row { grid-template-columns: 1fr auto; gap: 6px 10px; }
+  .weight-row input[type="range"] { grid-column: 1 / -1; order: 3; }
+  .hr-item { grid-template-columns: 1fr auto; gap: 6px 10px; }
+  .hr-bar { grid-column: 1 / -1; order: 3; }
+  .tag-rule { grid-template-columns: 1fr; gap: 6px; }
+  .threshold-row { grid-template-columns: 52px 1fr; }
+  .threshold-action { grid-column: 1 / -1; }
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .set-nav { white-space: nowrap; flex-shrink: 0; }
+
+  /* — Чат — */
+  .chat-shell { grid-template-columns: 1fr; height: auto; min-height: 60vh; }
+  .chat-sidebar { display: none; }
+  .bot-msg, .user-msg { max-width: 92%; }
+
+  /* — Бусад — */
+  .flow-diagram { gap: 6px; }
+  .legend-row { gap: 10px; font-size: 11.5px; }
+  .formula { font-size: 14px; gap: 7px; }
+  .f-term { font-size: 12.5px; padding: 5px 10px; }
+  .modal { border-radius: 16px; }
+  .modal-body { padding: 16px; }
+  .modal-head, .modal-foot { padding: 14px 16px; }
+  .modal-foot { flex-direction: column-reverse; }
+  .modal-foot .btn { width: 100%; }
+  .empty-state { padding: 26px 14px; }
+}
+
+/* Маш жижиг дэлгэц */
+@media (max-width: 420px) {
+  .page { padding: 14px 10px 40px; }
+  .card { padding: 13px; }
+  .quick-grid { grid-template-columns: 1fr; }
+  .stat-strip { grid-template-columns: 1fr 1fr; }
+  h1 { font-size: 19px; }
+  .kpi-value { font-size: 27px; }
+  .counter-num { font-size: 46px; }
+  .bc-current { max-width: 40vw; }
+}
+
+/* Хажуугийн цэс нээлттэй үед — арын бүрхүүл */
+@media (max-width: 768px) {
+  .sidebar { box-shadow: 0 0 0 100vmax rgba(15,17,40,0); transition: transform .22s ease, box-shadow .22s ease; }
+  .sidebar.open { box-shadow: 0 0 0 100vmax rgba(15,17,40,.45); }
+}
