@@ -6240,12 +6240,12 @@ function showLoginScreen() {
       em = document.getElementById('loginEmail'),
       pw = document.getElementById('loginPass'),
       err = document.getElementById('loginErr');
-  function fail(m) { if (err) err.textContent = m; if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-login"></i> Нэвтрэх'; } }
+  function fail(m) { if (err) err.textContent = m; if (btn) { btn.disabled = false; btn.textContent = 'Нэвтрэх'; } }
   function doLogin() {
     var email = ((em && em.value) || '').trim().toLowerCase(), pass = (pw && pw.value) || '';
     if (!email || !pass) { fail('Gmail хаяг болон нууц үгээ оруулна уу'); return; }
     if (!fbReady) { fail('Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.'); return; }
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Нэвтэрч байна...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Нэвтэрч байна...'; }
     if (err) err.textContent = '';
     fauth.signInWithEmailAndPassword(email, pass).then(function (cred) {
       // Имэйл+нууц үг зөв бол ОРУУЛНА. Эрх (admin/depthead/employee)-ийг establishSession
