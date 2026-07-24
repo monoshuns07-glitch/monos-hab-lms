@@ -42,9 +42,9 @@
   #loginScreen .brand-wrap,#loginScreen .login-card,#loginScreen .login-footer{position:relative;z-index:2}
 
   /* Лого хэсэг */
-  #loginScreen .brand-wrap{text-align:center;margin-bottom:40px;animation:fadeDown .7s cubic-bezier(.2,.8,.2,1) both}
+  #loginScreen .brand-wrap{text-align:center;margin-bottom:24px;animation:fadeDown .7s cubic-bezier(.2,.8,.2,1) both}
   @keyframes fadeDown{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:translateY(0)}}
-  #loginScreen .brand-logo{width:96px;height:96px;margin:0 auto 20px;position:relative;animation:logoBob 4s ease-in-out infinite}
+  #loginScreen .brand-logo{width:82px;height:82px;margin:0 auto 14px;position:relative;animation:logoBob 4s ease-in-out infinite}
   @keyframes logoBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
   #loginScreen .brand-logo-ring{position:absolute;inset:-3px;border-radius:28px;
     background:conic-gradient(from var(--angle),var(--red) 0%,var(--gold) 20%,#FF6B6B 40%,var(--gold2) 60%,var(--red) 80%,var(--red) 100%);
@@ -53,44 +53,54 @@
   @keyframes spin360{to{--angle:360deg}}
   #loginScreen .brand-logo-inner{position:absolute;inset:3px;background:linear-gradient(145deg,#1A0206,#0C1428);border-radius:25px;display:grid;place-items:center;overflow:hidden}
   #loginScreen .brand-logo-inner::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.14),transparent 55%)}
-  #loginScreen .logo-svg{width:58px;height:58px;position:relative;z-index:1}
-  #loginScreen .brand-company{font-family:'Bricolage Grotesque',serif;font-size:12.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--ink3);margin-bottom:6px}
-  #loginScreen .brand-name{font-family:'Bricolage Grotesque',serif;font-size:38px;font-weight:900;line-height:1;letter-spacing:-.5px;
-    background:linear-gradient(135deg,var(--ink) 0%,var(--red) 45%,var(--gold) 75%,var(--ink) 100%);background-size:280% auto;
-    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:gradSlide 5s linear infinite}
+  #loginScreen .logo-svg{width:50px;height:50px;position:relative;z-index:1}
+  #loginScreen .brand-company{font-family:'Bricolage Grotesque',serif;font-size:11.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.92);margin-bottom:5px;text-shadow:0 2px 12px rgba(0,0,0,.55)}
+  #loginScreen .brand-name{font-family:'Bricolage Grotesque',serif;font-size:32px;font-weight:900;line-height:1;letter-spacing:-.5px;
+    background:linear-gradient(135deg,#fff 0%,var(--gold2) 38%,#FF7A7A 68%,#fff 100%);background-size:280% auto;
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:gradSlide 5s linear infinite;
+    filter:drop-shadow(0 3px 16px rgba(0,0,0,.55))}
   @keyframes gradSlide{to{background-position:280% center}}
-  #loginScreen .brand-sub{font-size:11.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink3);margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:center}
+  #loginScreen .brand-sub{font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.88);margin-top:9px;display:flex;align-items:center;gap:8px;justify-content:center;text-shadow:0 2px 10px rgba(0,0,0,.55)}
   #loginScreen .brand-sub-dot{width:5px;height:5px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 2s ease-in-out infinite}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 
   /* Карт */
-  #loginScreen .login-card{width:100%;max-width:440px;position:relative;animation:fadeUp .7s cubic-bezier(.2,.8,.2,1) .15s both}
+  #loginScreen .login-card{width:100%;max-width:392px;position:relative;animation:fadeUp .7s cubic-bezier(.2,.8,.2,1) .15s both}
   @keyframes fadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
   #loginScreen .login-card-glow{position:absolute;inset:-50px;border-radius:50%;pointer-events:none;z-index:-1;background:radial-gradient(circle,rgba(227,6,19,.08) 0%,transparent 65%);animation:glowBreath 3s ease-in-out infinite}
   @keyframes glowBreath{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.08);opacity:1}}
   #loginScreen .login-card-border{position:absolute;inset:-1.5px;border-radius:26px;z-index:-1;
     background:conic-gradient(from var(--angle),transparent 15%,rgba(227,6,19,.55) 32%,rgba(245,158,11,.5) 50%,rgba(59,130,246,.4) 68%,transparent 85%);
     animation:spin360 7s linear infinite;filter:blur(.4px)}
-  #loginScreen .login-card-inner{background:var(--surface);border-radius:24px;padding:42px 36px;border:1px solid var(--border);box-shadow:var(--sh4);position:relative;overflow:hidden}
+  /* ШИЛЭН карт — видео цаанаас тодорхой харагдана */
+  #loginScreen .login-card-inner{
+    background:linear-gradient(135deg,rgba(255,255,255,.26) 0%,rgba(255,255,255,.13) 45%,rgba(255,255,255,.22) 100%);
+    backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);
+    border:1px solid rgba(255,255,255,.42);border-radius:24px;padding:30px 28px;
+    box-shadow:0 12px 44px rgba(0,0,0,.32),0 2px 10px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.55);
+    position:relative;overflow:hidden}
   #loginScreen .login-card-inner::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--red) 30%,var(--gold) 60%,transparent)}
-  #loginScreen .login-card-inner::after{content:"";position:absolute;top:-60px;right:-60px;width:180px;height:180px;background:radial-gradient(circle,rgba(227,6,19,.05),transparent 65%);pointer-events:none}
-  #loginScreen .card-heading{font-family:'Bricolage Grotesque',serif;font-size:22px;font-weight:800;color:var(--ink);margin-bottom:4px}
-  #loginScreen .card-sub{font-size:13px;color:var(--ink3);margin-bottom:28px;line-height:1.6}
-  #loginScreen .form-group{margin-bottom:16px}
-  #loginScreen .form-label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);margin-bottom:8px}
-  #loginScreen .form-input{width:100%;padding:14px 16px;background:#F9FAFB;border:1.5px solid var(--border2);border-radius:12px;font-size:14px;font-family:inherit;color:var(--ink);outline:none;transition:all .25s}
-  #loginScreen .form-input::placeholder{color:#9CA3AF}
-  #loginScreen .form-input:focus{border-color:var(--red);background:var(--surface);box-shadow:0 0 0 3px rgba(227,6,19,.09)}
-  #loginScreen .login-btn{width:100%;padding:16px;margin-top:6px;background:linear-gradient(135deg,#C10010 0%,var(--red) 50%,#FF2535 100%);background-size:200% auto;color:white;border:none;border-radius:13px;cursor:pointer;font-weight:800;font-size:14px;font-family:inherit;letter-spacing:.07em;text-transform:uppercase;transition:all .35s cubic-bezier(.2,.8,.2,1);position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(227,6,19,.4),0 2px 6px rgba(227,6,19,.25)}
+  #loginScreen .login-card-inner::after{content:"";position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.16),transparent);pointer-events:none}
+  #loginScreen .card-heading{font-family:'Bricolage Grotesque',serif;font-size:21px;font-weight:800;color:#fff;margin-bottom:4px;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+  #loginScreen .card-sub{font-size:12.5px;color:rgba(255,255,255,.86);margin-bottom:22px;line-height:1.55;text-shadow:0 1px 8px rgba(0,0,0,.45)}
+  #loginScreen .form-group{margin-bottom:14px}
+  #loginScreen .form-label{display:block;font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.9);margin-bottom:7px;text-shadow:0 1px 6px rgba(0,0,0,.45)}
+  #loginScreen .form-input{width:100%;padding:13px 15px;background:rgba(255,255,255,.86);border:1.5px solid rgba(255,255,255,.5);border-radius:12px;font-size:14px;font-family:inherit;color:#0F1117;outline:none;transition:all .25s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  #loginScreen .form-input::placeholder{color:#6B7280}
+  #loginScreen .form-input:focus{border-color:var(--red);background:rgba(255,255,255,.97);box-shadow:0 0 0 3px rgba(227,6,19,.22)}
+  #loginScreen .login-btn{width:100%;padding:15px;margin-top:4px;background:linear-gradient(135deg,#C10010 0%,var(--red) 50%,#FF2535 100%);background-size:200% auto;color:white;border:none;border-radius:13px;cursor:pointer;font-weight:800;font-size:14px;font-family:inherit;letter-spacing:.07em;text-transform:uppercase;transition:all .35s cubic-bezier(.2,.8,.2,1);position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(227,6,19,.4),0 2px 6px rgba(227,6,19,.25)}
   #loginScreen .login-btn::after{content:"";position:absolute;top:0;left:-100%;width:60%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:skewX(-18deg);animation:shine 2.8s ease-in-out infinite}
   @keyframes shine{0%,100%{left:-100%}50%{left:160%}}
   #loginScreen .login-btn:hover{background-position:right center;transform:translateY(-2px);box-shadow:0 16px 40px rgba(227,6,19,.5),0 4px 12px rgba(227,6,19,.3)}
   #loginScreen .login-btn:active{transform:translateY(0)}
   #loginScreen .login-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
   #loginScreen .login-btn:disabled::after{animation:none}
-  #loginScreen .login-err{margin-top:12px;padding:12px 15px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;color:#991B1B;font-size:13px}
+  #loginScreen .login-err{margin-top:12px;padding:11px 14px;background:rgba(254,242,242,.94);border:1px solid rgba(252,165,165,.9);border-radius:10px;color:#991B1B;font-size:12.5px;backdrop-filter:blur(8px)}
   #loginScreen .login-err:empty{display:none}
-  #loginScreen .login-footer{margin-top:28px;text-align:center;font-size:11px;color:var(--ink3);letter-spacing:.04em}
+  #loginScreen .login-footer{margin-top:20px;text-align:center;font-size:10.5px;color:rgba(255,255,255,.82);letter-spacing:.04em;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  /* Видеон дээрх зөөлөн бүрхүүл — бичвэр тод болгоно */
+  #loginScreen::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(1200px 820px at 50% 48%, rgba(4,12,26,.40) 0%, rgba(4,12,26,.26) 60%, rgba(4,12,26,.34) 100%)}
   #loginScreen .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spinR .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:7px}
   @keyframes spinR{to{transform:rotate(360deg)}}
 </style>
@@ -1944,6 +1954,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=67"></script>
+<script src="script.js?v=68"></script>
 </body>
 </html>
