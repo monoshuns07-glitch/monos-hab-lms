@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Апп суулгах — Монос Хүнс ХАБЭА-н алба</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E30613">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Manrope',-apple-system,sans-serif;color:#151A2E;min-height:100vh;
+  background:
+    radial-gradient(900px 520px at 8% -6%, rgba(227,6,19,.07), transparent 60%),
+    radial-gradient(820px 480px at 96% -4%, rgba(79,70,229,.07), transparent 60%),
+    radial-gradient(900px 600px at 50% 112%, rgba(245,180,0,.06), transparent 62%),
+    #F5F6FE;
+  background-attachment:fixed;
+  display:flex;align-items:center;justify-content:center;padding:28px 18px;
+}
+.wrap{width:100%;max-width:880px}
+.card{
+  background:#fff;border:1px solid #E6E9F5;border-radius:24px;
+  box-shadow:0 2px 8px rgba(23,25,60,.05),0 22px 60px rgba(23,25,60,.10);
+  overflow:hidden;
+}
+.head{
+  padding:30px 32px 26px;text-align:center;
+  background:linear-gradient(135deg,#23060C 0%,#0A1226 100%);color:#fff;position:relative;overflow:hidden;
+}
+.head::after{content:"";position:absolute;top:-40%;left:-15%;width:60%;height:150%;
+  background:radial-gradient(circle,rgba(227,6,19,.35),transparent 65%)}
+.logo{width:82px;height:82px;margin:0 auto 14px;display:block;border-radius:22px;position:relative;z-index:1;
+  box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.co{font-size:11.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.75);position:relative;z-index:1}
+.ttl{font-size:27px;font-weight:900;letter-spacing:-.4px;margin-top:5px;position:relative;z-index:1;
+  background:linear-gradient(135deg,#fff,#FCD34D 45%,#FF7A7A 75%,#fff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{font-size:13px;color:rgba(255,255,255,.72);margin-top:8px;position:relative;z-index:1}
+
+.body{padding:30px 32px 34px}
+.qrrow{display:flex;gap:30px;align-items:center;flex-wrap:wrap;justify-content:center}
+.qrbox{background:#fff;border:2px solid #E6E9F5;border-radius:20px;padding:16px;box-shadow:0 8px 24px rgba(23,25,60,.08);flex-shrink:0}
+.qrbox img{display:block;width:236px;height:236px}
+.qrcap{text-align:center;font-size:12px;color:#6B7189;margin-top:10px;font-weight:600}
+.qrside{flex:1;min-width:260px}
+.qrside h2{font-size:19px;font-weight:800;margin-bottom:8px}
+.qrside p{font-size:14px;color:#4B5268;line-height:1.75}
+.url{display:inline-block;margin-top:14px;padding:11px 16px;background:#F3F5FC;border:1.5px solid #E1E5F2;
+  border-radius:12px;font-size:14px;font-weight:700;color:#151A2E;word-break:break-all}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}
+@media(max-width:760px){.steps{grid-template-columns:1fr}}
+.step{border:1px solid #E6E9F5;border-radius:18px;padding:20px;background:#FBFCFF}
+.step-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.step-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;flex-shrink:0}
+.i-and{background:#DCFCE7;color:#166534}
+.i-ios{background:#E0E7FF;color:#3730A3}
+.i-pc{background:#FEE2E2;color:#991B1B}
+.step-t{font-size:14.5px;font-weight:800}
+.step ol{margin:0;padding-left:19px}
+.step li{font-size:13px;color:#4B5268;line-height:1.85;margin-bottom:3px}
+.step b{color:#151A2E}
+
+.note{margin-top:26px;display:flex;gap:11px;align-items:flex-start;
+  background:#F0FDF4;border:1px solid #BBF7D0;border-radius:14px;padding:15px 17px}
+.note-ic{font-size:18px;line-height:1.2}
+.note-tx{font-size:13px;color:#166534;line-height:1.7}
+.foot{text-align:center;font-size:11.5px;color:#8B93AB;margin-top:22px}
+
+@media print{
+  body{background:#fff;padding:0}
+  .card{box-shadow:none;border:none}
+  .head{background:#23060C !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .step,.note,.qrbox{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="head">
+      <img class="logo" src="/icons/icon-192.png" alt="МОНОС">
+      <div class="co">Монос Хүнс ХК</div>
+      <div class="ttl">ХАБЭА-н алба</div>
+      <div class="sub">Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн нэгдсэн систем</div>
+    </div>
+
+    <div class="body">
+      <div class="qrrow">
+        <div>
+          <div class="qrbox"><img src="/qr-monos-hab.png" alt="QR код"></div>
+          <div class="qrcap">📷 Утасны камераар уншуулна уу</div>
+        </div>
+        <div class="qrside">
+          <h2>Утас, компьютерт апп болгож суулгах</h2>
+          <p>QR кодыг утасныхаа камераар уншуулаад, гарч ирэх зааврыг дагана уу. Суусны дараа
+             <b>«ХАБЭА-н алба»</b> нэртэй, МОНОС логотой апп үүсэх бөгөөд дарахад шууд систем рүү орно.</p>
+          <div class="url">monos-hab.vercel.app</div>
+        </div>
+      </div>
+
+      <div class="steps">
+        <div class="step">
+          <div class="step-h"><div class="step-ic i-and">🤖</div><div class="step-t">Android утас</div></div>
+          <ol>
+            <li>QR уншуулж сайтыг нээнэ</li>
+            <li>Баруун доод булангийн <b>«Апп суулгах»</b> товч дарна</li>
+            <li>Эсвэл цэс <b>⋮</b> → <b>«Install app»</b></li>
+            <li>Нүүр дэлгэцэд апп үүснэ</li>
+          </ol>
+        </div>
+        <div class="step">
+          <div class="step-h"><div class="step-ic i-ios">🍎</div><div class="step-t">iPhone / iPad</div></div>
+          <ol>
+            <li>QR уншуулж <b>Safari</b>-аар нээнэ</li>
+            <li>Доод талын <b>Хуваалцах ⤴</b> дарна</li>
+            <li><b>«Нүүр дэлгэцэд нэмэх»</b> сонгоно</li>
+            <li><b>Нэмэх</b> дарна</li>
+          </ol>
+        </div>
+        <div class="step">
+          <div class="step-h"><div class="step-ic i-pc">💻</div><div class="step-t">Компьютер</div></div>
+          <ol>
+            <li>Chrome / Edge-ээр сайтыг нээнэ</li>
+            <li>Хаягийн мөрний баруун талын <b>⊕</b> дүрс дарна</li>
+            <li>Эсвэл <b>«Апп суулгах»</b> товч дарна</li>
+            <li>Ширээний компьютерт апп үүснэ</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-ic">✅</div>
+        <div class="note-tx">
+          <b>Хэрэглэгч бүр өөрийн Gmail хаяг, нууц үгээрээ нэвтэрнэ.</b>
+          Апп нь ажилтан, ХАБЭА-н алба, удирдлага гэсэн эрхийн түвшнээс хамаарч
+          зохих цэсүүдийг автоматаар харуулна.
+        </div>
+      </div>
+
+      <div class="foot">© 2025 Монос Хүнс ХК — ХАБЭА-н алба</div>
+    </div>
+  </div>
+</div>
+<script src="/pwa-init.js" defer></script>
+</body>
+</html>
