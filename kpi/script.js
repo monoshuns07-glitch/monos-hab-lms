@@ -2066,6 +2066,17 @@ function renderDashboard() {
       if (_cb) _cb.onclick = function () { if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу? Энэ үйлдлийг буцаах боломжгүй.')) clearAllDemoData(); };
     } else if (_dbn) { _dbn.remove(); }
   } catch (e) {}
+  /* Дашбоардын дэд гарчиг — жинхэнэ цалингийн сар + шинэчлэлтийн цаг */
+  try {
+    var ds = document.getElementById('dashSubtitle');
+    if (ds) {
+      var key = currentSalaryKey();                       // "YYYY-MM"
+      var p2 = key.split('-');
+      var now = new Date(), pad = function (n) { return String(n).padStart(2, '0'); };
+      ds.textContent = p2[0] + ' оны ' + parseInt(p2[1], 10) + '-р сарын цалингийн үе (25→24) · шинэчлэгдсэн ' +
+        pad(now.getHours()) + ':' + pad(now.getMinutes());
+    }
+  } catch (e) {}
   var a = avgKpi();
   var hero = $('.page[data-page="dashboard"] .kpi-hero .kpi-value');
   if (hero) hero.innerHTML = a.toFixed(1) + '<span class="kpi-unit">/100</span>';
@@ -4224,51 +4235,13 @@ function renderDaatgal() {
       '<div>Даатгалын хэсэг амьд систем дээр (Netlify/Vercel) ажиллана. Локал DEMO дээр харагдахгүй.</div></div></div>';
     return;
   }
-  if (sec._loaded) { fitEmbeddedFrame(sec); return; }
-  sec._loaded = true;
-  sec.style.padding = '0';
+  // Даатгал цэс дарахад ШУУД бүтэн хуудсаар нээнэ (iframe-гүй).
+  // Ингэснээр тухайн хуудасны өөрийн viewport (ком-загвар + pinch-zoom) бүрэн ажиллана.
+  sec.style.padding = '';
+  sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-loader"></i><div>Даатгалын хуудас нээгдэж байна…</div></div>';
+  try { location.href = '/nohon-tulbur.html'; } catch (e) {}
+  return;
 
-  var small = window.innerWidth < 1024;
-  // nohon-tulbur.html нь <meta viewport width=1024> буюу КОМ-загвартай.
-  // iframe дотор viewport meta үйлчлэхгүй тул 1024px өргөнөөр зуруулаад
-  // жижиг дэлгэцэд багасгаж (scale) багтаана — ком дээрхтэй ижил харагдана.
-  // Утсан дээр нэмэлтээр "Бүтэн дэлгэцээр нээх" товч — тэнд pinch-zoom ажиллана.
-  sec.innerHTML =
-    (small
-      ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:#fff;border-bottom:1px solid #E6E9F5">' +
-        '<div style="font-size:12.5px;font-weight:700;color:#4B5268">Даатгал — гарын авлага</div>' +
-        '<a href="/nohon-tulbur.html" class="btn btn-primary btn-sm" style="flex-shrink:0"><i class="ti ti-arrows-maximize"></i> Бүтэн дэлгэцээр</a></div>'
-      : '') +
-    '<div class="frame-fit" style="width:100%;height:calc(100vh - ' + (small ? 110 : 64) + 'px);overflow:hidden;position:relative">' +
-    '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
-    'style="border:0;display:block;width:100%;height:100%"></iframe></div>';
-
-  // Layout бодогдсоны дараа хэмжинэ (эс бөгөөс өргөн буруу гарч масштаб алдаатай болно)
-  fitEmbeddedFrame(sec);
-  requestAnimationFrame(function () { fitEmbeddedFrame(sec); });
-  setTimeout(function () { fitEmbeddedFrame(sec); }, 300);
-}
-
-/* Ком-загвартай шигтгээ хуудсыг жижиг дэлгэцэд багасгаж багтаах */
-function fitEmbeddedFrame(sec) {
-  if (!sec) return;
-  var wrap = sec.querySelector('.frame-fit'); if (!wrap) return;
-  var fr = wrap.querySelector('iframe'); if (!fr) return;
-  var BASE = 1024;
-  var w = wrap.getBoundingClientRect().width || wrap.clientWidth || window.innerWidth;
-  var h = wrap.getBoundingClientRect().height || wrap.clientHeight || Math.max(320, window.innerHeight - 110);
-  if (!w) return;                        // хараахан зурагдаагүй — дараа дахин дуудагдана
-  if (w >= BASE) {                       // ком: хэвийн
-    fr.style.width = '100%';
-    fr.style.height = h + 'px';
-    fr.style.transform = 'none';
-  } else {                               // утас/таблет: 1024px-ээр зураад багасгана
-    var s = w / BASE;
-    fr.style.width = BASE + 'px';
-    fr.style.height = Math.round(h / s) + 'px';
-    fr.style.transformOrigin = '0 0';
-    fr.style.transform = 'scale(' + s + ')';
-  }
 }
 
 /* ============ Контент удирдлага (admin.html — апп дотор шингээсэн) ============ */
@@ -6580,11 +6553,6 @@ async function init() {
     if (e.target.closest && (e.target.closest('#sidebar') || e.target.closest('.menu-toggle'))) return;
     sb.classList.remove('open');
   }, true);
-
-  /* Дэлгэцийн хэмжээ өөрчлөгдөхөд шигтгээ хуудсыг дахин тааруулна */
-  window.addEventListener('resize', function () {
-    try { fitEmbeddedFrame(pageEl('daatgal')); } catch (e) {}
-  });
 
   window.addEventListener('resize', closeMenu);
   window.addEventListener('scroll', function (e) {
