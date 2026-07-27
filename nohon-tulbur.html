@@ -3235,7 +3235,7 @@
 
 <nav class="nav">
   <div style="display:flex;align-items:center;gap:12px;min-width:0">
-    
+    <a href="index.html" class="hub-back-btn">← Буцах</a>
     <div class="brand">
       <div class="brand-mark">
         <div class="brand-mark-inner">
@@ -6002,5 +6002,34 @@
 })();
 </script>
 
+<!-- ← Буцах товч (KPI аппаас ирсэн үед) -->
+<script>
+(function () {
+  var b = document.createElement('a');
+  b.href = '/kpi/';
+  b.id = 'backToKpi';
+  b.innerHTML = '<span style="font-size:17px;line-height:1">&#8592;</span> Буцах';
+  b.style.cssText = [
+    'position:fixed','left:16px','bottom:16px','z-index:2147483000',
+    'display:inline-flex','align-items:center','gap:8px',
+    'padding:12px 20px','border-radius:14px','text-decoration:none',
+    'font-family:inherit','font-size:14px','font-weight:800','color:#fff',
+    'background:linear-gradient(135deg,#1F2937,#0F172A)',
+    'box-shadow:0 10px 30px rgba(15,23,42,.35),0 2px 8px rgba(0,0,0,.2)',
+    'transition:transform .18s, box-shadow .18s'
+  ].join(';');
+  b.onmouseenter = function () { b.style.transform = 'translateY(-2px)'; };
+  b.onmouseleave = function () { b.style.transform = 'none'; };
+  // Түүх байвал браузерын back, эс бөгөөс /kpi/ рүү
+  b.addEventListener('click', function (e) {
+    if (history.length > 1 && document.referrer && document.referrer.indexOf(location.host) !== -1) {
+      e.preventDefault();
+      history.back();
+    }
+  });
+  function add() { if (document.body && !document.getElementById('backToKpi')) document.body.appendChild(b); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+})();
+</script>
 </body>
 </html>
