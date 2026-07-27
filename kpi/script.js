@@ -2224,6 +2224,20 @@ function renderActivity() {
       title: (n.type === 'near-miss' ? 'Бараг осол' : 'Осол') + ' — ' + n.cause, meta: esc(n.location), src: 'system' });
   });
   items.sort(function (a, b) { return new Date(b.at) - new Date(a.at); });
+  /* Ажилтны тооны badge — жинхэнэ тоо */
+  try {
+    var eb = document.getElementById('empBadge');
+    if (eb) {
+      var n = (DB.employees || []).length;
+      eb.textContent = n;
+      eb.style.display = n ? '' : 'none';
+    }
+  } catch (e) {}
+  if (!items.length) {
+    list.innerHTML = '<li style="justify-content:center"><div class="empty-state" style="padding:22px 12px">' +
+      '<i class="ti ti-inbox"></i><div>Одоогоор мэдээлэл алга</div></div></li>';
+    return;
+  }
   var srcMap = { teams: ['src-teams', 'Teams'], bot: ['src-bot', 'Бот'], web: ['src-web', 'Вэб'], system: ['src-system', 'Систем'] };
   list.innerHTML = items.slice(0, 6).map(function (it) {
     var s = srcMap[it.src] || srcMap.system;
@@ -4213,14 +4227,26 @@ function renderDaatgal() {
   if (sec._loaded) { fitEmbeddedFrame(sec); return; }
   sec._loaded = true;
   sec.style.padding = '0';
+
+  var small = window.innerWidth < 1024;
   // nohon-tulbur.html нь <meta viewport width=1024> буюу КОМ-загвартай.
   // iframe дотор viewport meta үйлчлэхгүй тул 1024px өргөнөөр зуруулаад
   // жижиг дэлгэцэд багасгаж (scale) багтаана — ком дээрхтэй ижил харагдана.
+  // Утсан дээр нэмэлтээр "Бүтэн дэлгэцээр нээх" товч — тэнд pinch-zoom ажиллана.
   sec.innerHTML =
-    '<div class="frame-fit" style="width:100%;height:calc(100vh - 64px);overflow:hidden;position:relative">' +
+    (small
+      ? '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:#fff;border-bottom:1px solid #E6E9F5">' +
+        '<div style="font-size:12.5px;font-weight:700;color:#4B5268">Даатгал — гарын авлага</div>' +
+        '<a href="/nohon-tulbur.html" class="btn btn-primary btn-sm" style="flex-shrink:0"><i class="ti ti-arrows-maximize"></i> Бүтэн дэлгэцээр</a></div>'
+      : '') +
+    '<div class="frame-fit" style="width:100%;height:calc(100vh - ' + (small ? 110 : 64) + 'px);overflow:hidden;position:relative">' +
     '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
     'style="border:0;display:block;width:100%;height:100%"></iframe></div>';
+
+  // Layout бодогдсоны дараа хэмжинэ (эс бөгөөс өргөн буруу гарч масштаб алдаатай болно)
   fitEmbeddedFrame(sec);
+  requestAnimationFrame(function () { fitEmbeddedFrame(sec); });
+  setTimeout(function () { fitEmbeddedFrame(sec); }, 300);
 }
 
 /* Ком-загвартай шигтгээ хуудсыг жижиг дэлгэцэд багасгаж багтаах */
@@ -4229,8 +4255,9 @@ function fitEmbeddedFrame(sec) {
   var wrap = sec.querySelector('.frame-fit'); if (!wrap) return;
   var fr = wrap.querySelector('iframe'); if (!fr) return;
   var BASE = 1024;
-  var w = wrap.clientWidth || window.innerWidth;
-  var h = wrap.clientHeight || Math.max(320, window.innerHeight - 64);
+  var w = wrap.getBoundingClientRect().width || wrap.clientWidth || window.innerWidth;
+  var h = wrap.getBoundingClientRect().height || wrap.clientHeight || Math.max(320, window.innerHeight - 110);
+  if (!w) return;                        // хараахан зурагдаагүй — дараа дахин дуудагдана
   if (w >= BASE) {                       // ком: хэвийн
     fr.style.width = '100%';
     fr.style.height = h + 'px';

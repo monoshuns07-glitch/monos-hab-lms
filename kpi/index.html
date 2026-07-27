@@ -215,7 +215,7 @@
 
     <div class="nav-section">
       <div class="nav-section-title">ХАБЭА / KPI</div>
-      <a class="nav-item" data-page="employees"><i class="ti ti-users"></i><span>Ажилтнууд</span><span class="nav-badge">142</span></a>
+      <a class="nav-item" data-page="employees"><i class="ti ti-users"></i><span>Ажилтнууд</span><span class="nav-badge" id="empBadge" style="display:none">0</span></a>
       <a class="nav-item" data-page="kpi"><i class="ti ti-chart-radar"></i><span>KPI үнэлгээ</span></a>
       <a class="nav-item" data-page="tasks"><i class="ti ti-checkbox"></i><span>Даалгавар</span><span class="nav-badge" id="taskBadge" style="display:none">0</span></a>
     </div>
@@ -296,15 +296,15 @@
     <div class="kpi-grid">
       <div class="kpi-card kpi-hero">
         <div class="kpi-label"><i class="ti ti-target"></i> Нийт KPI оноо</div>
-        <div class="kpi-value">87.4<span class="kpi-unit">/100</span></div>
-        <div class="kpi-trend up"><i class="ti ti-trending-up"></i> +3.2 өмнөх сараас</div>
-        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:87.4%"></div></div>
+        <div class="kpi-value">--<span class="kpi-unit">/100</span></div>
+        <div class="kpi-trend up"></div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:0%"></div></div>
       </div>
 
       <div class="kpi-card">
         <div class="kpi-label"><i class="ti ti-school"></i> Сургалтын хамрах</div>
-        <div class="kpi-value">94<span class="kpi-unit">%</span></div>
-        <div class="kpi-sub">134/142 ажилтан</div>
+        <div class="kpi-value">--<span class="kpi-unit">%</span></div>
+        <div class="kpi-sub"></div>
         <div class="kpi-mini-chart">
           <div class="mini-bar" style="height:60%"></div>
           <div class="mini-bar" style="height:70%"></div>
@@ -318,8 +318,8 @@
 
       <div class="kpi-card">
         <div class="kpi-label"><i class="ti ti-alert-triangle"></i> Мэдээлсэн эрсдэл</div>
-        <div class="kpi-value">28</div>
-        <div class="kpi-sub">сүүлийн 30 хоногт</div>
+        <div class="kpi-value">--</div>
+        <div class="kpi-sub"></div>
         <div class="kpi-mini-chart">
           <div class="mini-bar warn" style="height:40%"></div>
           <div class="mini-bar warn" style="height:55%"></div>
@@ -333,8 +333,8 @@
 
       <div class="kpi-card">
         <div class="kpi-label"><i class="ti ti-shield-check"></i> Осолгүй өдөр</div>
-        <div class="kpi-value">142</div>
-        <div class="kpi-trend up"><i class="ti ti-check"></i> Жилийн зорилт хангалаа</div>
+        <div class="kpi-value">--</div>
+        <div class="kpi-trend up"></div>
         <div class="kpi-mini-chart">
           <div class="mini-bar success" style="height:80%"></div>
           <div class="mini-bar success" style="height:85%"></div>
@@ -368,56 +368,7 @@
           </div>
           <button class="link-btn">Бүгд <i class="ti ti-arrow-right"></i></button>
         </div>
-        <ul class="activity-list">
-          <li>
-            <div class="act-icon act-warn"><i class="ti ti-alert-triangle"></i></div>
-            <div class="act-body">
-              <div class="act-title">Цахилгааны кабель гэмтсэн</div>
-              <div class="act-meta">Б. Энхбат · Цех №2 · <span class="src src-teams">Teams</span></div>
-            </div>
-            <div class="act-time">2 ц</div>
-          </li>
-          <li>
-            <div class="act-icon act-info"><i class="ti ti-bulb"></i></div>
-            <div class="act-body">
-              <div class="act-title">Сайжруулалтын санал — агааржуулалт</div>
-              <div class="act-meta">Ц. Сараа · Захиргаа · <span class="src src-web">Вэб</span></div>
-            </div>
-            <div class="act-time">5 ц</div>
-          </li>
-          <li>
-            <div class="act-icon act-success"><i class="ti ti-check"></i></div>
-            <div class="act-body">
-              <div class="act-title">Бараг осол мэдээлсэн</div>
-              <div class="act-meta">Д. Ариунаа · Цех №1 · <span class="src src-bot">Бот</span></div>
-            </div>
-            <div class="act-time">8 ц</div>
-          </li>
-          <li>
-            <div class="act-icon act-purple"><i class="ti ti-school"></i></div>
-            <div class="act-body">
-              <div class="act-title">Сургалт дуусгасан · Гал түймрийн аюулгүй байдал</div>
-              <div class="act-meta">12 ажилтан · <span class="src src-system">Систем</span></div>
-            </div>
-            <div class="act-time">өчигдөр</div>
-          </li>
-          <li>
-            <div class="act-icon act-warn"><i class="ti ti-alert-triangle"></i></div>
-            <div class="act-body">
-              <div class="act-title">#аюул кран нь чичирхийлэлтэй</div>
-              <div class="act-meta">М. Баатар · Цех №3 · <span class="src src-teams">Teams</span></div>
-            </div>
-            <div class="act-time">өчигдөр</div>
-          </li>
-          <li>
-            <div class="act-icon act-info"><i class="ti ti-stethoscope"></i></div>
-            <div class="act-body">
-              <div class="act-title">Эрүүл мэндийн үзлэгт хамрагдсан</div>
-              <div class="act-meta">8 ажилтан · <span class="src src-system">Систем</span></div>
-            </div>
-            <div class="act-time">2 өдөр</div>
-          </li>
-        </ul>
+        <ul class="activity-list"></ul>
       </div>
     </div>
 
@@ -485,7 +436,7 @@
       <div class="stat-item"><div class="stat-num">142</div><div class="stat-lbl">Нийт</div></div>
       <div class="stat-item"><div class="stat-num">128</div><div class="stat-lbl">Идэвхтэй</div></div>
       <div class="stat-item"><div class="stat-num">14</div><div class="stat-lbl">Чөлөөтэй</div></div>
-      <div class="stat-item"><div class="stat-num emerald">87.4</div><div class="stat-lbl">Дундаж KPI</div></div>
+      <div class="stat-item"><div class="stat-num emerald">--</div><div class="stat-lbl">Дундаж KPI</div></div>
       <div class="stat-item"><div class="stat-num warn">8</div><div class="stat-lbl">Сайжруулалт хэрэгтэй</div></div>
     </div>
 
@@ -1867,6 +1818,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=72"></script>
+<script src="script.js?v=73"></script>
 </body>
 </html>
