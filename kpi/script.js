@@ -4210,11 +4210,38 @@ function renderDaatgal() {
       '<div>Даатгалын хэсэг амьд систем дээр (Netlify/Vercel) ажиллана. Локал DEMO дээр харагдахгүй.</div></div></div>';
     return;
   }
-  if (sec._loaded) return;
+  if (sec._loaded) { fitEmbeddedFrame(sec); return; }
   sec._loaded = true;
   sec.style.padding = '0';
-  sec.innerHTML = '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
-    'style="width:100%;height:calc(100vh - 64px);border:0;display:block"></iframe>';
+  // nohon-tulbur.html нь <meta viewport width=1024> буюу КОМ-загвартай.
+  // iframe дотор viewport meta үйлчлэхгүй тул 1024px өргөнөөр зуруулаад
+  // жижиг дэлгэцэд багасгаж (scale) багтаана — ком дээрхтэй ижил харагдана.
+  sec.innerHTML =
+    '<div class="frame-fit" style="width:100%;height:calc(100vh - 64px);overflow:hidden;position:relative">' +
+    '<iframe src="/nohon-tulbur.html" title="Даатгал — Нөхөн төлбөрийн гарын авлага" ' +
+    'style="border:0;display:block;width:100%;height:100%"></iframe></div>';
+  fitEmbeddedFrame(sec);
+}
+
+/* Ком-загвартай шигтгээ хуудсыг жижиг дэлгэцэд багасгаж багтаах */
+function fitEmbeddedFrame(sec) {
+  if (!sec) return;
+  var wrap = sec.querySelector('.frame-fit'); if (!wrap) return;
+  var fr = wrap.querySelector('iframe'); if (!fr) return;
+  var BASE = 1024;
+  var w = wrap.clientWidth || window.innerWidth;
+  var h = wrap.clientHeight || Math.max(320, window.innerHeight - 64);
+  if (w >= BASE) {                       // ком: хэвийн
+    fr.style.width = '100%';
+    fr.style.height = h + 'px';
+    fr.style.transform = 'none';
+  } else {                               // утас/таблет: 1024px-ээр зураад багасгана
+    var s = w / BASE;
+    fr.style.width = BASE + 'px';
+    fr.style.height = Math.round(h / s) + 'px';
+    fr.style.transformOrigin = '0 0';
+    fr.style.transform = 'scale(' + s + ')';
+  }
 }
 
 /* ============ Контент удирдлага (admin.html — апп дотор шингээсэн) ============ */
@@ -6526,6 +6553,11 @@ async function init() {
     if (e.target.closest && (e.target.closest('#sidebar') || e.target.closest('.menu-toggle'))) return;
     sb.classList.remove('open');
   }, true);
+
+  /* Дэлгэцийн хэмжээ өөрчлөгдөхөд шигтгээ хуудсыг дахин тааруулна */
+  window.addEventListener('resize', function () {
+    try { fitEmbeddedFrame(pageEl('daatgal')); } catch (e) {}
+  });
 
   window.addEventListener('resize', closeMenu);
   window.addEventListener('scroll', function (e) {
