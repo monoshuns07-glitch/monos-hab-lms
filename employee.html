@@ -711,22 +711,30 @@ body{
   .section-title{font-size:14px}
   .filter-bar{gap:6px;margin-bottom:10px}
   .search-wrap{min-width:100%;order:-1}
-  /* Бүлгийн дөрвөлжин карт — утсан дээр 2 багана */
-  .chapter-list{grid-template-columns:repeat(2,1fr);gap:11px}
-  .chapter-card{border-radius:15px}
-  .chapter-card.open .chapter-head{padding:11px 12px;gap:11px}
-  .chapter-info{padding:10px 11px 12px}
-  .chapter-title{font-size:13px;line-height:1.3}
+  /* Бүлгийн карт — утсан дээр 2 багана, НЯГТ (зураг намхан) */
+  .chapter-list{grid-template-columns:repeat(2,1fr);gap:10px}
+  .chapter-card{border-radius:14px}
+  .chapter-card.open .chapter-head{padding:10px 11px;gap:10px}
+  .ch-cover{aspect-ratio:16/11}                 /* дөрвөлжин биш, намхан → карт богиносно */
+  .chapter-info{padding:8px 10px 9px}
+  .chapter-title{font-size:12.5px;line-height:1.28;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
   .chapter-desc{display:none}
-  .ch-cover-num{font-size:34px}
-  .chapter-card.open .ch-cover{width:46px;height:46px;border-radius:11px}
-  .chapter-card.open .ch-cover-num{font-size:17px}
-  .ch-cover-new{font-size:9px;padding:2px 7px;top:6px;left:6px}
-  .ch-stats{gap:7px;margin-top:5px}
-  .ch-stat{font-size:10px}
-  .chapter-right{padding:0 11px 11px;gap:5px}
-  .ch-pill{font-size:10px;padding:2px 8px}
+  .ch-cover-num{font-size:26px}
+  .chapter-card.open .ch-cover{width:42px;height:42px;border-radius:10px;aspect-ratio:auto}
+  .chapter-card.open .ch-cover-num{font-size:16px}
+  .ch-cover-new{font-size:8.5px;padding:2px 6px;top:5px;left:5px;border-radius:14px}
+  .ch-cover-bar{height:4px}
+  /* Үзүүлэлт — нэг мөрөнд нягт */
+  .ch-stats{gap:6px;margin-top:3px}
+  .ch-stat{font-size:9.5px}
+  .ch-stat:nth-child(2){display:none}          /* хугацааг нуух (жижиг дэлгэцэд илүүц) */
+  .chapter-right{padding:0 10px 9px;gap:4px}
+  .ch-pill{font-size:9.5px;padding:2px 7px;border-radius:14px}
   .chapter-right .ch-pill.total{display:none}
+  /* Сургалтын карт ч бага зэрэг нягт */
+  .tcard-body{padding:8px 9px 10px}
+  .tcard-title{font-size:11.5px}
   /* Сургалтын карт — 2 багана */
   .training-list{grid-template-columns:repeat(2,1fr);gap:10px}
   .tcard-play{width:42px;height:42px}
@@ -740,6 +748,15 @@ body{
   .training-list{gap:8px}
   .tcard-badge{font-size:9.5px;padding:3px 7px;top:7px;left:7px}
   .tcard-dur{font-size:9.5px;padding:2px 6px;bottom:7px;right:7px}
+  /* Бүлгийн карт — хамгийн нягт */
+  .chapter-list{gap:9px}
+  .ch-cover{aspect-ratio:16/10}
+  .ch-cover-num{font-size:23px}
+  .chapter-info{padding:7px 9px 8px}
+  .chapter-title{font-size:12px}
+  .ch-stat{font-size:9px}
+  .chapter-right{padding:0 9px 8px}
+  .ch-pill{font-size:9px;padding:2px 6px}
 }
 
 /* ☀️ Aurora Light — нэгдмэл гэрэлтэй дэвсгэр */
