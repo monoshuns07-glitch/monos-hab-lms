@@ -605,6 +605,7 @@ function migrateDB() {
   });
   if (!DB.trainingModules) DB.trainingModules = {};
   if (!DB.moduleReleases) DB.moduleReleases = {};
+  if (!DB.empReleases) DB.empReleases = {};   // ажилтан тус бүрийн нээлт
   if (!DB.userRoles) DB.userRoles = {};
   if (!DB.empProgress) DB.empProgress = {};
   if (!Array.isArray(DB.extTrainings)) DB.extTrainings = [];
@@ -1287,6 +1288,15 @@ function getMod(key) { return ((DB.trainingModules || {})[key]) || {}; }
 function getModRel(key, dept) { return ((DB.moduleReleases || {})[key + '_' + (dept || '')]) || {}; }
 function getEmpProg(empId, key) { return ((DB.empProgress || {})[empId + '_' + key]) || {}; }
 
+/* ---- Ажилтан ТУС БҮРИЙН нээлт (албанаас хамаарахгүй, нэмэлт эрх) ---- */
+function getEmpRel(empId, key) { return ((DB.empReleases || {})[empId + '_' + key]) || {}; }
+function setEmpRelData(empId, key, data) {
+  DB.empReleases = DB.empReleases || {};
+  var k = empId + '_' + key;
+  DB.empReleases[k] = _merge(DB.empReleases[k] || {}, _merge({ updatedAt: new Date().toISOString() }, data));
+  saveDB();
+}
+
 /* ---- Шалгалт өгөх оролдлогын тоо (админ тохируулна) ---- */
 var EXAM_ATTEMPT_OPTS = [
   { v: 1, label: '1 удаа' },
@@ -1345,12 +1355,17 @@ function setModData(key, data) {
 function isModTrainingVisible(emp, key) {
   var mod = getMod(key);
   if (mod.releasedToAll) return true;
-  if (!emp || !emp.dept) return false;
+  if (!emp) return false;
+  // Ажилтанд ТУСГАЙЛАН нээсэн бол — алба нээгээгүй ч харагдана
+  if (getEmpRel(emp.id, key).trainingReleased) return true;
+  if (!emp.dept) return false;
   return !!(getModRel(key, emp.dept).trainingReleased);
 }
 function isModExamUnlocked(emp, key) {
   if (!emp) return false;
-  // Админ "Шалгалт нээх" дарсан бол — сургалт нээгээгүй/дуусгаагүй ч шалгалт шууд нээгдэнэ
+  // Ажилтанд тусгайлан "Шалгалт нээх" хийсэн бол — шууд нээгдэнэ
+  if (getEmpRel(emp.id, key).examForceUnlocked) return true;
+  // Админ албаар "Шалгалт нээх" дарсан бол — сургалт нээгээгүй/дуусгаагүй ч шалгалт шууд нээгдэнэ
   if (emp.dept && getModRel(key, emp.dept).examForceUnlocked) return true;
   // Байгалийн урсгал: сургалт нээгдсэн + ажилтан үзэж дуусгасан үед шалгалт нээгдэнэ
   if (!isModTrainingVisible(emp, key)) return false;
@@ -1397,6 +1412,36 @@ function renderModLockedPage(title, msg, color) {
     '<p style="color:#64748B;margin:0;font-size:14px">' + esc(msg) + '</p></div></div>';
 }
 
+/* Ажилтан тус бүрийн нээлтийн мөрүүд (сургалт/шалгалтыг ХУВИЙН эрхээр нээнэ) */
+function buildModEmpRows(key, mod, emps) {
+  if (!emps.length) return '';
+  return emps.map(function (e) {
+    var prog = getEmpProg(e.id, key);
+    var er = getEmpRel(e.id, key);
+    var dr = getModRel(key, e.dept);
+    // Албаар эсвэл бүх хэлтэст нээгдсэн эсэх (тайлбар харуулна)
+    var byDeptTrain = !!(mod.releasedToAll || dr.trainingReleased);
+    var byDeptExam = !!dr.examForceUnlocked;
+    var scoreHtml = prog.examTaken
+      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '%</span>'
+      : '<span style="color:#CBD5E1;font-size:12px">—</span>';
+    function cell(on, byDept, act) {
+      if (byDept) {
+        return '<td style="text-align:center"><span title="Албаар нээгдсэн" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#16A34A;background:#ECFDF5;border:1px solid #A7F3D0;padding:3px 9px;border-radius:20px"><i class="ti ti-building"></i> Албаар</span></td>';
+      }
+      return '<td style="text-align:center">' +
+        modTog(on, false, 'data-modact="' + act + '" data-modkey="' + esc(key) + '" data-empid="' + esc(e.id) + '"') + '</td>';
+    }
+    return '<tr data-emprow="1" data-empname="' + esc((e.name || '').toLowerCase()) + '" data-empdept="' + esc((e.dept || '').toLowerCase()) + '">' +
+      '<td style="font-size:13px;font-weight:500">' + esc(e.name) + '</td>' +
+      '<td style="font-size:12px;color:#64748B">' + esc(e.dept || '') + '</td>' +
+      cell(!!er.trainingReleased, byDeptTrain, 'emptrain') +
+      cell(!!er.examForceUnlocked, byDeptExam, 'empexam') +
+      '<td style="text-align:center">' + (prog.trainingCompleted ? '<span style="color:#16A34A;font-size:12px">✓ ' + (prog.completedAt ? timeAgo(prog.completedAt) : '') + '</span>' : '<span style="color:#CBD5E1">—</span>') + '</td>' +
+      '<td style="text-align:center">' + scoreHtml + '</td></tr>';
+  }).join('');
+}
+
 /* ========== SUPER ADMIN дэлгэц ========== */
 function renderModAdmin(sec, key, mod, title) {
   var hasContent = !!(mod.videoUrl || mod.pptUrl || mod.desc);
@@ -1416,15 +1461,7 @@ function renderModAdmin(sec, key, mod, title) {
       '</tr>';
   }).join('');
 
-  var empRows = (DB.employees || []).map(function (e) {
-    var prog = getEmpProg(e.id, key);
-    var scoreHtml = prog.examTaken
-      ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '%</span>'
-      : '<span style="color:#CBD5E1;font-size:12px">—</span>';
-    return '<tr><td style="font-size:13px">' + esc(e.name) + '</td><td style="font-size:12px;color:#64748B">' + esc(e.dept || '') + '</td>' +
-      '<td style="text-align:center">' + (prog.trainingCompleted ? '<span style="color:#16A34A;font-size:12px">✓ ' + (prog.completedAt ? timeAgo(prog.completedAt) : '') + '</span>' : '<span style="color:#CBD5E1">—</span>') + '</td>' +
-      '<td style="text-align:center">' + scoreHtml + '</td></tr>';
-  }).join('');
+  var empRows = buildModEmpRows(key, mod, DB.employees || []);
 
   sec.innerHTML =
     '<div style="padding:22px 26px 14px">' +
@@ -1463,9 +1500,18 @@ function renderModAdmin(sec, key, mod, title) {
 
     (hasContent ? '<div class="card" style="padding:18px;margin-bottom:14px"><div style="font-weight:600;font-size:13px;color:#64748B;margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px;font-size:11px">Агуулгын урьдчилан харах</div>' + renderModContentHtml(mod) + '</div>' : '') +
 
-    '<div class="card" style="padding:0;overflow:hidden"><div style="padding:11px 16px;border-bottom:1px solid #F1F5F9;font-weight:600;font-size:13px;color:#1E293B"><i class="ti ti-users" style="color:#8B5CF6"></i> Ажилтнуудын явц</div>' +
-    '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:420px"><thead><tr><th>Ажилтан</th><th>Хэлтэс</th><th style="text-align:center">Сургалт</th><th style="text-align:center">Шалгалт</th></tr></thead>' +
-    '<tbody>' + (empRows || '<tr><td colspan="4" style="text-align:center;color:#94A3B8;padding:20px;font-size:13px">Явц бүртгэгдээгүй</td></tr>') + '</tbody></table></div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div style="padding:11px 16px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+    '<div style="font-weight:600;font-size:13px;color:#1E293B"><i class="ti ti-user-check" style="color:#8B5CF6"></i> Ажилтан бүрээр нээх · явц</div>' +
+    '<div class="search-box" style="min-width:200px;flex:1;max-width:320px"><i class="ti ti-search"></i>' +
+    '<input type="text" id="modEmpSearch" placeholder="Ажилтан, хэлтсээр хайх..."></div></div>' +
+    '<div style="padding:9px 16px;background:#F8FAFF;border-bottom:1px solid #F1F5F9;font-size:11.5px;color:#64748B">' +
+    'Албаар нээгдсэн ажилтанд <b style="color:#16A34A">Албаар</b> гэж харагдана. Тухайн ажилтанд <b>дангаар</b> нээхийг хүсвэл доорх товчийг ашиглана.</div>' +
+    '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:640px"><thead><tr>' +
+    '<th>Ажилтан</th><th>Хэлтэс</th>' +
+    '<th style="text-align:center">Сургалт нээх</th><th style="text-align:center">Шалгалт нээх</th>' +
+    '<th style="text-align:center">Үзсэн</th><th style="text-align:center">Дүн</th></tr></thead>' +
+    '<tbody id="modEmpTbody">' + (empRows || '<tr><td colspan="6" style="text-align:center;color:#94A3B8;padding:20px;font-size:13px">Ажилтан бүртгэгдээгүй</td></tr>') + '</tbody></table></div></div>' +
     '</div>';
 
   if (!sec._mAdminWired) {
@@ -1478,6 +1524,17 @@ function renderModAdmin(sec, key, mod, title) {
         toast('Шалгалт өгөх давтамж: ' + (n === 0 ? 'Хязгааргүй' : n + ' удаа'), 'success');
         renderTrainingModule(CURRENT_MOD);
       }
+    });
+    /* Ажилтны хайлт — хүснэгтийн мөрийг шүүнэ */
+    sec.addEventListener('input', function (ev) {
+      var box = ev.target.closest && ev.target.closest('#modEmpSearch');
+      if (!box) return;
+      var q = (box.value || '').toLowerCase().trim();
+      $$('#modEmpTbody tr[data-emprow]').forEach(function (tr) {
+        var hit = !q || (tr.getAttribute('data-empname') || '').indexOf(q) > -1 ||
+          (tr.getAttribute('data-empdept') || '').indexOf(q) > -1;
+        tr.style.display = hit ? '' : 'none';
+      });
     });
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#mBtnContent')) { actionModEditContent(CURRENT_MOD); }
@@ -1503,13 +1560,7 @@ function renderModSubadmin(sec, key, mod, title, myDept) {
   var dEmps = (DB.employees || []).filter(function (e) { return e.dept === myDept; });
   var dDone = dEmps.filter(function (e) { return getEmpProg(e.id, key).trainingCompleted; }).length;
 
-  var empRows = dEmps.map(function (e) {
-    var prog = getEmpProg(e.id, key);
-    return '<tr><td style="font-size:13px">' + esc(e.name) + '</td>' +
-      '<td style="text-align:center">' + (prog.trainingCompleted ? '<span style="color:#16A34A;font-size:12px">✓</span>' : '<span style="color:#CBD5E1">—</span>') + '</td>' +
-      '<td style="text-align:center">' + (prog.examTaken ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;background:' + (prog.examPassed ? '#D1FAE5' : '#FEE2E2') + ';color:' + (prog.examPassed ? '#065F46' : '#991B1B') + '">' + (prog.examScore || 0) + '%</span>' : '<span style="color:#CBD5E1">—</span>') + '</td>' +
-      '</tr>';
-  }).join('');
+  var empRows = buildModEmpRows(key, mod, dEmps);
 
   sec.innerHTML =
     '<div style="padding:22px 26px 14px">' +
@@ -1531,11 +1582,29 @@ function renderModSubadmin(sec, key, mod, title, myDept) {
     '<div style="padding:0 26px 26px">' +
     '<div class="card" style="padding:18px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Сургалтын агуулга (читэх эрхтэй)</div>' +
     renderModContentHtml(mod) + '</div>' +
-    (dEmps.length ? '<div class="card" style="padding:0;overflow:hidden"><div style="padding:11px 16px;border-bottom:1px solid #F1F5F9;font-weight:600;font-size:13px">' +
-      esc(myDept) + ' — ажилтнуудын явц (<span style="color:#16A34A;font-weight:700">' + dDone + '</span>/' + dEmps.length + ')</div>' +
-      '<table class="data-table" style="width:100%"><thead><tr><th>Ажилтан</th><th style="text-align:center">Сургалт</th><th style="text-align:center">Шалгалт</th></tr></thead>' +
-      '<tbody>' + empRows + '</tbody></table></div>' : '') +
+    (dEmps.length ? '<div class="card" style="padding:0;overflow:hidden">' +
+      '<div style="padding:11px 16px;border-bottom:1px solid #F1F5F9;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-weight:600;font-size:13px">' + esc(myDept) + ' — ажилтан бүрээр нээх (<span style="color:#16A34A;font-weight:700">' + dDone + '</span>/' + dEmps.length + ' үзсэн)</div>' +
+      '<div class="search-box" style="min-width:180px;flex:1;max-width:300px"><i class="ti ti-search"></i>' +
+      '<input type="text" id="modEmpSearch" placeholder="Ажилтнаар хайх..."></div></div>' +
+      '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:640px"><thead><tr>' +
+      '<th>Ажилтан</th><th>Хэлтэс</th><th style="text-align:center">Сургалт нээх</th><th style="text-align:center">Шалгалт нээх</th>' +
+      '<th style="text-align:center">Үзсэн</th><th style="text-align:center">Дүн</th></tr></thead>' +
+      '<tbody id="modEmpTbody">' + empRows + '</tbody></table></div></div>' : '') +
     '</div>';
+
+  if (!sec._mSubWired) {
+    sec._mSubWired = true;
+    sec.addEventListener('input', function (ev) {
+      var box = ev.target.closest && ev.target.closest('#modEmpSearch');
+      if (!box) return;
+      var q = (box.value || '').toLowerCase().trim();
+      $$('#modEmpTbody tr[data-emprow]').forEach(function (tr) {
+        var hit = !q || (tr.getAttribute('data-empname') || '').indexOf(q) > -1;
+        tr.style.display = hit ? '' : 'none';
+      });
+    });
+  }
 }
 
 /* ========== АЖИЛТАН дэлгэц ========== */
@@ -1627,8 +1696,25 @@ function renderTrainingModule(key) {
 }
 
 /* ---- Toggle дарах үйлдэл ---- */
-function handleModToggle(act, key, dept) {
+function handleModToggle(act, key, dept, empId) {
   var mod = getMod(key);
+  /* — Ажилтан тус бүрийн нээлт — */
+  if (act === 'emptrain' || act === 'empexam') {
+    if (!empId) return;
+    var emp = (DB.employees || []).filter(function (x) { return x.id === empId; })[0];
+    var nm = emp ? emp.name : 'Ажилтан';
+    var er = getEmpRel(empId, key);
+    if (act === 'emptrain') {
+      if (!er.trainingReleased && !mod.videoUrl && !mod.pptUrl && !mod.desc) { toast('Эхлээд агуулга оруулна уу', 'warn'); return; }
+      setEmpRelData(empId, key, { trainingReleased: !er.trainingReleased });
+      toast(nm + (er.trainingReleased ? ' — сургалт хаагдлаа' : ' — сургалт нээгдлаа'), er.trainingReleased ? 'warn' : 'success');
+    } else {
+      setEmpRelData(empId, key, { examForceUnlocked: !er.examForceUnlocked });
+      toast(nm + (er.examForceUnlocked ? ' — шалгалт хаагдлаа' : ' — шалгалт нээгдлаа'), er.examForceUnlocked ? 'warn' : 'success');
+    }
+    renderTrainingModule(CURRENT_MOD);
+    return;
+  }
   if (act === 'subvis') {
     setModData(key, { visibleToSubadmin: !mod.visibleToSubadmin });
     toast(mod.visibleToSubadmin ? 'Туслах админаас нуугдлаа' : 'Туслах админд нээгдлаа', mod.visibleToSubadmin ? 'warn' : 'success');
@@ -6078,7 +6164,7 @@ function handleClick(e) {
       return;
     }
     if (modact === 'takeexam') { actionTakeModExam(mkey, mempid); return; }
-    if (el.classList.contains('mod-tog-btn')) { e.stopPropagation(); handleModToggle(modact, mkey, mdept); return; }
+    if (el.classList.contains('mod-tog-btn')) { e.stopPropagation(); handleModToggle(modact, mkey, mdept, mempid); return; }
   }
 
   /* --- Навигаци --- */
