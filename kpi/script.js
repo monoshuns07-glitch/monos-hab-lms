@@ -419,10 +419,14 @@ async function refreshMyExams() {
 }
 
 /* ===== Жинхэнэ ажилчид + сургалт/шалгалтаас KPI автоматаар бодох ===== */
+/* Ажилтан ачаалалтын оношлогоо — дашбоард дээр шалтгааныг харуулна */
+var EMP_LOAD = { state: 'idle', users: 0, error: '' };
+
 async function buildEmployeesFromRealData() {
-  if (!fbReady) return null;
+  if (!fbReady) { EMP_LOAD = { state: 'nofb', users: 0, error: 'Сервертэй холбогдоогүй' }; return null; }
   try {
     var usersSnap = await fdb.collection('users').get();
+    EMP_LOAD = { state: 'ok', users: usersSnap.size, error: '' };
     var examByUser = {}, progByUser = {};
     try {
       var examSnap = await fdb.collection('exam_results').get();
@@ -486,8 +490,13 @@ async function buildEmployeesFromRealData() {
         onLeave: u.isActive === false
       });
     });
+    EMP_LOAD.built = out.length;
     return out;
-  } catch (e) { return null; }
+  } catch (e) {
+    EMP_LOAD = { state: 'error', users: 0, error: (e && (e.code || e.message)) || 'уншиж чадсангүй' };
+    console.error('[buildEmployeesFromRealData]', e);
+    return null;
+  }
 }
 
 // Жинхэнэ датаг DB.employees руу нэгтгэнэ: training/participation автомат, гар засвар (health/sahilga)-ыг хадгална
@@ -2339,22 +2348,46 @@ function tidyDashboard() {
   // 5) Ажилтнуудын мэдээлэл — ажилтантай бол
   show(card(document.getElementById('dashEmpList')), hasEmp);
 
-  // 6) Ажилтан огт байхгүй бол — ойлгомжтой мэдэгдэл
+  // 6) Ажилтан огт байхгүй бол — ойлгомжтой мэдэгдэл (ХООСОН дэлгэц ХЭЗЭЭ Ч гарахгүй)
   var note = document.getElementById('dashNoData');
   if (!hasEmp) {
     if (!note) {
       note = document.createElement('div');
       note.id = 'dashNoData';
       note.className = 'card';
-      note.innerHTML = '<div class="empty-state" style="padding:34px 20px">' +
-        '<i class="ti ti-users-plus"></i>' +
-        '<div style="font-weight:700;color:#4B5268;margin-top:4px">Ажилтны мэдээлэл байхгүй байна</div>' +
-        '<div style="font-size:12.5px;margin-top:4px">Ажилтан бүртгэгдсэний дараа KPI, сургалт, тайлан энд харагдана.</div>' +
-        '</div>';
-      var grid = page.querySelector('.kpi-grid');
-      if (grid && grid.parentNode) grid.parentNode.insertBefore(note, grid.nextSibling);
+      // Дашбоардын хамгийн эхэнд (page-header-ийн дараа) заавал байрлана
+      var anchor = page.querySelector('.kpi-grid') || page.querySelector('.page-header');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(note, anchor.nextSibling);
+      else page.appendChild(note);
     }
+    var el = (typeof EMP_LOAD !== 'undefined') ? EMP_LOAD : { state: 'idle' };
+    var msg, hint, icon = 'ti-users-plus', showBtn = isAdmin();
+    if (!fbReady || el.state === 'nofb') {
+      icon = 'ti-cloud-off'; msg = 'Сервертэй холбогдож чадсангүй';
+      hint = 'Интернэт холболтоо шалгаад хуудсыг дахин ачаална уу.'; showBtn = false;
+    } else if (el.state === 'idle') {
+      icon = 'ti-loader-2'; msg = 'Мэдээлэл ачаалж байна…'; hint = ''; showBtn = false;
+    } else if (el.state === 'error') {
+      icon = 'ti-alert-triangle'; msg = 'Ажилтны мэдээлэл уншигдсангүй';
+      hint = 'Алдаа: ' + esc(el.error || '') + ' — хандах эрх дуусаагүй эсэхийг шалгана уу.'; showBtn = false;
+    } else if (!el.users) {
+      msg = 'Ажилтан бүртгэгдээгүй байна';
+      hint = 'Контент удирдлага → Хэрэглэгчид хэсгээс ажилтан нэмнэ. Бүртгэсний дараа KPI, сургалт энд автоматаар харагдана.';
+    } else {
+      msg = 'Ажилтны мэдээлэл боловсруулагдаагүй';
+      hint = 'Системд ' + el.users + ' хэрэглэгч байгаа ч ажилтны жагсаалт үүсээгүй байна. Хуудсыг дахин ачаална уу.';
+      showBtn = false;
+    }
+    note.innerHTML = '<div class="empty-state" style="padding:36px 20px">' +
+      '<i class="ti ' + icon + '"' + (icon === 'ti-loader-2' ? ' style="animation:spin 1s linear infinite"' : '') + '></i>' +
+      '<div style="font-weight:700;color:#4B5268;margin-top:6px;font-size:14px">' + msg + '</div>' +
+      (hint ? '<div style="font-size:12.5px;margin-top:6px;line-height:1.6;max-width:440px">' + hint + '</div>' : '') +
+      (showBtn ? '<button class="btn btn-primary btn-sm" style="margin-top:14px" data-go-users="1">' +
+        '<i class="ti ti-user-plus"></i> Ажилтан бүртгэх</button>' : '') +
+      '</div>';
     note.style.display = '';
+    var goBtn = note.querySelector('[data-go-users]');
+    if (goBtn) goBtn.onclick = function () { switchPage('adminpanel'); };
   } else if (note) { note.style.display = 'none'; }
 }
 

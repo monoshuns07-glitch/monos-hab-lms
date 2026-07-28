@@ -2041,6 +2041,9 @@ code {
 .notif-body span { font-size: 11px; color: var(--text-3); }
 .notif-empty { padding: 26px; text-align: center; color: var(--text-3); font-size: 13px; }
 
+/* Ачаалалтын эргэлт */
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ---- Хоосон төлөв ---- */
 .empty-state {
   display: flex;
