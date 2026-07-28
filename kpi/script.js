@@ -2155,6 +2155,7 @@ function renderDashboard() {
   }
   renderActivity();
   renderDashEmployees();
+  try { tidyDashboard(); } catch (e) {}
 }
 
 /* ---- Дашбоард дээрх ажилтны хайлт/шүүлт ---- */
@@ -2216,6 +2217,58 @@ function renderDashEmployees() {
 
   var cnt = $('#dashEmpCount');
   if (cnt) cnt.textContent = list.length + ' ажилтан';
+}
+
+/* Дата байхгүй хэсгүүдийг НУУНА — хоосон карт, утгагүй "--" харагдахгүй */
+function tidyDashboard() {
+  var page = document.querySelector('.page[data-page="dashboard"]');
+  if (!page) return;
+  function card(el) { return el ? el.closest('.card') : null; }
+  function show(el, yes) { if (el) el.style.display = yes ? '' : 'none'; }
+
+  var hasEmp = (DB.employees || []).length > 0;
+
+  // Ажилтан байхгүй бол дээд 4 KPI картыг ч нуу (утгагүй "--" харагдахгүй)
+  show(page.querySelector('.kpi-grid'), hasEmp);
+
+  // 1) Хэлтсүүдийн KPI — мөр байхгүй бол нуу
+  var ddb = document.getElementById('dashDeptBreak');
+  show(card(ddb), !!(ddb && ddb.children.length));
+
+  // 2) Сүүлд мэдээлсэн — жинхэнэ бичлэг байхгүй бол нуу
+  var act = page.querySelector('.activity-list');
+  var actHas = !!(act && act.querySelector('.act-body'));
+  show(card(act), actHas);
+
+  // 3) ХАБЭА-н үзүүлэлтүүд (график) — ажилтан байхгүй бол нуу
+  var canvas = document.getElementById('trendChart');
+  show(card(canvas), hasEmp);
+
+  // 4) Хэлтсийн KPI харьцуулалт — мөр байхгүй бол нуу
+  var dl = page.querySelector('.dept-list');
+  show(card(dl), !!(dl && dl.children.length));
+
+  // 5) Ажилтнуудын мэдээлэл — ажилтан байхгүй бол нуу
+  var del = document.getElementById('dashEmpList');
+  show(card(del), hasEmp);
+
+  // 6) Ажилтан огт байхгүй бол — ойлгомжтой мэдэгдэл
+  var note = document.getElementById('dashNoData');
+  if (!hasEmp) {
+    if (!note) {
+      note = document.createElement('div');
+      note.id = 'dashNoData';
+      note.className = 'card';
+      note.innerHTML = '<div class="empty-state" style="padding:34px 20px">' +
+        '<i class="ti ti-users-plus"></i>' +
+        '<div style="font-weight:700;color:#4B5268;margin-top:4px">Ажилтны мэдээлэл байхгүй байна</div>' +
+        '<div style="font-size:12.5px;margin-top:4px">Ажилтан бүртгэгдсэний дараа KPI, сургалт, тайлан энд харагдана.</div>' +
+        '</div>';
+      var grid = page.querySelector('.kpi-grid');
+      if (grid && grid.parentNode) grid.parentNode.insertBefore(note, grid.nextSibling);
+    }
+    note.style.display = '';
+  } else if (note) { note.style.display = 'none'; }
 }
 
 function renderActivity() {
