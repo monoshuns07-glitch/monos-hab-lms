@@ -6506,10 +6506,18 @@ function applyRole() {
   if (active && blockedPages().indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
 
+/* Ачаалалтын дэлгэцийг хаах — апп бэлэн болсныг тэмдэглэнэ */
+function appReady() {
+  try { document.body.classList.add('app-ready'); } catch (e) {}
+}
+
 async function init() {
+  // Юу ч болсон 6 секундын дараа ачаалалтын дэлгэцийг албадан хаана (гацахаас сэргийлж)
+  var _bootGuard = setTimeout(appReady, 6000);
+  try {
   await establishSession();
   // Нэвтрээгүй бол апп доторх нэвтрэх дэлгэцийг гаргана (тусдаа хуудас руу үсрэхгүй)
-  if (!SESSION) { showLoginScreen(); return; }
+  if (!SESSION) { clearTimeout(_bootGuard); appReady(); showLoginScreen(); return; }
   // Системийн эзэн админыг баталгаажуулна (Firestore role ямар ч байсан)
   if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
@@ -6529,6 +6537,8 @@ async function init() {
   applyRole();
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
   wireEmployeesPage();
+  clearTimeout(_bootGuard);
+  appReady();   // ← дата бэлэн: одоо л апп харагдана
 
   // URL-аас тодорхой хэсэг нээх (жишээ: /kpi/?page=hazards)
   try {
@@ -6633,6 +6643,13 @@ async function init() {
 
   setTimeout(renderCharts, 80);
   if (fresh) setTimeout(function () { toast('Тавтай морил! Жишээ өгөгдөл ачааллаа.', 'info'); }, 400);
+  } catch (err) {
+    // Алдаа гарсан ч ачаалалтын дэлгэц гацахгүй
+    console.error('[init] алдаа:', err);
+  } finally {
+    clearTimeout(_bootGuard);
+    appReady();
+  }
 }
 
 if (document.readyState === 'loading') {

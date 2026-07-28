@@ -113,9 +113,44 @@
     background:radial-gradient(1200px 820px at 50% 48%, rgba(4,12,26,.40) 0%, rgba(4,12,26,.26) 60%, rgba(4,12,26,.34) 100%)}
   #loginScreen .spinner{width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spinR .7s linear infinite;display:inline-block;vertical-align:middle;margin-right:7px}
   @keyframes spinR{to{transform:rotate(360deg)}}
+
+  /* ══ Ачаалалтын дэлгэц — дата бэлэн болтол апп харагдахгүй ══
+     (эс бөгөөс refresh бүрт статик HTML хормын зуур анивчина) */
+  #appBoot{
+    position:fixed;inset:0;z-index:9998;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:16px;
+    background:#F5F6FE;
+    background-image:
+      radial-gradient(900px 520px at 8% -6%, rgba(79,70,229,.10), transparent 60%),
+      radial-gradient(820px 480px at 96% -4%, rgba(124,58,237,.08), transparent 60%);
+    transition:opacity .28s ease;
+  }
+  #appBoot .boot-logo{
+    width:66px;height:66px;border-radius:19px;
+    background:linear-gradient(135deg,#4F46E5,#7C3AED);
+    display:grid;place-items:center;color:#fff;font-size:32px;
+    box-shadow:0 14px 34px rgba(79,70,229,.38);
+    animation:bootPulse 1.5s ease-in-out infinite;
+  }
+  @keyframes bootPulse{
+    0%,100%{transform:scale(1);box-shadow:0 14px 34px rgba(79,70,229,.38)}
+    50%{transform:scale(1.06);box-shadow:0 18px 44px rgba(79,70,229,.5)}
+  }
+  #appBoot .boot-txt{font-size:13.5px;font-weight:700;color:#6B7189;letter-spacing:.02em}
+  body.app-ready #appBoot{opacity:0;pointer-events:none;visibility:hidden}
+  /* Апп бэлэн болтол үндсэн хэсгийг нуух */
+  body:not(.app-ready) .sidebar,
+  body:not(.app-ready) .main{opacity:0}
+  .sidebar,.main{transition:opacity .25s ease}
 </style>
 </head>
 <body>
+
+<!-- ============ АЧААЛАЛТЫН ДЭЛГЭЦ ============ -->
+<div id="appBoot">
+  <div class="boot-logo"><i class="ti ti-shield-check"></i></div>
+  <div class="boot-txt">Ачаалж байна…</div>
+</div>
 
 <!-- ============ НЭВТРЭХ ДЭЛГЭЦ (апп дотор) ============ -->
 <div id="loginScreen">
@@ -967,6 +1002,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=75"></script>
+<script src="script.js?v=76"></script>
 </body>
 </html>
