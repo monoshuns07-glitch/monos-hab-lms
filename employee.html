@@ -275,30 +275,42 @@ body{
 .filter-chip b:empty{display:none}
 .filter-chip.active b{background:rgba(255,255,255,.26)}
 
-/* ── Chapter cards ── */
+/* ── Бүлэг = ДӨРВӨЛЖИН ФОЛДЕР КАРТ (сүлжээ) ── */
 .chapter-list{
-  display:flex;flex-direction:column;gap:10px;
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:14px;align-items:start;
   animation:fadeUp .5s .2s cubic-bezier(.2,.8,.2,1) both;
 }
 .chapter-card{
-  background:var(--surface);border-radius:16px;
+  background:var(--surface);border-radius:18px;
   border:1px solid var(--border);box-shadow:var(--sh1);
-  overflow:hidden;transition:box-shadow .2s;
+  overflow:hidden;transition:box-shadow .2s, transform .2s;
 }
-.chapter-card:hover{box-shadow:var(--sh2)}
+.chapter-card:hover{box-shadow:var(--sh2);transform:translateY(-3px)}
+/* Нээгдсэн бүлэг — бүтэн өргөнөөр дэлгэгдэнэ */
+.chapter-card.open{grid-column:1/-1;transform:none}
+.chapter-card.open:hover{transform:none}
+
+/* Хаалттай үед: БОСОО дөрвөлжин карт (зураг дээр, нэр доор) */
 .chapter-head{
-  display:flex;align-items:center;gap:14px;
-  padding:14px 18px;cursor:pointer;user-select:none;
-  transition:background .15s;
+  display:flex;flex-direction:column;align-items:stretch;gap:0;
+  padding:0;cursor:pointer;user-select:none;
+  transition:background .15s;position:relative;
 }
-.chapter-head:hover{background:rgba(0,0,0,.02)}
-.chapter-info{flex:1;min-width:0}
+.chapter-head:hover{background:rgba(0,0,0,.015)}
+/* Нээгдсэн үед: ХЭВТЭЭ нягт толгой */
+.chapter-card.open .chapter-head{flex-direction:row;align-items:center;gap:14px;padding:13px 16px}
+.chapter-info{flex:1;min-width:0;padding:12px 14px 14px}
+.chapter-card.open .chapter-info{padding:0}
 .chapter-title{font-size:15px;font-weight:800;color:var(--ink);margin-bottom:2px}
 .chapter-desc{
   font-size:12px;color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.chapter-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+/* Хаалттай карт: pill-үүд нэрний доор; нээгдсэн үед баруун талд */
+.chapter-right{display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;padding:0 14px 13px}
+.chapter-card.open .chapter-right{padding:0;flex-wrap:nowrap}
 .ch-pill{
   display:inline-flex;align-items:center;gap:4px;
   padding:3px 9px;border-radius:20px;
@@ -317,12 +329,13 @@ body{
   0%,100%{box-shadow:0 2px 8px rgba(227,6,19,.32)}
   50%{box-shadow:0 2px 14px rgba(227,6,19,.55)}
 }
+/* Хаалттай дөрвөлжин картад сум хэрэггүй — зөвхөн нээгдсэн үед */
 .chapter-chevron{
-  width:18px;height:18px;flex-shrink:0;
+  width:18px;height:18px;flex-shrink:0;display:none;
   stroke:var(--muted);fill:none;stroke-width:2.5;
   transition:transform .3s ease;
 }
-.chapter-card.open .chapter-chevron{transform:rotate(180deg)}
+.chapter-card.open .chapter-chevron{display:block;transform:rotate(180deg)}
 
 .chapter-body{
   display:none;
@@ -341,12 +354,17 @@ body{
 .topic-idx{color:var(--muted);font-weight:600}
 
 /* ── Бүлгийн ДӨРВӨЛЖИН нүүр зураг + мэдээлэл ── */
+/* Хаалттай карт: нүүр зураг БҮТЭН ӨРГӨН, дөрвөлжин (1:1) */
 .ch-cover{
-  position:relative;width:64px;height:64px;flex-shrink:0;
-  border-radius:14px;overflow:hidden;
+  position:relative;width:100%;aspect-ratio:1/1;flex-shrink:0;
+  border-radius:0;overflow:hidden;
   background:linear-gradient(135deg,#1F2937,#0F172A);
   background-size:cover;background-position:center;
   display:grid;place-items:center;
+}
+/* Нээгдсэн карт: жижиг дөрвөлжин зураг хажуудаа */
+.chapter-card.open .ch-cover{
+  width:54px;height:54px;aspect-ratio:auto;border-radius:13px;
   box-shadow:0 3px 10px rgba(15,23,42,.18);
 }
 .ch-cover::after{
@@ -355,19 +373,22 @@ body{
   pointer-events:none;
 }
 .ch-cover-num{
-  position:relative;z-index:1;font-size:23px;font-weight:900;color:#fff;opacity:.92;
+  position:relative;z-index:1;font-size:44px;font-weight:900;color:#fff;opacity:.88;
   font-family:'Fraunces',serif;
 }
+.chapter-card.open .ch-cover-num{font-size:20px}
 .ch-cover-new{
-  position:absolute;top:5px;left:5px;z-index:2;
-  padding:2px 7px;border-radius:20px;font-size:9.5px;font-weight:800;
-  background:var(--red);color:#fff;box-shadow:0 2px 6px rgba(227,6,19,.4);
+  position:absolute;top:8px;left:8px;z-index:2;
+  padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:800;
+  background:var(--red);color:#fff;box-shadow:0 2px 8px rgba(227,6,19,.45);
   white-space:nowrap;
 }
-.ch-cover-bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(0,0,0,.35);z-index:2}
+.chapter-card.open .ch-cover-new{display:none}
+.ch-cover-bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(0,0,0,.35);z-index:2}
 .ch-cover-bar i{display:block;height:100%;background:var(--green);transition:width .6s ease}
+.chapter-card.open .ch-cover-bar{height:4px}
 /* Бүлгийн товч үзүүлэлт */
-.ch-stats{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.ch-stats{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:6px}
 .ch-stat{font-size:11px;color:var(--muted);white-space:nowrap}
 .ch-stat b{color:var(--ink2);font-weight:800}
 .ch-stat.ok b{color:var(--green2)}
@@ -690,15 +711,21 @@ body{
   .section-title{font-size:14px}
   .filter-bar{gap:6px;margin-bottom:10px}
   .search-wrap{min-width:100%;order:-1}
-  /* Ангиллын толгой нягт */
-  .chapter-head{padding:11px 12px;gap:11px}
-  .chapter-title{font-size:14px}
+  /* Бүлгийн дөрвөлжин карт — утсан дээр 2 багана */
+  .chapter-list{grid-template-columns:repeat(2,1fr);gap:11px}
+  .chapter-card{border-radius:15px}
+  .chapter-card.open .chapter-head{padding:11px 12px;gap:11px}
+  .chapter-info{padding:10px 11px 12px}
+  .chapter-title{font-size:13px;line-height:1.3}
   .chapter-desc{display:none}
-  .ch-cover{width:54px;height:54px;border-radius:12px}
-  .ch-cover-num{font-size:19px}
-  .ch-cover-new{font-size:8.5px;padding:2px 6px;top:4px;left:4px}
-  .ch-stats{gap:8px;margin-top:4px}
-  .ch-stat{font-size:10.5px}
+  .ch-cover-num{font-size:34px}
+  .chapter-card.open .ch-cover{width:46px;height:46px;border-radius:11px}
+  .chapter-card.open .ch-cover-num{font-size:17px}
+  .ch-cover-new{font-size:9px;padding:2px 7px;top:6px;left:6px}
+  .ch-stats{gap:7px;margin-top:5px}
+  .ch-stat{font-size:10px}
+  .chapter-right{padding:0 11px 11px;gap:5px}
+  .ch-pill{font-size:10px;padding:2px 8px}
   .chapter-right .ch-pill.total{display:none}
   /* Сургалтын карт — 2 багана */
   .training-list{grid-template-columns:repeat(2,1fr);gap:10px}
@@ -1314,10 +1341,12 @@ function renderChapters(){
       </div>
       <div class="chapter-body">${buildTopicsHTML(visTopics)}</div>`;
 
-    card.classList.add('open');
-
     list.appendChild(card);
   });
+
+  /* Ганц бүлэгтэй бол шууд нээлттэй (нэмэлт дарах шаардлагагүй) */
+  const cards=list.querySelectorAll('.chapter-card');
+  if(cards.length===1) cards[0].classList.add('open');
 
   if(!anyVisible){
     list.innerHTML=`<div class="empty-state">
@@ -1432,7 +1461,14 @@ function handleSearch(){
 
 /* ── Accordion toggle ── */
 function toggleChapter(head){
-  head.closest('.chapter-card').classList.toggle('open');
+  const card=head.closest('.chapter-card');
+  const wasOpen=card.classList.contains('open');
+  /* Нэг зэрэг зөвхөн НЭГ бүлэг нээлттэй — сүлжээ эмх цэгцтэй хэвээр байна */
+  document.querySelectorAll('.chapter-card.open').forEach(c=>c.classList.remove('open'));
+  if(!wasOpen){
+    card.classList.add('open');
+    setTimeout(()=>{ try{ card.scrollIntoView({behavior:'smooth',block:'nearest'}); }catch(e){} },80);
+  }
 }
 
 /* ── Navigate to training ── */

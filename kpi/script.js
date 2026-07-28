@@ -5022,12 +5022,11 @@ function renderVtEmployee(sec) {
   // Ажилтны MiSkill цэс = админаас нэмсэн сургалтууд (Сургалтын самбар). Үзэж, шалгалтаа өгнө.
   sec.style.padding = '0';
   var eurl = '/employee.html?embed=1';
+  // Гарчиг ХАРУУЛАХГҮЙ — дээд баарт аль хэдийн "Видео сургалт (MiSkill)" гэж бичигдсэн,
+  // давхардуулбал утсан дээр орон зай дэмий эзэлнэ.
   sec.innerHTML =
-    '<div style="padding:18px 24px 10px">' +
-    '<h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0">Видео сургалт (MiSkill)</h1>' +
-    '<p style="font-size:13px;color:#64748B;margin:2px 0 0">Танд оногдсон сургалтуудыг үзэж, шалгалтаа өгнө үү</p></div>' +
-    '<div style="height:calc(100vh - 150px);min-height:520px">' +
-    '<iframe src="' + eurl + '" style="width:100%;height:100%;border:none" allow="fullscreen"></iframe>' +
+    '<div style="height:calc(100vh - 64px);min-height:520px">' +
+    '<iframe src="' + eurl + '" style="width:100%;height:100%;border:none;display:block" allow="fullscreen"></iframe>' +
     '</div>';
   return;
   /* eslint-disable */
