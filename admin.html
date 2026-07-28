@@ -1262,6 +1262,26 @@ body{
         <input type="text" class="form-input" id="chapterDepts" placeholder="Жишээ: Үйлдвэр, Нягтлан — хоосон = бүх алба" />
         <div class="form-hint">Хоосон орхивол бүх албанд харагдана</div>
       </div>
+      <!-- Нүүр зураг (ажилтны дэлгэц дээрх дөрвөлжин карт дээр харагдана) -->
+      <div class="form-group">
+        <label class="form-label">Нүүр зураг</label>
+        <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">
+          <div id="chapterCoverPrev" style="width:96px;height:96px;border-radius:12px;flex-shrink:0;
+               background:linear-gradient(135deg,#1F2937,#0F172A);background-size:cover;background-position:center;
+               display:grid;place-items:center;color:rgba(255,255,255,.5);font-size:11px;border:1px solid var(--border,#E5E7EB)">
+            зураггүй
+          </div>
+          <div style="flex:1;min-width:200px">
+            <input type="file" id="chapterCoverFile" accept="image/*" style="display:none" onchange="uploadChapterCover(this)">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('chapterCoverFile').click()">
+              📷 Зураг сонгох
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="clearChapterCover()" style="margin-left:6px">Устгах</button>
+            <input type="hidden" id="chapterCover" />
+            <div class="form-hint" id="chapterCoverHint" style="margin-top:6px">Дөрвөлжин зураг тохиромжтой (жишээ 600×600). 5MB хүртэл.</div>
+          </div>
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
           <label class="form-label">Дараалал</label>
@@ -3026,14 +3046,47 @@ window.openChapterModal=function(id=null){
     document.getElementById('chapterDepts').value=(c.departments||[]).join(', ');
     document.getElementById('chapterOrder').value=c.order||1;
     document.getElementById('chapterActive').checked=c.isActive!==false;
+    setChapterCover(c.coverUrl||'');
   } else {
     document.getElementById('chapterTitle').value='';
     document.getElementById('chapterDesc').value='';
     document.getElementById('chapterDepts').value='';
     document.getElementById('chapterOrder').value=lmsChapters.length+1;
     document.getElementById('chapterActive').checked=true;
+    setChapterCover('');
   }
   document.getElementById('chapterModal').classList.add('show');
+};
+
+/* ── Бүлгийн нүүр зураг ── */
+function setChapterCover(url){
+  const inp=document.getElementById('chapterCover');
+  const prev=document.getElementById('chapterCoverPrev');
+  if(inp) inp.value=url||'';
+  if(prev){
+    if(url){ prev.style.backgroundImage=`url("${url}")`; prev.textContent=''; }
+    else { prev.style.backgroundImage='none'; prev.textContent='зураггүй'; }
+  }
+}
+window.clearChapterCover=function(){ setChapterCover(''); };
+window.uploadChapterCover=async function(input){
+  const file=input.files&&input.files[0];
+  if(!file) return;
+  if(file.size>5*1024*1024){ toast('Зураг 5MB-аас бага байх ёстой','error'); input.value=''; return; }
+  const hint=document.getElementById('chapterCoverHint');
+  if(hint) hint.textContent='Байршуулж байна…';
+  try{
+    const key='chapter-cover/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const url=await r2Upload(file,key);
+    setChapterCover(url);
+    if(hint) hint.textContent='Зураг байршлаа ✓';
+    toast('Нүүр зураг байршлаа','success');
+  }catch(e){
+    console.error('[chapterCover]',e);
+    if(hint) hint.textContent='Алдаа гарлаа: '+(e.message||'');
+    toast('Зураг байршуулж чадсангүй','error');
+  }
+  input.value='';
 };
 
 window.saveChapter=async function(){
@@ -3045,6 +3098,7 @@ window.saveChapter=async function(){
     title,
     description:document.getElementById('chapterDesc').value.trim(),
     departments,
+    coverUrl:(document.getElementById('chapterCover').value||'').trim(),
     order:parseInt(document.getElementById('chapterOrder').value)||1,
     isActive:document.getElementById('chapterActive').checked,
     updatedAt:firebase.firestore.FieldValue.serverTimestamp()
