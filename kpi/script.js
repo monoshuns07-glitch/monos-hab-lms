@@ -2219,7 +2219,9 @@ function renderDashEmployees() {
   if (cnt) cnt.textContent = list.length + ' ажилтан';
 }
 
-/* Дата байхгүй хэсгүүдийг НУУНА — хоосон карт, утгагүй "--" харагдахгүй */
+/* Дашбоардын блокууд HTML дээр НУУГДМАЛ (display:none) эхэлдэг.
+   Энэ функц зөвхөн ЖИНХЭНЭ ДАТАТАЙ хэсгийг харуулна — алдаа гарсан ч
+   хоосон карт, утгагүй тэмдэг хэрэглэгчид харагдахгүй. */
 function tidyDashboard() {
   var page = document.querySelector('.page[data-page="dashboard"]');
   if (!page) return;
@@ -2228,29 +2230,28 @@ function tidyDashboard() {
 
   var hasEmp = (DB.employees || []).length > 0;
 
-  // Ажилтан байхгүй бол дээд 4 KPI картыг ч нуу (утгагүй "--" харагдахгүй)
+  // 1) Дээд 4 KPI карт — ажилтны мэдээлэл байвал
   show(page.querySelector('.kpi-grid'), hasEmp);
 
-  // 1) Хэлтсүүдийн KPI — мөр байхгүй бол нуу
+  // 2) Хэлтсүүдийн KPI / Сүүлд мэдээлсэн (grid-2) — аль нэг нь дататай бол
   var ddb = document.getElementById('dashDeptBreak');
-  show(card(ddb), !!(ddb && ddb.children.length));
-
-  // 2) Сүүлд мэдээлсэн — жинхэнэ бичлэг байхгүй бол нуу
   var act = page.querySelector('.activity-list');
+  var deptHas = !!(ddb && ddb.children.length);
   var actHas = !!(act && act.querySelector('.act-body'));
+  show(card(ddb), deptHas);
   show(card(act), actHas);
+  var g2 = page.querySelector('.grid-2');
+  show(g2, deptHas || actHas);
 
-  // 3) ХАБЭА-н үзүүлэлтүүд (график) — ажилтан байхгүй бол нуу
-  var canvas = document.getElementById('trendChart');
-  show(card(canvas), hasEmp);
+  // 3) ХАБЭА-н үзүүлэлтүүд (график) — ажилтантай бол
+  show(card(document.getElementById('trendChart')), hasEmp);
 
-  // 4) Хэлтсийн KPI харьцуулалт — мөр байхгүй бол нуу
+  // 4) Хэлтсийн KPI харьцуулалт — мөртэй бол
   var dl = page.querySelector('.dept-list');
   show(card(dl), !!(dl && dl.children.length));
 
-  // 5) Ажилтнуудын мэдээлэл — ажилтан байхгүй бол нуу
-  var del = document.getElementById('dashEmpList');
-  show(card(del), hasEmp);
+  // 5) Ажилтнуудын мэдээлэл — ажилтантай бол
+  show(card(document.getElementById('dashEmpList')), hasEmp);
 
   // 6) Ажилтан огт байхгүй бол — ойлгомжтой мэдэгдэл
   var note = document.getElementById('dashNoData');
@@ -5232,6 +5233,8 @@ function renderAll() {
    renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage].forEach(function (fn) {
     try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
   });
+  // renderDashboard унасан ч дашбоардын харагдац цэвэрхэн үлдэнэ
+  try { tidyDashboard(); } catch (e) {}
 }
 
 /* ============ Үйлдлүүд: Эрсдэл мэдээлэх ============ */
