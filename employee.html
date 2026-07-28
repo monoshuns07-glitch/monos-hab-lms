@@ -268,6 +268,12 @@ body{
 }
 .filter-chip:hover{color:var(--ink);border-color:var(--border2)}
 .filter-chip.active{background:var(--red);color:#fff;border-color:var(--red)}
+.filter-chip b{
+  display:inline-block;margin-left:4px;padding:1px 6px;border-radius:20px;
+  background:rgba(0,0,0,.07);font-size:10.5px;font-weight:800;line-height:1.5;
+}
+.filter-chip b:empty{display:none}
+.filter-chip.active b{background:rgba(255,255,255,.26)}
 
 /* ── Chapter cards ── */
 .chapter-list{
@@ -308,6 +314,16 @@ body{
 .ch-pill.total{background:rgba(0,0,0,.05);color:var(--ink2)}
 .ch-pill.done{background:var(--green-soft);color:var(--green2)}
 .ch-pill.prog{background:var(--blue-soft);color:var(--blue2)}
+/* Шинээр оногдсон (үзээгүй) — анхаарал татахуйц */
+.ch-pill.newone{
+  background:var(--red);color:#fff;
+  box-shadow:0 2px 8px rgba(227,6,19,.32);
+  animation:newPulse 2.2s ease-in-out infinite;
+}
+@keyframes newPulse{
+  0%,100%{box-shadow:0 2px 8px rgba(227,6,19,.32)}
+  50%{box-shadow:0 2px 14px rgba(227,6,19,.55)}
+}
 .chapter-chevron{
   width:18px;height:18px;flex-shrink:0;
   stroke:var(--muted);fill:none;stroke-width:2.5;
@@ -331,8 +347,110 @@ body{
 .topic-dot{width:5px;height:5px;border-radius:50%;background:var(--red);flex-shrink:0}
 .topic-idx{color:var(--muted);font-weight:600}
 
-/* ── Training rows ── */
-.training-list{display:flex;flex-direction:column;gap:3px;padding-bottom:4px}
+/* ── Ажилтны сургалтын дэлгэрэнгүй явц ── */
+.progress-detail{
+  background:var(--surface);border:1px solid var(--border);border-radius:18px;
+  padding:16px 18px;margin-bottom:16px;box-shadow:var(--sh1);
+}
+.pd-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.pd-title{font-size:14px;font-weight:800;color:var(--ink)}
+.pd-pct{font-size:24px;font-weight:900;color:var(--green2);line-height:1}
+.pd-pct span{font-size:14px;font-weight:700;opacity:.7}
+.pd-bar{display:flex;gap:3px;height:9px;border-radius:6px;overflow:hidden;background:rgba(0,0,0,.06);margin-bottom:12px}
+.pd-seg{height:100%;border-radius:4px;transition:flex .5s ease}
+.pd-seg.done{background:var(--green2)}
+.pd-seg.prog{background:var(--blue2)}
+.pd-seg.fail{background:var(--orange)}
+.pd-seg.new{background:#CBD5E1}
+.pd-items{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pd-item{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0}
+.pd-item.off{opacity:.4}
+.pd-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.pd-dot.done{background:var(--green2)}
+.pd-dot.prog{background:var(--blue2)}
+.pd-dot.fail{background:var(--orange)}
+.pd-dot.new{background:#CBD5E1}
+.pd-n{font-weight:900;color:var(--ink);font-size:14px}
+.pd-l{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-foot{
+  display:flex;align-items:center;gap:7px;margin-top:12px;padding-top:11px;
+  border-top:1px solid var(--border);font-size:12px;color:var(--ink2);line-height:1.5;
+}
+.pd-foot svg{width:14px;height:14px;stroke:var(--muted);fill:none;stroke-width:2;flex-shrink:0}
+.pd-foot b{color:var(--ink);font-weight:800}
+.pd-foot.done-all{color:var(--green2)}
+.pd-foot.done-all svg{stroke:var(--green2)}
+@media(max-width:800px){
+  .progress-detail{padding:13px 14px;border-radius:14px;margin-bottom:12px}
+  .pd-items{grid-template-columns:repeat(2,1fr);gap:7px}
+  .pd-pct{font-size:20px}
+  .pd-title{font-size:13px}
+  .pd-foot{font-size:11.5px;margin-top:10px;padding-top:9px}
+}
+
+/* ── Сургалтын КАРТ (дөрвөлжин) ── */
+.training-list{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+  gap:12px;padding:4px 0 8px;
+}
+.tcard{
+  position:relative;display:flex;flex-direction:column;
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:16px;overflow:hidden;cursor:pointer;
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s;
+}
+.tcard:hover{transform:translateY(-3px);box-shadow:var(--sh2);border-color:var(--border2)}
+.tcard:active{transform:translateY(0)}
+/* Дөрвөлжин thumbnail (1:1) */
+.tcard-thumb{
+  position:relative;aspect-ratio:1/1;width:100%;
+  background:linear-gradient(135deg,#1F2937,#0F172A);
+  display:grid;place-items:center;overflow:hidden;
+}
+.tcard-thumb::after{
+  content:"";position:absolute;inset:0;
+  background:radial-gradient(circle at 30% 25%,rgba(255,255,255,.10),transparent 60%);
+}
+.tcard.s-passed   .tcard-thumb{background:linear-gradient(135deg,#065F46,#047857)}
+.tcard.s-progress .tcard-thumb{background:linear-gradient(135deg,#1E3A8A,#2563EB)}
+.tcard.s-failed   .tcard-thumb{background:linear-gradient(135deg,#9A3412,#EA580C)}
+.tcard-play{
+  width:52px;height:52px;border-radius:50%;position:relative;z-index:1;
+  background:rgba(255,255,255,.16);backdrop-filter:blur(6px);
+  border:1.5px solid rgba(255,255,255,.35);
+  display:grid;place-items:center;transition:transform .18s, background .18s;
+}
+.tcard:hover .tcard-play{transform:scale(1.08);background:rgba(255,255,255,.26)}
+.tcard-play svg{width:20px;height:20px;fill:#fff;stroke:none;margin-left:3px}
+/* Дүрсэн дээрх тэмдэглэгээ */
+.tcard-badge{
+  position:absolute;top:9px;left:9px;z-index:2;
+  padding:4px 9px;border-radius:20px;font-size:10.5px;font-weight:800;
+  backdrop-filter:blur(8px);white-space:nowrap;
+}
+.tcard-badge.passed{background:rgba(16,185,129,.92);color:#fff}
+.tcard-badge.in-progress{background:rgba(59,130,246,.92);color:#fff}
+.tcard-badge.failed{background:rgba(249,115,22,.92);color:#fff}
+.tcard-badge.not-viewed{background:rgba(255,255,255,.9);color:#374151}
+.tcard-dur{
+  position:absolute;bottom:9px;right:9px;z-index:2;
+  padding:3px 8px;border-radius:8px;font-size:10.5px;font-weight:700;
+  background:rgba(0,0,0,.6);color:#fff;backdrop-filter:blur(6px);
+}
+/* Явцын зурвас (thumbnail-ийн доод ирмэг) */
+.tcard-prog{position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.25);z-index:2}
+.tcard-prog i{display:block;height:100%;background:#fff}
+/* Картын биет */
+.tcard-body{padding:11px 12px 13px;display:flex;flex-direction:column;gap:5px;flex:1}
+.tcard-title{
+  font-size:13px;font-weight:700;color:var(--ink);line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.tcard-meta{font-size:11px;color:var(--muted);margin-top:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* Хуучин мөр загвар (ашиглагдахгүй ч үлдээв) */
 .training-row{
   display:flex;align-items:center;gap:11px;
   padding:10px 12px;border-radius:10px;
@@ -436,18 +554,50 @@ body{
 
 /* ── Responsive ── */
 @media(max-width:800px){
-  .stats-grid{grid-template-columns:1fr 1fr}
-  .hero{padding:20px;gap:16px}
+  .stats-grid{grid-template-columns:repeat(3,1fr);gap:8px}
+  .hero{padding:14px 16px;gap:12px;margin-bottom:12px;border-radius:16px}
   .hero-ring-wrap{display:none}
   .nav-links{display:none}
   .nav-user-info{display:none}
-  .main{padding-left:16px;padding-right:16px;padding-bottom:90px}
-  .chapter-right .ch-pill.done,.chapter-right .ch-pill.prog{display:none}
+  .main{padding-left:14px;padding-right:14px;padding-bottom:90px;padding-top:calc(var(--nav-h) + 14px)}
+  .chapter-right .ch-pill.done{display:none}   /* "шинэ" ба явц утсан дээр ч харагдана */
   .bottom-nav{display:grid}
+
+  /* ── Гар утас: дээд хэсгийг НЯГТРУУЛЖ видеог шууд харагдуулна ── */
+  .hero-avatar{width:46px;height:46px;font-size:17px;border-width:2px}
+  .hero-greeting{font-size:15px;margin-bottom:4px;line-height:1.3}
+  .hero-badges{gap:5px;margin-bottom:2px}
+  .hero-badge{font-size:10px;padding:2px 8px}
+  .hero-date{display:none}
+  /* Статистик — жижиг, хажуу тийш нягт */
+  .stat-card{padding:10px 8px;flex-direction:column;align-items:flex-start;gap:4px;border-radius:12px}
+  .stat-icon{width:26px;height:26px;border-radius:8px}
+  .stat-icon svg{width:13px;height:13px}
+  .stat-label{font-size:9.5px;letter-spacing:0;line-height:1.25}
+  .stat-value{font-size:17px}
+  .stat-hint{display:none}
+  .section-hdr{margin-top:14px;margin-bottom:8px}
+  .section-title{font-size:14px}
+  .filter-bar{gap:6px;margin-bottom:10px}
+  .search-wrap{min-width:100%;order:-1}
+  /* Ангиллын толгой нягт */
+  .chapter-head{padding:11px 12px}
+  .chapter-title{font-size:13px}
+  .chapter-desc{display:none}
+  .chapter-num{width:28px;height:28px;font-size:12px}
+  /* Сургалтын карт — 2 багана */
+  .training-list{grid-template-columns:repeat(2,1fr);gap:10px}
+  .tcard-play{width:42px;height:42px}
+  .tcard-play svg{width:16px;height:16px}
+  .tcard-title{font-size:12px}
+  .tcard-body{padding:9px 10px 11px}
 }
 @media(max-width:480px){
-  .stats-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:repeat(3,1fr)}
   .filter-chip{padding:5px 10px;font-size:11px}
+  .training-list{gap:8px}
+  .tcard-badge{font-size:9.5px;padding:3px 7px;top:7px;left:7px}
+  .tcard-dur{font-size:9.5px;padding:2px 6px;bottom:7px;right:7px}
 }
 
 /* ☀️ Aurora Light — нэгдмэл гэрэлтэй дэвсгэр */
@@ -589,6 +739,9 @@ html.embed .main { padding-top:16px !important; max-width:100% !important; }
     </div>
   </div>
 
+  <!-- Ажилтны сургалтын дэлгэрэнгүй явц -->
+  <div class="progress-detail" id="progressDetail" style="display:none"></div>
+
   <!-- Training section header -->
   <div class="section-hdr">
     <div class="section-title">
@@ -604,10 +757,10 @@ html.embed .main { padding-top:16px !important; max-width:100% !important; }
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input class="search-input" id="searchInput" type="text" placeholder="Сургалт хайх…" oninput="handleSearch()">
     </div>
-    <button class="filter-chip active" onclick="setFilter('all',this)">Бүгд</button>
-    <button class="filter-chip" onclick="setFilter('not_viewed',this)">Үзээгүй</button>
-    <button class="filter-chip" onclick="setFilter('in_progress',this)">Явагдаж байна</button>
-    <button class="filter-chip" onclick="setFilter('passed',this)">Тэнцсэн</button>
+    <button class="filter-chip active" onclick="setFilter('all',this)">Бүгд <b id="fcAll"></b></button>
+    <button class="filter-chip" onclick="setFilter('not_viewed',this)">Үзээгүй <b id="fcNew"></b></button>
+    <button class="filter-chip" onclick="setFilter('in_progress',this)">Явагдаж байна <b id="fcProg"></b></button>
+    <button class="filter-chip" onclick="setFilter('passed',this)">Тэнцсэн <b id="fcDone"></b></button>
   </div>
 
   <!-- Chapter list -->
@@ -853,6 +1006,53 @@ function renderUserUI(){
   document.getElementById('navAvatar').textContent= initials;
 }
 
+/* ── Ажилтны сургалтын дэлгэрэнгүй байдал ── */
+function renderProgressDetail(s){
+  const host=document.getElementById('progressDetail');
+  if(!host) return;
+  if(!s.total){ host.style.display='none'; return; }
+  host.style.display='';
+
+  const pct = Math.round(s.done/s.total*100);
+  const fmtMin = m => m>=60 ? `${Math.floor(m/60)}ц ${m%60}м` : `${m}м`;
+
+  const seg = (n,cls,label)=> n>0
+    ? `<div class="pd-seg ${cls}" style="flex:${n}" title="${label}: ${n}"></div>` : '';
+
+  const item = (n,cls,label)=> `
+    <div class="pd-item ${n>0?'':'off'}">
+      <span class="pd-dot ${cls}"></span>
+      <span class="pd-n">${n}</span>
+      <span class="pd-l">${label}</span>
+    </div>`;
+
+  host.innerHTML=`
+    <div class="pd-top">
+      <div class="pd-title">Миний сургалтын явц</div>
+      <div class="pd-pct">${pct}<span>%</span></div>
+    </div>
+    <div class="pd-bar">
+      ${seg(s.done,'done','Дуусгасан')}
+      ${seg(s.prog,'prog','Явагдаж байна')}
+      ${seg(s.failed,'fail','Тэнцээгүй')}
+      ${seg(s.notViewed,'new','Үзээгүй')}
+    </div>
+    <div class="pd-items">
+      ${item(s.done,'done','Дуусгасан')}
+      ${item(s.prog,'prog','Явагдаж байна')}
+      ${item(s.failed,'fail','Дахин өгөх')}
+      ${item(s.notViewed,'new','Үзээгүй')}
+    </div>
+    ${s.leftMin>0?`<div class="pd-foot">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Үлдсэн сургалтад <b>${fmtMin(s.leftMin)}</b> орчим хугацаа шаардлагатай
+      ${s.notViewed>0?` · <b>${s.notViewed}</b> сургалт таныг хүлээж байна`:''}
+    </div>`:`<div class="pd-foot done-all">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Бүх сургалтаа дуусгасан байна. Баяр хүргэе!
+    </div>`}`;
+}
+
 function getInitials(n){
   const p=n.trim().split(/\s+/);
   return p.length>=2?(p[0][0]+(p[1][0]||'')).toUpperCase():(n[0]||'?').toUpperCase();
@@ -865,14 +1065,23 @@ function zp(n){return String(n).padStart(2,'0')}
 
 /* ── Stats computation ── */
 function computeStats(){
-  let total=0,done=0,scoreSum=0,scoreCt=0;
+  let total=0,done=0,scoreSum=0,scoreCt=0,prog=0,notViewed=0,failed=0,totalMin=0,leftMin=0;
 
   chaptersData.forEach(({topics})=>topics.forEach(({trainings})=>trainings.forEach(tr=>{
     total++;
+    const td=tr.data?tr.data():{};
+    const dmin=Number(td.duration)||0;
+    totalMin+=dmin;
     const p=progressMap[tr.id];
-    if(p&&p.status==='passed'){
+    const st=p?.status||'not_viewed';
+    if(st==='passed'){
       done++;
       if(p.score!=null){scoreSum+=p.score;scoreCt++;}
+    } else {
+      leftMin+=dmin;
+      if(st==='in_progress') prog++;
+      else if(st==='failed') failed++;
+      else notViewed++;
     }
   })));
 
@@ -880,6 +1089,13 @@ function computeStats(){
   const cEl=document.getElementById('sCompleted');
   cEl.innerHTML=`${done}<sub>/${total}</sub>`;
   document.getElementById('sCompletedHint').textContent=`нийт ${total} сургалтаас`;
+
+  /* Дэлгэрэнгүй задаргаа — ажилтанд ойлгомжтой */
+  renderProgressDetail({total,done,prog,failed,notViewed,leftMin,totalMin,scoreCt});
+
+  /* Шүүлтүүрийн чипс дээрх тоо */
+  const setChip=(id,n)=>{ const el=document.getElementById(id); if(el) el.textContent=n>0?n:''; };
+  setChip('fcAll',total); setChip('fcNew',notViewed); setChip('fcProg',prog); setChip('fcDone',done);
 
   /* Real site time from user profile */
   const totalSecs = userProfile.totalSiteTime||0;
@@ -913,7 +1129,7 @@ function renderChapters(){
     const chData=chapter.data();
 
     /* Count visible trainings in this chapter */
-    let chTotal=0,chDone=0,chProg=0;
+    let chTotal=0,chDone=0,chProg=0,chNew=0;
     const visTopics=topics.map(({topic,trainings})=>{
       const vis=trainings.filter(t=>trainingVisible(t));
       vis.forEach(t=>{
@@ -921,6 +1137,7 @@ function renderChapters(){
         const p=progressMap[t.id];
         if(p?.status==='passed') chDone++;
         else if(p?.status==='in_progress') chProg++;
+        else chNew++;                       // үзээгүй = шинээр оногдсон
       });
       return {topic,trainings:vis};
     }).filter(({trainings})=>trainings.length>0);
@@ -931,10 +1148,12 @@ function renderChapters(){
     const card=document.createElement('div');
     card.className='chapter-card';
 
+    /* Ангилал бүрийн товч мэдээлэл — шинэ/явцтай/дуусгасан */
     let pillsHtml='';
-    if(chDone>0)  pillsHtml+=`<span class="ch-pill done">✓ ${chDone}</span>`;
+    if(chNew>0)   pillsHtml+=`<span class="ch-pill newone">${chNew} шинэ</span>`;
     if(chProg>0)  pillsHtml+=`<span class="ch-pill prog">${chProg} явж байна</span>`;
-    pillsHtml+=`<span class="ch-pill total">${chTotal} сургалт</span>`;
+    if(chDone>0)  pillsHtml+=`<span class="ch-pill done">✓ ${chDone}</span>`;
+    pillsHtml+=`<span class="ch-pill total">${chDone}/${chTotal}</span>`;
 
     card.innerHTML=`
       <div class="chapter-head" onclick="toggleChapter(this)">
@@ -1010,19 +1229,28 @@ function buildTrainingRow(tDoc){
       </span>`
     :'';
 
-  const passHtml=t.passingScore?`<span>· Тэнцэх: ${t.passingScore}%</span>`:'';
+  const passHtml=t.passingScore?`<span>Тэнцэх: ${t.passingScore}%</span>`:'';
 
-  return `<div class="training-row ${sClass}" onclick="openTraining('${esc(tDoc.id)}')">
-    <div class="tr-icon">
-      <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+  /* Дүрсэн дээрх тэмдэглэгээ */
+  let topBadge='';
+  if(status==='passed')        topBadge=`<span class="tcard-badge passed">✓ Тэнцсэн${score!=null?` ${score}%`:''}</span>`;
+  else if(status==='in_progress') topBadge=`<span class="tcard-badge in-progress">${watchPct}% үзсэн</span>`;
+  else if(status==='failed')   topBadge=`<span class="tcard-badge failed">Тэнцсэнгүй${score!=null?` ${score}%`:''}</span>`;
+  else                         topBadge=`<span class="tcard-badge not-viewed">Үзээгүй</span>`;
+
+  const durBadge = dur>0 ? `<span class="tcard-dur">${dur} мин</span>` : '';
+  const progBar  = (status==='in_progress'&&watchPct>0)
+    ? `<div class="tcard-prog"><i style="width:${watchPct}%"></i></div>` : '';
+
+  return `<div class="tcard ${sClass}" onclick="openTraining('${esc(tDoc.id)}')">
+    <div class="tcard-thumb">
+      ${topBadge}${durBadge}
+      <div class="tcard-play"><svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+      ${progBar}
     </div>
-    <div class="tr-body">
-      <div class="tr-title">${esc(t.title||'')}</div>
-      <div class="tr-meta">${durHtml}${passHtml}</div>
-    </div>
-    <div class="tr-right">
-      ${badgeHtml}
-      <svg class="tr-chevron" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+    <div class="tcard-body">
+      <div class="tcard-title">${esc(t.title||'')}</div>
+      <div class="tcard-meta">${passHtml}</div>
     </div>
   </div>`;
 }
