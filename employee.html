@@ -352,26 +352,67 @@ body{
   background:var(--surface);border:1px solid var(--border);border-radius:18px;
   padding:16px 18px;margin-bottom:16px;box-shadow:var(--sh1);
 }
-.pd-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-.pd-title{font-size:14px;font-weight:800;color:var(--ink)}
-.pd-pct{font-size:24px;font-weight:900;color:var(--green2);line-height:1}
-.pd-pct span{font-size:14px;font-weight:700;opacity:.7}
-.pd-bar{display:flex;gap:3px;height:9px;border-radius:6px;overflow:hidden;background:rgba(0,0,0,.06);margin-bottom:12px}
+.pd-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.pd-title{font-size:15px;font-weight:800;color:var(--ink);margin-bottom:5px}
+/* Ерөнхий төлөвийн шошго */
+.pd-state{
+  display:inline-block;padding:3px 11px;border-radius:20px;
+  font-size:11px;font-weight:800;letter-spacing:.01em;
+}
+.pd-state.start{background:rgba(0,0,0,.06);color:var(--muted)}
+.pd-state.mid{background:var(--blue-soft);color:var(--blue2)}
+.pd-state.good{background:rgba(245,158,11,.13);color:#B45309}
+.pd-state.full{background:var(--green-soft);color:var(--green2)}
+.pd-pct-wrap{text-align:right;flex-shrink:0}
+.pd-pct{font-size:30px;font-weight:900;color:var(--green2);line-height:1}
+.pd-pct span{font-size:16px;font-weight:700;opacity:.7}
+.pd-pct-sub{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.pd-bar{display:flex;gap:3px;height:10px;border-radius:6px;overflow:hidden;background:rgba(0,0,0,.06);margin-bottom:13px}
 .pd-seg{height:100%;border-radius:4px;transition:flex .5s ease}
 .pd-seg.done{background:var(--green2)}
 .pd-seg.prog{background:var(--blue2)}
 .pd-seg.fail{background:var(--orange)}
 .pd-seg.new{background:#CBD5E1}
-.pd-items{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.pd-item{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0}
-.pd-item.off{opacity:.4}
-.pd-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-.pd-dot.done{background:var(--green2)}
-.pd-dot.prog{background:var(--blue2)}
-.pd-dot.fail{background:var(--orange)}
-.pd-dot.new{background:#CBD5E1}
-.pd-n{font-weight:900;color:var(--ink);font-size:14px}
-.pd-l{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Том, тодорхой үзүүлэлтийн хайрцаг */
+.pd-boxes{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.pd-box{
+  border:1.5px solid var(--border);border-radius:13px;padding:11px 12px;
+  background:var(--surface);position:relative;overflow:hidden;min-width:0;
+}
+.pd-box::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px}
+.pd-box.done::before{background:var(--green2)}
+.pd-box.prog::before{background:var(--blue2)}
+.pd-box.fail::before{background:var(--orange)}
+.pd-box.new::before{background:#CBD5E1}
+.pd-box.off{opacity:.45}
+.pd-box-n{font-size:24px;font-weight:900;line-height:1;color:var(--ink)}
+.pd-box.done .pd-box-n{color:var(--green2)}
+.pd-box.prog .pd-box-n{color:var(--blue2)}
+.pd-box.fail .pd-box-n{color:var(--orange)}
+.pd-box-l{font-size:12px;font-weight:700;color:var(--ink2);margin-top:4px;line-height:1.25}
+.pd-box-h{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.3}
+
+/* Дараагийн алхам — дарж болох мөр */
+.pd-next{
+  display:flex;align-items:center;gap:12px;margin-top:13px;padding:12px 14px;
+  border-radius:14px;cursor:pointer;
+  background:linear-gradient(135deg,rgba(227,6,19,.055),rgba(245,158,11,.05));
+  border:1.5px solid rgba(227,6,19,.16);
+  transition:transform .16s, box-shadow .16s, border-color .16s;
+}
+.pd-next:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(227,6,19,.14);border-color:rgba(227,6,19,.32)}
+.pd-next-ic{
+  width:40px;height:40px;border-radius:12px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  color:#fff;display:grid;place-items:center;font-size:17px;font-weight:700;
+  box-shadow:0 4px 12px rgba(227,6,19,.3);
+}
+.pd-next-body{flex:1;min-width:0}
+.pd-next-lbl{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--red);margin-bottom:2px}
+.pd-next-title{font-size:14px;font-weight:800;color:var(--ink);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-next-meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+.pd-next-arrow{width:17px;height:17px;stroke:var(--red);fill:none;stroke-width:2.5;flex-shrink:0;opacity:.6}
 .pd-foot{
   display:flex;align-items:center;gap:7px;margin-top:12px;padding-top:11px;
   border-top:1px solid var(--border);font-size:12px;color:var(--ink2);line-height:1.5;
@@ -382,7 +423,7 @@ body{
 .pd-foot.done-all svg{stroke:var(--green2)}
 /* Нэмэлт үзүүлэлт (зарцуулсан цаг, дундаж оноо, нийт үргэлжлэх) */
 .pd-extra{
-  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
   margin-top:11px;padding-top:11px;border-top:1px solid var(--border);
 }
 .pd-ex{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -390,10 +431,18 @@ body{
 .pd-ex b{font-size:15px;font-weight:900;color:var(--ink)}
 @media(max-width:800px){
   .progress-detail{padding:13px 14px;border-radius:14px;margin-bottom:12px}
-  .pd-items{grid-template-columns:repeat(2,1fr);gap:7px}
-  .pd-pct{font-size:20px}
-  .pd-title{font-size:13px}
+  .pd-boxes{grid-template-columns:repeat(2,1fr);gap:8px}
+  .pd-box{padding:9px 10px;border-radius:11px}
+  .pd-box-n{font-size:20px}
+  .pd-box-l{font-size:11px}
+  .pd-box-h{display:none}
+  .pd-pct{font-size:25px}
+  .pd-title{font-size:14px}
   .pd-foot{font-size:11.5px;margin-top:10px;padding-top:9px}
+  .pd-extra{grid-template-columns:repeat(2,1fr);gap:9px}
+  .pd-next{padding:10px 12px;gap:10px;margin-top:11px}
+  .pd-next-ic{width:34px;height:34px;font-size:15px;border-radius:10px}
+  .pd-next-title{font-size:13px}
 }
 
 /* ── Сургалтын КАРТ (дөрвөлжин) ── */
@@ -967,49 +1016,91 @@ function renderProgressDetail(s){
   host.style.display='';
 
   const pct = Math.round(s.done/s.total*100);
-  const fmtMin = m => m>=60 ? `${Math.floor(m/60)}ц ${m%60}м` : `${m}м`;
+  const fmtMin = m => m>=60 ? `${Math.floor(m/60)} цаг ${m%60} мин` : `${m} мин`;
   const secs = s.totalSecs||0;
-  const spent = secs>=3600 ? `${Math.floor(secs/3600)}ц ${Math.floor((secs%3600)/60)}м` : `${Math.floor(secs/60)}м`;
+  const spent = secs>=3600 ? `${Math.floor(secs/3600)} цаг ${Math.floor((secs%3600)/60)} мин` : `${Math.floor(secs/60)} мин`;
+
+  /* Төлөвийн ерөнхий дүгнэлт */
+  let stateCls='start', stateTxt='Эхлээгүй байна';
+  if(pct>=100){ stateCls='full'; stateTxt='Бүрэн дуусгасан'; }
+  else if(pct>=50){ stateCls='good'; stateTxt='Сайн явж байна'; }
+  else if(s.done>0||s.prog>0){ stateCls='mid'; stateTxt='Эхэлсэн байна'; }
 
   const seg = (n,cls,label)=> n>0
     ? `<div class="pd-seg ${cls}" style="flex:${n}" title="${label}: ${n}"></div>` : '';
 
-  const item = (n,cls,label)=> `
-    <div class="pd-item ${n>0?'':'off'}">
-      <span class="pd-dot ${cls}"></span>
-      <span class="pd-n">${n}</span>
-      <span class="pd-l">${label}</span>
+  /* Том, тодорхой үзүүлэлтийн хайрцаг */
+  const box = (n,cls,label,hint)=> `
+    <div class="pd-box ${cls} ${n>0?'':'off'}">
+      <div class="pd-box-n">${n}</div>
+      <div class="pd-box-l">${label}</div>
+      ${hint?`<div class="pd-box-h">${hint}</div>`:''}
     </div>`;
+
+  /* Дараагийн алхам — ажилтанд ЯГ юу хийхийг хэлнэ */
+  let nextHtml='';
+  if(s.next){
+    const n=s.next;
+    let act='Одоо үзэж эхлэх', icon='▶';
+    if(n.status==='in_progress'){ act=`Үргэлжлүүлэх (${n.watch}% үзсэн)`; icon='▶'; }
+    else if(n.status==='failed'){ act='Дахин үзэж, шалгалт өгөх'; icon='↻'; }
+    nextHtml=`
+      <div class="pd-next" onclick="openTraining('${esc(n.id)}')">
+        <div class="pd-next-ic">${icon}</div>
+        <div class="pd-next-body">
+          <div class="pd-next-lbl">Дараагийн алхам</div>
+          <div class="pd-next-title">${esc(n.title)}</div>
+          <div class="pd-next-meta">${act}${n.dur?` · ${n.dur} мин`:''}</div>
+        </div>
+        <svg class="pd-next-arrow" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>`;
+  }
+
+  const lastTxt = s.lastActive
+    ? (()=>{ const d=new Date(s.lastActive*1000); return `${d.getFullYear()}/${zp(d.getMonth()+1)}/${zp(d.getDate())}`; })()
+    : '—';
 
   host.innerHTML=`
     <div class="pd-top">
-      <div class="pd-title">Миний сургалтын явц</div>
-      <div class="pd-pct">${pct}<span>%</span></div>
+      <div>
+        <div class="pd-title">Миний сургалтын явц</div>
+        <div class="pd-state ${stateCls}">${stateTxt}</div>
+      </div>
+      <div class="pd-pct-wrap">
+        <div class="pd-pct">${pct}<span>%</span></div>
+        <div class="pd-pct-sub">${s.done} / ${s.total} дуусгасан</div>
+      </div>
     </div>
+
     <div class="pd-bar">
       ${seg(s.done,'done','Дуусгасан')}
       ${seg(s.prog,'prog','Явагдаж байна')}
       ${seg(s.failed,'fail','Тэнцээгүй')}
       ${seg(s.notViewed,'new','Үзээгүй')}
     </div>
-    <div class="pd-items">
-      ${item(s.done,'done','Дуусгасан')}
-      ${item(s.prog,'prog','Явагдаж байна')}
-      ${item(s.failed,'fail','Дахин өгөх')}
-      ${item(s.notViewed,'new','Үзээгүй')}
+
+    <div class="pd-boxes">
+      ${box(s.done,'done','Дуусгасан','шалгалт тэнцсэн')}
+      ${box(s.prog,'prog','Явагдаж байна','үзэж эхэлсэн')}
+      ${box(s.failed,'fail','Дахин өгөх','шалгалт тэнцээгүй')}
+      ${box(s.notViewed,'new','Үзээгүй','хараахан эхлээгүй')}
     </div>
+
+    ${nextHtml}
+
     ${s.leftMin>0?`<div class="pd-foot">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Үлдсэн сургалтад <b>${fmtMin(s.leftMin)}</b> орчим хугацаа шаардлагатай
-      ${s.notViewed>0?` · <b>${s.notViewed}</b> сургалт таныг хүлээж байна`:''}
+      Үлдсэн <b>${s.total-s.done}</b> сургалтад ойролцоогоор <b>${fmtMin(s.leftMin)}</b> хугацаа шаардлагатай
     </div>`:`<div class="pd-foot done-all">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-      Бүх сургалтаа дуусгасан байна. Баяр хүргэе!
+      Танд оногдсон бүх сургалтыг амжилттай дуусгасан байна. Баяр хүргэе!
     </div>`}
+
     <div class="pd-extra">
-      <div class="pd-ex"><span>Зарцуулсан цаг</span><b>${spent}</b></div>
+      <div class="pd-ex"><span>Нийт зарцуулсан</span><b>${spent}</b></div>
       <div class="pd-ex"><span>Дундаж оноо</span><b>${s.avg!=null?s.avg+'%':'—'}</b></div>
-      <div class="pd-ex"><span>Нийт үргэлжлэх</span><b>${fmtMin(s.totalMin||0)}</b></div>
+      <div class="pd-ex"><span>Хамгийн өндөр</span><b>${s.bestScore!=null?s.bestScore+'%':'—'}</b></div>
+      <div class="pd-ex"><span>Сүүлд үзсэн</span><b>${lastTxt}</b></div>
     </div>`;
 }
 
@@ -1026,6 +1117,8 @@ function zp(n){return String(n).padStart(2,'0')}
 /* ── Stats computation ── */
 function computeStats(){
   let total=0,done=0,scoreSum=0,scoreCt=0,prog=0,notViewed=0,failed=0,totalMin=0,leftMin=0;
+  let bestScore=null, lastActive=null;
+  const pending=[];   // дуусаагүй сургалтууд (дараагийн алхам харуулахад)
 
   chaptersData.forEach(({topics})=>topics.forEach(({trainings})=>trainings.forEach(tr=>{
     total++;
@@ -1034,16 +1127,26 @@ function computeStats(){
     totalMin+=dmin;
     const p=progressMap[tr.id];
     const st=p?.status||'not_viewed';
+    const wp=p?.watchProgress!=null?Math.round(p.watchProgress*100):0;
+    // Сүүлд идэвхтэй байсан огноо
+    const ts=p?.updatedAt?.seconds||p?.lastViewedAt?.seconds||null;
+    if(ts && (!lastActive || ts>lastActive)) lastActive=ts;
     if(st==='passed'){
       done++;
-      if(p.score!=null){scoreSum+=p.score;scoreCt++;}
+      if(p.score!=null){scoreSum+=p.score;scoreCt++;if(bestScore==null||p.score>bestScore)bestScore=p.score;}
     } else {
       leftMin+=dmin;
       if(st==='in_progress') prog++;
       else if(st==='failed') failed++;
       else notViewed++;
+      pending.push({id:tr.id,title:td.title||'',dur:dmin,status:st,watch:wp,score:p?.score});
     }
   })));
+
+  // Дараагийн алхам: эхлээд явцтай, дараа нь тэнцээгүй, эцэст нь үзээгүй
+  const rank={in_progress:0,failed:1,not_viewed:2};
+  pending.sort((a,b)=>(rank[a.status]??3)-(rank[b.status]??3) || b.watch-a.watch);
+  const next=pending[0]||null;
 
   /* Stat cards (устгагдсан бол алгасна) */
   _setHtml('sCompleted', `${done}<sub>/${total}</sub>`);
@@ -1052,7 +1155,7 @@ function computeStats(){
   /* Дэлгэрэнгүй задаргаа — ажилтанд ойлгомжтой */
   const totalSecs = userProfile.totalSiteTime||0;
   const avg = scoreCt>0?Math.round(scoreSum/scoreCt):null;
-  renderProgressDetail({total,done,prog,failed,notViewed,leftMin,totalMin,scoreCt,avg,totalSecs});
+  renderProgressDetail({total,done,prog,failed,notViewed,leftMin,totalMin,scoreCt,avg,totalSecs,next,bestScore,lastActive});
 
   /* Шүүлтүүрийн чипс дээрх тоо */
   const setChip=(id,n)=>{ const el=document.getElementById(id); if(el) el.textContent=n>0?n:''; };
