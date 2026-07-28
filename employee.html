@@ -380,6 +380,14 @@ body{
 .pd-foot b{color:var(--ink);font-weight:800}
 .pd-foot.done-all{color:var(--green2)}
 .pd-foot.done-all svg{stroke:var(--green2)}
+/* Нэмэлт үзүүлэлт (зарцуулсан цаг, дундаж оноо, нийт үргэлжлэх) */
+.pd-extra{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  margin-top:11px;padding-top:11px;border-top:1px solid var(--border);
+}
+.pd-ex{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pd-ex span{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-ex b{font-size:15px;font-weight:900;color:var(--ink)}
 @media(max-width:800px){
   .progress-detail{padding:13px 14px;border-radius:14px;margin-bottom:12px}
   .pd-items{grid-template-columns:repeat(2,1fr);gap:7px}
@@ -680,65 +688,6 @@ html.embed .main { padding-top:16px !important; max-width:100% !important; }
 <!-- Main content -->
 <main class="main">
 
-  <!-- Hero greeting -->
-  <div class="hero" id="heroCard">
-    <div class="hero-avatar" id="heroAvatar">?</div>
-    <div class="hero-content">
-      <div class="hero-greeting">Сайн байна уу, <em id="heroName">…</em>!</div>
-      <div class="hero-badges">
-        <span class="hero-badge dept" id="heroDept"></span>
-        <span class="hero-badge pos" id="heroPos"></span>
-      </div>
-      <div class="hero-date" id="heroDate"></div>
-    </div>
-    <div class="hero-ring-wrap">
-      <div class="hero-ring">
-        <svg viewBox="0 0 78 78">
-          <circle class="ring-bg" cx="39" cy="39" r="33"/>
-          <circle class="ring-fill" id="ringFill" cx="39" cy="39" r="33"/>
-        </svg>
-        <div class="ring-label">
-          <span class="ring-pct" id="ringPct">0%</span>
-          <span class="ring-sub">дүүрсэн</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Stats -->
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon red">
-        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Дуусгасан сургалт</div>
-        <div class="stat-value" id="sCompleted">—</div>
-        <div class="stat-hint" id="sCompletedHint">нийт сургалтаас</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon blue">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Нийт зарцуулсан цаг</div>
-        <div class="stat-value" id="sTime">—</div>
-        <div class="stat-hint">цаг минут</div>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon green">
-        <svg viewBox="0 0 24 24"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
-      </div>
-      <div class="stat-body">
-        <div class="stat-label">Дундаж оноо</div>
-        <div class="stat-value" id="sAvg">—</div>
-        <div class="stat-hint">тэнцсэн шалгалтын</div>
-      </div>
-    </div>
-  </div>
-
   <!-- Ажилтны сургалтын дэлгэрэнгүй явц -->
   <div class="progress-detail" id="progressDetail" style="display:none"></div>
 
@@ -988,6 +937,10 @@ async function loadDashboard(){
 }
 
 /* ── User UI ── */
+/* null-аюулгүй туслахууд (устгасан элемент байсан ч алдаа гарахгүй) */
+function _setTxt(id,v){ const e=document.getElementById(id); if(e) e.textContent=v; }
+function _setHtml(id,v){ const e=document.getElementById(id); if(e) e.innerHTML=v; }
+
 function renderUserUI(){
   const fn = userProfile.firstName||'';
   const ln = userProfile.lastName||'';
@@ -996,14 +949,14 @@ function renderUserUI(){
   const dept = userProfile.department||'';
   const pos  = userProfile.position||'';
 
-  document.getElementById('heroName').textContent = name;
-  document.getElementById('heroAvatar').textContent = initials;
-  document.getElementById('heroDept').textContent = dept||'Алба тодорхойгүй';
-  document.getElementById('heroPos').textContent  = pos ||'Албан тушаал тодорхойгүй';
-  document.getElementById('heroDate').textContent = fmtDate(new Date());
-  document.getElementById('navName').textContent  = name;
-  document.getElementById('navPos').textContent   = pos||dept;
-  document.getElementById('navAvatar').textContent= initials;
+  _setTxt('heroName', name);
+  _setTxt('heroAvatar', initials);
+  _setTxt('heroDept', dept||'Алба тодорхойгүй');
+  _setTxt('heroPos',  pos ||'Албан тушаал тодорхойгүй');
+  _setTxt('heroDate', fmtDate(new Date()));
+  _setTxt('navName',  name);
+  _setTxt('navPos',   pos||dept);
+  _setTxt('navAvatar',initials);
 }
 
 /* ── Ажилтны сургалтын дэлгэрэнгүй байдал ── */
@@ -1015,6 +968,8 @@ function renderProgressDetail(s){
 
   const pct = Math.round(s.done/s.total*100);
   const fmtMin = m => m>=60 ? `${Math.floor(m/60)}ц ${m%60}м` : `${m}м`;
+  const secs = s.totalSecs||0;
+  const spent = secs>=3600 ? `${Math.floor(secs/3600)}ц ${Math.floor((secs%3600)/60)}м` : `${Math.floor(secs/60)}м`;
 
   const seg = (n,cls,label)=> n>0
     ? `<div class="pd-seg ${cls}" style="flex:${n}" title="${label}: ${n}"></div>` : '';
@@ -1050,7 +1005,12 @@ function renderProgressDetail(s){
     </div>`:`<div class="pd-foot done-all">
       <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
       Бүх сургалтаа дуусгасан байна. Баяр хүргэе!
-    </div>`}`;
+    </div>`}
+    <div class="pd-extra">
+      <div class="pd-ex"><span>Зарцуулсан цаг</span><b>${spent}</b></div>
+      <div class="pd-ex"><span>Дундаж оноо</span><b>${s.avg!=null?s.avg+'%':'—'}</b></div>
+      <div class="pd-ex"><span>Нийт үргэлжлэх</span><b>${fmtMin(s.totalMin||0)}</b></div>
+    </div>`;
 }
 
 function getInitials(n){
@@ -1085,38 +1045,36 @@ function computeStats(){
     }
   })));
 
-  /* Stat cards */
-  const cEl=document.getElementById('sCompleted');
-  cEl.innerHTML=`${done}<sub>/${total}</sub>`;
-  document.getElementById('sCompletedHint').textContent=`нийт ${total} сургалтаас`;
+  /* Stat cards (устгагдсан бол алгасна) */
+  _setHtml('sCompleted', `${done}<sub>/${total}</sub>`);
+  _setTxt('sCompletedHint', `нийт ${total} сургалтаас`);
 
   /* Дэлгэрэнгүй задаргаа — ажилтанд ойлгомжтой */
-  renderProgressDetail({total,done,prog,failed,notViewed,leftMin,totalMin,scoreCt});
+  const totalSecs = userProfile.totalSiteTime||0;
+  const avg = scoreCt>0?Math.round(scoreSum/scoreCt):null;
+  renderProgressDetail({total,done,prog,failed,notViewed,leftMin,totalMin,scoreCt,avg,totalSecs});
 
   /* Шүүлтүүрийн чипс дээрх тоо */
   const setChip=(id,n)=>{ const el=document.getElementById(id); if(el) el.textContent=n>0?n:''; };
   setChip('fcAll',total); setChip('fcNew',notViewed); setChip('fcProg',prog); setChip('fcDone',done);
 
   /* Real site time from user profile */
-  const totalSecs = userProfile.totalSiteTime||0;
   const hrs=Math.floor(totalSecs/3600),mins=Math.floor((totalSecs%3600)/60);
-  const tEl=document.getElementById('sTime');
-  tEl.innerHTML=hrs>0?`${hrs}<sub>ц ${mins}м</sub>`:`${mins}<sub>мин</sub>`;
-
-  const avg=scoreCt>0?Math.round(scoreSum/scoreCt):null;
-  document.getElementById('sAvg').innerHTML=avg!=null?`${avg}<sub>%</sub>`:`—`;
+  _setHtml('sTime', hrs>0?`${hrs}<sub>ц ${mins}м</sub>`:`${mins}<sub>мин</sub>`);
+  _setHtml('sAvg', avg!=null?`${avg}<sub>%</sub>`:`—`);
 
   /* Ring */
   const pct=total>0?Math.round(done/total*100):0;
-  document.getElementById('ringPct').textContent=`${pct}%`;
-  document.getElementById('sectionMeta').textContent=`${done}/${total} дуусгасан`;
-  /* 2π×33 ≈ 207.3 */
-  const circ=2*Math.PI*33;
-  const offset=circ*(1-pct/100);
+  _setTxt('ringPct', `${pct}%`);
+  _setTxt('sectionMeta', `${done}/${total} дуусгасан`);
   const rf=document.getElementById('ringFill');
-  rf.style.strokeDasharray=circ;
-  rf.style.strokeDashoffset=circ;
-  setTimeout(()=>{ rf.style.strokeDashoffset=offset; },350);
+  if(rf){
+    const circ=2*Math.PI*33;
+    const offset=circ*(1-pct/100);
+    rf.style.strokeDasharray=circ;
+    rf.style.strokeDashoffset=circ;
+    setTimeout(()=>{ rf.style.strokeDashoffset=offset; },350);
+  }
 }
 
 /* ── Render chapters ── */
