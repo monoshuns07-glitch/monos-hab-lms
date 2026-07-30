@@ -6002,33 +6002,25 @@
 })();
 </script>
 
-<!-- ← Буцах товч (KPI аппаас ирсэн үед) -->
 <script>
+/* "← Буцах" товч — хаанаас ирснээс хамаарч зөв хуудас руу буцна
+   (KPI системээс ирсэн бол /kpi/, эс бөгөөс нүүр index.html) */
 (function () {
-  var b = document.createElement('a');
-  b.href = '/kpi/';
-  b.id = 'backToKpi';
-  b.innerHTML = '<span style="font-size:17px;line-height:1">&#8592;</span> Буцах';
-  b.style.cssText = [
-    'position:fixed','left:16px','bottom:16px','z-index:2147483000',
-    'display:inline-flex','align-items:center','gap:8px',
-    'padding:12px 20px','border-radius:14px','text-decoration:none',
-    'font-family:inherit','font-size:14px','font-weight:800','color:#fff',
-    'background:linear-gradient(135deg,#1F2937,#0F172A)',
-    'box-shadow:0 10px 30px rgba(15,23,42,.35),0 2px 8px rgba(0,0,0,.2)',
-    'transition:transform .18s, box-shadow .18s'
-  ].join(';');
-  b.onmouseenter = function () { b.style.transform = 'translateY(-2px)'; };
-  b.onmouseleave = function () { b.style.transform = 'none'; };
-  // Түүх байвал браузерын back, эс бөгөөс /kpi/ рүү
-  b.addEventListener('click', function (e) {
-    if (history.length > 1 && document.referrer && document.referrer.indexOf(location.host) !== -1) {
-      e.preventDefault();
-      history.back();
+  function fix() {
+    var b = document.querySelector('.hub-back-btn');
+    if (!b) return;
+    var ref = '';
+    try { ref = document.referrer || ''; } catch (e) {}
+    var fromKpi = ref.indexOf('/kpi') > -1;
+    if (fromKpi) {
+      b.setAttribute('href', '/kpi/');
+      b.addEventListener('click', function (e) {
+        if (history.length > 1) { e.preventDefault(); history.back(); }
+      });
     }
-  });
-  function add() { if (document.body && !document.getElementById('backToKpi')) document.body.appendChild(b); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fix);
+  else fix();
 })();
 </script>
 </body>
