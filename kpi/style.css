@@ -2044,6 +2044,36 @@ code {
 /* Ачаалалтын эргэлт */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── "Аюул мэдээлэх" хөвөгч товч (бүх цэсэнд) ── */
+#hazardFab {
+  position: fixed;
+  right: 20px; bottom: 20px;
+  z-index: 1090;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 14px 20px;
+  border: none; border-radius: 100px; cursor: pointer;
+  font-family: inherit; font-size: 14px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #C10010, #E30613 55%, #FF2535);
+  box-shadow: 0 10px 30px rgba(227, 6, 19, .42), 0 3px 10px rgba(0,0,0,.18);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+#hazardFab i { font-size: 19px; }
+#hazardFab:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(227,6,19,.5); }
+#hazardFab:active { transform: translateY(0); }
+/* Модал нээлттэй үед халхлахгүй */
+body.modal-open #hazardFab { display: none; }
+
+@media (max-width: 768px) {
+  #hazardFab { right: 14px; bottom: 14px; padding: 13px 17px; font-size: 13px; }
+  #hazardFab i { font-size: 18px; }
+}
+/* Маш жижиг дэлгэц — зөвхөн дүрс (дугуй) */
+@media (max-width: 420px) {
+  #hazardFab { padding: 0; width: 56px; height: 56px; justify-content: center; }
+  #hazardFab span { display: none; }
+  #hazardFab i { font-size: 24px; }
+}
+
 /* ---- Хоосон төлөв ---- */
 .empty-state {
   display: flex;

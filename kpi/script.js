@@ -984,9 +984,11 @@ var modalRoot;
 function closeModal() {
   if (modalRoot) modalRoot.innerHTML = '';
   document.body.style.overflow = '';
+  try { document.body.classList.remove('modal-open'); } catch (e) {}
 }
 function buildModal(title, contentNode, opts) {
   opts = opts || {};
+  try { document.body.classList.add('modal-open'); } catch (e) {}
   if (!modalRoot) { modalRoot = elc('div', 'modal-root'); document.body.appendChild(modalRoot); }
   var overlay = elc('div', 'modal-overlay');
   var modal = elc('div', 'modal');
@@ -6631,6 +6633,20 @@ function appReady() {
   try { document.body.classList.add('app-ready'); } catch (e) {}
 }
 
+/* ── "Аюул мэдээлэх" хөвөгч товч — БҮХ ЦЭСЭНД ил харагдана ── */
+function injectHazardFab() {
+  if (document.getElementById('hazardFab')) return;
+  var b = document.createElement('button');
+  b.id = 'hazardFab';
+  b.type = 'button';
+  b.title = 'Аюул мэдээлэх';
+  b.innerHTML = '<i class="ti ti-flag-2"></i><span>Аюул мэдээлэх</span>';
+  b.addEventListener('click', function () {
+    try { actionReportNew('hazard'); } catch (e) { try { switchPage('reportflow'); } catch (e2) {} }
+  });
+  document.body.appendChild(b);
+}
+
 async function init() {
   // Юу ч болсон 6 секундын дараа ачаалалтын дэлгэцийг албадан хаана (гацахаас сэргийлж)
   var _bootGuard = setTimeout(appReady, 6000);
@@ -6657,6 +6673,7 @@ async function init() {
   applyRole();
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
   wireEmployeesPage();
+  try { injectHazardFab(); } catch (e) {}   // бүх цэсэнд "Аюул мэдээлэх"
   clearTimeout(_bootGuard);
   appReady();   // ← дата бэлэн: одоо л апп харагдана
 

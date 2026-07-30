@@ -33,8 +33,9 @@
     b.id = 'pwaInstallBtn';
     b.type = 'button';
     b.innerHTML = '<span style="font-size:16px;line-height:1">⬇</span>' + label;
+    // bottom:88px — "Аюул мэдээлэх" хөвөгч товчтой давхцахгүй
     b.style.cssText = [
-      'position:fixed', 'right:18px', 'bottom:18px', 'z-index:2147483000',
+      'position:fixed', 'right:18px', 'bottom:88px', 'z-index:2147483000',
       'display:inline-flex', 'align-items:center', 'gap:9px',
       'padding:12px 18px', 'border:none', 'border-radius:14px', 'cursor:pointer',
       'font-family:inherit', 'font-size:13.5px', 'font-weight:800', 'color:#fff',
