@@ -3515,7 +3515,6 @@ function renderReportflow() {
   var html = '<div class="page-header"><div><h1>Аюул / Near-miss мэдээлэл</h1>' +
     '<p class="page-subtitle">Зураг → байршил → нэг өгүүлбэр → эрсдэл. Баталгаажсаны дараа бонус нэмэгдэнэ.</p></div>' +
     '<div class="page-actions">' +
-    '<button class="btn btn-secondary" data-newreport="near_miss"><i class="ti ti-alert-hexagon"></i> Осолд дөхсөн</button>' +
     '<button class="btn btn-primary" data-newreport="hazard"><i class="ti ti-flag-2"></i> Аюул мэдээлэх</button></div></div>';
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
