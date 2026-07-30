@@ -214,7 +214,7 @@ textarea.inp{resize:none;min-height:120px}
 <div id="screenInfo" class="screen">
   <div class="hdr"><div class="hdr-logo">🦺</div><div><div class="hdr-title">Мэдээлэл оруулах</div><div class="hdr-sub">Шалгалтад бэлтгэх</div></div></div>
   <div style="max-width:480px;margin:0 auto;padding:32px 20px;width:100%">
-    <button class="btn btn-ghost" style="margin-bottom:20px" onclick="show('Qr')">← Буцах</button>
+    <button class="btn btn-ghost" style="margin-bottom:20px" onclick="show('Welcome')">← Буцах</button>
     <div class="card slide-in" style="padding:36px">
       <div style="display:inline-flex;align-items:center;gap:8px;background:var(--gl);border:1px solid var(--gm);border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;color:var(--green);margin-bottom:20px">✓ Бүртгэл амжилттай</div>
       <h2 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:8px">Мэдээлэлээ оруулна уу</h2>
@@ -355,7 +355,7 @@ async function init(){
   }catch(e){}
   if(QP.title) CFG.examTitle = QP.title; // SafeWork-оос дамжуулсан сургалтын гарчиг
   document.getElementById("hdrTitle").textContent=CFG.examTitle||"ХАБЭА";
-  try{ if(QP.name){var _n=document.getElementById("iName"); if(_n&&!_n.value)_n.value=QP.name;} if(QP.dept){var _d=document.getElementById("iDept"); if(_d&&!_d.value)_d.value=QP.dept;} }catch(e){}
+  try{ if(QP.name){var _n=document.getElementById("iName"); if(_n&&!_n.value)_n.value=QP.name;} if(QP.dept){var _d=document.getElementById("iDept"); if(_d&&!_d.value)_d.value=QP.dept;} var _p0=(QP.pos||QP.position||""); if(_p0){var _p=document.getElementById("iPos"); if(_p&&!_p.value)_p.value=_p0;} }catch(e){}
   document.getElementById("hdrOrg").textContent=CFG.orgName||"МОНОС ХҮНС ХК";
   document.getElementById("welcomeTitle").innerHTML=(CFG.examTitle||"ХАБЭА Сургалтын")+'<span style="background:linear-gradient(135deg,#4F46E5,#7C3AED);-webkit-background-clip:text;-webkit-text-fill-color:transparent"> шалгалт</span>';
   document.getElementById("passPct").textContent=(CFG.passPercent||60)+"%";
@@ -367,20 +367,17 @@ function show(n){document.querySelectorAll(".screen").forEach(s=>s.classList.rem
 function goHome(){examType=null;emp=null;answers={};curQ=0;pickLeft=null;if(signaturePad){try{signaturePad.clear()}catch(e){}}show("Welcome")}
 
 function chooseExam(t){
-  examType=t;const isPre=t==="pre";
-  const url=isPre?CFG.regUrl:CFG.evalUrl;
-  document.getElementById("qrHdrSub").textContent=isPre?"Урьдчилсан шалгалт":"Сургалтын дараах шалгалт";
-  const pill=document.getElementById("qrPill");
-  pill.textContent=isPre?"📋 Урьдчилсан":"🎓 Дараах";
-  pill.style.cssText=isPre?"background:#EEF2FF;border:1px solid #C7D2FE;color:#4F46E5":"background:#FFF1F2;border:1px solid #FECACA;color:#E30613";
-  document.getElementById("qrTitle").textContent=isPre?"Бүртгэлийн QR":"Үнэлгээний QR";
-  document.getElementById("qrDesc").textContent=isPre?"Утсаараа QR уншуулж бүртгэлээ хийгээрэй. Эсвэл доорх товчоор шууд форм руу орно.":"Утсаараа QR уншуулж үнэлгээгээ өгөөрэй. Эсвэл доорх товчоор шууд форм руу орно.";
-  const btn=document.getElementById("qrBtn");
-  btn.textContent=isPre?"📝 Бүртгэлийн форм нээх →":"📝 Үнэлгээний форм нээх →";
-  btn.onclick=()=>{if(url&&url.startsWith("http"))try{window.open(url,"_blank","noopener,noreferrer")}catch(e){}};
-  document.getElementById("qrContinueBtn").onclick=()=>show("Info");
-  document.getElementById("qrImg").src=`https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=${encodeURIComponent(url&&url.startsWith("http")?url:"https://monos.mn")}`;
-  show("Qr");
+  examType=t;
+  var n=(QP.name||"").trim(), d=(QP.dept||"").trim(), p=(QP.pos||QP.position||"").trim();
+  if(n.length>=2){
+    emp={name:n,dept:d||"\u2014",pos:p||"\u2014"};
+    answers={};curQ=0;pickLeft=null;
+    try{document.getElementById("qTot").textContent=QS.length;}catch(e){}
+    try{document.getElementById("eMeta").textContent=n+(d?" \u00b7 "+d:"");}catch(e){}
+    renderQ();renderDots();show("Exam");
+    return;
+  }
+  show("Info");
 }
 
 function startExam(){

@@ -1242,7 +1242,9 @@ function renderMyExams() {
       return '<div class="card" style="padding:24px;border:1.5px solid #E2E8F0;opacity:.75">' + cardInner + '</div>';
     }
     var url = '/habea-exam.html?exam=' + encodeURIComponent(ep.key) + '&title=' + encodeURIComponent(ep.label) +
-      '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') + (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '');
+      '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') +
+      (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
+      (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       cardInner +
@@ -1886,7 +1888,8 @@ function actionTakeModExam(key, empId) {
   var title = encodeURIComponent(TRAINING_MODULES[key] || key);
   var eid = encodeURIComponent((me && me.id) || empId || '');
   var dept = encodeURIComponent((me && me.dept) || '');
-  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title + '&eid=' + eid + '&dept=' + dept, '_blank');
+  var pos = encodeURIComponent((me && (me.pos || me.role)) || '');
+  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title + '&eid=' + eid + '&dept=' + dept + '&pos=' + pos, '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
