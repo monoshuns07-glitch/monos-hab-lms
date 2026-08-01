@@ -2151,6 +2151,8 @@ function renderEmployeeDashboard() {
 
 function renderDashboard() {
   if (isEmp()) { renderEmployeeDashboard(); return; }
+  // Дараагийн алхмуудын аль нэг нь унасан ч дашбоард хоосон харагдахгүй
+  try { tidyDashboard(); } catch (e) {}
   // Демо дата анхааруулга (админд, эхний цэвэрлэлт хүртэл)
   try {
     var _dpage = document.querySelector('.page[data-page="dashboard"]');
@@ -6685,8 +6687,15 @@ function injectHazardFab() {
 }
 
 async function init() {
-  // Юу ч болсон 6 секундын дараа ачаалалтын дэлгэцийг албадан хаана (гацахаас сэргийлж)
-  var _bootGuard = setTimeout(appReady, 6000);
+  // Юу ч болсон 10 секундын дараа ачаалалтын дэлгэцийг албадан хаана (гацахаас сэргийлж).
+  // Тэр үед апп ХООСОН харагдахгүйн тулд байгаа датагаар нэг удаа зурна.
+  var _bootGuard = setTimeout(function () {
+    try {
+      if (!DB || !DB.settings) { DB = seedDB(); }
+      injectControls(); applyRole(); renderAll(); injectHazardFab();
+    } catch (e) { console.error('[bootGuard]', e); }
+    appReady();
+  }, 10000);
   try {
   await establishSession();
   // Нэвтрээгүй бол апп доторх нэвтрэх дэлгэцийг гаргана (тусдаа хуудас руу үсрэхгүй)
@@ -6694,10 +6703,25 @@ async function init() {
   // Системийн эзэн админыг баталгаажуулна (Firestore role ямар ч байсан)
   if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
-  // Дата ачаалахад алдаа гарсан ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй)
+  // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
+  // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул 12 сек хугацаа тавина.
   var fresh = false;
-  try { fresh = await loadDB(); }
-  catch (err) {
+  try {
+    fresh = await Promise.race([
+      loadDB(),
+      new Promise(function (res) { setTimeout(function () { res('__timeout__'); }, 12000); })
+    ]);
+    if (fresh === '__timeout__') {
+      console.warn('[init] loadDB хугацаа хэтэрлээ — локал/эхлэлийн датагаар үргэлжилнэ');
+      fresh = false;
+      if (!DB || !DB.settings) {
+        try { var _raw = localStorage.getItem(LSKEY); DB = _raw ? JSON.parse(_raw) : seedDB(); }
+        catch (e2) { try { DB = seedDB(); } catch (e3) {} }
+      }
+      // Дата дараа ирвэл автоматаар дахин зурна
+      loadDB().then(function () { try { renderAll(); } catch (e) {} }).catch(function () {});
+    }
+  } catch (err) {
     console.error('[init] loadDB:', err);
     if (!DB || !DB.settings) { try { DB = seedDB(); } catch (e2) {} }
   }
