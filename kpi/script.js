@@ -1146,6 +1146,7 @@ function openMenu(anchor, items, onSelect) {
 function switchPage(pageId) {
   // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
   if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
+  try { rememberPage(pageId); } catch (e) {}   // refresh хийхэд энэ хуудсандаа үлдэнэ
   $$('.nav-item').forEach(function (it) {
     it.classList.toggle('active', it.getAttribute('data-page') === pageId);
   });
@@ -6636,6 +6637,39 @@ function appReady() {
   try { document.body.classList.add('app-ready'); } catch (e) {}
 }
 
+/* ── Сүүлд үзсэн хуудсыг санах: refresh хийхэд ТЭР ХУУДСАНДАА үлдэнэ ──
+   Ажилтан бол ажилтны, админ бол админы үндсэн хуудас руу орно. */
+var LAST_PAGE_KEY = 'kpi_last_page';
+
+function rememberPage(pageId) {
+  if (!pageId) return;
+  try { localStorage.setItem(LAST_PAGE_KEY, pageId); } catch (e) {}
+}
+
+/* Эрхээс хамаарсан ҮНДСЭН хуудас */
+function defaultPageForRole() {
+  if (isAdmin() || isDeptHead()) return 'dashboard';
+  return 'video-track';         // ажилтан → Видео сургалт (өдөр тутмын ажлын хуудас)
+}
+
+function restoreLastPage() {
+  var pg = '';
+  try { pg = localStorage.getItem(LAST_PAGE_KEY) || ''; } catch (e) {}
+  // URL-д ?page= байвал тэр давамгайлна
+  try { if (new URLSearchParams(location.search).get('page')) return; } catch (e) {}
+  var blocked = blockedPages();
+  if (!pg || blocked.indexOf(pg) >= 0 || !pageEl(pg)) pg = defaultPageForRole();
+  if (!pg || pg === 'dashboard') return;
+  // Сургалтын модулийн хуудас бол сүүлд үзсэн модулийг сэргээнэ
+  if (pg === 'trn-mod') {
+    var mk = '';
+    try { mk = localStorage.getItem('kpi_last_mod') || ''; } catch (e) {}
+    if (!mk || !TRAINING_MODULES[mk]) { pg = defaultPageForRole(); if (pg === 'dashboard') return; }
+    else { CURRENT_MOD = mk; try { switchPage('trn-mod'); renderTrainingModule(mk); } catch (e) {} return; }
+  }
+  try { switchPage(pg); } catch (e) {}
+}
+
 /* ── "Аюул мэдээлэх" хөвөгч товч — БҮХ ЦЭСЭНД ил харагдана ── */
 function injectHazardFab() {
   if (document.getElementById('hazardFab')) return;
@@ -6660,7 +6694,13 @@ async function init() {
   // Системийн эзэн админыг баталгаажуулна (Firestore role ямар ч байсан)
   if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
-  var fresh = await loadDB();
+  // Дата ачаалахад алдаа гарсан ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй)
+  var fresh = false;
+  try { fresh = await loadDB(); }
+  catch (err) {
+    console.error('[init] loadDB:', err);
+    if (!DB || !DB.settings) { try { DB = seedDB(); } catch (e2) {} }
+  }
   // DB.userRoles-с SESSION эрхийн override шалгана — зөвхөн employee→depthead тохиолдолд
   // (admin-ийн role хэзээ ч бууруулагдахгүй, kpi_state/main-д хадгалагдсан override)
   if (SESSION && SESSION.email && SESSION.role === 'employee' && DB.userRoles && DB.userRoles[SESSION.email]) {
@@ -6672,11 +6712,13 @@ async function init() {
       await loadDB();
     }
   }
-  injectControls();
-  applyRole();
+  // Алхам бүрийг тусад нь хамгаална — нэг нь унасан ч апп бүрэн ажиллана
+  try { injectControls(); } catch (err) { console.error('[init] injectControls:', err); }
+  try { applyRole(); } catch (err) { console.error('[init] applyRole:', err); }
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
-  wireEmployeesPage();
+  try { wireEmployeesPage(); } catch (err) { console.error('[init] wireEmployeesPage:', err); }
   try { injectHazardFab(); } catch (e) {}   // бүх цэсэнд "Аюул мэдээлэх"
+  try { restoreLastPage(); } catch (e) {}   // сүүлд үзсэн хуудсаа сэргээнэ
   clearTimeout(_bootGuard);
   appReady();   // ← дата бэлэн: одоо л апп харагдана
 
@@ -6702,6 +6744,7 @@ async function init() {
     $$('.nav-item.leaf').forEach(function (el) { el.classList.remove('active'); });
     modleaf.classList.add('active');
     CURRENT_MOD = modKey;
+    try { localStorage.setItem('kpi_last_mod', modKey); } catch (e2) {}
     switchPage('trn-mod');
     var bc = $('#bcCurrent'); if (bc) bc.textContent = TRAINING_MODULES[modKey] || modKey;
     try { renderTrainingModule(modKey); } catch (e2) { console.error('[trn-mod]', e2); }
