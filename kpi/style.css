@@ -2044,6 +2044,21 @@ code {
 /* Ачаалалтын эргэлт */
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── "Миний гүйцэтгэл" — 2 багана (доошоо сунжрахгүй) ── */
+.emp-cols {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 0 16px;
+  align-items: start;
+}
+.emp-cols > div { min-width: 0; }
+.emp-cols .card { margin-bottom: 14px; }
+@media (max-width: 1000px) {
+  .emp-cols { grid-template-columns: 1fr; gap: 0; }
+}
+/* Хийх ёстой мөрийн hover */
+.emp-step:hover { border-color: #C7D2FE !important; background: #FAFBFF !important; }
+
 /* ── "Аюул мэдээлэх" хөвөгч товч (бүх цэсэнд) ── */
 #hazardFab {
   position: fixed;

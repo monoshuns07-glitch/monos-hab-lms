@@ -2189,6 +2189,10 @@ function renderEmployeeDashboard() {
     (lvl.next != null ? '<div style="margin-top:9px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12.5px;color:#64748B;margin-top:5px">Дараагийн түвшинд хүрэхэд <strong>' + toNext + '</strong> оноо дутуу байна</div>' : '<div style="color:#16A34A;font-weight:700;margin-top:7px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
     '</div></div>' +
 
+    /* ══ 2 БАГАНА: зүүн = хийх ёстой + оноо, баруун = сайн хийсэн, бонус, дүн ══ */
+    '<div class="emp-cols">' +
+    '<div>' +    /* ── ЗҮҮН БАГАНА ── */
+
     /* ② ЮУ ДУТУУ БАЙНА — хийвэл хэдэн оноо нэмэгдэхийг шууд хэлнэ */
     (todoList.length ?
       '<div class="card" style="padding:18px;margin-bottom:14px;border:1.5px solid #FEE2E2">' +
@@ -2212,67 +2216,75 @@ function renderEmployeeDashboard() {
         '</div>' : '') +
       '</div>' : '') +
 
-    /* ③ ЮУ САЙН БАЙНА */
-    (goodList.length ?
-      '<div class="card" style="padding:18px;margin-bottom:14px;border:1.5px solid #D1FAE5">' +
-      '<h3 style="margin:0 0 12px;color:#047857">✓ Сайн хийсэн зүйлс</h3>' +
-      goodList.map(function (g) {
-        return '<div style="display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid #F5F7FB">' +
-          '<div style="width:30px;height:30px;border-radius:50%;flex-shrink:0;background:#D1FAE5;color:#047857;display:flex;align-items:center;justify-content:center"><i class="ti ti-check" style="font-size:16px"></i></div>' +
-          '<div style="flex:1;font-size:13.5px;color:#334155">' + g.txt + '</div></div>';
-      }).join('') + '</div>' : '') +
-
-    /* ④ Оноо хаанаас бүрдсэн — энгийнээр */
-    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 3px">Таны оноо хаанаас бүрдсэн бэ?</h3>' +
-    '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 14px">Хэсэг бүрээс хэдэн оноо авснаа хараарай.</p>' +
+    /* ③ Оноо хаанаас бүрдсэн — нягт */
+    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 3px">Оноо хаанаас бүрдсэн бэ?</h3>' +
+    '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 10px">Хэсэг бүрээс хэдэн оноо авсан</p>' +
     (baseFactors.length ? baseFactors.map(function (c) {
       var contrib = Math.round(c.score * c.weight / baseWsum);
       var maxOf = Math.round(100 * c.weight / baseWsum);
-      return '<div style="padding:12px 0;border-top:1px solid #F5F7FB">' +
-        '<div style="display:flex;align-items:center;gap:11px;margin-bottom:7px">' +
-        '<div style="width:34px;height:34px;border-radius:10px;background:' + c.color + '18;color:' + c.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + c.icon + '" style="font-size:17px"></i></div>' +
-        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:#1E293B">' + c.label + '</div>' +
-        '<div style="font-size:12px;color:#8A94A6;margin-top:1px">' + evidenceFor(c.label) + '</div></div>' +
+      return '<div style="padding:9px 0;border-top:1px solid #F5F7FB">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">' +
+        '<div style="width:30px;height:30px;border-radius:9px;background:' + c.color + '18;color:' + c.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + c.icon + '" style="font-size:15px"></i></div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:#1E293B">' + c.label + '</div>' +
+        '<div style="font-size:11.5px;color:#8A94A6;margin-top:1px;line-height:1.35">' + evidenceFor(c.label) + '</div></div>' +
         '<div style="text-align:right;flex-shrink:0">' +
-        '<div style="font-size:20px;font-weight:900;color:' + c.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + contrib + '</div>' +
-        '<div style="font-size:10.5px;color:#94A3B8">' + maxOf + '-аас</div></div></div>' +
+        '<div style="font-size:18px;font-weight:900;color:' + c.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + contrib + '</div>' +
+        '<div style="font-size:10px;color:#94A3B8">' + maxOf + '-аас</div></div></div>' +
         miniBar(c.score, c.color) + '</div>';
-    }).join('') : '<div class="empty-state" style="padding:22px"><i class="ti ti-hourglass"></i><div>Танд сургалт, даалгавар хараахан оногдоогүй байна.</div></div>') +
+    }).join('') : '<div class="empty-state" style="padding:18px"><i class="ti ti-hourglass"></i><div>Танд сургалт, даалгавар хараахан оногдоогүй байна.</div></div>') +
 
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0;color:#16A34A;border-top:1px solid #F5F7FB;margin-top:6px">' +
-    '<span style="font-size:13.5px;font-weight:700"><i class="ti ti-gift"></i> Аюул мэдээлсний бонус</span>' +
-    '<span style="font-size:18px;font-weight:800">+' + bonusBoost + '</span></div>' +
-    '<div style="border-top:2px solid #EEF1F9;padding-top:13px;display:flex;justify-content:space-between;align-items:center">' +
-    '<span style="font-weight:800;font-size:15px">Нийт</span>' +
-    '<span style="font-size:26px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span></div></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;color:#16A34A;border-top:1px solid #F5F7FB">' +
+    '<span style="font-size:13px;font-weight:700"><i class="ti ti-gift"></i> Аюул мэдээлсний бонус</span>' +
+    '<span style="font-size:17px;font-weight:800">+' + bonusBoost + '</span></div>' +
+    '<div style="border-top:2px solid #EEF1F9;padding-top:11px;display:flex;justify-content:space-between;align-items:center">' +
+    '<span style="font-weight:800;font-size:14.5px">Нийт</span>' +
+    '<span style="font-size:24px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span></div></div>' +
 
-    /* ④ Байр эзлэлт — зөвхөн олон ажилтантай үед утга учиртай */
-    (showRank ? '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 4px">Байр эзлэлт</h3>' +
-      '<p style="font-size:12px;color:#94A3B8;margin:0 0 12px">KPI онооны дараалал (' + overallTotal + ' ажилтнаас)</p>' +
-      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-      rankBadge(overallRank, overallTotal, 'Нийт ажилтнуудаас') +
-      (deptTotal > 1 ? rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх') : '') +
-      (deptCountAll > 1 ? rankBadge(deptRankAmongAll, deptCountAll, 'Алба хоорондын') : '') +
+    '</div>' +   /* ← зүүн багана дуусав */
+
+    '<div>' +    /* ── БАРУУН БАГАНА ── */
+
+    /* ④ ЮУ САЙН БАЙНА — нягт чипс */
+    (goodList.length ?
+      '<div class="card" style="padding:16px 18px;margin-bottom:14px;border:1.5px solid #D1FAE5">' +
+      '<h3 style="margin:0 0 10px;color:#047857;font-size:15px">✓ Сайн хийсэн зүйлс</h3>' +
+      '<div style="display:flex;flex-direction:column;gap:7px">' +
+      goodList.map(function (g) {
+        return '<div style="display:flex;align-items:center;gap:9px;font-size:13px;color:#334155">' +
+          '<i class="ti ti-circle-check" style="color:#059669;font-size:17px;flex-shrink:0"></i>' +
+          '<span>' + g.txt + '</span></div>';
+      }).join('') + '</div></div>' : '') +
+
+    /* ⑤ Бонус */
+    '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;align-items:center;gap:11px"><i class="ti ti-gift" style="font-size:26px;color:#16A34A"></i>' +
+    '<div><div style="font-size:24px;font-weight:800;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">+' + bonus + '</div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-top:2px">Цуглуулсан бонус</div></div></div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-top:9px;line-height:1.5">' +
+    (rep.verified ? '<b>' + rep.verified + '</b> мэдээлэл баталгаажсан' + (rep.pending ? ', <b>' + rep.pending + '</b> хүлээгдэж байна' : '') + '.' : 'Хараахан мэдээлэл оруулаагүй байна.') +
+    ' Мэдээлэх тусам нэмэгдэнэ, <b>хэзээ ч хасагдахгүй</b>.</div>' +
+    '<button class="btn btn-primary btn-sm" data-goreport="1" style="margin-top:11px"><i class="ti ti-flag-2"></i> Мэдээлэх</button></div>' +
+
+    /* ⑥ Шалгалтын ахиц */
+    (improved != null ? '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;gap:11px"><i class="ti ' + (improved >= 0 ? 'ti-trending-up' : 'ti-arrow-down') + '" style="font-size:26px;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + '"></i>' +
+      '<div><div style="font-size:24px;font-weight:800;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + (improved >= 0 ? '+' : '') + improved + '</div>' +
+      '<div style="font-size:12.5px;color:#64748B;margin-top:2px">Шалгалтын ахиц</div></div></div>' +
+      '<div style="font-size:12.5px;color:#64748B;margin-top:9px">Өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>' +
+      (improved > 0 ? ' — мэдлэг ахисан 👏' : '') + '</div></div>' : '') +
+
+    /* ⑦ Байр эзлэлт */
+    (showRank ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><h3 style="margin:0 0 3px;font-size:15px">Байр эзлэлт</h3>' +
+      '<p style="font-size:12px;color:#94A3B8;margin:0 0 10px">' + overallTotal + ' ажилтнаас</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      rankBadge(overallRank, overallTotal, 'Нийт') +
+      (deptTotal > 1 ? rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба')) : '') +
       '</div></div>' : '') +
 
-    /* ⑤ Шалгалтын дүн */
+    /* ⑧ Шалгалтын дүн */
     habeaExamsHTML(e) +
 
-    /* ⑥ Бонус + ахиц */
-    '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
-    '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
-    '<div style="display:flex;align-items:center;gap:10px"><i class="ti ti-gift" style="font-size:28px;color:#16A34A"></i>' +
-    '<div><div style="font-size:26px;font-weight:800;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif">+' + bonus + '</div><div style="font-size:13px;color:#64748B">Цуглуулсан бонус оноо</div></div></div>' +
-    '<div style="font-size:13px;color:#64748B;margin-top:10px">' +
-    (rep.verified ? 'Таны <b>' + rep.verified + '</b> мэдээлэл баталгаажсан' + (rep.pending ? ', <b>' + rep.pending + '</b> хүлээгдэж байна' : '') + '.' : 'Та хараахан мэдээлэл оруулаагүй байна.') +
-    ' Аюул/осолд дөхсөн тохиолдол мэдээлэх тусам бонус нэмэгдэнэ — <b>хэзээ ч хасагдахгүй</b>.</div>' +
-    '<button class="btn btn-primary btn-sm" data-goreport="1" style="margin-top:12px"><i class="ti ti-flag-2"></i> Мэдээлэх</button></div>' +
-    (improved != null ? '<div class="card" style="flex:1;min-width:240px;padding:18px">' +
-      '<div style="display:flex;align-items:center;gap:10px"><i class="ti ' + (improved >= 0 ? 'ti-trending-up' : 'ti-arrow-down') + '" style="font-size:28px;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + '"></i>' +
-      '<div><div style="font-size:26px;font-weight:800;color:' + (improved >= 0 ? '#16A34A' : '#64748B') + ';font-family:\'Bricolage Grotesque\',sans-serif">' + (improved >= 0 ? '+' : '') + improved + '</div><div style="font-size:13px;color:#64748B">Шалгалтын ахиц</div></div></div>' +
-      '<div style="font-size:13px;color:#64748B;margin-top:10px">Сургалтын өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>. ' +
-      (improved > 0 ? 'Мэдлэг тань ахисан байна. 👏' : (improved === 0 ? 'Тогтвортой байна.' : 'Дараагийн удаа сайжруулъя.')) + '</div></div>' : '') +
-    '</div>';
+    '</div></div>';   /* ← баруун багана + emp-cols дуусав */
 
   if (!sec._empWired) {
     sec._empWired = true;
