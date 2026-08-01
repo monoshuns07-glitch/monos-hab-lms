@@ -2060,10 +2060,44 @@ function renderEmployeeDashboard() {
   var deptRank = deptEmps.findIndex(function (x) { return x.id === e.id; }) + 1;
   var deptTotal = deptEmps.length;
 
+  /* Урд байгаа хүнээс хэдэн оноогоор хоцорч байгаа */
+  function aheadInfo(list, myIdx) {
+    if (myIdx <= 0 || !list[myIdx - 1]) return { name: '', diff: 0 };
+    var ah = list[myIdx - 1];
+    var d = empTotal(ah) - empTotal(e);
+    return { name: ah.name || 'урдах ажилтан', diff: Math.max(0, d) };
+  }
+  var aheadOverall = aheadInfo(allEmps, overallRank - 1);
+  var aheadDept = aheadInfo(deptEmps, deptRank - 1);
+
   var depts = deptList();
   var deptScores = depts.map(function (d) { return { dept: d, score: deptScore(d) }; }).filter(function (r) { return r.score > 0 || r.dept === e.dept; }).sort(function (a, b) { return b.score - a.score; });
   var deptRankAmongAll = deptScores.findIndex(function (r) { return r.dept === e.dept; }) + 1;
   var deptCountAll = deptScores.length;
+
+  /* ══ БАЙР ЭЗЛЭЛТ — ямар ч хүн харангуут ойлгохоор энгийн ══
+     "Та 12 ажилтнаас 3-т явж байна" + өнгө + дээшлэх зөвлөмж */
+  function rankPlain(rank, total, whatLabel, aheadName, aheadDiff) {
+    var pct = total > 1 ? (rank - 1) / (total - 1) : 0;   // 0 = хамгийн дээр
+    var tone, txt, ic;
+    if (rank === 1)        { tone = '#D97706'; txt = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
+    else if (rank === 2)   { tone = '#64748B'; txt = 'Хоёрдугаарт явж байна';     ic = '🥈'; }
+    else if (rank === 3)   { tone = '#B45309'; txt = 'Гуравдугаарт явж байна';    ic = '🥉'; }
+    else if (pct <= 0.34)  { tone = '#16A34A'; txt = 'Урд хэсэгт явж байна';      ic = '👍'; }
+    else if (pct <= 0.67)  { tone = '#0891B2'; txt = 'Дунд хэсэгт явж байна';     ic = '🙂'; }
+    else                   { tone = '#DC2626'; txt = 'Ард хэсэгт явж байна';      ic = '💪'; }
+
+    return '<div style="background:' + tone + '0F;border:1.5px solid ' + tone + '33;border-radius:14px;padding:15px 16px;margin-bottom:10px">' +
+      '<div style="font-size:12px;color:#64748B;margin-bottom:6px">' + whatLabel + '</div>' +
+      '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+      '<span style="font-size:34px">' + ic + '</span>' +
+      '<span style="font-size:15px;color:#334155">Та <b style="font-size:30px;color:' + tone + ';font-family:\'Bricolage Grotesque\',sans-serif">' + rank + '</b>-т явж байна</span>' +
+      '<span style="font-size:13px;color:#94A3B8">' + total + ' хүнээс</span>' +
+      '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:' + tone + ';margin-top:6px">' + txt + '</div>' +
+      (aheadName ? '<div style="font-size:12.5px;color:#64748B;margin-top:5px">Урд байгаа хүнээс <b>' + aheadDiff + '</b> оноогоор хоцорч байна</div>' : '') +
+      '</div>';
+  }
 
   function rankBadge(rank, total, label) {
     var color = rank === 1 ? '#D97706' : (rank <= Math.ceil(total * 0.3) ? '#16A34A' : (rank <= Math.ceil(total * 0.6) ? '#0891B2' : '#64748B'));
@@ -2273,13 +2307,17 @@ function renderEmployeeDashboard() {
       '<div style="font-size:12.5px;color:#64748B;margin-top:9px">Өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>' +
       (improved > 0 ? ' — мэдлэг ахисан 👏' : '') + '</div></div>' : '') +
 
-    /* ⑦ Байр эзлэлт */
-    (showRank ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><h3 style="margin:0 0 3px;font-size:15px">Байр эзлэлт</h3>' +
-      '<p style="font-size:12px;color:#94A3B8;margin:0 0 10px">' + overallTotal + ' ажилтнаас</p>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-      rankBadge(overallRank, overallTotal, 'Нийт') +
-      (deptTotal > 1 ? rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба')) : '') +
-      '</div></div>' : '') +
+    /* ⑦ Байр эзлэлт — ЗААВАЛ харагдана, маш энгийнээр */
+    '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+    '<h3 style="margin:0 0 3px;font-size:15px">Таны байр</h3>' +
+    '<p style="font-size:12px;color:#94A3B8;margin:0 0 11px">KPI онооны дараалал</p>' +
+    (overallTotal > 1
+      ? rankPlain(overallRank, overallTotal, 'Байгууллагын бүх ажилтнаас', aheadOverall.name, aheadOverall.diff) +
+        (deptTotal > 1 ? rankPlain(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх', aheadDept.name, aheadDept.diff) : '')
+      : '<div style="background:#F0F9FF;border:1.5px solid #BAE6FD;border-radius:14px;padding:15px 16px;font-size:13.5px;color:#075985">' +
+        '<b>Та системд бүртгэлтэй цорын ганц ажилтан байна.</b><br>' +
+        '<span style="font-size:12.5px">Бусад ажилтан нэмэгдсэний дараа байр эзлэлт харагдана.</span></div>') +
+    '</div>' +
 
     /* ⑧ Шалгалтын дүн */
     habeaExamsHTML(e) +
