@@ -6634,9 +6634,66 @@ function applyRole() {
   if (active && blockedPages().indexOf(active.getAttribute('data-page')) >= 0) { switchPage('dashboard'); }
 }
 
+/* ══ Дашбоард ХЭЗЭЭ Ч хоосон харагдахгүй ══
+   renderDashboard дуудагдсан эсэхээс үл хамааран ажиллана.
+   Ажилтны дата байвал мэдэгдлийг нууна, байхгүй бол шалтгааныг харуулна. */
+function ensureDashboardNotEmpty() {
+  var page = document.querySelector('.page[data-page="dashboard"]');
+  if (!page) return;
+  var n = (DB && DB.employees && DB.employees.length) || 0;
+  var note = document.getElementById('dashNoData');
+
+  if (n > 0) { if (note) note.style.display = 'none'; return; }
+
+  if (!note) {
+    note = document.createElement('div');
+    note.id = 'dashNoData';
+    note.className = 'card';
+    var hdr = page.querySelector('.page-header');
+    if (hdr && hdr.parentNode === page) page.insertBefore(note, hdr.nextSibling);
+    else page.insertBefore(note, page.firstChild);
+  }
+
+  var el = (typeof EMP_LOAD !== 'undefined') ? EMP_LOAD : { state: 'idle' };
+  var icon = 'ti-users-plus', msg, hint = '', btn = false;
+
+  if (!fbReady || el.state === 'nofb') {
+    icon = 'ti-cloud-off';
+    msg = 'Сервертэй холбогдож чадсангүй';
+    hint = 'Интернэт холболтоо шалгаад хуудсыг дахин ачаална уу.';
+  } else if (el.state === 'error') {
+    icon = 'ti-alert-triangle';
+    msg = 'Ажилтны мэдээлэл уншигдсангүй';
+    hint = 'Алдаа: ' + esc(el.error || '') + '. Дахин нэвтэрч үзнэ үү.';
+  } else if (el.state === 'ok' && !el.users) {
+    msg = 'Ажилтан бүртгэгдээгүй байна';
+    hint = 'Контент удирдлага → Хэрэглэгчид хэсгээс ажилтан нэмнэ. Бүртгэсний дараа KPI, сургалт, тайлан энд автоматаар харагдана.';
+    btn = isAdmin();
+  } else if (el.state === 'ok') {
+    msg = 'Ажилтны жагсаалт үүсээгүй';
+    hint = 'Системд ' + el.users + ' хэрэглэгч байна. Хуудсыг дахин ачаалж (Ctrl+Shift+R) үзнэ үү.';
+  } else {
+    icon = 'ti-loader-2';
+    msg = 'Мэдээлэл ачаалж байна…';
+  }
+
+  note.innerHTML = '<div class="empty-state" style="padding:38px 20px">' +
+    '<i class="ti ' + icon + '"' + (icon === 'ti-loader-2' ? ' style="animation:spin 1s linear infinite"' : '') + '></i>' +
+    '<div style="font-weight:700;color:#4B5268;margin-top:8px;font-size:15px">' + msg + '</div>' +
+    (hint ? '<div style="font-size:12.5px;margin-top:7px;line-height:1.65;max-width:440px">' + hint + '</div>' : '') +
+    (btn ? '<button class="btn btn-primary btn-sm" style="margin-top:16px" data-go-users="1">' +
+      '<i class="ti ti-user-plus"></i> Ажилтан бүртгэх</button>' : '') +
+    '</div>';
+  note.style.display = '';
+  var g = note.querySelector('[data-go-users]');
+  if (g) g.onclick = function () { switchPage('adminpanel'); };
+}
+
 /* Ачаалалтын дэлгэцийг хаах — апп бэлэн болсныг тэмдэглэнэ */
 function appReady() {
   try { document.body.classList.add('app-ready'); } catch (e) {}
+  // Аль ч замаар ирсэн (амжилт / алдаа / хугацаа хэтрэлт) — дашбоард хоосон үлдэхгүй
+  try { ensureDashboardNotEmpty(); } catch (e) { console.error('[appReady]', e); }
 }
 
 /* ── Сүүлд үзсэн хуудсыг санах: refresh хийхэд ТЭР ХУУДСАНДАА үлдэнэ ──
@@ -6648,9 +6705,11 @@ function rememberPage(pageId) {
   try { localStorage.setItem(LAST_PAGE_KEY, pageId); } catch (e) {}
 }
 
-/* Эрхээс хамаарсан ҮНДСЭН хуудас */
+/* Эрхээс хамаарсан ҮНДСЭН хуудас.
+   Ажилтны дата байхгүй үед дашбоард утгагүй тул ажлын хуудас руу оруулна. */
 function defaultPageForRole() {
-  if (isAdmin() || isDeptHead()) return 'dashboard';
+  var hasEmp = (DB && DB.employees && DB.employees.length) > 0;
+  if (isAdmin() || isDeptHead()) return hasEmp ? 'dashboard' : 'adminpanel';
   return 'video-track';         // ажилтан → Видео сургалт (өдөр тутмын ажлын хуудас)
 }
 
@@ -6661,6 +6720,8 @@ function restoreLastPage() {
   try { if (new URLSearchParams(location.search).get('page')) return; } catch (e) {}
   var blocked = blockedPages();
   if (!pg || blocked.indexOf(pg) >= 0 || !pageEl(pg)) pg = defaultPageForRole();
+  // Хадгалсан хуудас нь дашбоард боловч дата байхгүй бол ажлын хуудас руу
+  if (pg === 'dashboard' && !((DB && DB.employees && DB.employees.length) > 0)) pg = defaultPageForRole();
   if (!pg || pg === 'dashboard') return;
   // Сургалтын модулийн хуудас бол сүүлд үзсэн модулийг сэргээнэ
   if (pg === 'trn-mod') {
