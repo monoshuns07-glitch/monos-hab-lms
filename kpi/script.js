@@ -2307,17 +2307,13 @@ function renderEmployeeDashboard() {
       '<div style="font-size:12.5px;color:#64748B;margin-top:9px">Өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>' +
       (improved > 0 ? ' — мэдлэг ахисан 👏' : '') + '</div></div>' : '') +
 
-    /* ⑦ Байр эзлэлт — ЗААВАЛ харагдана, маш энгийнээр */
-    '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
-    '<h3 style="margin:0 0 3px;font-size:15px">Таны байр</h3>' +
-    '<p style="font-size:12px;color:#94A3B8;margin:0 0 11px">KPI онооны дараалал</p>' +
-    (overallTotal > 1
-      ? rankPlain(overallRank, overallTotal, 'Байгууллагын бүх ажилтнаас', aheadOverall.name, aheadOverall.diff) +
-        (deptTotal > 1 ? rankPlain(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх', aheadDept.name, aheadDept.diff) : '')
-      : '<div style="background:#F0F9FF;border:1.5px solid #BAE6FD;border-radius:14px;padding:15px 16px;font-size:13.5px;color:#075985">' +
-        '<b>Та системд бүртгэлтэй цорын ганц ажилтан байна.</b><br>' +
-        '<span style="font-size:12.5px">Бусад ажилтан нэмэгдсэний дараа байр эзлэлт харагдана.</span></div>') +
-    '</div>' +
+    /* ⑦ Байр эзлэлт (өмнөх загвар) */
+    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 12px;font-size:14px;color:#64748B;text-transform:uppercase;letter-spacing:.5px">Байр эзлэлт</h3>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+    rankBadge(overallRank, overallTotal, 'Нийт ажилтнуудаас') +
+    rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх') +
+    rankBadge(deptRankAmongAll, deptCountAll, 'Алба хоорондын') +
+    '</div></div>' +
 
     /* ⑧ Шалгалтын дүн */
     habeaExamsHTML(e) +
