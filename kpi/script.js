@@ -3392,6 +3392,37 @@ function renderRiskAdmin(sec) {
   });
 }
 
+/* ══ Дашбоардыг ДААТГАЛЫН ХУУДАСТАЙ ЯГ ИЖИЛ хэмжээгээр харуулах ══
+   iframe дотор гадна талын viewport (740) нэвтэрдэггүй тул дашбоард нурдаг.
+   Шийдэл: iframe-ийг ҮРГЭЛЖ 1024px өргөнөөр зурж (даатгалын хуудастай адил),
+   дараа нь багтах хэмжээгээр нь багасгана. Ком дээр (өргөн ≥1024) огт өөрчлөгдөхгүй. */
+var RISK_LOGICAL_W = 1024;
+
+function fitRiskFrame(wrapper, iframe, visibleH) {
+  var host = wrapper.clientWidth || wrapper.parentNode.clientWidth || RISK_LOGICAL_W;
+  var sc = Math.min(1, host / RISK_LOGICAL_W);
+  iframe.style.width = RISK_LOGICAL_W + 'px';
+  iframe.style.height = Math.round(visibleH / sc) + 'px';
+  iframe.style.transform = 'scale(' + sc + ')';
+  iframe.style.transformOrigin = 'top left';
+  wrapper.style.height = visibleH + 'px';
+  wrapper.style.overflow = 'hidden';
+}
+
+/* Дэлгэц эргэх/хэмжээ өөрчлөгдөхөд дахин тааруулна */
+function wireRiskFrameResize(wrapper, iframe, hFn) {
+  if (wireRiskFrameResize._t) { window.removeEventListener('resize', wireRiskFrameResize._t); }
+  var t = null;
+  wireRiskFrameResize._t = function () {
+    clearTimeout(t);
+    t = setTimeout(function () {
+      if (!document.body.contains(iframe)) { window.removeEventListener('resize', wireRiskFrameResize._t); return; }
+      fitRiskFrame(wrapper, iframe, hFn());
+    }, 160);
+  };
+  window.addEventListener('resize', wireRiskFrameResize._t);
+}
+
 function renderRiskDept(sec, dept) {
   sec.style.padding = '0';
   if (!dept) {
@@ -3417,9 +3448,9 @@ function renderRiskDept(sec, dept) {
     }
     area.innerHTML = '';
     var wrapper = document.createElement('div');
-    wrapper.style.cssText = 'border-radius:12px;overflow:hidden;border:1px solid #E2E8F0;background:#fff';
+    wrapper.style.cssText = 'border-radius:12px;overflow:hidden;border:1px solid #E2E8F0;background:#fff;width:100%';
     var iframe = document.createElement('iframe');
-    iframe.style.cssText = 'width:100%;height:calc(100vh - 160px);min-height:480px;border:0;display:block';
+    iframe.style.cssText = 'border:0;display:block';
     if (data.htmlUrl) {
       iframe.src = data.htmlUrl;
     } else {
@@ -3428,14 +3459,17 @@ function renderRiskDept(sec, dept) {
     }
     wrapper.appendChild(iframe);
     area.appendChild(wrapper);
+    var hFn = function () { return Math.max(480, window.innerHeight - 170); };
+    fitRiskFrame(wrapper, iframe, hFn());
+    wireRiskFrameResize(wrapper, iframe, hFn);
   });
 }
 
 function openRiskPreviewModal(dept, htmlOrUrl, isUrl) {
   var wrap = document.createElement('div');
-  wrap.style.cssText = 'width:100%;height:70vh;min-height:400px';
+  wrap.style.cssText = 'width:100%;border-radius:8px;overflow:hidden';
   var iframe = document.createElement('iframe');
-  iframe.style.cssText = 'width:100%;height:100%;border:0;display:block;border-radius:8px;overflow:hidden';
+  iframe.style.cssText = 'border:0;display:block';
   if (isUrl) {
     iframe.src = htmlOrUrl;
   } else {
@@ -3444,6 +3478,12 @@ function openRiskPreviewModal(dept, htmlOrUrl, isUrl) {
   }
   wrap.appendChild(iframe);
   buildModal(esc(dept) + ' — Эрсдэлийн үнэлгээний дашбоард', wrap, { width: '90vw' });
+  // Модал DOM-д ороод өргөнөө мэдсэний дараа тааруулна
+  setTimeout(function () {
+    var hFn = function () { return Math.max(400, Math.round(window.innerHeight * 0.7)); };
+    fitRiskFrame(wrap, iframe, hFn());
+    wireRiskFrameResize(wrap, iframe, hFn);
+  }, 30);
 }
 
 /* ============ Осол ============ */
