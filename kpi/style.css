@@ -2066,7 +2066,7 @@ code {
   gap: 12px;
   align-items: stretch;
 }
-@media (max-width: 780px) {
+@media (max-width: 560px) {
   .rank-grid { grid-template-columns: 1fr; gap: 10px; }
 }
 
