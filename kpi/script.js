@@ -3398,15 +3398,58 @@ function renderRiskAdmin(sec) {
    дараа нь багтах хэмжээгээр нь багасгана. Ком дээр (өргөн ≥1024) огт өөрчлөгдөхгүй. */
 var RISK_LOGICAL_W = 1024;
 
+/* Дашбоардын ЖИНХЭНЭ контентын өргөнийг iframe дотроос хэмжинэ.
+   (Ихэнх дашбоард max-width-тэй тул 1024-д тавихад баруун талд хоосон зай үлддэг.)
+   Гадны домэйн (CORS) бол 0 буцаана. */
+function riskContentWidth(iframe) {
+  try {
+    var d = iframe.contentDocument;
+    if (!d || !d.body) return 0;
+    var w = 0, kids = d.body.children;
+    for (var i = 0; i < kids.length; i++) {
+      var el = kids[i];
+      var bw = Math.max(el.scrollWidth || 0, el.getBoundingClientRect().width || 0);
+      if (bw > w) w = bw;
+    }
+    var cs = d.defaultView.getComputedStyle(d.body);
+    w += (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) +
+         (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0);
+    return Math.round(w);
+  } catch (e) { return 0; }
+}
+
 function fitRiskFrame(wrapper, iframe, visibleH) {
   var host = wrapper.clientWidth || wrapper.parentNode.clientWidth || RISK_LOGICAL_W;
-  var sc = Math.min(1, host / RISK_LOGICAL_W);
-  iframe.style.width = RISK_LOGICAL_W + 'px';
+  // undefined = эхний зураг (1024) · 0 = хэмжиж чадаагүй → бүтэн өргөнөөр
+  var logical = (iframe._riskW === undefined) ? RISK_LOGICAL_W : iframe._riskW;
+  wrapper.style.height = visibleH + 'px';
+  wrapper.style.overflow = 'hidden';
+
+  // Өргөн хүрэлцэж байвал (ком дээр) огт багасгахгүй — хуучин байдлаараа
+  if (!logical || host >= logical) {
+    iframe.style.width = '100%';
+    iframe.style.height = visibleH + 'px';
+    iframe.style.transform = 'none';
+    return;
+  }
+  var sc = host / logical;
+  iframe.style.width = logical + 'px';
   iframe.style.height = Math.round(visibleH / sc) + 'px';
   iframe.style.transform = 'scale(' + sc + ')';
   iframe.style.transformOrigin = 'top left';
-  wrapper.style.height = visibleH + 'px';
-  wrapper.style.overflow = 'hidden';
+}
+
+/* Ачаалагдсаны дараа контентын өргөнийг хэмжиж, хоосон зайг арилгана */
+function tuneRiskFrame(wrapper, iframe, hFn) {
+  function pass() {
+    var cw = riskContentWidth(iframe);
+    if (cw >= 360 && cw <= 1600) iframe._riskW = cw;   // хэмжигдвэл яг таарууулна
+    else if (!cw) iframe._riskW = 0;                   // CORS — багасгалтгүй, 100% өргөн
+    fitRiskFrame(wrapper, iframe, hFn());
+  }
+  fitRiskFrame(wrapper, iframe, hFn());   // эхлээд 1024-д зурж контентыг задлана
+  setTimeout(pass, 120);
+  setTimeout(pass, 600);                  // график/хүснэгт сүүлд зурагдвал дахин
 }
 
 /* Дэлгэц эргэх/хэмжээ өөрчлөгдөхөд дахин тааруулна */
@@ -3450,40 +3493,50 @@ function renderRiskDept(sec, dept) {
     var wrapper = document.createElement('div');
     wrapper.style.cssText = 'border-radius:12px;overflow:hidden;border:1px solid #E2E8F0;background:#fff;width:100%';
     var iframe = document.createElement('iframe');
-    iframe.style.cssText = 'border:0;display:block';
-    if (data.htmlUrl) {
-      iframe.src = data.htmlUrl;
-    } else {
-      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-      iframe.srcdoc = data.html;
-    }
+    iframe.style.cssText = 'border:0;display:block;width:100%';
     wrapper.appendChild(iframe);
     area.appendChild(wrapper);
+
     var hFn = function () { return Math.max(480, window.innerHeight - 170); };
-    fitRiskFrame(wrapper, iframe, hFn());
-    wireRiskFrameResize(wrapper, iframe, hFn);
+    var start = function () { tuneRiskFrame(wrapper, iframe, hFn); wireRiskFrameResize(wrapper, iframe, hFn); };
+    iframe.onload = start;
+    loadRiskIntoFrame(iframe, data, start);
   });
+}
+
+/* Дашбоардыг iframe рүү оруулна.
+   URL-тэй бол эхлээд татаж srcdoc болгоно → ижил домэйн болсноор өргөнийг нь хэмжиж чадна.
+   Татаж чадахгүй (CORS) бол шууд src-ээр — тэр үед багасгалт хийхгүй, бүтэн өргөнөөр. */
+function loadRiskIntoFrame(iframe, data, onFail) {
+  function asDoc(html) {
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    iframe.srcdoc = html;
+  }
+  if (data.html) { asDoc(data.html); return; }
+  if (!data.htmlUrl) return;
+  var done = false;
+  var to = setTimeout(function () { if (!done) { done = true; iframe.src = data.htmlUrl; } }, 6000);
+  try {
+    fetch(data.htmlUrl).then(function (r) { if (!r.ok) throw 0; return r.text(); })
+      .then(function (txt) { if (done) return; done = true; clearTimeout(to); asDoc(txt); })
+      .catch(function () { if (done) return; done = true; clearTimeout(to); iframe.src = data.htmlUrl; });
+  } catch (e) { done = true; clearTimeout(to); iframe.src = data.htmlUrl; }
 }
 
 function openRiskPreviewModal(dept, htmlOrUrl, isUrl) {
   var wrap = document.createElement('div');
   wrap.style.cssText = 'width:100%;border-radius:8px;overflow:hidden';
   var iframe = document.createElement('iframe');
-  iframe.style.cssText = 'border:0;display:block';
-  if (isUrl) {
-    iframe.src = htmlOrUrl;
-  } else {
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-    iframe.srcdoc = htmlOrUrl;
-  }
+  iframe.style.cssText = 'border:0;display:block;width:100%';
   wrap.appendChild(iframe);
   buildModal(esc(dept) + ' — Эрсдэлийн үнэлгээний дашбоард', wrap, { width: '90vw' });
   // Модал DOM-д ороод өргөнөө мэдсэний дараа тааруулна
-  setTimeout(function () {
-    var hFn = function () { return Math.max(400, Math.round(window.innerHeight * 0.7)); };
-    fitRiskFrame(wrap, iframe, hFn());
-    wireRiskFrameResize(wrap, iframe, hFn);
-  }, 30);
+  var hFn = function () { return Math.max(400, Math.round(window.innerHeight * 0.7)); };
+  var start = function () {
+    setTimeout(function () { tuneRiskFrame(wrap, iframe, hFn); wireRiskFrameResize(wrap, iframe, hFn); }, 30);
+  };
+  iframe.onload = start;
+  loadRiskIntoFrame(iframe, isUrl ? { htmlUrl: htmlOrUrl } : { html: htmlOrUrl }, start);
 }
 
 /* ============ Осол ============ */
