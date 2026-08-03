@@ -2075,38 +2075,48 @@ function renderEmployeeDashboard() {
   var deptRankAmongAll = deptScores.findIndex(function (r) { return r.dept === e.dept; }) + 1;
   var deptCountAll = deptScores.length;
 
-  /* ══ БАЙР ЭЗЛЭЛТ — ямар ч хүн харангуут ойлгохоор энгийн ══
-     "Та 12 ажилтнаас 3-т явж байна" + өнгө + дээшлэх зөвлөмж */
-  function rankPlain(rank, total, whatLabel, aheadName, aheadDiff) {
+  /* ══ БАЙР ЭЗЛЭЛТ — ямар ч хүн харангуут ойлгохоор ══
+     Юуг юутай харьцуулж байгааг үг болгоноор нь тайлбарлана. */
+  function rankBox(rank, total, groupLabel, explainTxt) {
     var pct = total > 1 ? (rank - 1) / (total - 1) : 0;   // 0 = хамгийн дээр
-    var tone, txt, ic;
-    if (rank === 1)        { tone = '#D97706'; txt = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
-    else if (rank === 2)   { tone = '#64748B'; txt = 'Хоёрдугаарт явж байна';     ic = '🥈'; }
-    else if (rank === 3)   { tone = '#B45309'; txt = 'Гуравдугаарт явж байна';    ic = '🥉'; }
-    else if (pct <= 0.34)  { tone = '#16A34A'; txt = 'Урд хэсэгт явж байна';      ic = '👍'; }
-    else if (pct <= 0.67)  { tone = '#0891B2'; txt = 'Дунд хэсэгт явж байна';     ic = '🙂'; }
-    else                   { tone = '#DC2626'; txt = 'Ард хэсэгт явж байна';      ic = '💪'; }
+    var tone, state, ic;
+    if (rank === 1)        { tone = '#D97706'; state = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
+    else if (rank === 2)   { tone = '#0891B2'; state = 'Хоёрдугаарт явж байна';     ic = '🥈'; }
+    else if (rank === 3)   { tone = '#B45309'; state = 'Гуравдугаарт явж байна';    ic = '🥉'; }
+    else if (pct <= 0.34)  { tone = '#16A34A'; state = 'Урд хэсэгт явж байна';      ic = '👍'; }
+    else if (pct <= 0.67)  { tone = '#0891B2'; state = 'Дунд хэсэгт явж байна';     ic = '🙂'; }
+    else                   { tone = '#DC2626'; state = 'Ард хэсэгт явж байна';      ic = '💪'; }
 
-    return '<div style="background:' + tone + '0F;border:1.5px solid ' + tone + '33;border-radius:14px;padding:15px 16px;margin-bottom:10px">' +
-      '<div style="font-size:12px;color:#64748B;margin-bottom:6px">' + whatLabel + '</div>' +
-      '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
-      '<span style="font-size:34px">' + ic + '</span>' +
-      '<span style="font-size:15px;color:#334155">Та <b style="font-size:30px;color:' + tone + ';font-family:\'Bricolage Grotesque\',sans-serif">' + rank + '</b>-т явж байна</span>' +
-      '<span style="font-size:13px;color:#94A3B8">' + total + ' хүнээс</span>' +
-      '</div>' +
-      '<div style="font-size:13px;font-weight:700;color:' + tone + ';margin-top:6px">' + txt + '</div>' +
-      (aheadName ? '<div style="font-size:12.5px;color:#64748B;margin-top:5px">Урд байгаа хүнээс <b>' + aheadDiff + '</b> оноогоор хоцорч байна</div>' : '') +
+    return '<div style="background:' + tone + '0D;border:1.5px solid ' + tone + '2E;border-radius:16px;padding:16px 15px">' +
+      '<div style="font-size:11.5px;font-weight:800;color:#64748B;text-transform:uppercase;letter-spacing:.4px">' + groupLabel + '</div>' +
+      '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;margin-top:7px">' +
+      '<span style="font-size:34px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1;color:' + tone + '">' + rank + '</span>' +
+      '<span style="font-size:15px;font-weight:800;color:' + tone + '">-р байр</span>' +
+      '<span style="font-size:13px;color:#94A3B8">/ ' + total + '-аас</span></div>' +
+      '<div style="margin-top:9px;display:inline-block;background:' + tone + '1A;color:' + tone + ';border-radius:20px;padding:4px 11px;font-size:12px;font-weight:800">' + ic + ' ' + state + '</div>' +
+      '<div style="font-size:12px;color:#8A94A6;margin-top:9px;line-height:1.45">' + explainTxt + '</div>' +
       '</div>';
   }
 
-  function rankBadge(rank, total, label) {
-    var color = rank === 1 ? '#D97706' : (rank <= Math.ceil(total * 0.3) ? '#16A34A' : (rank <= Math.ceil(total * 0.6) ? '#0891B2' : '#64748B'));
-    var bg = rank === 1 ? '#FEF3C7' : (rank <= Math.ceil(total * 0.3) ? '#D1FAE5' : (rank <= Math.ceil(total * 0.6) ? '#E0F2FE' : '#F1F5F9'));
-    var medal = rank === 1 ? '🥇' : (rank === 2 ? '🥈' : (rank === 3 ? '🥉' : ''));
-    return '<div style="flex:1;min-width:140px;background:' + bg + ';border-radius:14px;padding:16px 14px;text-align:center">' +
-      '<div style="font-size:30px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + color + '">' + medal + rank + '<span style="font-size:16px;font-weight:600;color:' + color + '">-р</span></div>' +
-      '<div style="font-size:12px;color:' + color + ';font-weight:600;margin-top:2px">' + label + '</div>' +
-      '<div style="font-size:11px;color:#94A3B8;margin-top:2px">нийт ' + total + '</div></div>';
+  /* Байр эзлэлтийн бүтэн хэсэг — тайлбартай */
+  function rankSectionHTML() {
+    var dn = esc(e.dept || 'Алба');
+    return '<div class="card" style="padding:20px;margin-bottom:14px">' +
+      '<h3 style="margin:0 0 3px">🏆 Байр эзлэлт — та хаана явж байна вэ?</h3>' +
+      '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 14px;line-height:1.5">' +
+      'Бүх хүнийг <b>оноогоор нь</b> дээрээс доош эрэмбэлсэн жагсаалт. <b>1-р байр = хамгийн өндөр оноотой</b> хүн. ' +
+      'Та оноогоо нэмэх бүрд байр нь дээшилнэ.</p>' +
+      '<div class="rank-grid">' +
+      rankBox(overallRank, overallTotal, 'Компани даяар',
+        'Компанийн нийт <b>' + overallTotal + '</b> ажилтныг оноогоор эрэмбэлэхэд таны эзэлж буй байр.') +
+      rankBox(deptRank, deptTotal, 'Албандаа',
+        '<b>' + dn + '</b>-ны <b>' + deptTotal + '</b> ажилтны дотор таны эзэлж буй байр.') +
+      rankBox(deptRankAmongAll, deptCountAll, 'Албуудын дунд',
+        'Энэ нь таны биш, <b>албаныхаа</b> байр. ' + deptCountAll + ' албыг дундаж оноогоор нь эрэмбэлсэн.') +
+      '</div>' +
+      (overallRank > 1 ? '<div style="margin-top:12px;padding:11px 14px;background:#F8FAFC;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
+        '<b>Байраа дээшлүүлэх арга:</b> дээрх «Хийх ёстой зүйлс» хэсгийг гүйцээх — сургалтаа үзэж шалгалтаа өгөх, даалгавраа биелүүлэх, аюул мэдээлэх.</div>' : '') +
+      '</div>';
   }
 
   /* ---- KPI задаргаа (суурь үзүүлэлтүүд → суурь оноо, дээр нь бонус НЭМЭГДЭНЭ) ---- */
@@ -2223,6 +2233,9 @@ function renderEmployeeDashboard() {
     (lvl.next != null ? '<div style="margin-top:9px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12.5px;color:#64748B;margin-top:5px">Дараагийн түвшинд хүрэхэд <strong>' + toNext + '</strong> оноо дутуу байна</div>' : '<div style="color:#16A34A;font-weight:700;margin-top:7px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
     '</div></div>' +
 
+    /* ② Байр эзлэлт — оноон дор, бүтэн өргөнөөр */
+    (showRank ? rankSectionHTML() : '') +
+
     /* ══ 2 БАГАНА: зүүн = хийх ёстой + оноо, баруун = сайн хийсэн, бонус, дүн ══ */
     '<div class="emp-cols">' +
     '<div>' +    /* ── ЗҮҮН БАГАНА ── */
@@ -2307,15 +2320,7 @@ function renderEmployeeDashboard() {
       '<div style="font-size:12.5px;color:#64748B;margin-top:9px">Өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>' +
       (improved > 0 ? ' — мэдлэг ахисан 👏' : '') + '</div></div>' : '') +
 
-    /* ⑦ Байр эзлэлт (өмнөх загвар) */
-    '<div class="card" style="padding:18px;margin-bottom:14px"><h3 style="margin:0 0 12px;font-size:14px;color:#64748B;text-transform:uppercase;letter-spacing:.5px">Байр эзлэлт</h3>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-    rankBadge(overallRank, overallTotal, 'Нийт ажилтнуудаас') +
-    rankBadge(deptRank, deptTotal, esc(e.dept || 'Алба') + ' доторх') +
-    rankBadge(deptRankAmongAll, deptCountAll, 'Алба хоорондын') +
-    '</div></div>' +
-
-    /* ⑧ Шалгалтын дүн */
+    /* ⑦ Шалгалтын дүн */
     habeaExamsHTML(e) +
 
     '</div></div>';   /* ← баруун багана + emp-cols дуусав */

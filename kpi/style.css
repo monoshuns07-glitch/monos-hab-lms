@@ -2059,6 +2059,17 @@ code {
 /* Хийх ёстой мөрийн hover */
 .emp-step:hover { border-color: #C7D2FE !important; background: #FAFBFF !important; }
 
+/* Байр эзлэлт — 3 тэнцүү хайрцаг, өндөр нь тэгшилнэ */
+.rank-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+@media (max-width: 780px) {
+  .rank-grid { grid-template-columns: 1fr; gap: 10px; }
+}
+
 /* ── "Аюул мэдээлэх" хөвөгч товч (бүх цэсэнд) ── */
 #hazardFab {
   position: fixed;
