@@ -2098,24 +2098,35 @@ function renderEmployeeDashboard() {
       '</div>';
   }
 
-  /* Байр эзлэлтийн бүтэн хэсэг — тайлбартай */
+  /* Байр эзлэлтийн бүтэн хэсэг — тайлбартай.
+     ⚠ Ямар ч тохиолдолд ХООСОН БУЦААХГҮЙ — алдаа гарвал ч гарчиг нь үлдэнэ. */
   function rankSectionHTML() {
-    var dn = esc(e.dept || 'Алба');
-    return '<div class="card" style="padding:20px;margin-bottom:14px">' +
+    var boxes = '';
+    try {
+      var dn = esc(e.dept || 'Алба');
+      if (overallRank >= 1 && overallTotal >= 1)
+        boxes += rankBox(overallRank, overallTotal, 'Компани даяар',
+          'Компанийн нийт <b>' + overallTotal + '</b> ажилтныг оноогоор эрэмбэлэхэд таны эзэлж буй байр.');
+      if (deptRank >= 1 && deptTotal >= 1)
+        boxes += rankBox(deptRank, deptTotal, 'Албандаа',
+          '<b>' + dn + '</b>-ны <b>' + deptTotal + '</b> ажилтны дотор таны эзэлж буй байр.');
+      if (deptRankAmongAll >= 1 && deptCountAll >= 1)
+        boxes += rankBox(deptRankAmongAll, deptCountAll, 'Албуудын дунд',
+          'Энэ нь таны биш, <b>албаныхаа</b> байр. ' + deptCountAll + ' албыг дундаж оноогоор нь эрэмбэлсэн.');
+    } catch (err) { boxes = ''; }
+
+    return '<div class="card" id="rankCard" style="padding:20px;margin-bottom:14px">' +
       '<h3 style="margin:0 0 3px">🏆 Байр эзлэлт — та хаана явж байна вэ?</h3>' +
       '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 14px;line-height:1.5">' +
       'Бүх хүнийг <b>оноогоор нь</b> дээрээс доош эрэмбэлсэн жагсаалт. <b>1-р байр = хамгийн өндөр оноотой</b> хүн. ' +
       'Та оноогоо нэмэх бүрд байр нь дээшилнэ.</p>' +
-      '<div class="rank-grid">' +
-      rankBox(overallRank, overallTotal, 'Компани даяар',
-        'Компанийн нийт <b>' + overallTotal + '</b> ажилтныг оноогоор эрэмбэлэхэд таны эзэлж буй байр.') +
-      rankBox(deptRank, deptTotal, 'Албандаа',
-        '<b>' + dn + '</b>-ны <b>' + deptTotal + '</b> ажилтны дотор таны эзэлж буй байр.') +
-      rankBox(deptRankAmongAll, deptCountAll, 'Албуудын дунд',
-        'Энэ нь таны биш, <b>албаныхаа</b> байр. ' + deptCountAll + ' албыг дундаж оноогоор нь эрэмбэлсэн.') +
-      '</div>' +
-      (overallRank > 1 ? '<div style="margin-top:12px;padding:11px 14px;background:#F8FAFC;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
-        '<b>Байраа дээшлүүлэх арга:</b> дээрх «Хийх ёстой зүйлс» хэсгийг гүйцээх — сургалтаа үзэж шалгалтаа өгөх, даалгавраа биелүүлэх, аюул мэдээлэх.</div>' : '') +
+      (boxes
+        ? '<div class="rank-grid">' + boxes + '</div>' +
+          (overallRank > 1 ? '<div style="margin-top:12px;padding:11px 14px;background:#F8FAFC;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
+            '<b>Байраа дээшлүүлэх арга:</b> доорх «Хийх ёстой зүйлс» хэсгийг гүйцээх — сургалтаа үзэж шалгалтаа өгөх, даалгавраа биелүүлэх, аюул мэдээлэх.</div>' : '')
+        : '<div style="padding:16px;background:#F8FAFC;border-radius:12px;font-size:13px;color:#64748B;line-height:1.5">' +
+          'Байр эзлэлт тооцоолохын тулд ажилтнуудын жагсаалт ачаалагдах шаардлагатай. ' +
+          'Хуудсыг дахин ачаална уу (Ctrl + Shift + R).</div>') +
       '</div>';
   }
 
@@ -2233,8 +2244,8 @@ function renderEmployeeDashboard() {
     (lvl.next != null ? '<div style="margin-top:9px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12.5px;color:#64748B;margin-top:5px">Дараагийн түвшинд хүрэхэд <strong>' + toNext + '</strong> оноо дутуу байна</div>' : '<div style="color:#16A34A;font-weight:700;margin-top:7px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
     '</div></div>' +
 
-    /* ② Байр эзлэлт — оноон дор, бүтэн өргөнөөр */
-    (showRank ? rankSectionHTML() : '') +
+    /* ② Байр эзлэлт — оноон дор, бүтэн өргөнөөр (ҮРГЭЛЖ харагдана) */
+    rankSectionHTML() +
 
     /* ══ 2 БАГАНА: зүүн = хийх ёстой + оноо, баруун = сайн хийсэн, бонус, дүн ══ */
     '<div class="emp-cols">' +
