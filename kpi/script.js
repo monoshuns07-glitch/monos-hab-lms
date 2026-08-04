@@ -6562,11 +6562,11 @@ function hintTick() {
   h.style.left = Math.round(hx) + 'px';
   h.style.top = Math.round(hy) + 'px';
 
-  /* ── Цагираг: зорилтын голд ── */
-  var rs = Math.max(30, Math.min(Math.min(r.width, r.height) + 12, 54));
+  /* ── Цагираг: ЯГ ГАРЫН дээр — дарж буй цэгээс цацарна ── */
+  var rs = Math.max(38, Math.min(r.height + 14, 54));
   ring.style.width = rs + 'px'; ring.style.height = rs + 'px';
-  ring.style.left = Math.round(r.left + r.width / 2 - rs / 2) + 'px';
-  ring.style.top = Math.round(r.top + r.height / 2 - rs / 2) + 'px';
+  ring.style.left = Math.round(hx + hw / 2 - rs / 2) + 'px';
+  ring.style.top = Math.round(hy + hh / 2 - rs / 2) + 'px';
 
   /* ── Бичиг: зорилтын ДООР, зүүн ирмэгээр нь. Багтахгүй бол дээр нь ── */
   var tw = tip.offsetWidth || 120, th = tip.offsetHeight || 24;
