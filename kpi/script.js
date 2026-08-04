@@ -6276,6 +6276,14 @@ function globalSearch(q) {
    ══════════════════════════════════════════════════════════════ */
 var TOUR = { i: 0, steps: [], sidebarOpened: false };
 
+/* Заагч гар — emoji биш SVG. Ямар ч төхөөрөмж дээр ижил зурагдаж, ижил хөдөлнө. */
+var HAND_SVG =
+  '<svg viewBox="0 0 26 30" width="34" height="39" xmlns="http://www.w3.org/2000/svg">' +
+  '<path d="M10.4 15.2V4.1a2.1 2.1 0 0 1 4.2 0v8.3h.9V9.9a2.1 2.1 0 0 1 4.2 0v2.9h.9v-1a2 2 0 0 1 4 0v8.6c0 4.4-3.1 7.6-7.6 7.6h-2.3c-2.4 0-4.6-1.1-6-3l-4.4-5.7a2.2 2.2 0 0 1 3-3.1l3.1 2z" ' +
+  'fill="#FBBF24" stroke="#1E293B" stroke-width="1.6" stroke-linejoin="round"/>' +
+  '<path d="M14.6 12.4v3.1M19.5 12.8v2.7" stroke="#1E293B" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>' +
+  '</svg>';
+
 function tourSteps() {
   var s = [];
   function add(sel, title, text) { s.push({ sel: sel, title: title, text: text }); }
@@ -6327,7 +6335,7 @@ function tourEls() {
   mask = document.createElement('div');
   mask.id = 'tourMask';
   mask.innerHTML =
-    '<div id="tourHole"></div><div id="tourRing"></div><div id="tourHand">👆</div>' +
+    '<div id="tourHole"></div><div id="tourRing"></div><div id="tourHand">' + HAND_SVG + '</div>' +
     '<div id="tourTip"><div class="tt-step"></div><div class="tt-title"></div><div class="tt-text"></div>' +
     '<div class="tt-bar"><button class="btn btn-secondary btn-sm" data-tour="prev">Өмнөх</button>' +
     '<button class="btn btn-primary btn-sm" data-tour="next">Дараах</button></div>' +
@@ -6436,6 +6444,107 @@ function tourPlace(st, el, i) {
   tip.querySelector('.tt-dots').innerHTML = TOUR.steps.map(function (_, k) {
     return '<i class="' + (k === i ? 'on' : '') + '"></i>';
   }).join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   БАЙНГЫН ЗААГЧ — аялал дуусахад ч арилахгүй.
+   Ажилтны дараагийн хийх ёстой зүйл рүү үргэлж заасаар байна.
+   ══════════════════════════════════════════════════════════════ */
+function hintEl() {
+  var h = document.getElementById('hintHand');
+  if (h) return h;
+  h = document.createElement('div');
+  h.id = 'hintHand';
+  h.innerHTML = '<div class="hh-ring"></div><div class="hh-emoji">' + HAND_SVG + '</div><div class="hh-tip"></div>';
+  document.body.appendChild(h);
+  window.addEventListener('scroll', hintTick, true);
+  window.addEventListener('resize', hintTick);
+  return h;
+}
+
+/* Юун дээр заах вэ — эрэмбээр нь. Эхний ХАРАГДАЖ БУЙ нь сонгогдоно. */
+function hintCandidates() {
+  var list = [];
+  var e = null; try { e = myEmployeeRecord(); } catch (err) {}
+
+  if (isEmp()) {
+    // Хуудсан дээр "Хийх ёстой зүйлс" мөр байвал хамгийн түрүүнд
+    list.push({ sel: '.page.active .emp-step[data-gopage]', txt: 'Эндээс эхлээрэй' });
+    if (e) {
+      try {
+        var v = empLmsStats(e);
+        if (v && v.total && v.passed < v.total)
+          list.push({ sel: '.nav-item[data-page="video-track"]', txt: 'Сургалтаа үзнэ үү' });
+      } catch (err) {}
+      try {
+        var needExam = false;
+        Object.keys(TRAINING_MODULES).forEach(function (k) {
+          if (isModExamUnlocked(e, k) && !getEmpProg(e.id, k).examTaken) needExam = true;
+        });
+        if (needExam) list.push({ sel: '.nav-item[data-page="myexams"]', txt: 'Шалгалтаа өгнө үү' });
+      } catch (err) {}
+      try {
+        var t = empTaskStats(e);
+        if (t && t.total && t.done < t.total)
+          list.push({ sel: '.nav-item[data-page="tasks"]', txt: 'Даалгавраа гүйцээнэ үү' });
+      } catch (err) {}
+    }
+    list.push({ sel: '#hazardFab', txt: 'Аюул харвал энд дар' });
+  } else {
+    try {
+      var pend = (DB.reports || []).filter(function (r) { return r.status !== 'verified' && r.status !== 'rejected'; }).length;
+      if (pend) list.push({ sel: '.nav-item[data-page="reportflow"]', txt: pend + ' мэдээлэл хүлээгдэж байна' });
+    } catch (err) {}
+    list.push({ sel: '#hazardFab', txt: 'Аюул мэдээлэх' });
+  }
+  return list;
+}
+
+function hintVisible(el) {
+  if (!el || !el.offsetParent) return false;
+  var r = el.getBoundingClientRect();
+  if (r.width < 8 || r.height < 8) return false;
+  return r.bottom > 40 && r.top < window.innerHeight - 10 && r.right > 0 && r.left < window.innerWidth;
+}
+
+function hintTick() {
+  var h = hintEl();
+  // Аялал явж байх үед эсвэл цонх нээлттэй бол нуух
+  var tm = document.getElementById('tourMask');
+  if ((tm && tm.classList.contains('on')) || document.body.classList.contains('modal-open')) {
+    h.classList.remove('on'); return;
+  }
+  var pick = null, cands = hintCandidates();
+  for (var i = 0; i < cands.length; i++) {
+    var el = document.querySelector(cands[i].sel);
+    if (hintVisible(el)) { pick = { el: el, txt: cands[i].txt }; break; }
+  }
+  if (!pick) { h.classList.remove('on'); return; }
+
+  var r = pick.el.getBoundingClientRect();
+  var vw = window.innerWidth;
+  h.classList.add('on');
+  h.querySelector('.hh-tip').textContent = pick.txt;
+
+  // Байрлал: голдуу баруун талд нь, багтахгүй бол зүүн талд
+  var hw = h.offsetWidth || 150;
+  var left = r.right + 6;
+  if (left + hw > vw - 8) left = Math.max(6, r.left - hw - 6);
+  h.style.left = Math.round(left) + 'px';
+  h.style.top = Math.round(Math.max(6, r.top + r.height / 2 - 20)) + 'px';
+
+  var ring = h.querySelector('.hh-ring');
+  var rs = Math.max(34, Math.min(r.height + 14, 58));
+  ring.style.width = rs + 'px'; ring.style.height = rs + 'px';
+  ring.style.left = (-rs / 2 - 4) + 'px';
+  ring.style.top = (20 - rs / 2) + 'px';
+}
+
+function startHint() {
+  if (startHint._on) return;
+  startHint._on = true;
+  hintTick();
+  setInterval(hintTick, 1300);
 }
 
 /* ══════════════════ ТУСЛАМЖ — сайтын жинхэнэ цэсээр ══════════════════ */
@@ -7206,6 +7315,8 @@ function appReady() {
       setTimeout(function () { if (!document.getElementById('tourMask')) tourStart(); }, 1400);
     }
   } catch (e) {}
+  // Байнгын заагч — үргэлж ажиллана
+  try { startHint(); } catch (e) { console.error('[hint]', e); }
 }
 
 /* ── Сүүлд үзсэн хуудсыг санах: refresh хийхэд ТЭР ХУУДСАНДАА үлдэнэ ──
