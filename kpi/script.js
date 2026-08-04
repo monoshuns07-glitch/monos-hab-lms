@@ -6271,19 +6271,235 @@ function globalSearch(q) {
 }
 
 /* ============ Тусламж ============ */
+/* ══════════════════════════════════════════════════════════════
+   ЗААВАР АЯЛАЛ — цэс/товч бүр дээр гарын хөдөлгөөнт заагч гаргана
+   ══════════════════════════════════════════════════════════════ */
+var TOUR = { i: 0, steps: [], sidebarOpened: false };
+
+function tourSteps() {
+  var s = [];
+  function add(sel, title, text) { s.push({ sel: sel, title: title, text: text }); }
+
+  if (isEmp()) {
+    add('.nav-item[data-page="dashboard"]', 'Миний гүйцэтгэл',
+      'Энэ сарын оноо, байр эзлэлт, юу хийх ёстойгоо энд хараарай.');
+    add('.nav-item[data-page="video-track"]', 'Видео сургалт',
+      'Танд оногдсон видео хичээлүүд. Үзэж дуусгаснаар оноо нэмэгдэнэ.');
+    add('.nav-item[data-page="myexams"]', 'ХАБЭА шалгалт',
+      'Урьдчилсан болон дараах шалгалтаа энд өгнө. Сүүлийн дүн тооцогдоно.');
+    add('.nav-item[data-page="tasks"]', 'Даалгавар',
+      'ХАБЭА ажилтнаас өгсөн даалгавар. Биелүүлээд тэмдэглэнэ.');
+    add('#hazardFab', 'Аюул мэдээлэх',
+      'Аюултай зүйл харвал энд дарж мэдээлнэ. Батлагдсан бүрт БОНУС оноо нэмэгдэнэ — хэзээ ч хасагдахгүй.');
+    add('.nav-item[data-page="hazards"]', 'Эрсдэлийн үнэлгээ',
+      'Таны албаны эрсдэлийн үнэлгээний дашбоард.');
+    add('.nav-item[data-page="daatgal"]', 'Даатгал',
+      'Нөхөн төлбөрийн гарын авлага — AI туслахтай.');
+  } else {
+    add('.nav-item[data-page="dashboard"]', 'Хяналтын самбар',
+      'Компанийн ерөнхий үзүүлэлт, албадын харьцуулалт.');
+    add('[data-batch-training]', 'Бүлэг сургалт нэмэх',
+      'Олон ажилтанд нэг дор сургалт оноох.');
+    add('.nav-item.leaf[data-mod="urdchilsan"]', 'Зааварчилгаа бүр',
+      'Зааварчилгаа тус бүрийг нээж, албаар эсвэл ажилтан тус бүрээр нь сургалт/шалгалтыг нээнэ.');
+    add('.nav-item[data-page="examadmin"]', 'Шалгалтын удирдлага',
+      'Шалгалтын асуулт, дүн, хэдэн удаа өгөх эрхийг эндээс тохируулна.');
+    add('.nav-item[data-page="employees"]', 'Ажилтнууд',
+      'Бүх ажилтны KPI оноо, сургалт/шалгалтын биелэлт.');
+    add('.nav-item[data-page="kpi"]', 'KPI үнэлгээ',
+      'Оноо хэрхэн тооцогдож байгаа арга зүй, албадын харьцуулалт.');
+    add('.nav-item[data-page="reportflow"]', 'Аюул/Near-miss',
+      'Ажилтнуудын мэдээлсэн аюул. Баталгаажуулсны дараа бонус тооцогдоно.');
+    add('.nav-item[data-page="violations"]', 'Осол/зөрчлийн бүртгэл',
+      'Зөрчил бүртгэвэл тухайн ажилтны босго оноо хасагдана.');
+    add('.nav-item[data-page="hazards"]', 'Эрсдэлийн үнэлгээ',
+      'Алба тус бүрийн эрсдэлийн дашбоардыг эндээс байршуулна.');
+    add('.nav-item[data-page="settings"]', 'Тохиргоо',
+      'KPI-н жин, давтан зааварчилгааны хуваарь, бонусын хэмжээ.');
+  }
+  add('#kpiLogoutBtn', 'Гарах', 'Ажлаа дуусгасны дараа эндээс гарна.');
+  return s;
+}
+
+function tourEls() {
+  var mask = document.getElementById('tourMask');
+  if (mask) return mask;
+  mask = document.createElement('div');
+  mask.id = 'tourMask';
+  mask.innerHTML =
+    '<div id="tourHole"></div><div id="tourRing"></div><div id="tourHand">👆</div>' +
+    '<div id="tourTip"><div class="tt-step"></div><div class="tt-title"></div><div class="tt-text"></div>' +
+    '<div class="tt-bar"><button class="btn btn-secondary btn-sm" data-tour="prev">Өмнөх</button>' +
+    '<button class="btn btn-primary btn-sm" data-tour="next">Дараах</button></div>' +
+    '<div style="text-align:center"><button class="tt-skip" data-tour="end">Хаах</button></div>' +
+    '<div class="tt-dots"></div></div>';
+  document.body.appendChild(mask);
+  mask.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-tour]'); if (!b) return;
+    var a = b.getAttribute('data-tour');
+    if (a === 'end') tourEnd();
+    else if (a === 'prev') tourGo(TOUR.i - 1);
+    else tourGo(TOUR.i + 1);
+  });
+  // Гүйлгэх / дэлгэц эргэхэд заагчаа дагуулна
+  var reflow = function () {
+    if (!mask.classList.contains('on')) return;
+    var st = TOUR.steps[TOUR.i]; if (!st) return;
+    var el = document.querySelector(st.sel); if (el) tourPlace(st, el, TOUR.i);
+  };
+  window.addEventListener('resize', reflow);
+  window.addEventListener('scroll', reflow, true);
+  return mask;
+}
+
+function tourStart() {
+  closeModal();
+  TOUR.steps = tourSteps().filter(function (st) { return document.querySelector(st.sel); });
+  if (!TOUR.steps.length) { toast('Заавар үзүүлэх цэс олдсонгүй', 'warn'); return; }
+  tourEls().classList.add('on');
+  TOUR.i = -1;
+  setTimeout(function () { tourGo(0); }, 60);
+}
+
+function tourEnd() {
+  var m = document.getElementById('tourMask');
+  if (m) m.classList.remove('on');
+  if (TOUR.sidebarOpened) {
+    var sb = document.querySelector('.sidebar'); if (sb) sb.classList.remove('open');
+    TOUR.sidebarOpened = false;
+  }
+  try { localStorage.setItem('kpi_tour_done', '1'); } catch (e) {}
+}
+
+function tourGo(i) {
+  if (i < 0) return;
+  if (i >= TOUR.steps.length) { tourEnd(); toast('Заавар дууслаа 👍'); return; }
+  TOUR.i = i;
+  var st = TOUR.steps[i];
+  var el = document.querySelector(st.sel);
+  if (!el) { tourGo(i + 1); return; }
+
+  // Хаалттай мод цэс / далд хажуугийн цэсийг нээнэ
+  var d = el.closest('details');
+  while (d) { d.open = true; d = d.parentNode && d.parentNode.closest ? d.parentNode.closest('details') : null; }
+  if (el.closest('.sidebar') && window.innerWidth <= 768) {
+    var sb = document.querySelector('.sidebar');
+    if (sb && !sb.classList.contains('open')) { sb.classList.add('open'); TOUR.sidebarOpened = true; }
+  } else if (TOUR.sidebarOpened && !el.closest('.sidebar')) {
+    var sb2 = document.querySelector('.sidebar');
+    if (sb2) sb2.classList.remove('open');
+    TOUR.sidebarOpened = false;
+  }
+  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { }
+  setTimeout(function () { tourPlace(st, el, i); }, 320);
+}
+
+function tourPlace(st, el, i) {
+  var r = el.getBoundingClientRect();
+  var vw = window.innerWidth, vh = window.innerHeight;
+  var hole = document.getElementById('tourHole');
+  var ring = document.getElementById('tourRing');
+  var hand = document.getElementById('tourHand');
+  var tip = document.getElementById('tourTip');
+  if (!hole) return;
+
+  var pad = 7;
+  hole.style.left = (r.left - pad) + 'px';
+  hole.style.top = (r.top - pad) + 'px';
+  hole.style.width = (r.width + pad * 2) + 'px';
+  hole.style.height = (r.height + pad * 2) + 'px';
+
+  var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  var rs = Math.max(46, Math.min(r.height + 30, 90));
+  ring.style.width = rs + 'px'; ring.style.height = rs + 'px';
+  ring.style.left = (cx - rs / 2) + 'px'; ring.style.top = (cy - rs / 2) + 'px';
+
+  // Гар — товчны баруун доод хэсэгт, дарж байгаа мэт
+  hand.style.left = Math.min(vw - 46, r.left + r.width * 0.58) + 'px';
+  hand.style.top = (r.top + r.height * 0.45) + 'px';
+
+  // Тайлбар хайрцаг — доор нь, багтахгүй бол дээр нь
+  var tw = Math.min(300, vw - 28);
+  tip.style.width = tw + 'px';
+  var tl = Math.max(14, Math.min(vw - tw - 14, cx - tw / 2));
+  var th = tip.offsetHeight || 190;
+  var tt = r.bottom + 58;
+  if (tt + th > vh - 12) tt = Math.max(12, r.top - th - 22);
+  tip.style.left = tl + 'px';
+  tip.style.top = tt + 'px';
+
+  tip.querySelector('.tt-step').textContent = (i + 1) + ' / ' + TOUR.steps.length;
+  tip.querySelector('.tt-title').textContent = st.title;
+  tip.querySelector('.tt-text').textContent = st.text;
+  tip.querySelector('[data-tour="prev"]').style.display = i === 0 ? 'none' : '';
+  tip.querySelector('[data-tour="next"]').textContent = (i === TOUR.steps.length - 1) ? 'Дуусгах' : 'Дараах';
+  tip.querySelector('.tt-dots').innerHTML = TOUR.steps.map(function (_, k) {
+    return '<i class="' + (k === i ? 'on' : '') + '"></i>';
+  }).join('');
+}
+
+/* ══════════════════ ТУСЛАМЖ — сайтын жинхэнэ цэсээр ══════════════════ */
+function helpRow(icon, color, name, desc) {
+  return '<div class="help-row"><i class="ti ' + icon + ' hi" style="background:' + color + '18;color:' + color + '"></i>' +
+    '<div class="ht"><b>' + name + '</b><span>' + desc + '</span></div></div>';
+}
+
 function openHelp() {
-  infoModal('Тусламж — SafeWork систем',
-    '<div class="help-body">' +
-    '<p>Энэхүү систем нь ХАБЭА (Хөдөлмөрийн аюулгүй байдал, эрүүл ахуй)-н удирдлагын самбар юм.</p>' +
-    '<ul>' +
-    '<li><b>Эрсдэл, аюул</b> — товчоор шинэ эрсдэл мэдээлж, төлөвийг нь хянана.</li>' +
-    '<li><b>Ажилтнууд</b> — KPI оноо, хайлт, шүүлт, шинэ ажилтан нэмэх.</li>' +
-    '<li><b>KPI үнэлгээ</b> — 5 ангиллын жинтэй оноо. Жинг Тохиргоо хэсгээс өөрчилнө.</li>' +
-    '<li><b>Сайжруулалтын санал, Осол</b> — бүртгэх, төлөв өөрчлөх.</li>' +
-    '</ul>' +
-    '<p class="muted">Таны оруулсан бүх мэдээлэл энэ компьютерийн browser-т автоматаар хадгалагдана. ' +
-    'Анхдагч жишээ өгөгдөл рүү буцаахыг хүсвэл зүүн доод буланд байгаа хэрэглэгчийн нэр дээр дарна уу.</p>' +
-    '</div>');
+  var w = kpiCfg().weights;
+  var body = '<div class="help-body">' +
+    '<button class="btn btn-primary" data-starttour="1" style="width:100%;justify-content:center;margin-bottom:14px">' +
+    '<i class="ti ti-hand-click"></i> Заавар үзүүлэх — цэс бүрийг гараар зааж өгнө</button>';
+
+  if (isEmp()) {
+    body +=
+      '<p>Энэ бол <b>Монос Хүнс</b>-ний ХАБЭА-н систем. Та сургалтаа үзэж, шалгалтаа өгч, аюул мэдээлснээр ' +
+      '<b>сар бүрийн оноо</b> цуглуулна.</p>' +
+      '<h4>Таны цэсүүд</h4>' +
+      helpRow('ti-layout-dashboard', '#4F46E5', 'Миний гүйцэтгэл', 'Энэ сарын оноо, байр эзлэлт, хийх ёстой зүйлс.') +
+      helpRow('ti-player-play', '#C2410C', 'Видео сургалт (MiSkill)', 'Оногдсон хичээлүүд. Үзэж дуусгаснаар оноо нэмэгдэнэ.') +
+      helpRow('ti-pencil-check', '#0891B2', 'ХАБЭА шалгалт', 'Урьдчилсан/дараах шалгалт. Хэд дахин өгөхийг админ тохируулна.') +
+      helpRow('ti-checkbox', '#16A34A', 'Даалгавар', 'Танд оногдсон ажил. Биелүүлээд тэмдэглэнэ.') +
+      helpRow('ti-flag-2', '#E11D48', 'Аюул мэдээлэх', 'Улаан хөвөгч товч — бүх хуудсанд байна. Бонус авах хамгийн хялбар зам.') +
+      helpRow('ti-chart-pie-2', '#7C3AED', 'Эрсдэлийн үнэлгээ', 'Таны албаны эрсдэлийн дашбоард.') +
+      helpRow('ti-shield-heart', '#0EA5E9', 'Даатгал', 'Нөхөн төлбөрийн гарын авлага.') +
+      '<h4>Оноо хэрхэн бүрддэг вэ</h4>' +
+      helpRow('ti-shield-check', '#3730A3', 'Осол, зөрчилгүй байх', 'Хамгийн том хувь. Зөрчил бүртгэгдэхгүй бол бүтэн оноо.') +
+      helpRow('ti-player-play', '#C2410C', 'Видео сургалт үзэх', 'Тэнцсэн сургалтын хувиар.') +
+      helpRow('ti-refresh', '#0891B2', 'Давтан + шалгалт', 'Тухайн сард давтан зааварчилгаа товлогдсон бол.') +
+      helpRow('ti-checkbox', '#16A34A', 'Даалгавар биелүүлэх', 'Биелүүлсэн даалгаврын хувиар.') +
+      helpRow('ti-gift', '#059669', 'Аюул мэдээлэх (бонус)', 'НЭМЭГДЭНЭ — хэзээ ч хасагдахгүй.') +
+      '<div class="help-note"><b>Түвшин:</b> 0–59 Эхлэгч · 60–74 Хүрэл · 75–89 Мөнгөн · 90+ Алтан.<br>' +
+      '<b>Хугацаа:</b> оноо цалингийн сараар (өмнөх сарын 25-наас энэ сарын 24) тооцогдоно.<br>' +
+      '<b>Шалгалт:</b> нэг шалгалтыг хэд хэдэн удаа өгвөл <b>сүүлийн дүн</b> тооцогдоно.</div>';
+  } else {
+    body +=
+      '<p>Та <b>' + esc(USER.role || 'ХАБЭА ажилтан') + '</b> эрхтэй нэвтэрсэн байна. ' +
+      'Сургалт нээх, шалгалт удирдах, KPI хянах бүрэн боломжтой.</p>' +
+      '<h4>Сургалт ба шалгалт</h4>' +
+      helpRow('ti-table-plus', '#4F46E5', '＋ Бүлэг сургалт нэмэх', 'Олон ажилтанд нэг дор сургалт оноох.') +
+      helpRow('ti-school', '#7C3AED', 'Зааварчилгаа бүр', 'Дотор нь <b>алба тус бүрээр</b> эсвэл <b>ажилтан тус бүрээр</b> сургалт/шалгалт нээнэ.') +
+      helpRow('ti-clipboard-text', '#0891B2', 'Шалгалтын удирдлага', 'Асуулт, дүн, хэдэн удаа өгөх эрх.') +
+      helpRow('ti-settings-cog', '#64748B', 'Контент удирдлага', 'Видео хичээл, бүлгийн зураг байршуулах.') +
+      '<h4>ХАБЭА / KPI</h4>' +
+      helpRow('ti-users', '#4F46E5', 'Ажилтнууд', 'Бүх ажилтны оноо, сургалт/шалгалтын биелэлт.') +
+      helpRow('ti-chart-radar', '#7C3AED', 'KPI үнэлгээ', 'Арга зүй, албадын харьцуулалт.') +
+      helpRow('ti-checkbox', '#16A34A', 'Даалгавар', 'Ажилтнуудад даалгавар өгч, биелэлтийг хянана.') +
+      '<h4>Мэдээлэл цуглуулалт</h4>' +
+      helpRow('ti-flag-2', '#E11D48', 'Аюул/Near-miss', 'Ажилтны мэдээлэл. <b>Баталгаажуулсны дараа</b> бонус тооцогдоно.') +
+      helpRow('ti-shield-x', '#DC2626', 'Осол/зөрчлийн бүртгэл', 'Зөрчил бүртгэвэл босго оноо хасагдана.') +
+      helpRow('ti-chart-pie-2', '#7C3AED', 'Эрсдэлийн үнэлгээ', 'Алба бүрийн дашбоард байршуулах.') +
+      '<div class="help-note"><b>KPI-н жин (Тохиргооноос өөрчилнө):</b><br>' +
+      'Босго (осол/зөрчилгүй) <b>' + _f(w.bosgo) + '</b> · Давтан+шалгалт <b>' + _f(w.davtan) + '</b> · ' +
+      'Видео сургалт <b>' + _f(w.video) + '</b> · Даалгавар <b>' + _f(w.task) + '</b> · Бонус <b>' + _f(w.bonus) + '</b><br>' +
+      'Давтан зааварчилгаа товлогдоогүй сард түүний жин видео сургалт руу шилжинэ.<br>' +
+      '<b>Хугацаа:</b> цалингийн сар — өмнөх сарын 25-наас энэ сарын 24.</div>';
+  }
+  body += '</div>';
+  infoModal('Сайтын ашиглах заавар', body, '520px');
+  setTimeout(function () {
+    var b = document.querySelector('[data-starttour]');
+    if (b) b.addEventListener('click', tourStart);
+  }, 40);
 }
 
 /* ============ Хэрэглэгчийн цэс ============ */
@@ -6984,6 +7200,12 @@ function appReady() {
   try { document.body.classList.add('app-ready'); } catch (e) {}
   // Аль ч замаар ирсэн (амжилт / алдаа / хугацаа хэтрэлт) — дашбоард хоосон үлдэхгүй
   try { ensureDashboardNotEmpty(); } catch (e) { console.error('[appReady]', e); }
+  // Анх орж ирсэн хүнд зааврыг НЭГ УДАА автоматаар үзүүлнэ
+  try {
+    if (!localStorage.getItem('kpi_tour_done')) {
+      setTimeout(function () { if (!document.getElementById('tourMask')) tourStart(); }, 1400);
+    }
+  } catch (e) {}
 }
 
 /* ── Сүүлд үзсэн хуудсыг санах: refresh хийхэд ТЭР ХУУДСАНДАА үлдэнэ ──

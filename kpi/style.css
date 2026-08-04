@@ -2059,6 +2059,57 @@ code {
 /* Хийх ёстой мөрийн hover */
 .emp-step:hover { border-color: #C7D2FE !important; background: #FAFBFF !important; }
 
+/* ══════════ ЗААВАР АЯЛАЛ — гарын хөдөлгөөнт заагч ══════════ */
+#tourMask { position: fixed; inset: 0; z-index: 100000; display: none; pointer-events: none; }
+#tourMask.on { display: block; }
+#tourHole {
+  position: absolute; border-radius: 14px; border: 2.5px solid #FCD34D;
+  box-shadow: 0 0 0 9999px rgba(10, 14, 30, .62), 0 0 22px rgba(252, 211, 77, .55);
+  transition: left .3s cubic-bezier(.2,.8,.2,1), top .3s cubic-bezier(.2,.8,.2,1), width .3s, height .3s;
+}
+#tourRing {
+  position: absolute; border-radius: 50%; border: 3px solid rgba(252, 211, 77, .95);
+  animation: tourRing 1.2s ease-out infinite; transition: left .3s, top .3s;
+}
+@keyframes tourRing { 0% { transform: scale(.5); opacity: .95 } 100% { transform: scale(1.7); opacity: 0 } }
+#tourHand {
+  position: absolute; font-size: 38px; line-height: 1; user-select: none;
+  filter: drop-shadow(0 5px 12px rgba(0, 0, 0, .5));
+  animation: tourTap 1.2s ease-in-out infinite;
+  transition: left .3s cubic-bezier(.2,.8,.2,1), top .3s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes tourTap {
+  0%, 100% { transform: translate(0, 0) scale(1) }
+  42%      { transform: translate(-7px, -14px) scale(1.14) }
+  62%      { transform: translate(0, 0) scale(.94) }
+}
+#tourTip {
+  position: absolute; width: 300px; max-width: calc(100vw - 28px); pointer-events: auto;
+  background: #fff; border-radius: 18px; padding: 16px 17px 14px;
+  box-shadow: 0 20px 50px rgba(10, 14, 30, .34);
+  transition: left .3s cubic-bezier(.2,.8,.2,1), top .3s cubic-bezier(.2,.8,.2,1);
+}
+#tourTip .tt-step { font-size: 11px; font-weight: 800; color: #94A3B8; letter-spacing: .5px; }
+#tourTip .tt-title { font-size: 16px; font-weight: 800; color: #1E293B; margin: 3px 0 5px; }
+#tourTip .tt-text { font-size: 13px; color: #475569; line-height: 1.55; }
+#tourTip .tt-bar { display: flex; gap: 8px; align-items: center; margin-top: 13px; }
+#tourTip .tt-bar .btn { flex: 1; justify-content: center; }
+#tourTip .tt-skip { background: none; border: 0; color: #94A3B8; font-size: 12px; cursor: pointer; font-family: inherit; padding: 4px 2px; }
+#tourTip .tt-dots { display: flex; gap: 4px; justify-content: center; margin-top: 9px; }
+#tourTip .tt-dots i { width: 6px; height: 6px; border-radius: 50%; background: #E2E8F0; display: block; }
+#tourTip .tt-dots i.on { background: #4F46E5; width: 16px; border-radius: 3px; }
+
+/* Тусламжийн цонх — сайтын жинхэнэ цэсийн тайлбар */
+.help-body h4 { font-size: 13px; font-weight: 800; color: #4F46E5; text-transform: uppercase; letter-spacing: .4px; margin: 16px 0 7px; }
+.help-body h4:first-child { margin-top: 0; }
+.help-row { display: flex; gap: 11px; align-items: flex-start; padding: 8px 0; border-top: 1px solid #F1F5F9; }
+.help-row:first-of-type { border-top: 0; }
+.help-row i.hi { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.help-row .ht { flex: 1; min-width: 0; }
+.help-row .ht b { display: block; font-size: 13.5px; color: #1E293B; }
+.help-row .ht span { font-size: 12.5px; color: #64748B; line-height: 1.5; }
+.help-note { background: #F8FAFC; border-radius: 12px; padding: 12px 14px; font-size: 12.5px; color: #475569; line-height: 1.55; margin-top: 14px; }
+
 /* Байр эзлэлт — 3 тэнцүү хайрцаг, өндөр нь тэгшилнэ */
 .rank-grid {
   display: grid;
