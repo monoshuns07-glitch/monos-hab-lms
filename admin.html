@@ -1055,18 +1055,12 @@ body{
       </div>
       <div class="form-group">
         <label class="form-label">Алба <span>*</span></label>
+        <!-- Жагсаалт нь БҮРТГЭЛТЭЙ ажилтнуудаас автоматаар бүрдэнэ (fillDeptOptions) -->
         <select class="form-input" id="newUserDept">
           <option value="">Алба сонгох...</option>
-          <option>Захиргаа</option>
-          <option>Санхүү</option>
-          <option>Хүний нөөц</option>
-          <option>Мэдээллийн технологи</option>
-          <option>Маркетинг</option>
-          <option>Борлуулалт</option>
-          <option>Үйлдвэрлэл</option>
-          <option>Чанарын хяналт</option>
-          <option>ХАБЭА</option>
         </select>
+        <input type="text" class="form-input" id="newUserDeptOther" placeholder="Шинэ албаны нэр бичнэ үү"
+               style="display:none;margin-top:8px" autocomplete="off" />
       </div>
       <div class="form-group">
         <label class="form-label">Gmail хаяг <span>*</span></label>
@@ -2262,12 +2256,36 @@ function renderCredsList(filterText){
 
 /* ===== ADD SINGLE USER ===== */
 const addUserModal=document.getElementById('addUserModal');
+
+/* ═══ Алба сонгох жагсаалт — ХАТУУ БИЧСЭН БИШ, бүртгэлтэй ажилтнуудаас бүрдэнэ ═══
+   Ажилтан хамгийн олонтой албаас эхлэн, хажууд нь хүний тоог харуулна. */
+async function fillDeptOptions(){
+  const sel=document.getElementById('newUserDept'); if(!sel) return;
+  const keep=sel.value;
+  if(!allUsers.length){ try{ await loadUsers(); }catch(e){} }
+  const cnt={};
+  (allUsers||[]).forEach(u=>{ const d=String(u.department||'').trim(); if(d) cnt[d]=(cnt[d]||0)+1; });
+  const list=Object.keys(cnt).sort((a,b)=> (cnt[b]-cnt[a]) || a.localeCompare(b,'mn'));
+  sel.innerHTML='<option value="">Алба сонгох...</option>'
+    + list.map(d=>`<option value="${escapeAttr(d)}">${escapeHtml(d)} — ${cnt[d]} ажилтан</option>`).join('')
+    + '<option value="__new__">➕ Шинэ алба нэмэх...</option>';
+  if(keep && [...sel.options].some(o=>o.value===keep)) sel.value=keep;
+}
+document.getElementById('newUserDept').addEventListener('change',e=>{
+  const other=document.getElementById('newUserDeptOther');
+  const isNew=e.target.value==='__new__';
+  other.style.display=isNew?'':'none';
+  if(isNew){ other.value=''; other.focus(); }
+});
+
 document.getElementById('addUserBtn').addEventListener('click',()=>{
-  ['newUserLastName','newUserFirstName','newUserPosition','newUserEmail','newUserPassword','newUserPassword2']
-    .forEach(id=>{ document.getElementById(id).value=''; });
+  ['newUserLastName','newUserFirstName','newUserPosition','newUserEmail','newUserPassword','newUserPassword2','newUserDeptOther']
+    .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('newUserDeptOther').style.display='none';
   document.getElementById('newUserDept').value='';
   document.getElementById('addUserStatus').innerHTML='';
   addUserModal.classList.add('show');
+  fillDeptOptions();
 });
 document.getElementById('addUserClose').addEventListener('click',()=>addUserModal.classList.remove('show'));
 document.getElementById('addUserCancel').addEventListener('click',()=>addUserModal.classList.remove('show'));
@@ -2275,7 +2293,8 @@ document.getElementById('addUserSave').addEventListener('click', async()=>{
   const lastName=document.getElementById('newUserLastName').value.trim();
   const firstName=document.getElementById('newUserFirstName').value.trim();
   const position=document.getElementById('newUserPosition').value.trim();
-  const dept=document.getElementById('newUserDept').value;
+  let dept=document.getElementById('newUserDept').value;
+  if(dept==='__new__') dept=document.getElementById('newUserDeptOther').value.trim();
   const email=document.getElementById('newUserEmail').value.trim();
   const password=document.getElementById('newUserPassword').value;
   const password2=document.getElementById('newUserPassword2').value;

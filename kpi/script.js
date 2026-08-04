@@ -68,7 +68,8 @@ var pageLabels = {
   'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт'
 };
 
-var DEPTS = ['Цех №1', 'Цех №2', 'Цех №3', 'Захиргаа', 'Тээвэр', 'Үйлчилгээ'];
+/* Албуудыг ХАТУУ бичихгүй — зөвхөн бүртгэлтэй ажилтнуудаас гарна (deptList) */
+var DEPTS = [];
 var AREAS = ['Цех №1', 'Цех №2', 'Цех №3', 'Захиргааны байр', 'Агуулах', 'Гадна талбай', 'Тээврийн зогсоол'];
 var ROLES = ['Оператор', 'Технологич', 'Цех ахлагч', 'Цахилгаанчин', 'Гагнуурчин', 'Жолооч',
   'Нягтлан', 'Инженер', 'Слесарь', 'Угсрагч', 'Механикч', 'Чанарын шалгагч',
@@ -903,9 +904,11 @@ function categoryAverages() {
 
 /* — Албаны түвшний оноо (coverage + бонус + анхны тусламж + PPE) — */
 function deptList() {
-  var s = {}; (DB.employees || []).forEach(function (e) { if (e.dept) s[e.dept] = 1; });
-  var list = Object.keys(s).sort();
-  return list.length ? list : DEPTS.slice();
+  // Ажилтан хамгийн олонтой албанаас эхлэн эрэмбэлнэ (жинхэнэ бүртгэлээр)
+  var c = {}; (DB.employees || []).forEach(function (e) { if (e.dept) c[e.dept] = (c[e.dept] || 0) + 1; });
+  return Object.keys(c).sort(function (a, b) {
+    return (c[b] - c[a]) || a.localeCompare(b, 'mn');
+  });
 }
 function deptMembers(dept) { return (DB.employees || []).filter(function (e) { return e.dept === dept && !e.onLeave; }); }
 function deptCoverage(dept) {
