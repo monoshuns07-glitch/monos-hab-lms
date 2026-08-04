@@ -6450,16 +6450,27 @@ function tourPlace(st, el, i) {
    БАЙНГЫН ЗААГЧ — аялал дуусахад ч арилахгүй.
    Ажилтны дараагийн хийх ёстой зүйл рүү үргэлж заасаар байна.
    ══════════════════════════════════════════════════════════════ */
+var HINT = { idx: 0, at: 0, key: '' };
+
 function hintEl() {
   var h = document.getElementById('hintHand');
   if (h) return h;
-  h = document.createElement('div');
-  h.id = 'hintHand';
-  h.innerHTML = '<div class="hh-ring"></div><div class="hh-emoji">' + HAND_SVG + '</div><div class="hh-tip"></div>';
+  h = document.createElement('div'); h.id = 'hintHand'; h.innerHTML = HAND_SVG;
+  var ring = document.createElement('div'); ring.id = 'hintRing';
+  var tip = document.createElement('div'); tip.id = 'hintTip';
+  document.body.appendChild(ring);
   document.body.appendChild(h);
+  document.body.appendChild(tip);
   window.addEventListener('scroll', hintTick, true);
   window.addEventListener('resize', hintTick);
   return h;
+}
+
+function hintShow(on) {
+  ['hintHand', 'hintRing', 'hintTip'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.classList[on ? 'add' : 'remove']('on');
+  });
 }
 
 /* Юун дээр заах вэ — эрэмбээр нь. Эхний ХАРАГДАЖ БУЙ нь сонгогдоно. */
@@ -6469,7 +6480,7 @@ function hintCandidates() {
 
   if (isEmp()) {
     // Хуудсан дээр "Хийх ёстой зүйлс" мөр байвал хамгийн түрүүнд
-    list.push({ sel: '.page.active .emp-step[data-gopage]', txt: 'Эндээс эхлээрэй' });
+    list.push({ sel: '.page.active .emp-step[data-gopage]', txt: 'Энд дарж хийнэ үү' });
     if (e) {
       try {
         var v = empLmsStats(e);
@@ -6509,35 +6520,61 @@ function hintVisible(el) {
 
 function hintTick() {
   var h = hintEl();
+  var ring = document.getElementById('hintRing');
+  var tip = document.getElementById('hintTip');
   // Аялал явж байх үед эсвэл цонх нээлттэй бол нуух
   var tm = document.getElementById('tourMask');
   if ((tm && tm.classList.contains('on')) || document.body.classList.contains('modal-open')) {
-    h.classList.remove('on'); return;
+    hintShow(false); return;
   }
-  var pick = null, cands = hintCandidates();
-  for (var i = 0; i < cands.length; i++) {
-    var el = document.querySelector(cands[i].sel);
-    if (hintVisible(el)) { pick = { el: el, txt: cands[i].txt }; break; }
+  /* Харагдаж буй БҮХ зорилтыг цуглуулаад ээлжлэн заана
+     (доод мөрүүд ч алгасагдахгүй) */
+  var vis = [], cands = hintCandidates();
+  for (var i = 0; i < cands.length && vis.length < 6; i++) {
+    var nl = document.querySelectorAll(cands[i].sel);
+    for (var j = 0; j < nl.length && vis.length < 6; j++) {
+      if (hintVisible(nl[j])) vis.push({ el: nl[j], txt: cands[i].txt });
+    }
   }
-  if (!pick) { h.classList.remove('on'); return; }
+  if (!vis.length) { hintShow(false); return; }
+
+  var key = vis.map(function (c) { return c.txt + '@' + Math.round(c.el.getBoundingClientRect().top); }).join('|');
+  var now = Date.now();
+  if (key !== HINT.key) { HINT.key = key; HINT.idx = 0; HINT.at = now; }
+  else if (now - HINT.at > 3800) { HINT.idx = (HINT.idx + 1) % vis.length; HINT.at = now; }
+  var pick = vis[HINT.idx % vis.length];
 
   var r = pick.el.getBoundingClientRect();
-  var vw = window.innerWidth;
-  h.classList.add('on');
-  h.querySelector('.hh-tip').textContent = pick.txt;
+  var vw = window.innerWidth, vh = window.innerHeight;
+  hintShow(true);
+  tip.textContent = pick.txt;
 
-  // Байрлал: голдуу баруун талд нь, багтахгүй бол зүүн талд
-  var hw = h.offsetWidth || 150;
-  var left = r.right + 6;
-  if (left + hw > vw - 8) left = Math.max(6, r.left - hw - 6);
-  h.style.left = Math.round(left) + 'px';
-  h.style.top = Math.round(Math.max(6, r.top + r.height / 2 - 20)) + 'px';
+  /* ── Гар: зорилтын ДОТОР, баруун доод хэсэгт (дарж байгаа мэт).
+        Хажуугийн багана/картад давхцахгүй — хэзээ ч зорилтоос гарахгүй. ── */
+  var hw = 29, hh = 33;
+  var hx = r.right - hw - 10;
+  var hy = r.top + r.height / 2 - hh / 2 + 4;
+  // Жижиг зорилт бол гар нь бүтэн багтахгүй — төвд нь тавина
+  if (r.width < hw + 20) hx = r.left + r.width / 2 - hw / 2;
+  if (r.height < hh) hy = r.top + r.height / 2 - hh / 2;
+  hx = Math.max(4, Math.min(hx, vw - hw - 4));
+  hy = Math.max(4, Math.min(hy, vh - hh - 4));
+  h.style.left = Math.round(hx) + 'px';
+  h.style.top = Math.round(hy) + 'px';
 
-  var ring = h.querySelector('.hh-ring');
-  var rs = Math.max(34, Math.min(r.height + 14, 58));
+  /* ── Цагираг: зорилтын голд ── */
+  var rs = Math.max(30, Math.min(Math.min(r.width, r.height) + 12, 54));
   ring.style.width = rs + 'px'; ring.style.height = rs + 'px';
-  ring.style.left = (-rs / 2 - 4) + 'px';
-  ring.style.top = (20 - rs / 2) + 'px';
+  ring.style.left = Math.round(r.left + r.width / 2 - rs / 2) + 'px';
+  ring.style.top = Math.round(r.top + r.height / 2 - rs / 2) + 'px';
+
+  /* ── Бичиг: зорилтын ДООР, зүүн ирмэгээр нь. Багтахгүй бол дээр нь ── */
+  var tw = tip.offsetWidth || 120, th = tip.offsetHeight || 24;
+  var tx = Math.max(6, Math.min(r.left + 4, vw - tw - 6));
+  var ty = r.bottom + 6;
+  if (ty + th > vh - 6) ty = Math.max(6, r.top - th - 6);
+  tip.style.left = Math.round(tx) + 'px';
+  tip.style.top = Math.round(ty) + 'px';
 }
 
 function startHint() {

@@ -2100,32 +2100,32 @@ code {
 #tourTip .tt-dots i.on { background: #4F46E5; width: 16px; border-radius: 3px; }
 
 /* ══ БАЙНГЫН ЗААГЧ — дараагийн хийх зүйл рүү үргэлж заана ══ */
+/* Гурав нь тус тусдаа байрлана: гар — зорилтын ДОТОР, цагираг — голд, бичиг — доор */
+#hintHand, #hintRing, #hintTip { position: fixed; z-index: 1095; display: none; pointer-events: none; }
+#hintHand.on, #hintRing.on, #hintTip.on { display: block; }
+body.modal-open #hintHand, body.modal-open #hintRing, body.modal-open #hintTip { display: none; }
+
 #hintHand {
-  position: fixed; z-index: 1095; display: none; pointer-events: none;
-  align-items: center; gap: 6px;
-}
-#hintHand.on { display: flex; }
-body.modal-open #hintHand { display: none; }
-#hintHand .hh-emoji {
-  line-height: 0; filter: drop-shadow(0 4px 9px rgba(0, 0, 0, .35));
+  line-height: 0; filter: drop-shadow(0 4px 9px rgba(0, 0, 0, .38));
   animation: tourTap 1.25s ease-in-out infinite;
 }
-#hintHand .hh-emoji svg { display: block; width: 29px; height: 33px; }
+#hintHand svg { display: block; width: 29px; height: 33px; }
 #tourHand svg { display: block; }
-#hintHand .hh-tip {
-  background: #1E293B; color: #fff; font-size: 11.5px; font-weight: 700;
-  padding: 5px 10px; border-radius: 20px; white-space: nowrap;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, .3);
-  animation: hhFade 2.6s ease-in-out infinite;
-}
-@keyframes hhFade { 0%, 100% { opacity: .35 } 40%, 60% { opacity: 1 } }
-#hintHand .hh-ring {
-  position: absolute; border-radius: 50%; border: 2.5px solid rgba(79, 70, 229, .8);
+
+#hintRing {
+  border-radius: 50%; border: 2.5px solid rgba(79, 70, 229, .75);
   animation: tourRing 1.25s ease-out infinite;
 }
+#hintTip {
+  background: #1E293B; color: #fff; font-size: 11.5px; font-weight: 700;
+  padding: 5px 11px; border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .32);
+  animation: hhFade 2.6s ease-in-out infinite;
+}
+@keyframes hhFade { 0%, 100% { opacity: .4 } 40%, 60% { opacity: 1 } }
 @media (max-width: 560px) {
-  #hintHand .hh-tip { display: none; }
-  #hintHand .hh-emoji svg { width: 25px; height: 29px; }
+  #hintTip { display: none !important; }
+  #hintHand svg { width: 25px; height: 29px; }
 }
 
 /* Тусламжийн цонх — сайтын жинхэнэ цэсийн тайлбар */
