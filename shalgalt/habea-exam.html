@@ -157,7 +157,16 @@ textarea.inp{resize:none;min-height:120px}
 .sig-diag.live{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
 .sig-diag.dead{background:#FEF2F2;border-color:#FECACA;color:#B91C1C}
 .sig-wrap.photo{border-style:solid;border-color:#0EA5E9;background:#F0F9FF}
-#sigPhotoBtn{font-size:13.5px;padding:11px 14px}
+#sigPhotoBtn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  font-size:15px;font-weight:800;padding:15px 16px;border:0;border-radius:14px;cursor:pointer;
+  color:#fff;background:linear-gradient(135deg,#0EA5E9,#2563EB);
+  box-shadow:0 8px 22px rgba(37,99,235,.30);font-family:inherit;
+  -webkit-tap-highlight-color:transparent}
+#sigPhotoBtn:active{transform:translateY(1px)}
+.sig-or{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:#94A3B8;font-size:12px;font-weight:700}
+.sig-or:before,.sig-or:after{content:"";flex:1;height:1px;background:#E2E8F0}
+@media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:11px 14px;font-size:13.5px} .sig-or{margin:10px 0 8px} }
 @media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:8px 12px;font-size:12.5px} }
 .sig-kind.pen{color:#047857;background:#D1FAE5}
 @media (orientation:landscape) and (max-height:600px){ .sig-note{display:none} }
@@ -322,8 +331,9 @@ textarea.inp{resize:none;min-height:120px}
         <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px" onclick="clearSignature()">🗑️ Цэвэрлэх</button>
       </div>
       <input type="file" id="sigPhotoFile" accept="image/*" capture="environment" style="display:none">
-      <button type="button" class="btn btn-outline" id="sigPhotoBtn" style="width:100%;justify-content:center;margin-top:12px">📷 Цаасан дээр балаар зурсан гарын үсгээ оруулах</button>
-      <div class="sig-note" style="margin-top:8px">Цаасан дээр <b>жинхэнэ балаар</b> гарын үсгээ зураад зургийг нь аваарай — програм өөрөө цэвэрлэж, дэвсгэрийг нь арилгаад гарын үсэг болгоно.</div>
+      <div class="sig-or"><span>эсвэл</span></div>
+      <button type="button" class="btn" id="sigPhotoBtn">📷 Цаасан дээр балаар зураад зургийг нь авах</button>
+      <div class="sig-note" style="margin-top:9px;text-align:center">Утас бал мэдрэхгүй бол <b>энэ аргыг</b> хэрэглээрэй. Цаасан дээр <b>жинхэнэ балаараа</b> гарын үсгээ зураад зургийг нь авахад — програм дэвсгэрийг нь цэвэрлэж, гарын үсэг болгож илгээнэ.</div>
       <div style="display:none">
       </div>
 
