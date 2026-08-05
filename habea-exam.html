@@ -9,6 +9,9 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.2.0/dist/signature_pad.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -667,9 +670,8 @@ function sigKindLabel(t){ return t==="pen"?"✒️ Стилус илэрлээ" 
    Стилус дэлгэц дээгүүр өнгөрөхөд (hover) ч мэдэрнэ. */
 var SIG_PEN_TS=0, SIG_EVENTS=0;
 
-/* Дэлгэцээс ирж буй дохиог ШУУД харуулна.
-   Хэрэв та балаар хүрэхэд энэ тоо нэмэгдэхгүй бол — дэлгэц тухайн зүйлийг
-   огт мэдрээгүй гэсэн үг (цахилгаан дамжуулдаггүй зүйлийг дэлгэц уншдаггүй). */
+/* Зурах талбарт юу болж байгааг шууд харуулна:
+   хэдэн хүрэлт ирсэн, хэдэн зураас эхэлсэн, ямар төрлийн хэрэгсэл. */
 var SIG_STROKES=0;
 function sigDiag(e){
   var el=document.getElementById("sigDiag");

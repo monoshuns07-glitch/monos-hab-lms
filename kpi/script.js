@@ -1249,6 +1249,7 @@ function renderMyExams() {
       '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') +
       (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
       (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
+    url = examBust(url);
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       cardInner +
@@ -1893,7 +1894,7 @@ function actionTakeModExam(key, empId) {
   var eid = encodeURIComponent((me && me.id) || empId || '');
   var dept = encodeURIComponent((me && me.dept) || '');
   var pos = encodeURIComponent((me && (me.pos || me.role)) || '');
-  window.open('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title + '&eid=' + eid + '&dept=' + dept + '&pos=' + pos, '_blank');
+  window.open(examBust('/habea-exam.html?email=' + email + '&name=' + name + '&exam=' + exam + '&title=' + title + '&eid=' + eid + '&dept=' + dept + '&pos=' + pos), '_blank');
 }
 
 /* ============ Дотоод сургалт — сургалт бүрийн хуудас (агуулга + шалгалт) ============ */
@@ -1916,8 +1917,8 @@ function renderCourse(cat, skipRefresh) {
     if (meRec) myResults = (meRec.habeaExams || []).filter(function (x) { return x.title === cat || x.key === key; });
   }
   var examOpen = DB.settings && DB.settings.examOpen ? DB.settings.examOpen[key] !== false : true;
-  var examUrl = '/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
-    '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || '');
+  var examUrl = examBust('/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
+    '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || ''));
   var videoHtml = '';
   if (c.video) {
     var emb = toEmbed(c.video);
@@ -7259,7 +7260,7 @@ function applyRole() {
   // Шалгалтын холбоост нэвтэрсэн ажилтны имэйл/нэрийг дамжуулна (дүнг буцааж тааруулна)
   try {
     var exLink = document.querySelector('a[data-exam-link]');
-    if (exLink && SESSION) exLink.href = '/shalgalt/habea-exam.html?email=' + encodeURIComponent(SESSION.email || '') + '&name=' + encodeURIComponent(USER.name || '') + (SESSION.empId ? '&eid=' + encodeURIComponent(SESSION.empId) : '');
+    if (exLink && SESSION) exLink.href = examBust('/shalgalt/habea-exam.html?email=' + encodeURIComponent(SESSION.email || '') + '&name=' + encodeURIComponent(USER.name || '') + (SESSION.empId ? '&eid=' + encodeURIComponent(SESSION.empId) : ''));
   } catch (e) {}
   if (isAdmin()) {
     // Операциональ цэсүүдийг админы харагдацаас нуух
@@ -7402,6 +7403,13 @@ var LAST_PAGE_KEY = 'kpi_last_page';
    Жишээ: "Даатгал" нь /nohon-tulbur.html руу шилждэг. Хэрэв санавал —
    буцах товч дарахад энэ сайт дахин ачаалж, дахиад тийш үсэрч, ГОГЦОО үүсдэг. */
 var NAV_AWAY_PAGES = { daatgal: 1 };
+
+/* Шалгалтын хуудсыг браузер КЭШЛЭХГҮЙН тулд цагийн тэмдэг нэмнэ.
+   (Хуучин хувилбар үлдэж, зассан алдаа дахин гарахаас сэргийлнэ.) */
+function examBust(u) {
+  var v = Math.floor(Date.now() / 600000);   // 10 минут тутам шинэчилнэ
+  return u + (u.indexOf('?') >= 0 ? '&' : '?') + '_v=' + v;
+}
 
 function rememberPage(pageId) {
   if (!pageId) return;
