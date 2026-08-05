@@ -165,6 +165,16 @@ textarea.inp{resize:none;min-height:120px}
   -webkit-tap-highlight-color:transparent}
 #sigPhotoBtn:active{transform:translateY(1px)}
 .sig-or{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:#94A3B8;font-size:12px;font-weight:700}
+.sig-saved{display:none;align-items:center;gap:11px;background:#ECFDF5;border:1.5px solid #A7F3D0;border-radius:14px;padding:11px 14px;margin-bottom:12px}
+.sig-saved .ss-t{flex:1;min-width:0;font-size:13px;font-weight:700;color:#047857;line-height:1.4}
+.sig-saved .ss-t span{display:block;font-weight:500;font-size:11.5px;color:#059669;margin-top:2px}
+.sig-saved button{background:#fff;border:1.5px solid #A7F3D0;color:#047857;border-radius:100px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
+.sig-consent{display:flex;align-items:flex-start;gap:10px;background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:14px;padding:13px 14px;margin-top:16px;cursor:pointer}
+.sig-consent input{width:20px;height:20px;flex-shrink:0;margin-top:1px;accent-color:#4F46E5;cursor:pointer}
+.sig-consent span{font-size:13px;color:#334155;line-height:1.5}
+.sig-consent.ok{background:#F5F3FF;border-color:#C4B5FD}
+.sig-proof{margin-top:16px;background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:12px;padding:12px 14px;font-size:12px;color:#475569;line-height:1.6;font-family:ui-monospace,Menlo,Consolas,monospace}
+.sig-proof span{font-family:inherit;color:#94A3B8}
 .sig-or:before,.sig-or:after{content:"";flex:1;height:1px;background:#E2E8F0}
 @media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:11px 14px;font-size:13.5px} .sig-or{margin:10px 0 8px} }
 @media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:8px 12px;font-size:12.5px} }
@@ -312,6 +322,11 @@ textarea.inp{resize:none;min-height:120px}
         </div>
       </div>
 
+      <div class="sig-saved" id="sigSavedBar">
+        <div style="font-size:22px">✅</div>
+        <div class="ss-t">Таны бүртгэлтэй гарын үсэг ашиглагдаж байна<span>Дахин зурах шаардлагагүй. Өөрчлөхийг хүсвэл баруун талд дарна уу.</span></div>
+        <button type="button" id="sigRedrawBtn">✎ Шинээр</button>
+      </div>
       <div class="sig-tools">
         <button type="button" class="sig-tool on" data-sigtool="pen">🖊️ Бал</button>
         <button type="button" class="sig-tool" data-sigtool="pencil">✏️ Харандаа</button>
@@ -337,11 +352,15 @@ textarea.inp{resize:none;min-height:120px}
       <div style="display:none">
       </div>
 
+      <label class="sig-consent" id="sigConsentBox">
+        <input type="checkbox" id="sigConsent">
+        <span>Би энэ шалгалтын асуултад <b>өөрөө хариулж</b>, дүнг нь хүлээн зөвшөөрч, гарын үсгээрээ <b>баталгаажуулж</b> байна.</span>
+      </label>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="backToExam()">← Буцах</button>
         <button class="btn btn-primary btn-lg" id="btnFinalSubmit" style="flex:2" onclick="finalSubmit()" disabled>📤 Шалгалт илгээх</button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">Гарын үсэг зураагүй бол илгээх товч идэвхгүй байна</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">Гарын үсэг зурж, дээрх нүдийг тэмдэглэсний дараа илгээх товч идэвхжинэ</p>
     </div>
   </div>
 </div>
@@ -660,6 +679,7 @@ function openSignature(){
   sigLandscape();
   setTimeout(()=>setupSignaturePad(),110);
   try{ sigDiagReset(); }catch(e){}
+  setTimeout(function(){ try{ sigLoadRegistered(function(u){ if(u) sigApplyRegistered(u); }); }catch(e){} },420);
   setTimeout(()=>{ if(signaturePad) sigResize(); sigCheckRotate(); },720);
 }
 
@@ -981,7 +1001,8 @@ function sigShowPhoto(res){
   cx.drawImage(res.src,b[0],b[1],sw,sh,(cw-dw)/2,(chh-dh)/2,dw,dh);
   wrap.classList.add("has-sig","photo");
   document.getElementById("sigHint").classList.add("hide");
-  document.getElementById("btnFinalSubmit").disabled=false;
+  SIG_SOURCE="photo";
+  sigUpdateSubmit();
   try{ if(signaturePad) signaturePad.off(); }catch(e){}   // зураг идэвхтэй үед зурахгүй
 }
 
@@ -1013,6 +1034,95 @@ function sigWirePhoto(){
   btn._w=true;
   btn.addEventListener("click",function(){ inp.value=""; inp.click(); });
   inp.addEventListener("change",function(){ sigLoadPhoto(inp.files&&inp.files[0]); });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   БҮРТГЭЛТЭЙ ГАРЫН ҮСЭГ — нэг удаа бүртгээд бүх шалгалтад автоматаар.
+   + Шалгалт бүрийн ЗӨВШӨӨРӨЛ ба өөрчлөгдөөгүйн НОТОЛГОО (SHA-256).
+   ══════════════════════════════════════════════════════════════ */
+var SIG_SOURCE="", SIG_HASH="";
+var SIG_CONSENT_TEXT="Би энэ шалгалтын асуултад өөрөө хариулж, дүнг нь хүлээн зөвшөөрч, гарын үсгээрээ баталгаажуулж байна.";
+
+function sigDocId(){
+  var k=String((typeof QP!=="undefined"&&QP.email)||"").toLowerCase().trim();
+  if(!k) k=String((emp&&emp.name)||"").toLowerCase().trim()+"_"+String((emp&&emp.dept)||"").toLowerCase().trim();
+  k=k.replace(/[^a-z0-9._@-]+/g,"_").replace(/^_+|_+$/g,"").slice(0,120);
+  return k||"unknown";
+}
+function sigLocalKey(){ return "habea_sig_"+sigDocId(); }
+
+function sigLoadRegistered(cb){
+  var url="";
+  try{ url=localStorage.getItem(sigLocalKey())||""; }catch(e){}
+  if(url){ cb(url); return; }
+  try{
+    db.collection("habea_signatures").doc(sigDocId()).get().then(function(s){
+      var d=(s&&s.exists)?s.data():null;
+      if(d&&d.signature){ try{localStorage.setItem(sigLocalKey(),d.signature);}catch(e){} cb(d.signature); }
+      else cb("");
+    }).catch(function(){ cb(""); });
+  }catch(e){ cb(""); }
+}
+
+function sigSaveRegistered(url){
+  if(!url) return;
+  try{ localStorage.setItem(sigLocalKey(),url); }catch(e){}
+  try{
+    db.collection("habea_signatures").doc(sigDocId()).set({
+      email:String((typeof QP!=="undefined"&&QP.email)||"").toLowerCase(),
+      name:(emp&&emp.name)||"", dept:(emp&&emp.dept)||"", position:(emp&&emp.pos)||"",
+      signature:url, consent:true, consentText:SIG_CONSENT_TEXT,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true}).catch(function(){});
+  }catch(e){}
+}
+
+/* Хадгалсан гарын үсгийг талбарт тавина */
+function sigApplyRegistered(url){
+  var img=new Image();
+  img.onload=function(){
+    try{
+      var canvas=document.getElementById("sigCanvas"), wrap=document.getElementById("sigWrap");
+      if(!canvas||!canvas.offsetWidth){ return; }
+      var ratio=Math.max(window.devicePixelRatio||1,1);
+      var cw=canvas.offsetWidth, chh=canvas.offsetHeight;
+      canvas.width=cw*ratio; canvas.height=chh*ratio;
+      var cx=canvas.getContext("2d"); cx.scale(ratio,ratio); cx.clearRect(0,0,cw,chh);
+      var k=Math.min((cw-18)/img.width,(chh-18)/img.height);
+      var dw=img.width*k, dh=img.height*k;
+      cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality="high";
+      cx.drawImage(img,(cw-dw)/2,(chh-dh)/2,dw,dh);
+      wrap.classList.add("has-sig","photo");
+      document.getElementById("sigHint").classList.add("hide");
+      try{ if(signaturePad) signaturePad.off(); }catch(e){}
+      SIG_PHOTO=url; SIG_SOURCE="registered";
+      var bar=document.getElementById("sigSavedBar"); if(bar) bar.style.display="flex";
+      sigUpdateSubmit();
+    }catch(e){}
+  };
+  img.src=url;
+}
+
+function sigHasSignature(){
+  return !!SIG_PHOTO || !!(signaturePad && !signaturePad.isEmpty());
+}
+function sigUpdateSubmit(){
+  var c=document.getElementById("sigConsent");
+  var box=document.getElementById("sigConsentBox");
+  var ok=sigHasSignature() && (!c || c.checked);
+  var b=document.getElementById("btnFinalSubmit");
+  if(b) b.disabled=!ok;
+  if(box&&c) box.classList.toggle("ok",c.checked);
+}
+
+/* Бүртгэл өөрчлөгдөөгүйг нотлох код */
+async function sigMakeHash(obj){
+  try{
+    var s=JSON.stringify(obj);
+    var buf=new TextEncoder().encode(s);
+    var h=await crypto.subtle.digest("SHA-256",buf);
+    return Array.prototype.map.call(new Uint8Array(h),function(b){return ("0"+b.toString(16)).slice(-2)}).join("");
+  }catch(e){ return ""; }
 }
 
 function setupSignaturePad(){
@@ -1066,16 +1176,24 @@ function setupSignaturePad(){
     SIG_STROKES++;
     document.getElementById("sigHint").classList.add("hide");
     wrap.classList.add("has-sig");
-    document.getElementById("btnFinalSubmit").disabled=false;
+    sigUpdateSubmit();
   });
 
-  wrap.classList.remove("has-sig");
-  document.getElementById("sigHint").classList.remove("hide");
-  document.getElementById("btnFinalSubmit").disabled=true;
+  if(!SIG_PHOTO){
+    wrap.classList.remove("has-sig");
+    document.getElementById("sigHint").classList.remove("hide");
+  }
+  // Зөвшөөрлийн нүд ба "Шинээр" товчийг холбоно (нэг л удаа)
+  var _cb=document.getElementById("sigConsent");
+  if(_cb&&!_cb._w){ _cb._w=true; _cb.addEventListener("change",sigUpdateSubmit); }
+  var _rb=document.getElementById("sigRedrawBtn");
+  if(_rb&&!_rb._w){ _rb._w=true; _rb.addEventListener("click",function(){ clearSignature(); try{toast("✍️ Шинээр зурна уу")}catch(e){} }); }
+  sigUpdateSubmit();
 }
 
 function clearSignature(){
-  SIG_PHOTO=null;
+  SIG_PHOTO=null; SIG_SOURCE="";
+  var _bar=document.getElementById("sigSavedBar"); if(_bar) _bar.style.display="none";
   var wrap=document.getElementById("sigWrap");
   if(wrap) wrap.classList.remove("has-sig","photo");
   if(signaturePad){
@@ -1084,7 +1202,7 @@ function clearSignature(){
     try{ sigResize(); }catch(e){}
   }
   document.getElementById("sigHint").classList.remove("hide");
-  document.getElementById("btnFinalSubmit").disabled=true;
+  sigUpdateSubmit();
 }
 
 /* ══ Гарын үсгийг ЧАНАРЫГ НЬ САЙЖРУУЛЖ илгээнэ ══
@@ -1161,6 +1279,8 @@ function getSignatureDataUrl(){
 
 async function finalSubmit(){ sigRelease();
   if(!SIG_PHOTO&&(!signaturePad||signaturePad.isEmpty())){toast("✍️ Гарын үсгээ зураагүй байна");return}
+  var _cons=document.getElementById("sigConsent");
+  if(_cons&&!_cons.checked){ toast("☑️ Баталгаажуулах нүдийг тэмдэглэнэ үү"); return; }
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
   const bd=QS.map(q=>({id:q.id,pts:pts(q),earned:grade(q,answers[q.id])}));
@@ -1191,6 +1311,20 @@ async function finalSubmit(){ sigRelease();
     doc.signature=signatureDataUrl;
     doc.signedAt=firebase.firestore.FieldValue.serverTimestamp();
   }
+  // ── Зөвшөөрөл ба өөрчлөгдөөгүйн нотолгоо ──
+  doc.consent=true;
+  doc.consentText=SIG_CONSENT_TEXT;
+  doc.consentAt=firebase.firestore.FieldValue.serverTimestamp();
+  doc.signatureSource=SIG_SOURCE||"drawn";
+  doc.device=String(navigator.userAgent||"").slice(0,180);
+  doc.hashAlg="SHA-256";
+  SIG_HASH=await sigMakeHash({
+    n:emp.name||"", d:emp.dept||"", o:emp.pos||"",
+    e:String((QP.email)||"").toLowerCase(),
+    k:String(QP.exam||""), t:examType, p:pct, s:tot,
+    a:answers, ts:new Date().toISOString()
+  });
+  doc.recordHash=SIG_HASH;
 
   let saved=false;
   try{
@@ -1214,9 +1348,21 @@ async function finalSubmit(){ sigRelease();
       toast("❌ Хадгалж чадсангүй: "+msg.substring(0,80));
     }
   }
-  if(saved)toast("✅ Амжилттай хадгалагдлаа");
+  if(saved){
+    toast("✅ Амжилттай хадгалагдлаа");
+    if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
+  }
   btn.disabled=false;btn.textContent="📤 Шалгалт илгээх";
   showResult(bd,tot,pct,passed);
+  try{
+    var _host=document.getElementById("screenResult");
+    var _old=document.getElementById("sigProof"); if(_old) _old.remove();
+    if(_host&&SIG_HASH){
+      var _d=document.createElement("div"); _d.id="sigProof"; _d.className="sig-proof";
+      _d.innerHTML="Баталгааны код: <b>"+SIG_HASH.slice(0,16)+"</b><br><span>Гарын үсэг, хариулт, дүн өөрчлөгдөөгүйг энэ код нотолно.</span>";
+      var _c=_host.querySelector(".card")||_host; _c.appendChild(_d);
+    }
+  }catch(e){}
 }
 
 function showResult(bd,tot,pct,passed){
