@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Баталгаажуулалт — ХАБЭА</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(900px 520px at 12% -6%,rgba(79,70,229,.10),transparent 60%),
+             radial-gradient(800px 480px at 90% 4%,rgba(124,58,237,.08),transparent 58%),
+             linear-gradient(135deg,#EEF1FF,#F5F0FF 55%,#FDF2FB)}
+.card{width:100%;max-width:440px;background:#fff;border-radius:22px;padding:36px 30px;text-align:center;
+  box-shadow:0 18px 50px rgba(15,23,42,.14)}
+.ico{font-size:56px;line-height:1;margin-bottom:14px}
+h1{font-size:22px;font-weight:900;color:#0F172A;margin-bottom:8px;letter-spacing:-.3px}
+p{font-size:14.5px;color:#475569;line-height:1.65}
+.spin{width:34px;height:34px;border:3.5px solid #E2E8F0;border-top-color:#4F46E5;border-radius:50%;
+  animation:sp .8s linear infinite;margin:8px auto 16px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.ok{color:#047857}.err{color:#B91C1C}
+.note{margin-top:20px;background:#F8FAFC;border-radius:14px;padding:14px 16px;font-size:13px;color:#475569;line-height:1.6}
+.code{margin-top:16px;font-size:30px;font-weight:900;letter-spacing:.34em;color:#4F46E5;font-family:Consolas,monospace;
+  background:#EEF2FF;border-radius:12px;padding:13px 0 13px 12px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="ico" id="ico">⏳</div>
+  <div class="spin" id="spin"></div>
+  <h1 id="ttl">Баталгаажуулж байна…</h1>
+  <p id="msg">Түр хүлээнэ үү.</p>
+  <div id="extra"></div>
+</div>
+<script>
+const QP=Object.fromEntries(new URLSearchParams(location.search).entries());
+firebase.initializeApp({apiKey:"AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",authDomain:"habea-shalgalt.firebaseapp.com",projectId:"habea-shalgalt"});
+const db=firebase.firestore();
+
+function show(ico,title,msg,cls,extra){
+  document.getElementById("spin").style.display="none";
+  document.getElementById("ico").textContent=ico;
+  const t=document.getElementById("ttl"); t.textContent=title; t.className=cls||"";
+  document.getElementById("msg").innerHTML=msg;
+  document.getElementById("extra").innerHTML=extra||"";
+}
+
+async function sha256Hex(str){
+  const b=new TextEncoder().encode(str);
+  const h=await crypto.subtle.digest("SHA-256",b);
+  return Array.from(new Uint8Array(h)).map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+
+(async function(){
+  const id=(QP.id||"").trim(), code=(QP.c||"").trim();
+  if(!id||!code){ show("⚠️","Холбоос буруу байна","И-мэйл дэх товчийг дахин дарна уу.","err"); return; }
+  try{
+    const ref=db.collection("habea_otp").doc(id);
+    const snap=await ref.get();
+    if(!snap.exists){ show("⚠️","Код олдсонгүй","Хугацаа нь дууссан байж болзошгүй. Шалгалтын хуудаснаас дахин код авна уу.","err"); return; }
+    const d=snap.data()||{};
+    if(d.used){ show("ℹ️","Энэ код аль хэдийн ашиглагдсан","Шалгалтын хуудсаа шалгана уу.","err"); return; }
+    if(d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()){
+      show("⏰","Кодын хугацаа дууссан","Шалгалтын хуудаснаас <b>шинэ код</b> авна уу.","err"); return;
+    }
+    const h=await sha256Hex(code+"|"+id+"|"+String(d.email||""));
+    if(h!==d.hash){ show("⚠️","Код таарахгүй байна","И-мэйл дэх товчийг дахин дарна уу.","err"); return; }
+
+    await ref.update({ verified:true, verifiedAt:firebase.firestore.FieldValue.serverTimestamp() });
+    show("✅","Баталгаажлаа!",
+      "Шалгалтын хуудас руу буцаж очиход <b>өөрөө үргэлжилнэ</b>.<br>Энэ цонхыг хааж болно.","ok",
+      '<div class="note">Хэрэв автоматаар үргэлжлээгүй бол шалгалтын хуудсан дээрх нүдэнд доорх кодыг оруулна уу.</div>'+
+      '<div class="code">'+code.replace(/./g,c=>c)+'</div>');
+  }catch(e){
+    show("⚠️","Алдаа гарлаа",String((e&&e.message)||e),"err");
+  }
+})();
+</script>
+</body>
+</html>

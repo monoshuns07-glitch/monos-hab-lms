@@ -173,6 +173,23 @@ textarea.inp{resize:none;min-height:120px}
 .sig-consent input{width:20px;height:20px;flex-shrink:0;margin-top:1px;accent-color:#4F46E5;cursor:pointer}
 .sig-consent span{font-size:13px;color:#334155;line-height:1.5}
 .sig-consent.ok{background:#F5F3FF;border-color:#C4B5FD}
+.otp-box{margin-top:14px;background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:16px;padding:16px}
+.otp-box.on{background:#EEF2FF;border-color:#C7D2FE}
+.otp-box.ok{background:#ECFDF5;border-color:#A7F3D0}
+.otp-hd{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:800;color:#334155;margin-bottom:4px}
+.otp-sub{font-size:12.5px;color:#64748B;line-height:1.55}
+.otp-btn{display:block;width:100%;margin-top:12px;padding:13px 16px;border:0;border-radius:12px;cursor:pointer;
+  font-family:inherit;font-size:14.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#4F46E5,#7C3AED)}
+.otp-btn[disabled]{opacity:.55;cursor:default}
+.otp-in{display:flex;gap:7px;justify-content:center;margin-top:14px}
+.otp-in input{width:44px;height:54px;text-align:center;font-size:22px;font-weight:900;color:#1E293B;
+  border:1.8px solid #CBD5E1;border-radius:12px;background:#fff;font-family:inherit;outline:none}
+.otp-in input:focus{border-color:#4F46E5;box-shadow:0 0 0 3px rgba(79,70,229,.14)}
+.otp-in input.fill{border-color:#4F46E5;background:#F5F3FF}
+.otp-msg{margin-top:11px;font-size:12.5px;text-align:center;line-height:1.5;color:#64748B}
+.otp-msg.err{color:#B91C1C;font-weight:700}
+.otp-msg.ok{color:#047857;font-weight:800}
+@media (orientation:landscape) and (max-height:600px){ .otp-in input{width:38px;height:46px;font-size:19px} }
 .sig-proof{margin-top:16px;background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:12px;padding:12px 14px;font-size:12px;color:#475569;line-height:1.6;font-family:ui-monospace,Menlo,Consolas,monospace}
 .sig-proof span{font-family:inherit;color:#94A3B8}
 .sig-or:before,.sig-or:after{content:"";flex:1;height:1px;background:#E2E8F0}
@@ -356,6 +373,20 @@ textarea.inp{resize:none;min-height:120px}
         <input type="checkbox" id="sigConsent">
         <span>Би энэ шалгалтын асуултад <b>өөрөө хариулж</b>, дүнг нь хүлээн зөвшөөрч, гарын үсгээрээ <b>баталгаажуулж</b> байна.</span>
       </label>
+      <div class="otp-box" id="otpBox">
+        <div class="otp-hd">🔐 И-мэйлээр баталгаажуулах</div>
+        <div class="otp-sub" id="otpSub">Зөвшөөрлийн нүдийг тэмдэглэсний дараа код авна.</div>
+        <button type="button" class="otp-btn" id="otpSend" disabled>📧 Баталгаажуулах код авах</button>
+        <div class="otp-in" id="otpIn" style="display:none">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="0">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="1">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="2">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="3">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="4">
+          <input type="tel" inputmode="numeric" maxlength="1" data-otp="5">
+        </div>
+        <div class="otp-msg" id="otpMsg"></div>
+      </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="backToExam()">← Буцах</button>
         <button class="btn btn-primary btn-lg" id="btnFinalSubmit" style="flex:2" onclick="finalSubmit()" disabled>📤 Шалгалт илгээх</button>
@@ -679,6 +710,7 @@ function openSignature(){
   sigLandscape();
   setTimeout(()=>setupSignaturePad(),110);
   try{ sigDiagReset(); }catch(e){}
+  try{ otpWire(); sigUpdateSubmit(); }catch(e){}
   setTimeout(function(){ try{ sigLoadRegistered(function(u){ if(u) sigApplyRegistered(u); }); }catch(e){} },420);
   setTimeout(()=>{ if(signaturePad) sigResize(); sigCheckRotate(); },720);
 }
@@ -1109,10 +1141,17 @@ function sigHasSignature(){
 function sigUpdateSubmit(){
   var c=document.getElementById("sigConsent");
   var box=document.getElementById("sigConsentBox");
-  var ok=sigHasSignature() && (!c || c.checked);
+  var base=sigHasSignature() && (!c || c.checked);
   var b=document.getElementById("btnFinalSubmit");
-  if(b) b.disabled=!ok;
+  if(b) b.disabled=!(base && OTP_OK);
   if(box&&c) box.classList.toggle("ok",c.checked);
+  var s=document.getElementById("otpSend");
+  if(s && !OTP_ID){ s.disabled=!base; }
+  var sub=document.getElementById("otpSub");
+  if(sub && !OTP_ID && !OTP_OK){
+    sub.textContent = base ? "Одоо код авч, и-мэйлээ шалгана уу."
+                           : "Гарын үсэг зурж, зөвшөөрлийн нүдийг тэмдэглэсний дараа код авна.";
+  }
 }
 
 /* Бүртгэл өөрчлөгдөөгүйг нотлох код */
@@ -1123,6 +1162,156 @@ async function sigMakeHash(obj){
     var h=await crypto.subtle.digest("SHA-256",buf);
     return Array.prototype.map.call(new Uint8Array(h),function(b){return ("0"+b.toString(16)).slice(-2)}).join("");
   }catch(e){ return ""; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   И-МЭЙЛЭЭР НЭГ УДААГИЙН КОД (OTP)
+   · «Код авах» дарахад и-мэйл рүү 6 оронтой код + товч илгээнэ
+   · И-мэйл дэх товчийг дарахад энэ хуудас ӨӨРӨӨ мэдэрч, нүднүүд
+     автоматаар дүүрч, баталгаажилт дуусна (юу ч бичих шаардлагагүй)
+   · Товч ажиллахгүй бол кодыг гараар оруулж болно
+   ══════════════════════════════════════════════════════════════ */
+var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
+
+function otpEl(id){ return document.getElementById(id); }
+function otpMsg(t,cls){ var m=otpEl("otpMsg"); if(m){ m.innerHTML=t||""; m.className="otp-msg"+(cls?" "+cls:""); } }
+
+async function otpSha(str){
+  var b=new TextEncoder().encode(str);
+  var h=await crypto.subtle.digest("SHA-256",b);
+  return Array.prototype.map.call(new Uint8Array(h),function(x){return ("0"+x.toString(16)).slice(-2)}).join("");
+}
+
+function otpEmail(){ return String((typeof QP!=="undefined"&&QP.email)||"").trim().toLowerCase(); }
+
+function otpFillBoxes(code){
+  var ins=document.querySelectorAll("[data-otp]");
+  for(var i=0;i<ins.length;i++){
+    ins[i].value=(code&&code[i])?code[i]:"";
+    ins[i].classList.toggle("fill",!!ins[i].value);
+  }
+}
+
+function otpSetVerified(){
+  OTP_OK=true;
+  if(OTP_POLL){ clearInterval(OTP_POLL); OTP_POLL=null; }
+  if(OTP_TIMER){ clearInterval(OTP_TIMER); OTP_TIMER=null; }
+  var box=otpEl("otpBox"); if(box){ box.classList.remove("on"); box.classList.add("ok"); }
+  var s=otpEl("otpSend"); if(s){ s.style.display="none"; }
+  otpFillBoxes("······");
+  var ins=document.querySelectorAll("[data-otp]");
+  for(var i=0;i<ins.length;i++){ ins[i].disabled=true; ins[i].classList.add("fill"); }
+  otpMsg("✅ И-мэйлээр баталгаажлаа","ok");
+  var sub=otpEl("otpSub"); if(sub) sub.textContent="Таны хаяг баталгаажсан. Одоо шалгалтаа илгээж болно.";
+  try{ toast("✅ Баталгаажлаа"); }catch(e){}
+  sigUpdateSubmit();
+}
+
+/* И-мэйл дэх товч дарагдсан эсэхийг байнга шалгана */
+function otpStartPoll(){
+  if(OTP_POLL) clearInterval(OTP_POLL);
+  OTP_POLL=setInterval(function(){
+    if(!OTP_ID||OTP_OK) return;
+    try{
+      db.collection("habea_otp").doc(OTP_ID).get().then(function(s){
+        var d=(s&&s.exists)?s.data():null;
+        if(d&&d.verified===true) otpSetVerified();
+      }).catch(function(){});
+    }catch(e){}
+  },2500);
+}
+
+function otpCountdown(sec){
+  OTP_LEFT=sec;
+  if(OTP_TIMER) clearInterval(OTP_TIMER);
+  OTP_TIMER=setInterval(function(){
+    OTP_LEFT--;
+    if(OTP_LEFT<=0){
+      clearInterval(OTP_TIMER); OTP_TIMER=null;
+      if(!OTP_OK){
+        otpMsg("Кодын хугацаа дууслаа. Дахин код авна уу.","err");
+        var s=otpEl("otpSend"); if(s){ s.disabled=false; s.textContent="📧 Дахин код авах"; s.style.display=""; }
+      }
+      return;
+    }
+    if(!OTP_OK){
+      var m=Math.floor(OTP_LEFT/60), ss=OTP_LEFT%60;
+      otpMsg("И-мэйл рүү илгээлээ. Дотор нь байгаа <b>Баталгаажуулах</b> товчийг дарахад энэ хуудас өөрөө үргэлжилнэ.<br>Хүчинтэй хугацаа: <b>"+m+":"+(ss<10?"0":"")+ss+"</b>");
+    }
+  },1000);
+}
+
+async function otpSendCode(){
+  var em=otpEmail();
+  if(!em){ otpMsg("И-мэйл хаяг олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.","err"); return; }
+  var btn=otpEl("otpSend");
+  btn.disabled=true; btn.textContent="⏳ Илгээж байна…";
+  try{
+    var r=await fetch("/api/send-otp",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ email:em, name:(emp&&emp.name)||"", examTitle:(QP.title||""), origin:location.origin })
+    });
+    var j=await r.json().catch(function(){return {}});
+    if(!r.ok||!j.ok){
+      otpMsg("⚠️ "+((j&&j.error)||("Илгээж чадсангүй ("+r.status+")")),"err");
+      btn.disabled=false; btn.textContent="📧 Дахин оролдох";
+      return;
+    }
+    OTP_ID=j.id;
+    otpEl("otpBox").classList.add("on");
+    otpEl("otpIn").style.display="flex";
+    otpEl("otpSub").innerHTML="Код <b>"+em+"</b> хаяг руу илгээгдлээ.";
+    btn.style.display="none";
+    otpCountdown((j.ttl||10)*60);
+    otpStartPoll();
+    try{ document.querySelector("[data-otp='0']").focus(); }catch(e){}
+  }catch(e){
+    otpMsg("⚠️ Сүлжээний алдаа: "+String((e&&e.message)||e),"err");
+    btn.disabled=false; btn.textContent="📧 Дахин оролдох";
+  }
+}
+
+/* Гараар оруулсан кодыг шалгах */
+async function otpCheckTyped(){
+  var ins=document.querySelectorAll("[data-otp]"), code="";
+  for(var i=0;i<ins.length;i++) code+=(ins[i].value||"").replace(/\D/g,"");
+  if(code.length<6||!OTP_ID) return;
+  otpMsg("⏳ Шалгаж байна…");
+  try{
+    var s=await db.collection("habea_otp").doc(OTP_ID).get();
+    var d=(s&&s.exists)?s.data():null;
+    if(!d){ otpMsg("Код олдсонгүй. Дахин код авна уу.","err"); return; }
+    if(d.expiresAt && new Date(d.expiresAt).getTime()<Date.now()){ otpMsg("Кодын хугацаа дууссан.","err"); return; }
+    var h=await otpSha(code+"|"+OTP_ID+"|"+String(d.email||""));
+    if(h!==d.hash){ otpMsg("❌ Код таарахгүй байна. Дахин шалгана уу.","err"); return; }
+    try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
+    otpSetVerified();
+  }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
+}
+
+function otpWire(){
+  var b=otpEl("otpSend");
+  if(b&&!b._w){ b._w=true; b.addEventListener("click",otpSendCode); }
+  var ins=document.querySelectorAll("[data-otp]");
+  for(var i=0;i<ins.length;i++){
+    (function(el,idx){
+      if(el._w) return; el._w=true;
+      el.addEventListener("input",function(){
+        el.value=(el.value||"").replace(/\D/g,"").slice(0,1);
+        el.classList.toggle("fill",!!el.value);
+        if(el.value&&idx<5){ var n=document.querySelector("[data-otp='"+(idx+1)+"']"); if(n) n.focus(); }
+        otpCheckTyped();
+      });
+      el.addEventListener("keydown",function(ev){
+        if(ev.key==="Backspace"&&!el.value&&idx>0){ var p=document.querySelector("[data-otp='"+(idx-1)+"']"); if(p){p.focus();p.value="";p.classList.remove("fill");} }
+      });
+      el.addEventListener("paste",function(ev){
+        var t=(ev.clipboardData||window.clipboardData).getData("text")||"";
+        t=t.replace(/\D/g,"").slice(0,6);
+        if(t.length){ ev.preventDefault(); otpFillBoxes(t); otpCheckTyped(); }
+      });
+    })(ins[i],i);
+  }
 }
 
 function setupSignaturePad(){
@@ -1186,6 +1375,7 @@ function setupSignaturePad(){
   // Зөвшөөрлийн нүд ба "Шинээр" товчийг холбоно (нэг л удаа)
   var _cb=document.getElementById("sigConsent");
   if(_cb&&!_cb._w){ _cb._w=true; _cb.addEventListener("change",sigUpdateSubmit); }
+  try{ otpWire(); }catch(e){}
   var _rb=document.getElementById("sigRedrawBtn");
   if(_rb&&!_rb._w){ _rb._w=true; _rb.addEventListener("click",function(){ clearSignature(); try{toast("✍️ Шинээр зурна уу")}catch(e){} }); }
   sigUpdateSubmit();
@@ -1281,6 +1471,7 @@ async function finalSubmit(){ sigRelease();
   if(!SIG_PHOTO&&(!signaturePad||signaturePad.isEmpty())){toast("✍️ Гарын үсгээ зураагүй байна");return}
   var _cons=document.getElementById("sigConsent");
   if(_cons&&!_cons.checked){ toast("☑️ Баталгаажуулах нүдийг тэмдэглэнэ үү"); return; }
+  if(!OTP_OK){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
   const bd=QS.map(q=>({id:q.id,pts:pts(q),earned:grade(q,answers[q.id])}));
@@ -1318,6 +1509,8 @@ async function finalSubmit(){ sigRelease();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
   doc.hashAlg="SHA-256";
+  doc.emailVerified=true;
+  doc.otpId=OTP_ID||"";
   SIG_HASH=await sigMakeHash({
     n:emp.name||"", d:emp.dept||"", o:emp.pos||"",
     e:String((QP.email)||"").toLowerCase(),
