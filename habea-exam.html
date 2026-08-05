@@ -142,6 +142,26 @@ textarea.inp{resize:none;min-height:120px}
 .sig-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#C7D2FE;font-size:14px;font-weight:600;pointer-events:none;text-align:center;line-height:1.6}
 .sig-hint.hide{display:none}
 .sig-baseline{position:absolute;bottom:40px;left:24px;right:24px;height:1px;background:repeating-linear-gradient(to right,#E0E7FF 0,#E0E7FF 6px,transparent 6px,transparent 12px);pointer-events:none}
+/* ── Бал / харандаа сонголт + хэвтээ горим ── */
+.sig-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.sig-tool{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:100px;border:1.5px solid #E2E8F0;background:#fff;font-size:13.5px;font-weight:700;color:#475569;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.sig-tool.on{border-color:#4F46E5;background:#EEF2FF;color:#4F46E5;box-shadow:0 4px 12px rgba(79,70,229,.16)}
+.sig-thick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#64748B;font-weight:600}
+.sig-thick input{width:104px;accent-color:#4F46E5}
+.sig-kind{margin-left:auto;font-size:11.5px;font-weight:800;color:#4F46E5;background:#EEF2FF;border-radius:100px;padding:5px 11px;white-space:nowrap}
+@media (orientation:landscape) and (max-height:600px){
+  #screenSignature .hdr{display:none}
+  #screenSignature .sig-desc,#screenSignature .sig-userbox,#screenSignature .sig-badge{display:none}
+  #screenSignature .card{padding:14px 16px}
+  #screenSignature h2{font-size:17px;margin-bottom:6px}
+  #screenSignature .sig-page{padding:10px 14px 16px !important}
+  .sig-canvas{height:42vh;min-height:120px}
+  .sig-baseline{bottom:26px}
+}
+#rotateHint{position:fixed;inset:0;z-index:99999;display:none;background:rgba(15,23,42,.95);color:#fff;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:28px}
+#rotateHint.on{display:flex}
+#rotateHint .rh-ico{font-size:60px;animation:rhTurn 2.2s ease-in-out infinite}
+@keyframes rhTurn{0%,42%{transform:rotate(0)}62%,100%{transform:rotate(90deg)}}
 
 /* ☀️ Aurora Light — нэгдмэл гэрэлтэй дэвсгэр */
 body{
@@ -239,14 +259,14 @@ body{
     <div class="hdr-logo">✍️</div>
     <div><div class="hdr-title">Гарын үсэг</div><div class="hdr-sub">Шалгалтын баталгаажуулалт</div></div>
   </div>
-  <div style="max-width:680px;margin:0 auto;padding:32px 20px 60px;width:100%">
+  <div class="sig-page" style="max-width:680px;margin:0 auto;padding:32px 20px 60px;width:100%">
     <button class="btn btn-ghost" style="margin-bottom:20px" onclick="backToExam()">← Шалгалт руу буцах</button>
     <div class="card slide-in" style="padding:32px">
-      <div style="display:inline-flex;align-items:center;gap:8px;background:var(--bl);border:1px solid #C7D2FE;border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;color:var(--blue);margin-bottom:16px">📝 Эцсийн алхам</div>
+      <div class="sig-badge" style="display:inline-flex;align-items:center;gap:8px;background:var(--bl);border:1px solid #C7D2FE;border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;color:var(--blue);margin-bottom:16px">📝 Эцсийн алхам</div>
       <h2 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:8px;letter-spacing:-.3px">Гарын үсгээ зурна уу</h2>
-      <p style="color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:20px">Шалгалтын хариултаа баталгаажуулж, доорх талбарт <b style="color:var(--ink2)">гараараа</b> гарын үсгээ зурна уу. Зурж дуусаад <b style="color:var(--ink2)">Илгээх</b> товчийг дарна.</p>
+      <p class="sig-desc" style="color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:20px">Доорх талбарт <b style="color:var(--ink2)">хуруу, бал (стилус) эсвэл харандаагаар</b> гарын үсгээ зурна уу. Утсыг хэвтээ эргүүлбэл илүү том талбар гарна. Зурж дуусаад <b style="color:var(--ink2)">Илгээх</b> товчийг дарна.</p>
 
-      <div style="background:var(--bg);border-radius:14px;padding:16px;margin-bottom:18px;display:flex;align-items:center;gap:12px">
+      <div class="sig-userbox" style="background:var(--bg);border-radius:14px;padding:16px;margin-bottom:18px;display:flex;align-items:center;gap:12px">
         <div style="width:44px;height:44px;background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0">👤</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:15px;font-weight:800;color:var(--ink);margin-bottom:2px" id="sigName">—</div>
@@ -254,6 +274,12 @@ body{
         </div>
       </div>
 
+      <div class="sig-tools">
+        <button type="button" class="sig-tool on" data-sigtool="pen">🖊️ Бал</button>
+        <button type="button" class="sig-tool" data-sigtool="pencil">✏️ Харандаа</button>
+        <label class="sig-thick">Зузаан <input type="range" id="sigThick" min="1" max="5" step="1" value="3"></label>
+        <span class="sig-kind" id="sigInputKind">Хуруу</span>
+      </div>
       <div class="sig-wrap" id="sigWrap">
         <canvas id="sigCanvas" class="sig-canvas"></canvas>
         <div class="sig-hint" id="sigHint">✍️ Энд гарын үсгээ зур</div>
@@ -579,7 +605,7 @@ function submitExam(){
   openSignature();
 }
 
-function backToExam(){show("Exam")}
+function backToExam(){sigRelease();show("Exam")}
 
 function openSignature(){
   document.getElementById("sigName").textContent=emp.name||"—";
@@ -589,39 +615,168 @@ function openSignature(){
   document.getElementById("sigDate").textContent=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   show("Signature");
   // canvas-ийг идэвхтэй болсны дараа л setup хийнэ (offsetWidth зөв авахын тулд)
-  requestAnimationFrame(()=>setupSignaturePad());
+  sigLandscape();
+  setTimeout(()=>setupSignaturePad(),110);
+  setTimeout(()=>{ if(signaturePad) sigResize(); sigCheckRotate(); },720);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ГАРЫН ҮСЭГ — хуруу / бал (стилус) / харандаа БҮГДИЙГ мэдэрнэ
+   ══════════════════════════════════════════════════════════════ */
+var SIG_TOOL="pen", SIG_THICK=3, SIG_PENSEEN=false;
+var SIG_PRESET={
+  pen:    {color:"rgb(17,24,39)",      min:1.15, max:3.30},   // бэхэн бал — тод, зузаан
+  pencil: {color:"rgba(51,65,85,.72)", min:0.80, max:2.20}    // харандаа — бүдэгхэн, нимгэн
+};
+
+function sigApplyTool(){
+  if(!signaturePad)return;
+  var p=SIG_PRESET[SIG_TOOL]||SIG_PRESET.pen;
+  var k=0.62+SIG_THICK*0.26;              // 1→0.88 · 3→1.40 · 5→1.92
+  signaturePad.penColor=p.color;
+  signaturePad._bMin=+(p.min*k).toFixed(2);
+  signaturePad._bMax=+(p.max*k).toFixed(2);
+  signaturePad.minWidth=signaturePad._bMin;
+  signaturePad.maxWidth=signaturePad._bMax;
+  var btns=document.querySelectorAll("[data-sigtool]");
+  for(var i=0;i<btns.length;i++){
+    btns[i].classList.toggle("on", btns[i].getAttribute("data-sigtool")===SIG_TOOL);
+  }
+}
+
+function sigKindLabel(t){ return t==="pen"?"✒️ Бал / стилус" : (t==="mouse"?"🖱️ Хулгана":"👆 Хуруу"); }
+
+/* Даралт/хүрэлтийн талбайгаар зураасны зузааныг амьдаар өөрчилнө */
+function sigPressure(e){
+  if(!signaturePad||!signaturePad._bMin)return;
+  var f=1;
+  if(e.pointerType==="pen"){
+    var pr=(e.pressure>0?e.pressure:0.5);
+    f=0.50+pr*1.20;                                  // жинхэнэ даралт
+  } else if(e.pointerType==="touch"){
+    var w=e.width||0;
+    f=w>0?Math.min(1.45,0.88+w/46):1.06;             // хуруу — хүрэлтийн талбайгаар
+  }
+  signaturePad.minWidth=+(signaturePad._bMin*f).toFixed(2);
+  signaturePad.maxWidth=+(signaturePad._bMax*f).toFixed(2);
+}
+
+function sigWirePointer(canvas){
+  if(canvas._sigWired)return; canvas._sigWired=true;
+  canvas.addEventListener("pointerdown",function(e){
+    if(e.pointerType==="pen"){ SIG_PENSEEN=true; }
+    else if(SIG_PENSEEN && e.pointerType==="touch"){   // стилус хэрэглэсэн бол алганы хүрэлтийг үл тоох
+      e.stopPropagation(); e.preventDefault(); return;
+    }
+    var b=document.getElementById("sigInputKind");
+    if(b) b.textContent=sigKindLabel(e.pointerType);
+    sigPressure(e);
+  },true);
+  canvas.addEventListener("pointermove",function(e){
+    if(e.buttons||e.pressure>0) sigPressure(e);
+  },{passive:true});
+}
+
+/* ── Хэвтээ байрлал руу автоматаар шилжүүлэх ── */
+function sigLandscape(){
+  try{
+    var el=document.documentElement;
+    var rq=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen||el.msRequestFullscreen;
+    var lock=function(){
+      try{
+        if(screen.orientation&&screen.orientation.lock){
+          var pr=screen.orientation.lock("landscape");
+          if(pr&&pr.then) pr.then(sigHideRotate).catch(sigCheckRotate); else sigCheckRotate();
+        } else sigCheckRotate();
+      }catch(e){ sigCheckRotate(); }
+    };
+    if(window.innerWidth>window.innerHeight){ sigHideRotate(); return; }   // аль хэдийн хэвтээ
+    var p=rq?rq.call(el):null;
+    if(p&&p.then) p.then(lock).catch(lock); else lock();
+  }catch(e){ sigCheckRotate(); }
+}
+function sigCheckRotate(){
+  var need=(window.innerHeight>window.innerWidth)&&(window.innerWidth<820);
+  var el=document.getElementById("rotateHint");
+  var on=document.getElementById("screenSignature");
+  if(el) el.classList.toggle("on", !!(need && on && on.classList.contains("active")));
+}
+function sigHideRotate(){ var el=document.getElementById("rotateHint"); if(el) el.classList.remove("on"); }
+function sigRelease(){
+  sigHideRotate();
+  try{ if(screen.orientation&&screen.orientation.unlock) screen.orientation.unlock(); }catch(e){}
+  try{
+    if(document.fullscreenElement&&document.exitFullscreen) document.exitFullscreen();
+    else if(document.webkitFullscreenElement&&document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }catch(e){}
+}
+
+/* Эргүүлэх/хэмжээ өөрчлөгдөхөд — зурсныг АЛДАЛГҮЙ дахин тааруулна */
+function sigResize(){
+  if(!signaturePad)return;
+  var canvas=document.getElementById("sigCanvas");
+  if(!canvas||!canvas.offsetWidth)return;
+  var data=[]; try{ data=signaturePad.toData()||[]; }catch(e){}
+  var ratio=Math.max(window.devicePixelRatio||1,1);
+  canvas.width=canvas.offsetWidth*ratio;
+  canvas.height=canvas.offsetHeight*ratio;
+  canvas.getContext("2d").scale(ratio,ratio);
+  signaturePad.clear();
+  sigApplyTool();
+  if(data.length){ try{ signaturePad.fromData(data); }catch(e){} }
 }
 
 function setupSignaturePad(){
   const canvas=document.getElementById("sigCanvas");
   const wrap=document.getElementById("sigWrap");
 
-  // Canvas-ын дотоод resolution-ийг CSS хэмжээтэй тааруулна (Retina-д ч нягт)
   const ratio=Math.max(window.devicePixelRatio||1,1);
   canvas.width=canvas.offsetWidth*ratio;
   canvas.height=canvas.offsetHeight*ratio;
   canvas.getContext("2d").scale(ratio,ratio);
 
-  // Өмнө байсан pad-аас холбогдсон listener-уудыг арилгая
   if(signaturePad){try{signaturePad.off()}catch(e){}}
 
   signaturePad=new SignaturePad(canvas,{
-    minWidth:0.3,      // хамгийн нимгэн зураас
-    maxWidth:1.6,      // хамгийн зузаан зураас
-    penColor:"rgb(20,30,50)",     // бараг хар, бяцхан хөхтэй (бэхэн үзэг шиг)
-    backgroundColor:"rgba(255,255,255,0)", // ил тод суурь
-    throttle:8,        // smoother (ms)
-    velocityFilterWeight:0.7
+    backgroundColor:"rgba(255,255,255,0)",
+    throttle:6,                  // илүү нягт цэг → жигд шугам
+    minDistance:1,
+    velocityFilterWeight:0.55    // хурууны сэгсрэлтийг зөөллөнө
   });
+  sigApplyTool();
+  sigWirePointer(canvas);
 
-  // Үсэг зурах эхэн дээр hint арилгаад submit товчийг идэвхжүүлнэ
+  // Хэрэгслийн товч, зузааны гулсуур
+  var btns=document.querySelectorAll("[data-sigtool]");
+  for(var i=0;i<btns.length;i++){
+    (function(b){
+      if(b._w)return; b._w=true;
+      b.addEventListener("click",function(){ SIG_TOOL=b.getAttribute("data-sigtool"); sigApplyTool(); });
+    })(btns[i]);
+  }
+  var th=document.getElementById("sigThick");
+  if(th&&!th._w){ th._w=true; th.addEventListener("input",function(){ SIG_THICK=+th.value; sigApplyTool(); }); }
+
+  if(!window._sigResizeWired){
+    window._sigResizeWired=true;
+    var t=null;
+    var h=function(){
+      clearTimeout(t);
+      t=setTimeout(function(){
+        var sc=document.getElementById("screenSignature");
+        if(sc&&sc.classList.contains("active")){ sigResize(); sigCheckRotate(); }
+      },220);
+    };
+    window.addEventListener("resize",h);
+    window.addEventListener("orientationchange",h);
+  }
+
   signaturePad.addEventListener("beginStroke",()=>{
     document.getElementById("sigHint").classList.add("hide");
     wrap.classList.add("has-sig");
     document.getElementById("btnFinalSubmit").disabled=false;
   });
 
-  // Анхны төлөв
   wrap.classList.remove("has-sig");
   document.getElementById("sigHint").classList.remove("hide");
   document.getElementById("btnFinalSubmit").disabled=true;
@@ -635,56 +790,78 @@ function clearSignature(){
   document.getElementById("btnFinalSubmit").disabled=true;
 }
 
+/* ══ Гарын үсгийг ЧАНАРЫГ НЬ САЙЖРУУЛЖ илгээнэ ══
+   1) Дэлгэцийн зургийг сунгахгүй — вектор өгөгдлөөс 3 дахин нягтаар ДАХИН ЗУРНА
+   2) Хоосон зайг тайрч, гарын үсэг бүтэн талбарыг эзэлнэ
+   3) Supersampling-аар жигдрүүлж, PNG-ээр (алдагдалгүй) хадгална */
 function getSignatureDataUrl(){
   if(!signaturePad||signaturePad.isEmpty())return"";
   try{
-    // signature_pad-аар цэвэр SVG-style цоройг PNG болгож авна
-    const canvas=document.getElementById("sigCanvas");
-    const ctx=canvas.getContext("2d");
-    const w=canvas.width,h=canvas.height;
+    const live=document.getElementById("sigCanvas");
+    const cssW=live.offsetWidth||live.width, cssH=live.offsetHeight||live.height;
+    let data=[]; try{ data=signaturePad.toData()||[]; }catch(e){}
 
-    // Bounding box олох
-    const img=ctx.getImageData(0,0,w,h).data;
-    let minX=w,minY=h,maxX=0,maxY=0,found=false;
-    for(let y=0;y<h;y++){
-      for(let x=0;x<w;x++){
-        const a=img[(y*w+x)*4+3];
-        if(a>0){found=true;if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}
+    // ── 1) Вектор өгөгдлөөс өндөр нягтаар дахин зурах ──
+    const SS=3;
+    let src=live, sw=live.width, sh=live.height;
+    if(data.length&&typeof SignaturePad!=="undefined"){
+      try{
+        const hi=document.createElement("canvas");
+        hi.width=Math.round(cssW*SS); hi.height=Math.round(cssH*SS);
+        hi.getContext("2d").scale(SS,SS);
+        const tmp=new SignaturePad(hi,{backgroundColor:"rgba(255,255,255,0)"});
+        tmp.fromData(data);
+        try{ tmp.off(); }catch(e){}
+        src=hi; sw=hi.width; sh=hi.height;
+      }catch(e){ src=live; sw=live.width; sh=live.height; }
+    }
+
+    // ── 2) Бэхний хүрээг олж тайрах ──
+    const ctx=src.getContext("2d");
+    const img=ctx.getImageData(0,0,sw,sh).data;
+    let minX=sw,minY=sh,maxX=0,maxY=0,found=false;
+    for(let y=0;y<sh;y++){
+      for(let x=0;x<sw;x++){
+        if(img[(y*sw+x)*4+3]>8){ found=true;
+          if(x<minX)minX=x; if(x>maxX)maxX=x;
+          if(y<minY)minY=y; if(y>maxY)maxY=y; }
       }
     }
     if(!found)return"";
-    const pad=12;
-    minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);
-    maxX=Math.min(w-1,maxX+pad);maxY=Math.min(h-1,maxY+pad);
-    const cw=maxX-minX,ch=maxY-minY;
+    const pad=Math.round(Math.max(10,(maxY-minY)*0.10));
+    minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+    maxX=Math.min(sw-1,maxX+pad); maxY=Math.min(sh-1,maxY+pad);
+    const cw=Math.max(1,maxX-minX), ch=Math.max(1,maxY-minY);
 
-    // Max 600px өргөн болгож downscale
-    const MAX_W=600;
-    const scale=cw>MAX_W?MAX_W/cw:1;
-    const outW=Math.round(cw*scale),outH=Math.round(ch*scale);
+    // ── 3) Тохирох хэмжээнд буулгах (хэт жижиг бол томруулна) ──
+    const MAX_W=900, MIN_W=420;
+    let scale=1;
+    if(cw>MAX_W) scale=MAX_W/cw;
+    else if(cw<MIN_W) scale=Math.min(2,MIN_W/cw);
+    const outW=Math.max(1,Math.round(cw*scale)), outH=Math.max(1,Math.round(ch*scale));
+
     const off=document.createElement("canvas");
-    off.width=outW;off.height=outH;
+    off.width=outW; off.height=outH;
     const octx=off.getContext("2d");
-    octx.fillStyle="#FFFFFF";
-    octx.fillRect(0,0,outW,outH);
-    // Зургийн нягтралыг сайжруулах
-    octx.imageSmoothingEnabled=true;
-    octx.imageSmoothingQuality="high";
-    octx.drawImage(canvas,minX,minY,cw,ch,0,0,outW,outH);
+    octx.fillStyle="#FFFFFF"; octx.fillRect(0,0,outW,outH);
+    octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality="high";
+    octx.drawImage(src,minX,minY,cw,ch,0,0,outW,outH);
 
-    let dataUrl=off.toDataURL("image/jpeg",0.9);
-    if(!dataUrl.startsWith("data:image/jpeg")){
-      dataUrl=off.toDataURL("image/png");
+    // ── 4) PNG (алдагдалгүй). Хэт том бол JPEG ──
+    let dataUrl=off.toDataURL("image/png");
+    if(dataUrl.length>620*1024){
+      const j=off.toDataURL("image/jpeg",0.92);
+      if(j&&j.length<dataUrl.length) dataUrl=j;
     }
-    console.log("[Signature] size:",(dataUrl.length/1024).toFixed(1)+"KB",`(${outW}x${outH})`);
+    console.log("[Signature] "+(dataUrl.length/1024).toFixed(1)+"KB ("+outW+"x"+outH+") src="+sw+"x"+sh);
     return dataUrl;
   }catch(e){
     console.error("[Signature] export failed:",e);
-    try{return signaturePad.toDataURL("image/jpeg")}catch(e2){return""}
+    try{return signaturePad.toDataURL("image/png")}catch(e2){return""}
   }
 }
 
-async function finalSubmit(){
+async function finalSubmit(){ sigRelease();
   if(!signaturePad||signaturePad.isEmpty()){toast("✍️ Гарын үсгээ зураагүй байна");return}
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
@@ -821,5 +998,11 @@ init();
 <!-- ← Буцах товч (шалгалт дундуур байвал баталгаажуулна) -->
 
 <script src="/exam-back.js" defer></script>
+<div id="rotateHint">
+  <div class="rh-ico">📱</div>
+  <div style="font-size:19px;font-weight:900">Утсаа хэвтээ эргүүлнэ үү</div>
+  <div style="font-size:14px;opacity:.82;line-height:1.6;max-width:330px">Гарын үсгээ том, тод зурахын тулд утсаа хажуу тийш эргүүлнэ үү. (Дэлгэц эргэх тохиргоо асаалттай эсэхээ шалгаарай.)</div>
+  <button type="button" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.45)" onclick="sigHideRotate()">Ингэж үргэлжлүүлэх</button>
+</div>
 </body>
 </html>
