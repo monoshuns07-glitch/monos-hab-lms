@@ -150,6 +150,9 @@ textarea.inp{resize:none;min-height:120px}
 .sig-thick input{width:104px;accent-color:#4F46E5}
 .sig-kind{margin-left:auto;font-size:11.5px;font-weight:800;color:#4F46E5;background:#EEF2FF;border-radius:100px;padding:5px 11px;white-space:nowrap}
 .sig-note{font-size:12px;color:#64748B;line-height:1.5;margin:-4px 0 10px}
+.sig-diag{margin-top:10px;font-size:11.5px;color:#64748B;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:7px 11px;font-family:ui-monospace,Menlo,Consolas,monospace;line-height:1.5}
+.sig-diag.live{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.sig-diag.dead{background:#FEF2F2;border-color:#FECACA;color:#B91C1C}
 .sig-wrap.photo{border-style:solid;border-color:#0EA5E9;background:#F0F9FF}
 #sigPhotoBtn{font-size:13.5px;padding:11px 14px}
 @media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:8px 12px;font-size:12.5px} }
@@ -310,6 +313,7 @@ textarea.inp{resize:none;min-height:120px}
         <div class="sig-baseline"></div>
       </div>
 
+      <div class="sig-diag" id="sigDiag">Дэлгэц юу мэдэрч байгаа: <b>хүлээгдэж байна…</b></div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;font-size:12px;color:var(--muted)">
         <div>📅 <b id="sigDate">—</b></div>
         <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px" onclick="clearSignature()">🗑️ Цэвэрлэх</button>
@@ -642,6 +646,7 @@ function openSignature(){
   // canvas-ийг идэвхтэй болсны дараа л setup хийнэ (offsetWidth зөв авахын тулд)
   sigLandscape();
   setTimeout(()=>setupSignaturePad(),110);
+  try{ sigDiagReset(); }catch(e){}
   setTimeout(()=>{ if(signaturePad) sigResize(); sigCheckRotate(); },720);
 }
 
@@ -673,18 +678,49 @@ function sigKindLabel(t){ return t==="pen"?"✒️ Стилус илэрлээ" 
 
 /* Юугаар бичиж байгааг ЗУРАХААС ӨМНӨ таних.
    Стилус дэлгэц дээгүүр өнгөрөхөд (hover) ч мэдэрнэ. */
+var SIG_PEN_TS=0, SIG_EVENTS=0;
+
+/* Дэлгэцээс ирж буй дохиог ШУУД харуулна.
+   Хэрэв та балаар хүрэхэд энэ тоо нэмэгдэхгүй бол — дэлгэц тухайн зүйлийг
+   огт мэдрээгүй гэсэн үг (цахилгаан дамжуулдаггүй зүйлийг дэлгэц уншдаггүй). */
+function sigDiag(e){
+  var el=document.getElementById("sigDiag");
+  if(!el) return;
+  if(!e){ el.className="sig-diag"; el.innerHTML='Дэлгэц юу мэдэрч байгаа: <b>хүлээгдэж байна…</b>'; return; }
+  SIG_EVENTS++;
+  var pr=(typeof e.pressure==="number")?e.pressure.toFixed(2):"—";
+  var wd=(typeof e.width==="number")?Math.round(e.width):"—";
+  el.className="sig-diag live";
+  el.innerHTML='Дохио: <b>'+SIG_EVENTS+'</b> · төрөл: <b>'+(e.pointerType||"?")+'</b> · даралт: <b>'+pr+'</b> · өргөн: <b>'+wd+'</b>px';
+}
+function sigDiagReset(){
+  SIG_EVENTS=0; SIG_PENSEEN=false; SIG_PEN_TS=0;
+  sigDiag(null);
+  setTimeout(function(){
+    var el=document.getElementById("sigDiag");
+    if(el&&SIG_EVENTS===0){
+      el.className="sig-diag dead";
+      el.innerHTML='Дэлгэцээс дохио ирсэнгүй. Хуруу эсвэл <b>цахилгаан дамжуулдаг</b> зүйлээр хүрнэ үү — энгийн бал, харандааг дэлгэц уншдаггүй.';
+    }
+  },9000);
+}
+
 function sigDetect(e){
   var kind=(e&&e.pointerType)||"touch";
+  sigDiag(e);
   var b=document.getElementById("sigInputKind");
   if(b&&b._k!==kind){
     b._k=kind;
     b.textContent=sigKindLabel(kind);
     b.classList.toggle("pen",kind==="pen");
   }
-  if(kind==="pen"&&!SIG_PENSEEN){
-    SIG_PENSEEN=true;
-    SIG_TOOL="pen"; sigApplyTool();          // стилус илэрвэл автоматаар Бал горим
-    try{ toast("✒️ Стилус илэрлээ — Бал горимд шилжлээ"); }catch(err){}
+  if(kind==="pen"){
+    SIG_PEN_TS=Date.now();
+    if(!SIG_PENSEEN){
+      SIG_PENSEEN=true;
+      SIG_TOOL="pen"; sigApplyTool();        // стилус илэрвэл автоматаар Бал горим
+      try{ toast("✒️ Стилус илэрлээ — Бал горимд шилжлээ"); }catch(err){}
+    }
   }
 }
 
@@ -713,8 +749,10 @@ function sigWirePointer(canvas){
   });
 
   canvas.addEventListener("pointerdown",function(e){
-    if(e.pointerType==="pen"){ SIG_PENSEEN=true; }
-    else if(SIG_PENSEEN && e.pointerType==="touch"){   // стилус хэрэглэсэн бол алганы хүрэлтийг үл тоох
+    if(e.pointerType==="pen"){ SIG_PENSEEN=true; SIG_PEN_TS=Date.now(); }
+    else if(e.pointerType==="touch" && SIG_PEN_TS && (Date.now()-SIG_PEN_TS)<900){
+      // Стилус ДӨНГӨЖ САЯ хүрсэн үед л алганы хүрэлтийг үл тоох.
+      // (Байнга блоклодог байсныг зассан — нэг л удаа pen илэрвэл хуруу мөнхөд ажиллахаа больдог байв.)
       e.stopPropagation(); e.preventDefault(); return;
     }
     sigDetect(e); sigPressure(e);
