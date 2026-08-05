@@ -2310,27 +2310,63 @@ document.getElementById('addUserSave').addEventListener('click', async()=>{
   document.getElementById('addUserSave').disabled=true;
   document.getElementById('addUserSave').innerHTML='<span class="spinner-sm"></span>Бүртгэж байна...';
   try{
-    const cred=await secondaryAuth.createUserWithEmailAndPassword(email.toLowerCase(),password);
-    await secondaryAuth.signOut();
+    const em=email.toLowerCase();
+    let cred=null;
+    try{
+      cred=await secondaryAuth.createUserWithEmailAndPassword(em,password);
+    } catch(eCreate){
+      if(eCreate.code!=='auth/email-already-in-use') throw eCreate;
+      // Auth-д бүртгэл байгаа ч Firestore-т баримт байхгүй бол — өмнөх оролдлого дутуу үлдсэн тул НӨХНӨ
+      const dup=(allUsers||[]).some(u=>String(u.email||'').toLowerCase()===em);
+      if(dup) throw eCreate;
+      try{
+        cred=await secondaryAuth.signInWithEmailAndPassword(em,password);
+      } catch(eIn){
+        throw new Error('Энэ Gmail хаяг Firebase Auth-д бүртгэлтэй боловч мэдээлэл нь дутуу үлдсэн байна. Өмнө оруулсан нууц үгээ бичиж дахин оролдоно уу.');
+      }
+    }
+
     const userData={
-      email:email.toLowerCase(), uid:cred.user.uid,
+      email:em, uid:cred.user.uid,
       lastName, firstName, position, department:dept,
       role:'employee', isActive:true,
       createdAt:firebase.firestore.FieldValue.serverTimestamp(),
       totalSiteTime:0
     };
-    await Promise.all([
-      db.collection('users').doc(cred.user.uid).set(userData),
-      db.collection('allowed_users').doc(cred.user.uid).set({
-        email:email.toLowerCase(), uid:cred.user.uid,
-        createdAt:firebase.firestore.FieldValue.serverTimestamp()
-      })
-    ]);
+    const allowData={ email:em, uid:cred.user.uid, createdAt:firebase.firestore.FieldValue.serverTimestamp() };
+
+    /* Firestore дүрэм ихэвчлэн "хэрэглэгч зөвхөн ӨӨРИЙН баримтаа бичнэ" гэсэн байдаг.
+       Тиймээс эхлээд ШИНЭ ХЭРЭГЛЭГЧИЙН эрхээр (secondary app) бичихийг оролдоно,
+       бүтэхгүй бол админы эрхээр. Хоёулаа бүтэхгүй үед л алдаа мэдэгдэнэ. */
+    const sdb=secondaryApp.firestore();
+    async function writeBoth(ref1,ref2,data){
+      try{ await ref1.set(data,{merge:true}); return null; }
+      catch(e1){
+        try{ await ref2.set(data,{merge:true}); return null; }
+        catch(e2){ return e2; }
+      }
+    }
+    const uErr=await writeBoth(
+      sdb.collection('users').doc(cred.user.uid),
+      db.collection('users').doc(cred.user.uid), userData);
+    const aErr=await writeBoth(
+      db.collection('allowed_users').doc(cred.user.uid),
+      sdb.collection('allowed_users').doc(cred.user.uid), allowData);
+
+    try{ await secondaryAuth.signOut(); }catch(e){}
+
+    if(uErr){
+      throw new Error('«users» цуглуулгад бичих эрх алга. Firebase Console → Firestore → Rules хэсэгт '
+        +'match /users/{uid} дээр "allow create: if request.auth != null;" нэмнэ үү. ('+uErr.message+')');
+    }
+    // allowed_users-ийг нэвтрэлтэд ашигладаггүй тул алдаа гарсан ч бүртгэл хүчинтэй
+    if(aErr) console.warn('allowed_users бичигдсэнгүй (нэвтрэхэд нөлөөлөхгүй):', aErr.message);
     toast('Ажилтан амжилттай бүртгэгдлээ','success');
     addUserModal.classList.remove('show'); loadUsers();
   } catch(e){
     const msg=e.code==='auth/email-already-in-use'?'Энэ Gmail хаяг аль хэдийн бүртгэлтэй байна':
               e.code==='auth/invalid-email'?'Gmail хаяг буруу форматтай байна':
+              e.code==='auth/weak-password'?'Нууц үг хэт сул байна (6+ тэмдэгт)':
               'Алдаа: '+e.message;
     statusEl.innerHTML=`<span style="color:#FF6B6B">${msg}</span>`;
   } finally{
