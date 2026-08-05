@@ -149,6 +149,9 @@ textarea.inp{resize:none;min-height:120px}
 .sig-thick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#64748B;font-weight:600}
 .sig-thick input{width:104px;accent-color:#4F46E5}
 .sig-kind{margin-left:auto;font-size:11.5px;font-weight:800;color:#4F46E5;background:#EEF2FF;border-radius:100px;padding:5px 11px;white-space:nowrap}
+.sig-note{font-size:12px;color:#64748B;line-height:1.5;margin:-4px 0 10px}
+.sig-kind.pen{color:#047857;background:#D1FAE5}
+@media (orientation:landscape) and (max-height:600px){ .sig-note{display:none} }
 @media (orientation:landscape) and (max-height:600px){
   #screenSignature .hdr{display:none}
   #screenSignature .sig-desc,#screenSignature .sig-userbox,#screenSignature .sig-badge{display:none}
@@ -295,8 +298,9 @@ textarea.inp{resize:none;min-height:120px}
         <button type="button" class="sig-tool on" data-sigtool="pen">🖊️ Бал</button>
         <button type="button" class="sig-tool" data-sigtool="pencil">✏️ Харандаа</button>
         <label class="sig-thick">Зузаан <input type="range" id="sigThick" min="1" max="5" step="1" value="3"></label>
-        <span class="sig-kind" id="sigInputKind">Хуруу</span>
+        <span class="sig-kind" id="sigInputKind">Хүлээж байна…</span>
       </div>
+      <div class="sig-note">Дэлгэц дээр <b>хуруу</b> эсвэл <b>стилус (S Pen)</b>-ээр зурна уу — юугаар зурж байгааг өөрөө таниад тохируулна. Энгийн бал, харандааг мэдрэх дэлгэц байдаггүй.</div>
       <div class="sig-wrap" id="sigWrap">
         <canvas id="sigCanvas" class="sig-canvas"></canvas>
         <div class="sig-hint" id="sigHint">✍️ Энд гарын үсгээ зур</div>
@@ -657,7 +661,24 @@ function sigApplyTool(){
   }
 }
 
-function sigKindLabel(t){ return t==="pen"?"✒️ Бал / стилус" : (t==="mouse"?"🖱️ Хулгана":"👆 Хуруу"); }
+function sigKindLabel(t){ return t==="pen"?"✒️ Стилус илэрлээ" : (t==="mouse"?"🖱️ Хулгана":"👆 Хуруу"); }
+
+/* Юугаар бичиж байгааг ЗУРАХААС ӨМНӨ таних.
+   Стилус дэлгэц дээгүүр өнгөрөхөд (hover) ч мэдэрнэ. */
+function sigDetect(e){
+  var kind=(e&&e.pointerType)||"touch";
+  var b=document.getElementById("sigInputKind");
+  if(b&&b._k!==kind){
+    b._k=kind;
+    b.textContent=sigKindLabel(kind);
+    b.classList.toggle("pen",kind==="pen");
+  }
+  if(kind==="pen"&&!SIG_PENSEEN){
+    SIG_PENSEEN=true;
+    SIG_TOOL="pen"; sigApplyTool();          // стилус илэрвэл автоматаар Бал горим
+    try{ toast("✒️ Стилус илэрлээ — Бал горимд шилжлээ"); }catch(err){}
+  }
+}
 
 /* Даралт/хүрэлтийн талбайгаар зураасны зузааныг амьдаар өөрчилнө */
 function sigPressure(e){
@@ -676,18 +697,31 @@ function sigPressure(e){
 
 function sigWirePointer(canvas){
   if(canvas._sigWired)return; canvas._sigWired=true;
+  var wrap=document.getElementById("sigWrap")||canvas;
+
+  // Хүрэхээс/зурахаас ӨМНӨ таних (стилус hover хийхэд ч ажиллана)
+  ["pointerover","pointerenter","pointermove","pointerdown"].forEach(function(ev){
+    wrap.addEventListener(ev,sigDetect,{passive:true,capture:true});
+  });
+
   canvas.addEventListener("pointerdown",function(e){
     if(e.pointerType==="pen"){ SIG_PENSEEN=true; }
     else if(SIG_PENSEEN && e.pointerType==="touch"){   // стилус хэрэглэсэн бол алганы хүрэлтийг үл тоох
       e.stopPropagation(); e.preventDefault(); return;
     }
-    var b=document.getElementById("sigInputKind");
-    if(b) b.textContent=sigKindLabel(e.pointerType);
-    sigPressure(e);
+    sigDetect(e); sigPressure(e);
   },true);
   canvas.addEventListener("pointermove",function(e){
     if(e.buttons||e.pressure>0) sigPressure(e);
   },{passive:true});
+
+  // Стилустай төхөөрөмж эсэхийг эхнээс нь мэдэх оролдлого
+  try{
+    if(window.matchMedia&&window.matchMedia("(any-pointer: fine)").matches&&navigator.maxTouchPoints>0){
+      var b=document.getElementById("sigInputKind");
+      if(b&&!b._k) b.textContent="Хуруу / стилус";
+    }
+  }catch(e){}
 }
 
 /* ── Хэвтээ байрлал руу автоматаар шилжүүлэх ── */
