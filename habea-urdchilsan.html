@@ -150,6 +150,9 @@ textarea.inp{resize:none;min-height:120px}
 .sig-thick input{width:104px;accent-color:#4F46E5}
 .sig-kind{margin-left:auto;font-size:11.5px;font-weight:800;color:#4F46E5;background:#EEF2FF;border-radius:100px;padding:5px 11px;white-space:nowrap}
 .sig-note{font-size:12px;color:#64748B;line-height:1.5;margin:-4px 0 10px}
+.sig-wrap.photo{border-style:solid;border-color:#0EA5E9;background:#F0F9FF}
+#sigPhotoBtn{font-size:13.5px;padding:11px 14px}
+@media (orientation:landscape) and (max-height:600px){ #sigPhotoBtn{padding:8px 12px;font-size:12.5px} }
 .sig-kind.pen{color:#047857;background:#D1FAE5}
 @media (orientation:landscape) and (max-height:600px){ .sig-note{display:none} }
 @media (orientation:landscape) and (max-height:600px){
@@ -310,6 +313,11 @@ textarea.inp{resize:none;min-height:120px}
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;font-size:12px;color:var(--muted)">
         <div>📅 <b id="sigDate">—</b></div>
         <button class="btn btn-ghost" style="padding:6px 14px;font-size:13px" onclick="clearSignature()">🗑️ Цэвэрлэх</button>
+      </div>
+      <input type="file" id="sigPhotoFile" accept="image/*" capture="environment" style="display:none">
+      <button type="button" class="btn btn-outline" id="sigPhotoBtn" style="width:100%;justify-content:center;margin-top:12px">📷 Цаасан дээр балаар зурсан гарын үсгээ оруулах</button>
+      <div class="sig-note" style="margin-top:8px">Цаасан дээр <b>жинхэнэ балаар</b> гарын үсгээ зураад зургийг нь аваарай — програм өөрөө цэвэрлэж, дэвсгэрийг нь арилгаад гарын үсэг болгоно.</div>
+      <div style="display:none">
       </div>
 
       <div style="display:flex;gap:10px;margin-top:20px">
@@ -773,6 +781,167 @@ function sigResize(){
   if(data.length){ try{ signaturePad.fromData(data); }catch(e){} }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ЦААСАН ДЭЭР ЖИНХЭНЭ БАЛААР зурсан гарын үсгийг зургаар оруулах.
+   Дэлгэц бал мэдэрдэггүй тул — цаасан дээр зураад зургийг нь авна.
+   Програм дэвсгэрийг нь автоматаар арилгаж, цэвэр гарын үсэг болгоно.
+   Ямар ч утсанд ажиллана (камер эсвэл галерей).
+   ══════════════════════════════════════════════════════════════ */
+var SIG_PHOTO=null;
+
+function sigParseColor(c){
+  var m=String(c).match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  return m?[+m[1],+m[2],+m[3]]:[17,24,39];
+}
+
+/* Зургийг цэвэр гарын үсэг болгоно.
+   Гар утсаар авсан зураг жигд бус гэрэлтэй, сүүдэртэй байдаг тул
+   НУТГИЙН (adaptive) босго ашиглана — цэг бүрийг ойр орчныхоо дундажтай харьцуулна. */
+function sigCleanPhoto(img){
+  var MAXD=1400;
+  var s=Math.min(1,MAXD/Math.max(img.width,img.height));
+  var w=Math.max(1,Math.round(img.width*s)), h=Math.max(1,Math.round(img.height*s));
+  var c=document.createElement("canvas"); c.width=w; c.height=h;
+  var cx=c.getContext("2d"); cx.drawImage(img,0,0,w,h);
+  var px=cx.getImageData(0,0,w,h).data;
+
+  // 1) Саарал болгох
+  var g=new Float32Array(w*h);
+  for(var i=0,j=0;i<px.length;i+=4,j++) g[j]=0.299*px[i]+0.587*px[i+1]+0.114*px[i+2];
+
+  // 2) Интеграл зураг → нутгийн дундажийг хурдан бодно
+  var W=w+1, ii=new Float64Array(W*(h+1));
+  for(var y=0;y<h;y++){
+    var rowSum=0;
+    for(var x=0;x<w;x++){
+      rowSum+=g[y*w+x];
+      ii[(y+1)*W+(x+1)]=ii[y*W+(x+1)]+rowSum;
+    }
+  }
+  function boxMean(x0,y0,x1,y1){
+    x0=Math.max(0,x0); y0=Math.max(0,y0);
+    x1=Math.min(w-1,x1); y1=Math.min(h-1,y1);
+    var a=ii[y0*W+x0], b=ii[y0*W+(x1+1)], cc=ii[(y1+1)*W+x0], d=ii[(y1+1)*W+(x1+1)];
+    var n=(x1-x0+1)*(y1-y0+1);
+    return (d-b-cc+a)/n;
+  }
+
+  var R=Math.max(10,Math.round(Math.min(w,h)/14));   // цонхны радиус
+  var K=0.14;                                         // хэр бараан байвал бэх гэж үзэх
+  var alpha=new Uint8ClampedArray(w*h);
+  for(var y2=0;y2<h;y2++){
+    for(var x2=0;x2<w;x2++){
+      var m=boxMean(x2-R,y2-R,x2+R,y2+R);
+      var thr=m*(1-K);
+      var v=g[y2*w+x2];
+      var soft=Math.max(5,m*0.05);
+      var diff=thr-v;
+      alpha[y2*w+x2]= diff<=0 ? 0 : Math.min(255,Math.round(255*Math.min(1,diff/soft)));
+    }
+  }
+
+  // 3) Ганц бие цэгүүдийг (тоос, ширхэг) арилгана
+  var clean=new Uint8ClampedArray(w*h);
+  for(var y3=1;y3<h-1;y3++){
+    for(var x3=1;x3<w-1;x3++){
+      var idx=y3*w+x3, a0=alpha[idx];
+      if(!a0){ continue; }
+      var nb=0;
+      for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+        if(dx||dy){ if(alpha[(y3+dy)*w+(x3+dx)]>60) nb++; }
+      }
+      clean[idx]= nb>=2 ? a0 : 0;
+    }
+  }
+
+  // 4) Бэхийг сонгосон өнгөөр, дэвсгэрийг ил тодоор
+  var col=(SIG_PRESET[SIG_TOOL]||SIG_PRESET.pen);
+  var rgb=sigParseColor(col.color);
+  var out=cx.createImageData(w,h), op=out.data;
+  for(var m2=0,n2=0;m2<op.length;m2+=4,n2++){
+    op[m2]=rgb[0]; op[m2+1]=rgb[1]; op[m2+2]=rgb[2]; op[m2+3]=clean[n2];
+  }
+  var oc=document.createElement("canvas"); oc.width=w; oc.height=h;
+  oc.getContext("2d").putImageData(out,0,0);
+  return oc;
+}
+
+/* Бэхний хүрээгээр тайрч, цагаан дэвсгэртэй PNG болгоно */
+function sigCropToPng(src,maxW){
+  var w=src.width,h=src.height;
+  var ctx=src.getContext("2d");
+  var img=ctx.getImageData(0,0,w,h).data;
+  var minX=w,minY=h,maxX=0,maxY=0,found=false;
+  for(var y=0;y<h;y++)for(var x=0;x<w;x++){
+    if(img[(y*w+x)*4+3]>10){found=true;
+      if(x<minX)minX=x; if(x>maxX)maxX=x;
+      if(y<minY)minY=y; if(y>maxY)maxY=y;}
+  }
+  if(!found) return null;
+  var pad=Math.round(Math.max(8,(maxY-minY)*0.10));
+  minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+  maxX=Math.min(w-1,maxX+pad); maxY=Math.min(h-1,maxY+pad);
+  var cw=Math.max(1,maxX-minX), ch=Math.max(1,maxY-minY);
+  var MW=maxW||900, sc=cw>MW?MW/cw:(cw<420?Math.min(2,420/cw):1);
+  var ow=Math.round(cw*sc), oh=Math.round(ch*sc);
+  var off=document.createElement("canvas"); off.width=ow; off.height=oh;
+  var octx=off.getContext("2d");
+  octx.fillStyle="#FFFFFF"; octx.fillRect(0,0,ow,oh);
+  octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality="high";
+  octx.drawImage(src,minX,minY,cw,ch,0,0,ow,oh);
+  return {url:off.toDataURL("image/png"), w:ow, h:oh, src:src, box:[minX,minY,cw,ch]};
+}
+
+/* Дэлгэц дээр урьдчилан харуулна */
+function sigShowPhoto(res){
+  var canvas=document.getElementById("sigCanvas");
+  var wrap=document.getElementById("sigWrap");
+  var ratio=Math.max(window.devicePixelRatio||1,1);
+  var cw=canvas.offsetWidth, chh=canvas.offsetHeight;
+  canvas.width=cw*ratio; canvas.height=chh*ratio;
+  var cx=canvas.getContext("2d"); cx.scale(ratio,ratio);
+  cx.clearRect(0,0,cw,chh);
+  var b=res.box, sw=b[2], sh=b[3];
+  var k=Math.min((cw-16)/sw,(chh-16)/sh);
+  var dw=sw*k, dh=sh*k;
+  cx.imageSmoothingEnabled=true; cx.imageSmoothingQuality="high";
+  cx.drawImage(res.src,b[0],b[1],sw,sh,(cw-dw)/2,(chh-dh)/2,dw,dh);
+  wrap.classList.add("has-sig","photo");
+  document.getElementById("sigHint").classList.add("hide");
+  document.getElementById("btnFinalSubmit").disabled=false;
+  try{ if(signaturePad) signaturePad.off(); }catch(e){}   // зураг идэвхтэй үед зурахгүй
+}
+
+function sigLoadPhoto(file){
+  if(!file) return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    var img=new Image();
+    img.onload=function(){
+      try{
+        var clean=sigCleanPhoto(img);
+        var res=sigCropToPng(clean,900);
+        if(!res){ try{toast("⚠️ Зурган дээр гарын үсэг олдсонгүй. Гэрэлтэй газар, цагаан цаасан дээр дахин авна уу")}catch(e){} return; }
+        SIG_PHOTO=res.url;
+        sigShowPhoto(res);
+        try{toast("✅ Гарын үсэг оруулагдлаа ("+res.w+"×"+res.h+")")}catch(e){}
+      }catch(e){ try{toast("⚠️ Зураг боловсруулахад алдаа гарлаа")}catch(e2){} }
+    };
+    img.onerror=function(){ try{toast("⚠️ Зургийг уншиж чадсангүй")}catch(e){} };
+    img.src=fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+
+function sigWirePhoto(){
+  var btn=document.getElementById("sigPhotoBtn");
+  var inp=document.getElementById("sigPhotoFile");
+  if(!btn||!inp||btn._w) return;
+  btn._w=true;
+  btn.addEventListener("click",function(){ inp.value=""; inp.click(); });
+  inp.addEventListener("change",function(){ sigLoadPhoto(inp.files&&inp.files[0]); });
+}
+
 function setupSignaturePad(){
   const canvas=document.getElementById("sigCanvas");
   const wrap=document.getElementById("sigWrap");
@@ -786,12 +955,14 @@ function setupSignaturePad(){
 
   signaturePad=new SignaturePad(canvas,{
     backgroundColor:"rgba(255,255,255,0)",
-    throttle:6,                  // илүү нягт цэг → жигд шугам
-    minDistance:1,
-    velocityFilterWeight:0.55    // хурууны сэгсрэлтийг зөөллөнө
+    throttle:0,                  // цэг бүрийг барина — сул/тасалданги хүрэлт ч алдагдахгүй
+    minDistance:0,               // хамгийн бага хөдөлгөөнийг ч бүртгэнэ
+    velocityFilterWeight:0.55,   // сэгсрэлтийг зөөллөнө
+    dotSize:function(){ return (this.minWidth+this.maxWidth)/2; }  // товшилт ч тэмдэг үлдээнэ
   });
   sigApplyTool();
   sigWirePointer(canvas);
+  sigWirePhoto();
 
   // Хэрэгслийн товч, зузааны гулсуур
   var btns=document.querySelectorAll("[data-sigtool]");
@@ -830,10 +1001,15 @@ function setupSignaturePad(){
 }
 
 function clearSignature(){
-  if(!signaturePad)return;
-  signaturePad.clear();
+  SIG_PHOTO=null;
+  var wrap=document.getElementById("sigWrap");
+  if(wrap) wrap.classList.remove("has-sig","photo");
+  if(signaturePad){
+    try{ signaturePad.on(); }catch(e){}     // зургийн горимоос гарч дахин зурах боломжтой
+    try{ signaturePad.clear(); }catch(e){}
+    try{ sigResize(); }catch(e){}
+  }
   document.getElementById("sigHint").classList.remove("hide");
-  document.getElementById("sigWrap").classList.remove("has-sig");
   document.getElementById("btnFinalSubmit").disabled=true;
 }
 
@@ -842,6 +1018,7 @@ function clearSignature(){
    2) Хоосон зайг тайрч, гарын үсэг бүтэн талбарыг эзэлнэ
    3) Supersampling-аар жигдрүүлж, PNG-ээр (алдагдалгүй) хадгална */
 function getSignatureDataUrl(){
+  if(SIG_PHOTO) return SIG_PHOTO;          // цаасан дээрх балын гарын үсэг
   if(!signaturePad||signaturePad.isEmpty())return"";
   try{
     const live=document.getElementById("sigCanvas");
@@ -909,7 +1086,7 @@ function getSignatureDataUrl(){
 }
 
 async function finalSubmit(){ sigRelease();
-  if(!signaturePad||signaturePad.isEmpty()){toast("✍️ Гарын үсгээ зураагүй байна");return}
+  if(!SIG_PHOTO&&(!signaturePad||signaturePad.isEmpty())){toast("✍️ Гарын үсгээ зураагүй байна");return}
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
   const bd=QS.map(q=>({id:q.id,pts:pts(q),earned:grade(q,answers[q.id])}));
