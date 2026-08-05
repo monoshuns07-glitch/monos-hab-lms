@@ -136,9 +136,9 @@ textarea.inp{resize:none;min-height:120px}
 }
 
 /* SIGNATURE PAD */
-.sig-wrap{background:#FFFFFF;border:2.5px dashed #C7D2FE;border-radius:16px;padding:8px;position:relative;overflow:hidden}
+.sig-wrap{background:#FFFFFF;border:2.5px dashed #C7D2FE;border-radius:16px;padding:0;position:relative;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 .sig-wrap.has-sig{border-style:solid;border-color:#4F46E5;background:linear-gradient(135deg,#FAFBFF,#fff)}
-.sig-canvas{display:block;width:100%;height:240px;background:#fff;border-radius:10px;cursor:crosshair;touch-action:none}
+.sig-canvas{display:block;width:100%;height:240px;background:#fff;border-radius:14px;cursor:crosshair;touch-action:none;-webkit-user-select:none;user-select:none}
 .sig-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#C7D2FE;font-size:14px;font-weight:600;pointer-events:none;text-align:center;line-height:1.6}
 .sig-hint.hide{display:none}
 .sig-baseline{position:absolute;bottom:40px;left:24px;right:24px;height:1px;background:repeating-linear-gradient(to right,#E0E7FF 0,#E0E7FF 6px,transparent 6px,transparent 12px);pointer-events:none}
@@ -682,24 +682,33 @@ var SIG_PEN_TS=0, SIG_EVENTS=0;
 /* Дэлгэцээс ирж буй дохиог ШУУД харуулна.
    Хэрэв та балаар хүрэхэд энэ тоо нэмэгдэхгүй бол — дэлгэц тухайн зүйлийг
    огт мэдрээгүй гэсэн үг (цахилгаан дамжуулдаггүй зүйлийг дэлгэц уншдаггүй). */
+var SIG_STROKES=0;
 function sigDiag(e){
   var el=document.getElementById("sigDiag");
   if(!el) return;
-  if(!e){ el.className="sig-diag"; el.innerHTML='Дэлгэц юу мэдэрч байгаа: <b>хүлээгдэж байна…</b>'; return; }
+  if(!e){ el.className="sig-diag"; el.innerHTML='Хүрэхэд энд мэдээлэл гарна.'; return; }
   SIG_EVENTS++;
   var pr=(typeof e.pressure==="number")?e.pressure.toFixed(2):"—";
   var wd=(typeof e.width==="number")?Math.round(e.width):"—";
-  el.className="sig-diag live";
-  el.innerHTML='Дохио: <b>'+SIG_EVENTS+'</b> · төрөл: <b>'+(e.pointerType||"?")+'</b> · даралт: <b>'+pr+'</b> · өргөн: <b>'+wd+'</b>px';
+  if(SIG_STROKES>0){
+    el.className="sig-diag live";
+    el.innerHTML='✅ Зурж байна · зураас: <b>'+SIG_STROKES+'</b> · төрөл: <b>'+(e.pointerType||"?")+'</b> · даралт: <b>'+pr+'</b> · өргөн: <b>'+wd+'</b>px';
+  } else if(SIG_EVENTS>20){
+    el.className="sig-diag dead";
+    el.innerHTML='Хүрэлт мэдэгдэж байна ('+SIG_EVENTS+') ч зураас эхлээгүй байна. Цагаан талбарын <b>дотор талаас</b> эхлэн зурна уу.';
+  } else {
+    el.className="sig-diag live";
+    el.innerHTML='Хүрэлт: <b>'+SIG_EVENTS+'</b> · төрөл: <b>'+(e.pointerType||"?")+'</b> · даралт: <b>'+pr+'</b> · өргөн: <b>'+wd+'</b>px';
+  }
 }
 function sigDiagReset(){
-  SIG_EVENTS=0; SIG_PENSEEN=false; SIG_PEN_TS=0;
+  SIG_EVENTS=0; SIG_STROKES=0; SIG_PENSEEN=false; SIG_PEN_TS=0;
   sigDiag(null);
   setTimeout(function(){
     var el=document.getElementById("sigDiag");
     if(el&&SIG_EVENTS===0){
-      el.className="sig-diag dead";
-      el.innerHTML='Дэлгэцээс дохио ирсэнгүй. Хуруу эсвэл <b>цахилгаан дамжуулдаг</b> зүйлээр хүрнэ үү — энгийн бал, харандааг дэлгэц уншдаггүй.';
+      el.className="sig-diag";
+      el.innerHTML='Хүрэхэд энд мэдээлэл гарна. Зурахгүй бол доорх <b>📷 зургаар оруулах</b> товчийг ашиглаарай.';
     }
   },9000);
 }
@@ -746,6 +755,20 @@ function sigWirePointer(canvas){
   ["pointerover","pointerenter","pointermove","pointerdown"].forEach(function(ev){
     wrap.addEventListener(ev,sigDetect,{passive:true,capture:true});
   });
+
+  /* ⚠ Хүрэлт талбарын ИРМЭГ/хүрээн дээр буувал зураас эхлэхгүй байсныг зассан.
+     Canvas дээр биш газар хүрсэн бол хүрэлтийг canvas руу шууд дамжуулна. */
+  wrap.addEventListener("pointerdown",function(e){
+    if(e.target===canvas) return;
+    try{
+      canvas.dispatchEvent(new PointerEvent("pointerdown",{
+        pointerId:e.pointerId, pointerType:e.pointerType, isPrimary:true,
+        clientX:e.clientX, clientY:e.clientY,
+        pressure:e.pressure||0.5, width:e.width||1, height:e.height||1,
+        buttons:1, bubbles:true, cancelable:true
+      }));
+    }catch(err){}
+  },true);
 
   canvas.addEventListener("pointerdown",function(e){
     if(e.pointerType==="pen"){ SIG_PENSEEN=true; SIG_PEN_TS=Date.now(); }
@@ -1027,6 +1050,7 @@ function setupSignaturePad(){
   }
 
   signaturePad.addEventListener("beginStroke",()=>{
+    SIG_STROKES++;
     document.getElementById("sigHint").classList.add("hide");
     wrap.classList.add("has-sig");
     document.getElementById("btnFinalSubmit").disabled=false;
