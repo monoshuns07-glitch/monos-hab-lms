@@ -4711,11 +4711,46 @@ function renderDaatgal() {
   // Даатгал цэс дарахад ШУУД бүтэн хуудсаар нээнэ (iframe-гүй).
   // Ингэснээр тухайн хуудасны өөрийн viewport (ком-загвар + pinch-zoom) бүрэн ажиллана.
   sec.style.padding = '';
+
+  /* ⚠ ГОГЦОО ХАМГААЛАЛТ: даатгалаас буцаж ирээд дахин тийш үсрэхээс сэргийлнэ.
+     Дөнгөж сая (6 сек дотор) тийш явсан бол автоматаар нээхгүй — товч харуулна. */
+  var justWent = 0;
+  try { justWent = +(sessionStorage.getItem('kpi_daatgal_at') || 0); } catch (e) {}
+  if (justWent && (Date.now() - justWent) < 6000) {
+    try { sessionStorage.removeItem('kpi_daatgal_at'); } catch (e) {}
+    sec.innerHTML = '<div class="page-header"><div><h1>Даатгал</h1>' +
+      '<p class="page-subtitle">Нөхөн төлбөрийн гарын авлага</p></div></div>' +
+      '<div class="card" style="padding:30px;text-align:center">' +
+      '<i class="ti ti-shield-heart" style="font-size:42px;color:#0EA5E9"></i>' +
+      '<div style="font-size:14px;color:#64748B;margin:12px 0 18px;line-height:1.6">Даатгалын хуудас тусдаа нээгддэг.</div>' +
+      '<button class="btn btn-primary" id="daatgalOpen"><i class="ti ti-external-link"></i> Даатгалын хуудсыг нээх</button></div>';
+    var ob = document.getElementById('daatgalOpen');
+    if (ob) ob.addEventListener('click', function () {
+      try { sessionStorage.setItem('kpi_daatgal_at', Date.now()); } catch (e) {}
+      location.href = '/nohon-tulbur.html';
+    });
+    return;
+  }
+
   sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-loader"></i><div>Даатгалын хуудас нээгдэж байна…</div></div>';
+  try { sessionStorage.setItem('kpi_daatgal_at', Date.now()); } catch (e) {}
   try { location.href = '/nohon-tulbur.html'; } catch (e) {}
   return;
 
 }
+
+/* Браузерын кэшээс (bfcache) буцаж ирэхэд даатгалын хуудсан дээр үлдвэл —
+   үндсэн хуудас руу гаргана. Эс тэгвээс дахин үсэрдэг. */
+window.addEventListener('pageshow', function (ev) {
+  if (!ev.persisted) return;
+  try {
+    var cur = document.querySelector('.page.active');
+    if (cur && cur.getAttribute('data-page') === 'daatgal') {
+      try { sessionStorage.removeItem('kpi_daatgal_at'); } catch (e) {}
+      switchPage(defaultPageForRole());
+    }
+  } catch (e) {}
+});
 
 /* ============ Контент удирдлага (admin.html — апп дотор шингээсэн) ============ */
 function renderAdminPanel() {
@@ -7363,8 +7398,14 @@ function appReady() {
    Ажилтан бол ажилтны, админ бол админы үндсэн хуудас руу орно. */
 var LAST_PAGE_KEY = 'kpi_last_page';
 
+/* ⚠ Гадагш үсэрдэг хуудсуудыг САНАХГҮЙ.
+   Жишээ: "Даатгал" нь /nohon-tulbur.html руу шилждэг. Хэрэв санавал —
+   буцах товч дарахад энэ сайт дахин ачаалж, дахиад тийш үсэрч, ГОГЦОО үүсдэг. */
+var NAV_AWAY_PAGES = { daatgal: 1 };
+
 function rememberPage(pageId) {
   if (!pageId) return;
+  if (NAV_AWAY_PAGES[pageId]) return;
   try { localStorage.setItem(LAST_PAGE_KEY, pageId); } catch (e) {}
 }
 
@@ -7382,6 +7423,8 @@ function restoreLastPage() {
   // URL-д ?page= байвал тэр давамгайлна
   try { if (new URLSearchParams(location.search).get('page')) return; } catch (e) {}
   var blocked = blockedPages();
+  // Гадагш үсэрдэг хуудас хадгалагдсан байвал (хуучин хувилбарын үлдэгдэл) — үл тоомсорлоно
+  if (NAV_AWAY_PAGES[pg]) { try { localStorage.removeItem(LAST_PAGE_KEY); } catch (e) {} pg = ''; }
   if (!pg || blocked.indexOf(pg) >= 0 || !pageEl(pg)) pg = defaultPageForRole();
   // Хадгалсан хуудас нь дашбоард боловч дата байхгүй бол ажлын хуудас руу
   if (pg === 'dashboard' && !((DB && DB.employees && DB.employees.length) > 0)) pg = defaultPageForRole();
