@@ -1246,7 +1246,7 @@ async function otpSendCode(){
   var btn=otpEl("otpSend");
   btn.disabled=true; btn.textContent="⏳ Илгээж байна…";
   try{
-    var r=await fetch("/api/send-otp",{
+    var r=await fetch("/api/send-otp/",{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({ email:em, name:(emp&&emp.name)||"", examTitle:(QP.title||""), origin:location.origin })
     });
