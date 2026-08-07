@@ -189,6 +189,7 @@ textarea.inp{resize:none;min-height:120px}
 .otp-msg{margin-top:11px;font-size:12.5px;text-align:center;line-height:1.5;color:#64748B}
 .otp-msg.err{color:#B91C1C;font-weight:700}
 .otp-msg.ok{color:#047857;font-weight:800}
+.otp-hint{margin-top:10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;padding:10px 12px;font-size:12px;color:#92400E;line-height:1.55}
 @media (orientation:landscape) and (max-height:600px){ .otp-in input{width:38px;height:46px;font-size:19px} }
 .sig-proof{margin-top:16px;background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:12px;padding:12px 14px;font-size:12px;color:#475569;line-height:1.6;font-family:ui-monospace,Menlo,Consolas,monospace}
 .sig-proof span{font-family:inherit;color:#94A3B8}
@@ -386,6 +387,7 @@ textarea.inp{resize:none;min-height:120px}
           <input type="tel" inputmode="numeric" maxlength="1" data-otp="5">
         </div>
         <div class="otp-msg" id="otpMsg"></div>
+        <div class="otp-hint" id="otpHint" style="display:none">📬 Захидал <b>Junk / Спам</b> хавтсанд орсон байж болно. Гарчиг дээр нь код бичээстэй тул захидлыг нээхгүйгээр уншиж болно. Нэг удаа олоод <b>«Not junk / Спам биш»</b> гэж тэмдэглэвэл дараагийнх нь ирсэн хайрцагт орно.</div>
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="backToExam()">← Буцах</button>
@@ -1239,6 +1241,7 @@ function otpSetVerified(fromCache){
     var ins=document.querySelectorAll("[data-otp]");
     for(var i=0;i<ins.length;i++){ ins[i].disabled=true; ins[i].classList.add("fill"); }
   }
+  var _h2=otpEl("otpHint"); if(_h2) _h2.style.display="none";
   var sub=otpEl("otpSub");
   if(fromCache){
     otpMsg('<a href="#" id="otpFresh" style="color:#4F46E5;font-weight:800;text-decoration:none">🔄 Шинэ код авах</a>');
@@ -1305,7 +1308,7 @@ function otpCountdown(sec){
     }
     if(!OTP_OK){
       var m=Math.floor(OTP_LEFT/60), ss=OTP_LEFT%60;
-      otpMsg("И-мэйл рүү илгээлээ. Дотор нь байгаа <b>Баталгаажуулах</b> товчийг дарахад энэ хуудас өөрөө үргэлжилнэ.<br>Хүчинтэй хугацаа: <b>"+m+":"+(ss<10?"0":"")+ss+"</b>");
+      otpMsg("Захидлын <b>гарчигнаас</b> 6 оронтой кодоо уншаад дээрх нүдэнд оруулна уу.<br>⚠️ Ирээгүй бол <b>Junk / Спам</b> хавтсаа шалгаарай.<br>Хүчинтэй хугацаа: <b>"+m+":"+(ss<10?"0":"")+ss+"</b>");
     }
   },1000);
 }
@@ -1329,8 +1332,9 @@ async function otpSendCode(){
     OTP_ID=j.id;
     otpEl("otpBox").classList.add("on");
     otpEl("otpIn").style.display="flex";
-    otpEl("otpSub").innerHTML="Код <b>"+em+"</b> хаяг руу илгээгдлээ.";
+    otpEl("otpSub").innerHTML="Код <b>"+em+"</b> хаяг руу илгээгдлээ. Захидлын <b>гарчигт</b> код бичээстэй байгаа — нээх ч шаардлагагүй.";
     btn.style.display="none";
+    var _hint=otpEl("otpHint"); if(_hint) _hint.style.display="";
     otpCountdown((j.ttl||10)*60);
     otpStartPoll();
     try{ document.querySelector("[data-otp='0']").focus(); }catch(e){}
