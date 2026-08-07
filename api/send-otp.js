@@ -65,12 +65,18 @@ function mailHtml(code, name, examTitle, link) {
       ${examTitle ? `<p style="font-size:14px;color:#475569;margin:0 0 18px">${esc(examTitle)}</p>` : ''}
       <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 10px">Таны баталгаажуулах код:</p>
       <div style="text-align:center;font-size:38px;font-weight:bold;letter-spacing:10px;color:#4F46E5;background:#EEF2FF;border-radius:10px;padding:18px 0 18px 10px;margin:0 0 18px">${esc(code)}</div>
-      <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 18px">
+      <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 20px">
         Шалгалтын хуудсан дээрх <b>6 нүдэнд</b> энэ кодыг оруулна уу.
         Код <b>${TTL_MIN} минут</b> хүчинтэй, нэг удаа ашиглагдана.
       </p>
-      <p style="font-size:13px;color:#64748B;line-height:1.6;margin:0 0 6px">Эсвэл шууд баталгаажуулах:</p>
-      <p style="font-size:13px;margin:0 0 18px"><a href="${esc(link)}" style="color:#4F46E5">${esc(link)}</a></p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 8px">
+        <tr><td align="center">
+          <a href="${esc(link)}" style="display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;font-size:17px;font-weight:bold;padding:16px 40px;border-radius:10px;font-family:Arial,Helvetica,sans-serif">✅ Баталгаажуулах</a>
+        </td></tr>
+      </table>
+      <p style="font-size:13px;color:#64748B;line-height:1.6;margin:0 0 18px;text-align:center">
+        Энэ товчийг дарвал <b>код бичих шаардлагагүй</b> — шалгалтын хуудас өөрөө үргэлжилнэ.
+      </p>
       <p style="font-size:12px;color:#94A3B8;line-height:1.6;margin:0;border-top:1px solid #E2E8F0;padding-top:14px">
         Хэрэв та шалгалт өгөөгүй бол энэ захидлыг үл тоомсорлоно уу.
       </p>
