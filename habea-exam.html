@@ -176,6 +176,8 @@ textarea.inp{resize:none;min-height:120px}
 .otp-box{margin-top:14px;background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:16px;padding:16px}
 .otp-box.on{background:#EEF2FF;border-color:#C7D2FE}
 .otp-box.ok{background:#ECFDF5;border-color:#A7F3D0}
+.otp-box.warn{background:#FFFBEB;border-color:#FDE68A}
+.otp-msg.warnmsg{color:#92400E;font-weight:700}
 .otp-hd{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:800;color:#334155;margin-bottom:4px}
 .otp-sub{font-size:12.5px;color:#64748B;line-height:1.55}
 .otp-btn{display:block;width:100%;margin-top:12px;padding:13px 16px;border:0;border-radius:12px;cursor:pointer;
@@ -761,6 +763,7 @@ function sigDiag(e){
 }
 function sigDiagReset(){
   SIG_EVENTS=0; SIG_STROKES=0; SIG_PENSEEN=false; SIG_PEN_TS=0;
+  OTP_BYPASS=false; OTP_SKIP_REASON="";
   sigDiag(null);
   setTimeout(function(){
     var el=document.getElementById("sigDiag");
@@ -1136,7 +1139,7 @@ function sigUpdateSubmit(){
   var box=document.getElementById("sigConsentBox");
   var base=sigHasSignature() && (!c || c.checked);
   var b=document.getElementById("btnFinalSubmit");
-  if(b) b.disabled=!(base && OTP_OK);
+  if(b) b.disabled=!(base && (OTP_OK || OTP_BYPASS));
   if(box&&c) box.classList.toggle("ok",c.checked);
   var s=document.getElementById("otpSend");
   if(s && !OTP_ID){ s.disabled=!base; }
@@ -1166,6 +1169,7 @@ async function sigMakeHash(obj){
    ══════════════════════════════════════════════════════════════ */
 var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
 var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false, OTP_LAST_TRIED="";
+var OTP_BYPASS=false, OTP_SKIP_REASON="";
 var OTP_TTL_H=12;                    // баталгаажилт хэдэн цаг хүчинтэй вэ
 
 function otpEl(id){ return document.getElementById(id); }
@@ -1317,8 +1321,10 @@ async function otpSendCode(){
     });
     var j=await r.json().catch(function(){return {}});
     if(!r.ok||!j.ok){
-      otpMsg("⚠️ "+((j&&j.error)||("Илгээж чадсангүй ("+r.status+")")),"err");
-      btn.disabled=false; btn.textContent="📧 Дахин оролдох";
+      /* ⚠ И-МЭЙЛИЙН ҮЙЛЧИЛГЭЭ УНАСАН БОЛ АЖИЛТНЫГ ХААХГҮЙ.
+         Шалгалт бол хуулиар шаардагдах үүрэг — гадны үйлчилгээнээс болж
+         зогсох ёсгүй. Оронд нь бүртгэлд "баталгаажаагүй" гэж тэмдэглэнэ. */
+      otpAllowWithout(String((j&&j.error)||("HTTP "+r.status)));
       return;
     }
     OTP_ID=j.id;
@@ -1333,9 +1339,27 @@ async function otpSendCode(){
     otpStartPoll();
     try{ document.querySelector("[data-otp='0']").focus(); }catch(e){}
   }catch(e){
-    otpMsg("⚠️ Сүлжээний алдаа: "+String((e&&e.message)||e),"err");
-    btn.disabled=false; btn.textContent="📧 Дахин оролдох";
+    otpAllowWithout("Сүлжээ: "+String((e&&e.message)||e));
   }
+}
+
+/* И-мэйл илгээгдээгүй ч шалгалтаа үргэлжлүүлэх боломж олгоно */
+function otpAllowWithout(reason){
+  OTP_BYPASS=true;
+  OTP_SKIP_REASON=String(reason||"").slice(0,200);
+  var box=otpEl("otpBox"); if(box){ box.classList.remove("on"); box.classList.add("warn"); }
+  var s=otpEl("otpSend");
+  if(s){ s.disabled=false; s.textContent="🔄 Дахин оролдох"; s.style.display=""; }
+  var inw=otpEl("otpIn"); if(inw) inw.style.display="none";
+  var pb=otpEl("otpPaste"); if(pb) pb.style.display="none";
+  var hn=otpEl("otpHint"); if(hn) hn.style.display="none";
+  var sub=otpEl("otpSub");
+  if(sub) sub.innerHTML="И-мэйл илгээх үйлчилгээ түр ажиллахгүй байна. "
+    + "<b>Та шалгалтаа үргэлжлүүлж болно</b> — бүртгэлд тэмдэглэгдэнэ.";
+  otpMsg("Баталгаажуулалтгүйгээр илгээх боломжтой боллоо. Ажил зогсохгүй.","warnmsg");
+  try{ toast("И-мэйл түр ажиллахгүй — үргэлжлүүлж болно","warn"); }catch(e){}
+  console.warn("[OTP] alga:", OTP_SKIP_REASON);
+  sigUpdateSubmit();
 }
 
 /* Гараар оруулсан кодыг шалгах */
@@ -1578,7 +1602,7 @@ async function finalSubmit(){ sigRelease();
   if(!SIG_PHOTO&&(!signaturePad||signaturePad.isEmpty())){toast("✍️ Гарын үсгээ зураагүй байна");return}
   var _cons=document.getElementById("sigConsent");
   if(_cons&&!_cons.checked){ toast("☑️ Баталгаажуулах нүдийг тэмдэглэнэ үү"); return; }
-  if(!OTP_OK){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
+  if(!OTP_OK && !OTP_BYPASS){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
   const bd=QS.map(q=>({id:q.id,pts:pts(q),earned:grade(q,answers[q.id])}));
@@ -1616,7 +1640,9 @@ async function finalSubmit(){ sigRelease();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
   doc.hashAlg="SHA-256";
-  doc.emailVerified=true;
+  doc.emailVerified=!!OTP_OK;
+  doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
+  if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
   doc.otpId=OTP_ID||"";
   doc.otpVerifiedAt=OTP_VERIFIED_AT?new Date(OTP_VERIFIED_AT).toISOString():"";
   doc.otpAgeMin=OTP_VERIFIED_AT?Math.round((Date.now()-OTP_VERIFIED_AT)/60000):0;
