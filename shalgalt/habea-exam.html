@@ -375,7 +375,7 @@ textarea.inp{resize:none;min-height:120px}
       </label>
       <div class="otp-box" id="otpBox">
         <div class="otp-hd">🔐 И-мэйлээр баталгаажуулах</div>
-        <div class="otp-sub" id="otpSub">Зөвшөөрлийн нүдийг тэмдэглэсний дараа код авна.</div>
+        <div class="otp-sub" id="otpSub">Зөвшөөрлийн нүдийг тэмдэглэсний дараа код авна. Нэг удаа баталгаажуулбал 12 цагийн дотор дахин шаардахгүй.</div>
         <button type="button" class="otp-btn" id="otpSend" disabled>📧 Баталгаажуулах код авах</button>
         <div class="otp-in" id="otpIn" style="display:none">
           <input type="tel" inputmode="numeric" maxlength="1" data-otp="0">
@@ -709,7 +709,7 @@ function openSignature(){
   sigLandscape();
   setTimeout(()=>setupSignaturePad(),110);
   try{ sigDiagReset(); }catch(e){}
-  try{ otpWire(); sigUpdateSubmit(); }catch(e){}
+  try{ otpWire(); otpApplyCached(); sigUpdateSubmit(); }catch(e){}
   setTimeout(function(){ try{ sigLoadRegistered(function(u){ if(u) sigApplyRegistered(u); }); }catch(e){} },420);
   setTimeout(()=>{ if(signaturePad) sigResize(); sigCheckRotate(); },720);
 }
@@ -1171,6 +1171,8 @@ async function sigMakeHash(obj){
    · Товч ажиллахгүй бол кодыг гараар оруулж болно
    ══════════════════════════════════════════════════════════════ */
 var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
+var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false;
+var OTP_TTL_H=12;                    // баталгаажилт хэдэн цаг хүчинтэй вэ
 
 function otpEl(id){ return document.getElementById(id); }
 function otpMsg(t,cls){ var m=otpEl("otpMsg"); if(m){ m.innerHTML=t||""; m.className="otp-msg"+(cls?" "+cls:""); } }
@@ -1191,18 +1193,85 @@ function otpFillBoxes(code){
   }
 }
 
-function otpSetVerified(){
+/* ── Баталгаажилтыг ТӨХӨӨРӨМЖИД 12 цаг санана ──
+   Ингэснээр ажилтан нэг ажлын өдөрт нэг л удаа код авна.
+   Өөр төхөөрөмжөөс орвол, эсвэл 12 цаг өнгөрвөл дахин шаардана. */
+function otpCacheKey(){ return "habea_otpok_"+otpEmail(); }
+
+function otpSaveCache(){
+  try{
+    localStorage.setItem(otpCacheKey(), JSON.stringify({ at:OTP_VERIFIED_AT, id:OTP_ID }));
+  }catch(e){}
+}
+function otpReadCache(){
+  try{
+    var raw=localStorage.getItem(otpCacheKey());
+    if(!raw) return null;
+    var o=JSON.parse(raw);
+    if(!o||!o.at) return null;
+    if(Date.now()-o.at > OTP_TTL_H*3600000){ try{localStorage.removeItem(otpCacheKey());}catch(e){} return null; }
+    return o;
+  }catch(e){ return null; }
+}
+function otpClearCache(){ try{ localStorage.removeItem(otpCacheKey()); }catch(e){} }
+
+function otpWhenText(){
+  var d=new Date(OTP_VERIFIED_AT);
+  var hh=("0"+d.getHours()).slice(-2), mm=("0"+d.getMinutes()).slice(-2);
+  var same=(new Date()).toDateString()===d.toDateString();
+  return (same?"өнөөдөр ":(d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)+" "))+hh+":"+mm;
+}
+
+function otpSetVerified(fromCache){
   OTP_OK=true;
+  OTP_FROM_CACHE=!!fromCache;
+  if(!fromCache){ OTP_VERIFIED_AT=Date.now(); otpSaveCache(); }
   if(OTP_POLL){ clearInterval(OTP_POLL); OTP_POLL=null; }
   if(OTP_TIMER){ clearInterval(OTP_TIMER); OTP_TIMER=null; }
   var box=otpEl("otpBox"); if(box){ box.classList.remove("on"); box.classList.add("ok"); }
   var s=otpEl("otpSend"); if(s){ s.style.display="none"; }
-  otpFillBoxes("······");
+  var inw=otpEl("otpIn");
+  if(fromCache){
+    if(inw) inw.style.display="none";
+  }else{
+    otpFillBoxes("······");
+    var ins=document.querySelectorAll("[data-otp]");
+    for(var i=0;i<ins.length;i++){ ins[i].disabled=true; ins[i].classList.add("fill"); }
+  }
+  var sub=otpEl("otpSub");
+  if(fromCache){
+    otpMsg('<a href="#" id="otpFresh" style="color:#4F46E5;font-weight:800;text-decoration:none">🔄 Шинэ код авах</a>');
+    if(sub) sub.innerHTML="Та <b>"+otpWhenText()+"</b>-д и-мэйлээр баталгаажсан. "+OTP_TTL_H+" цагийн дотор дахин код шаардахгүй.";
+    var fr=otpEl("otpFresh");
+    if(fr&&!fr._w){ fr._w=true; fr.addEventListener("click",function(ev){ ev.preventDefault(); otpForceNew(); }); }
+  }else{
+    otpMsg("✅ И-мэйлээр баталгаажлаа","ok");
+    if(sub) sub.textContent="Таны хаяг баталгаажсан. Одоо шалгалтаа илгээж болно.";
+    try{ toast("✅ Баталгаажлаа"); }catch(e){}
+  }
+  sigUpdateSubmit();
+}
+
+/* Хадгалсан баталгаажилтыг сэргээх */
+function otpApplyCached(){
+  if(OTP_OK) return;
+  var c=otpReadCache();
+  if(!c) return;
+  OTP_VERIFIED_AT=c.at; OTP_ID=c.id||"";
+  otpSetVerified(true);
+}
+
+/* Хэрэглэгч өөрөө шинэ код авахыг хүсвэл */
+function otpForceNew(){
+  otpClearCache();
+  OTP_OK=false; OTP_FROM_CACHE=false; OTP_ID=""; OTP_VERIFIED_AT=0;
+  var box=otpEl("otpBox"); if(box){ box.classList.remove("ok","on"); }
+  var s=otpEl("otpSend"); if(s){ s.style.display=""; s.disabled=false; s.textContent="📧 Баталгаажуулах код авах"; }
+  var inw=otpEl("otpIn"); if(inw) inw.style.display="none";
+  otpFillBoxes("");
   var ins=document.querySelectorAll("[data-otp]");
-  for(var i=0;i<ins.length;i++){ ins[i].disabled=true; ins[i].classList.add("fill"); }
-  otpMsg("✅ И-мэйлээр баталгаажлаа","ok");
-  var sub=otpEl("otpSub"); if(sub) sub.textContent="Таны хаяг баталгаажсан. Одоо шалгалтаа илгээж болно.";
-  try{ toast("✅ Баталгаажлаа"); }catch(e){}
+  for(var i=0;i<ins.length;i++){ ins[i].disabled=false; ins[i].classList.remove("fill"); }
+  otpMsg("");
   sigUpdateSubmit();
 }
 
@@ -1214,7 +1283,7 @@ function otpStartPoll(){
     try{
       db.collection("habea_otp").doc(OTP_ID).get().then(function(s){
         var d=(s&&s.exists)?s.data():null;
-        if(d&&d.verified===true) otpSetVerified();
+        if(d&&d.verified===true) otpSetVerified(false);
       }).catch(function(){});
     }catch(e){}
   },2500);
@@ -1284,7 +1353,7 @@ async function otpCheckTyped(){
     var h=await otpSha(code+"|"+OTP_ID+"|"+String(d.email||""));
     if(h!==d.hash){ otpMsg("❌ Код таарахгүй байна. Дахин шалгана уу.","err"); return; }
     try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
-    otpSetVerified();
+    otpSetVerified(false);
   }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
 }
 
@@ -1510,6 +1579,10 @@ async function finalSubmit(){ sigRelease();
   doc.hashAlg="SHA-256";
   doc.emailVerified=true;
   doc.otpId=OTP_ID||"";
+  doc.otpVerifiedAt=OTP_VERIFIED_AT?new Date(OTP_VERIFIED_AT).toISOString():"";
+  doc.otpAgeMin=OTP_VERIFIED_AT?Math.round((Date.now()-OTP_VERIFIED_AT)/60000):0;
+  doc.otpReused=!!OTP_FROM_CACHE;
+  doc.otpTtlHours=OTP_TTL_H;
   SIG_HASH=await sigMakeHash({
     n:emp.name||"", d:emp.dept||"", o:emp.pos||"",
     e:String((QP.email)||"").toLowerCase(),
