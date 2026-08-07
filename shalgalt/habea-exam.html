@@ -190,6 +190,9 @@ textarea.inp{resize:none;min-height:120px}
 .otp-msg.err{color:#B91C1C;font-weight:700}
 .otp-msg.ok{color:#047857;font-weight:800}
 .otp-hint{margin-top:10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;padding:10px 12px;font-size:12px;color:#92400E;line-height:1.55}
+.otp-paste{display:block;width:100%;margin-top:11px;padding:11px 14px;border:1.5px solid #C7D2FE;background:#fff;color:#4F46E5;
+  border-radius:12px;font-family:inherit;font-size:13.5px;font-weight:800;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.otp-paste:active{background:#EEF2FF}
 @media (orientation:landscape) and (max-height:600px){ .otp-in input{width:38px;height:46px;font-size:19px} }
 .sig-proof{margin-top:16px;background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:12px;padding:12px 14px;font-size:12px;color:#475569;line-height:1.6;font-family:ui-monospace,Menlo,Consolas,monospace}
 .sig-proof span{font-family:inherit;color:#94A3B8}
@@ -379,15 +382,16 @@ textarea.inp{resize:none;min-height:120px}
         <div class="otp-sub" id="otpSub">Зөвшөөрлийн нүдийг тэмдэглэсний дараа код авна. Нэг удаа баталгаажуулбал 12 цагийн дотор дахин шаардахгүй.</div>
         <button type="button" class="otp-btn" id="otpSend" disabled>📧 Баталгаажуулах код авах</button>
         <div class="otp-in" id="otpIn" style="display:none">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="0">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="1">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="2">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="3">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="4">
-          <input type="tel" inputmode="numeric" maxlength="1" data-otp="5">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="0">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="1">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="2">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="3">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="4">
+          <input type="tel" inputmode="numeric" maxlength="1" autocomplete="one-time-code" data-otp="5">
         </div>
+        <button type="button" class="otp-paste" id="otpPaste" style="display:none">📋 Хуулсан кодыг оруулах</button>
         <div class="otp-msg" id="otpMsg"></div>
-        <div class="otp-hint" id="otpHint" style="display:none">📬 Захидал <b>Junk / Спам</b> хавтсанд орсон байж болно. Гарчиг дээр нь код бичээстэй тул захидлыг нээхгүйгээр уншиж болно. Нэг удаа олоод <b>«Not junk / Спам биш»</b> гэж тэмдэглэвэл дараагийнх нь ирсэн хайрцагт орно.</div>
+        <div class="otp-hint" id="otpHint" style="display:none">📬 Захидал <b>Junk / Спам</b> хавтсанд орсон байж болно. Гарчиг дээр нь код бичээстэй тул захидлыг нээхгүйгээр уншиж болно. Кодыг <b>хуулаад</b> энэ хуудас руу буцаж ирэхэд <b>өөрөө бөглөгдөнө</b>. Нэг удаа олоод <b>«Not junk / Спам биш»</b> гэж тэмдэглэвэл дараагийнх нь ирсэн хайрцагт орно.</div>
       </div>
       <div style="display:flex;gap:10px;margin-top:20px">
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="backToExam()">← Буцах</button>
@@ -1173,7 +1177,7 @@ async function sigMakeHash(obj){
    · Товч ажиллахгүй бол кодыг гараар оруулж болно
    ══════════════════════════════════════════════════════════════ */
 var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
-var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false;
+var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false, OTP_LAST_TRIED="";
 var OTP_TTL_H=12;                    // баталгаажилт хэдэн цаг хүчинтэй вэ
 
 function otpEl(id){ return document.getElementById(id); }
@@ -1241,6 +1245,7 @@ function otpSetVerified(fromCache){
     for(var i=0;i<ins.length;i++){ ins[i].disabled=true; ins[i].classList.add("fill"); }
   }
   var _h2=otpEl("otpHint"); if(_h2) _h2.style.display="none";
+  var _p2=otpEl("otpPaste"); if(_p2) _p2.style.display="none";
   var sub=otpEl("otpSub");
   if(fromCache){
     otpMsg('<a href="#" id="otpFresh" style="color:#4F46E5;font-weight:800;text-decoration:none">🔄 Шинэ код авах</a>');
@@ -1334,6 +1339,8 @@ async function otpSendCode(){
     otpEl("otpSub").innerHTML="Код <b>"+em+"</b> хаяг руу илгээгдлээ. Захидлын <b>гарчигт</b> код бичээстэй байгаа — нээх ч шаардлагагүй.";
     btn.style.display="none";
     var _hint=otpEl("otpHint"); if(_hint) _hint.style.display="";
+    var _pb=otpEl("otpPaste"); if(_pb) _pb.style.display="";
+    setTimeout(function(){ otpTryClipboard(true); }, 800);
     otpCountdown((j.ttl||10)*60);
     otpStartPoll();
     try{ document.querySelector("[data-otp='0']").focus(); }catch(e){}
@@ -1361,9 +1368,49 @@ async function otpCheckTyped(){
   }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
 }
 
+/* ══ ХУУЛСАН КОДЫГ АВТОМАТААР ОЛЖ БӨГЛӨНӨ ══
+   Ажилтан и-мэйлээс (эсвэл гарчигнаас) кодоо хуулаад энэ хуудас руу
+   буцаж ирэхэд — өөрөө уншиж, 6 нүдэнд бөглөж, шалгаад дуусгана. */
+async function otpTryClipboard(silent){
+  if(OTP_OK || !OTP_ID) return false;
+  try{
+    if(!navigator.clipboard || !navigator.clipboard.readText) return false;
+    var txt = await navigator.clipboard.readText();
+    var m = String(txt||"").match(/(?:^|\D)(\d{6})(?:\D|$)/);
+    if(!m){
+      if(!silent) otpMsg("Санах ойд 6 оронтой код олдсонгүй. Захидлаас кодоо хуулаад дахин дарна уу.","err");
+      return false;
+    }
+    if(m[1]===OTP_LAST_TRIED) return false;      // ижил кодыг дахин дахин шалгахгүй
+    OTP_LAST_TRIED=m[1];
+    otpFillBoxes(m[1]);
+    otpMsg("📋 Хуулсан код автоматаар орлоо — шалгаж байна…");
+    otpCheckTyped();
+    return true;
+  }catch(e){
+    if(!silent) otpMsg("Санах ойг уншихыг зөвшөөрөөгүй байна. Кодоо гараар оруулна уу.","err");
+    return false;
+  }
+}
+
+/* Хуудас руу буцаж ирэх бүрд санах ойг чимээгүй шалгана */
+function otpWatchReturn(){
+  if(otpWatchReturn._w) return; otpWatchReturn._w=true;
+  var probe=function(){
+    if(OTP_OK || !OTP_ID) return;
+    setTimeout(function(){ otpTryClipboard(true); }, 250);
+  };
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) probe(); });
+  window.addEventListener("focus", probe);
+  window.addEventListener("pageshow", probe);
+}
+
 function otpWire(){
   var b=otpEl("otpSend");
   if(b&&!b._w){ b._w=true; b.addEventListener("click",otpSendCode); }
+  var pb=otpEl("otpPaste");
+  if(pb&&!pb._w){ pb._w=true; pb.addEventListener("click",function(){ otpTryClipboard(false); }); }
+  otpWatchReturn();
   var ins=document.querySelectorAll("[data-otp]");
   for(var i=0;i<ins.length;i++){
     (function(el,idx){
