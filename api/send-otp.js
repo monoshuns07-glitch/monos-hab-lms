@@ -1,7 +1,7 @@
 /* ══════════════════════════════════════════════════════════════
    И-МЭЙЛЭЭР НЭГ УДААГИЙН БАТАЛГААЖУУЛАХ КОД ИЛГЭЭХ
    ──────────────────────────────────────────────────────────────
-   POST /api/send-otp   { email, name, examTitle, origin }
+   POST /api/send-otp/   { email, name, examTitle, origin }
    → 6 оронтой код үүсгэж, и-мэйлээр илгээнэ
    → Firestore-д зөвхөн код-ын HASH-ийг хадгална (кодыг өөрийг нь биш)
    → { ok:true, id } буцаана. Код нь зөвхөн и-мэйлд очно.
@@ -11,6 +11,10 @@
      RESEND_API_KEY  — Resend (сард 3000 и-мэйл үнэгүй)  ← сонгоно
      OTP_FROM        — илгээгчийн хаяг (жишээ: habea@monos.mn)
      OTP_FROM_NAME   — илгээгчийн нэр (жишээ: Монос Хүнс ХАБЭА)
+
+   ⚠ SPAM-ААС СЭРГИЙЛЭХ: энгийн бичвэр хувилбар (textContent) заавал
+   явуулна, холбоосыг цөөлнө, кодыг гарчигт бичнэ — Junk хавтаст орсон ч
+   ажилтан кодыг гарчигнаас шууд уншиж чадна.
    ══════════════════════════════════════════════════════════════ */
 
 const FB_PROJECT = 'habea-shalgalt';
@@ -36,36 +40,47 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/* Энгийн бичвэр хувилбар — spam оноог мэдэгдэхүйц бууруулна */
+function mailText(code, name, examTitle, link) {
+  return 'Монос Хүнс ХХК - ХАБЭА шалгалтын баталгаажуулалт\n\n'
+    + 'Сайн байна уу, ' + (name || 'ажилтан') + '!\n\n'
+    + (examTitle ? examTitle + '\n\n' : '')
+    + 'ТАНЫ БАТАЛГААЖУУЛАХ КОД:  ' + code + '\n\n'
+    + 'Шалгалтын хуудсан дээрх 6 нүдэнд энэ кодыг оруулна уу.\n'
+    + 'Код ' + TTL_MIN + ' минут хүчинтэй, нэг удаа ашиглагдана.\n\n'
+    + 'Эсвэл доорх хаягаар орж шууд баталгаажуулж болно:\n' + link + '\n\n'
+    + 'Хэрэв та шалгалт өгөөгүй бол энэ захидлыг үл тоомсорлоно уу.\n';
+}
+
 function mailHtml(code, name, examTitle, link) {
-  return `<div style="font-family:Segoe UI,Arial,sans-serif;background:#F4F6FB;padding:26px 14px">
-  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 8px 28px rgba(15,23,42,.10)">
-    <div style="background:linear-gradient(135deg,#4F46E5,#7C3AED);padding:22px 26px;color:#fff">
-      <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.85">Монос Хүнс ХХК</div>
-      <div style="font-size:20px;font-weight:800;margin-top:4px">ХАБЭА шалгалтын баталгаажуулалт</div>
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#F4F6FB">
+<div style="font-family:Arial,Helvetica,sans-serif;background:#F4F6FB;padding:24px 14px">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;border:1px solid #E2E8F0">
+    <div style="padding:20px 24px;border-bottom:3px solid #4F46E5">
+      <div style="font-size:12px;letter-spacing:2px;color:#64748B">МОНОС ХҮНС ХХК</div>
+      <div style="font-size:19px;font-weight:bold;color:#0F172A;margin-top:4px">ХАБЭА шалгалтын баталгаажуулалт</div>
     </div>
-    <div style="padding:26px">
+    <div style="padding:24px">
       <p style="font-size:15px;color:#1E293B;margin:0 0 6px">Сайн байна уу, <b>${esc(name || 'ажилтан')}</b>!</p>
-      <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 20px">
-        <b>${esc(examTitle || 'ХАБЭА шалгалт')}</b>-ыг баталгаажуулахын тулд доорх товчийг дарна уу.
-        Товч дарахад шалгалтын хуудас <b>өөрөө үргэлжилнэ</b> — код бичих шаардлагагүй.
+      ${examTitle ? `<p style="font-size:14px;color:#475569;margin:0 0 18px">${esc(examTitle)}</p>` : ''}
+      <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 10px">Таны баталгаажуулах код:</p>
+      <div style="text-align:center;font-size:38px;font-weight:bold;letter-spacing:10px;color:#4F46E5;background:#EEF2FF;border-radius:10px;padding:18px 0 18px 10px;margin:0 0 18px">${esc(code)}</div>
+      <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 18px">
+        Шалгалтын хуудсан дээрх <b>6 нүдэнд</b> энэ кодыг оруулна уу.
+        Код <b>${TTL_MIN} минут</b> хүчинтэй, нэг удаа ашиглагдана.
       </p>
-      <div style="text-align:center;margin:0 0 22px">
-        <a href="${esc(link)}" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;font-size:16px;font-weight:800;padding:15px 34px;border-radius:12px">✅ Баталгаажуулах</a>
-      </div>
-      <div style="border-top:1px solid #E2E8F0;padding-top:18px">
-        <p style="font-size:13px;color:#64748B;margin:0 0 8px">Товч ажиллахгүй бол энэ кодыг гараар оруулна уу:</p>
-        <div style="text-align:center;font-size:34px;font-weight:900;letter-spacing:.42em;color:#4F46E5;font-family:Consolas,monospace;background:#EEF2FF;border-radius:12px;padding:14px 0 14px 14px">${esc(code)}</div>
-      </div>
-      <p style="font-size:12px;color:#94A3B8;line-height:1.6;margin:18px 0 0">
-        Код <b>${TTL_MIN} минут</b> хүчинтэй, нэг удаа ашиглагдана.<br>
+      <p style="font-size:13px;color:#64748B;line-height:1.6;margin:0 0 6px">Эсвэл шууд баталгаажуулах:</p>
+      <p style="font-size:13px;margin:0 0 18px"><a href="${esc(link)}" style="color:#4F46E5">${esc(link)}</a></p>
+      <p style="font-size:12px;color:#94A3B8;line-height:1.6;margin:0;border-top:1px solid #E2E8F0;padding-top:14px">
         Хэрэв та шалгалт өгөөгүй бол энэ захидлыг үл тоомсорлоно уу.
       </p>
     </div>
   </div>
-</div>`;
+</div>
+</body></html>`;
 }
 
-async function sendMail(to, subject, html) {
+async function sendMail(to, subject, html, text) {
   const fromMail = process.env.OTP_FROM || 'no-reply@monos-hab.vercel.app';
   const fromName = process.env.OTP_FROM_NAME || 'Монос Хүнс ХАБЭА';
 
@@ -73,7 +88,15 @@ async function sendMail(to, subject, html) {
     const r = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: { 'api-key': process.env.BREVO_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ sender: { email: fromMail, name: fromName }, to: [{ email: to }], subject, htmlContent: html })
+      body: JSON.stringify({
+        sender: { email: fromMail, name: fromName },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text,
+        tags: ['habea-otp'],
+        headers: { 'X-Mailin-Tag': 'habea-otp', 'X-Auto-Response-Suppress': 'All' }
+      })
     });
     if (!r.ok) throw new Error('Brevo: ' + r.status + ' ' + (await r.text()).slice(0, 200));
     return 'brevo';
@@ -82,7 +105,7 @@ async function sendMail(to, subject, html) {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `${fromName} <${fromMail}>`, to: [to], subject, html })
+      body: JSON.stringify({ from: `${fromName} <${fromMail}>`, to: [to], subject, html, text })
     });
     if (!r.ok) throw new Error('Resend: ' + r.status + ' ' + (await r.text()).slice(0, 200));
     return 'resend';
@@ -125,11 +148,13 @@ module.exports = async function handler(req, res) {
 
     const origin = String(body.origin || 'https://monos-hab.vercel.app').replace(/\/+$/, '');
     const link = `${origin}/otp.html?id=${encodeURIComponent(id)}&c=${encodeURIComponent(code)}`;
+    const subject = 'Баталгаажуулах код ' + code + ' — ХАБЭА шалгалт';
 
     let provider = '';
     try {
-      provider = await sendMail(email, 'ХАБЭА шалгалт — баталгаажуулах код: ' + code,
-        mailHtml(code, body.name, body.examTitle, link));
+      provider = await sendMail(email, subject,
+        mailHtml(code, body.name, body.examTitle, link),
+        mailText(code, body.name, body.examTitle, link));
     } catch (e) {
       if (String(e.message).indexOf('NO_PROVIDER') >= 0) {
         return res.status(503).json({ error: 'И-мэйл илгээгч тохируулаагүй байна. Vercel дээр BREVO_API_KEY эсвэл RESEND_API_KEY нэмнэ үү.', id });
