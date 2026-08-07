@@ -84,6 +84,22 @@ async function sendMail(to, subject, html, text) {
   const fromMail = process.env.OTP_FROM || 'no-reply@monos-hab.vercel.app';
   const fromName = process.env.OTP_FROM_NAME || 'Монос Хүнс ХАБЭА';
 
+  /* ① GMAIL — хамгийн сайн хүргэлт (Outlook итгэдэг, Junk-д ордоггүй).
+        Алдвал доорх Brevo руу автоматаар шилжинэ. */
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    try {
+      const { sendViaGmail } = require('./_smtp.js');
+      await sendViaGmail({
+        user: process.env.GMAIL_USER,
+        pass: String(process.env.GMAIL_APP_PASSWORD).replace(/\s+/g, ''),
+        fromName, to, subject, text, html
+      });
+      return 'gmail';
+    } catch (e) {
+      console.error('[OTP] Gmail SMTP амжилтгүй, Brevo руу шилжиж байна:', e && e.message);
+    }
+  }
+
   if (process.env.BREVO_API_KEY) {
     const r = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
