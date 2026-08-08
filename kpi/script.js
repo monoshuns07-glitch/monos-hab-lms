@@ -2464,6 +2464,54 @@ function reportDept(r) {
   return e ? (e.dept || '') : '';
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ҮЙЛДЛИЙН КАРТ ДЭЭР ДАРАХАД — ЯГ ХЭН, ЯМАР БИЧЛЭГ БОЛОХЫГ ХАРУУЛНА
+   ══════════════════════════════════════════════════════════════ */
+var DASH_DRILL = {};
+
+function dashDrillRow(main, sub, right, rightColor) {
+  return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #F1F5F9">' +
+    '<div style="flex:1;min-width:0">' +
+    '<div style="font-size:13.5px;font-weight:700;color:#1E293B">' + main + '</div>' +
+    (sub ? '<div style="font-size:12px;color:#94A3B8;margin-top:2px">' + sub + '</div>' : '') + '</div>' +
+    (right ? '<div style="flex-shrink:0;font-size:13px;font-weight:800;color:' + (rightColor || '#64748B') + '">' + right + '</div>' : '') +
+    '</div>';
+}
+
+function dashEmpName(id) {
+  var e = (DB.employees || []).filter(function (x) { return x.id === id; })[0];
+  return e ? esc(e.name) + (e.dept ? ' · ' + esc(e.dept) : '') : esc(id);
+}
+
+function dashTaskWho(t) {
+  var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
+  if (!ids.length) return t.dept === 'all' ? 'Бүх алба' : esc(t.dept || '');
+  return ids.map(dashEmpName).join(', ');
+}
+
+function dashOpenDrill(kind) {
+  var d = DASH_DRILL[kind];
+  if (!d || !d.rows || !d.rows.length) { toast('Жагсаалт хоосон байна', 'info'); return; }
+
+  var body = '<div style="max-height:60vh;overflow-y:auto;margin:-4px -4px 0">' + d.rows.join('') + '</div>';
+  var node = elc('div', 'modal-info',
+    (d.hint ? '<div style="font-size:12.5px;color:#64748B;line-height:1.5;margin-bottom:12px">' + d.hint + '</div>' : '') +
+    body +
+    '<div style="display:flex;gap:10px;margin-top:16px">' +
+    '<button class="btn btn-secondary" data-drillclose="1" style="flex:1">Хаах</button>' +
+    (d.page ? '<button class="btn btn-primary" data-drillgo="' + d.page + '" style="flex:1"><i class="ti ti-arrow-right"></i> ' + esc(d.pageLabel || 'Цэс рүү очих') + '</button>' : '') +
+    '</div>');
+
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('[data-drillclose]')) { closeModal(); return; }
+    var g = ev.target.closest('[data-drillgo]');
+    if (g) { closeModal(); switchPage(g.getAttribute('data-drillgo')); return; }
+    var rv = ev.target.closest('[data-drillreview]');
+    if (rv) { closeModal(); switchPage('tasks'); setTimeout(function () { actionReviewTask(rv.getAttribute('data-drillreview')); }, 120); return; }
+  });
+  buildModal(d.title + ' — ' + d.rows.length, node, { width: '560px' });
+}
+
 function renderAdminDashboard() {
   var page = pageEl('dashboard'); if (!page) return;
 
@@ -2492,42 +2540,110 @@ function renderAdminDashboard() {
 
   /* ═══════════ 1. ШААРДЛАГАТАЙ АРГА ХЭМЖЭЭ ═══════════ */
   var acts = [];
+  DASH_DRILL = {};
 
   var pendingReview = (DB.tasks || []).filter(function (t) { return t.status === 'submitted' && canReviewTask(t); });
-  if (pendingReview.length) acts.push({ n: pendingReview.length, t: 'даалгавар хянаж үнэлгээ өгөх', c: '#7C3AED', i: 'ti-eye-search', p: 'tasks' });
+  if (pendingReview.length) {
+    acts.push({ n: pendingReview.length, t: 'даалгавар хянаж үнэлгээ өгөх', c: '#7C3AED', i: 'ti-eye-search', k: 'review' });
+    DASH_DRILL.review = {
+      title: 'Хянаж үнэлгээ өгөх даалгавар', page: 'tasks', pageLabel: 'Даалгавар цэс',
+      hint: 'Мөр дээрх «Хянах» товчийг дарж шууд үнэлгээ өгнө.',
+      rows: pendingReview.map(function (x) {
+        return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid #F1F5F9">' +
+          '<div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:700;color:#1E293B">' + esc(x.title) + '</div>' +
+          '<div style="font-size:12px;color:#94A3B8;margin-top:2px">' + dashTaskWho(x) +
+          (x.submittedAt ? ' · илгээсэн ' + esc(String(x.submittedAt).slice(0, 10)) : '') + '</div></div>' +
+          '<button class="btn btn-sm btn-primary" data-drillreview="' + esc(x.id) + '">Хянах</button></div>';
+      })
+    };
+  }
 
   var pendingReports = (DB.reports || []).filter(function (r) {
     if (dh && reportDept(r) !== dh) return false;
     return r.status === 'reported';
   });
-  if (pendingReports.length) acts.push({ n: pendingReports.length, t: 'аюул/near-miss баталгаажуулах', c: '#E11D48', i: 'ti-flag-2', p: 'reportflow' });
+  if (pendingReports.length) {
+    acts.push({ n: pendingReports.length, t: 'аюул/near-miss баталгаажуулах', c: '#E11D48', i: 'ti-flag-2', k: 'reports' });
+    DASH_DRILL.reports = {
+      title: 'Баталгаажуулах хүлээж буй мэдээлэл', page: 'reportflow', pageLabel: 'Аюул мэдээлэл цэс',
+      hint: 'Баталгаажуулсны дараа л ажилтанд бонус оноо тооцогдоно.',
+      rows: pendingReports.map(function (r) {
+        var who = (DB.employees || []).filter(function (x) { return reportBelongsTo(r, x); })[0];
+        return dashDrillRow(
+          esc(r.desc || r.title || 'Мэдээлэл'),
+          (who ? esc(who.name) : esc(r.reporterName || '')) + (reportDept(r) ? ' · ' + esc(reportDept(r)) : '') +
+          (r.date ? ' · ' + esc(String(r.date).slice(0, 10)) : ''),
+          r.type === 'near_miss' ? 'Near-miss' : 'Аюул', '#E11D48');
+      })
+    };
+  }
 
   var overdueT = (DB.tasks || []).filter(function (t) {
     if (dh && t.dept !== dh && t.dept !== 'all') return false;
     return taskOverdueDays(t) > 0;
   });
-  if (overdueT.length) acts.push({ n: overdueT.length, t: 'даалгаврын хугацаа хэтэрсэн', c: '#DC2626', i: 'ti-alarm', p: 'tasks' });
+  if (overdueT.length) {
+    acts.push({ n: overdueT.length, t: 'даалгаврын хугацаа хэтэрсэн', c: '#DC2626', i: 'ti-alarm', k: 'overdue' });
+    DASH_DRILL.overdue = {
+      title: 'Хугацаа хэтэрсэн даалгавар', page: 'tasks', pageLabel: 'Даалгавар цэс',
+      rows: overdueT.slice().sort(function (a, b) { return taskOverdueDays(b) - taskOverdueDays(a); }).map(function (x) {
+        return dashDrillRow(esc(x.title), dashTaskWho(x) + (x.dueDate ? ' · дуусах ' + esc(x.dueDate) : ''),
+          taskOverdueDays(x) + ' хоног', '#DC2626');
+      })
+    };
+  }
 
   /* Шалгалт нээлттэй боловч өгөөгүй ажилтан */
-  var examWaiting = 0;
+  var examRows = [];
   emps.forEach(function (e) {
     Object.keys(TRAINING_MODULES).forEach(function (k) {
-      try { if (isModExamUnlocked(e, k) && !getEmpProg(e.id, k).examTaken) examWaiting++; } catch (err) {}
+      try {
+        if (isModExamUnlocked(e, k) && !getEmpProg(e.id, k).examTaken) {
+          examRows.push(dashDrillRow(esc(e.name), esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : ''),
+            esc(TRAINING_MODULES[k]), '#0891B2'));
+        }
+      } catch (err) {}
     });
   });
-  if (examWaiting) acts.push({ n: examWaiting, t: 'шалгалт нээлттэй ч өгөөгүй', c: '#0891B2', i: 'ti-pencil-check', p: 'employees' });
+  if (examRows.length) {
+    acts.push({ n: examRows.length, t: 'шалгалт нээлттэй ч өгөөгүй', c: '#0891B2', i: 'ti-pencil-check', k: 'exam' });
+    DASH_DRILL.exam = {
+      title: 'Шалгалт өгөөгүй ажилтан', page: 'employees', pageLabel: 'Ажилтнууд цэс',
+      hint: 'Эдгээр ажилтанд шалгалт нээлттэй боловч хараахан өгөөгүй байна.',
+      rows: examRows
+    };
+  }
 
-  var lowEmps = emps.filter(function (e) { return empTotal(e) < 60; });
-  if (lowEmps.length) acts.push({ n: lowEmps.length, t: 'ажилтан 60-аас доош оноотой', c: '#D97706', i: 'ti-user-exclamation', p: 'employees' });
+  var lowEmps = emps.filter(function (e) { return empTotal(e) < 60; }).sort(function (a, b) { return empTotal(a) - empTotal(b); });
+  if (lowEmps.length) {
+    acts.push({ n: lowEmps.length, t: 'ажилтан 60-аас доош оноотой', c: '#D97706', i: 'ti-user-exclamation', k: 'low' });
+    DASH_DRILL.low = {
+      title: '60-аас доош оноотой ажилтан', page: 'employees', pageLabel: 'Ажилтнууд цэс',
+      rows: lowEmps.map(function (e) {
+        return dashDrillRow(esc(e.name), esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : ''),
+          empTotal(e) + ' оноо', '#DC2626');
+      })
+    };
+  }
 
   var noRisk = (RISK_DEPTS === null) ? [] : depts.filter(function (d) { return RISK_DEPTS.indexOf(d) < 0; });
-  if (noRisk.length) acts.push({ n: noRisk.length, t: 'албанд эрсдэлийн үнэлгээ байршуулаагүй', c: '#7C3AED', i: 'ti-chart-pie-2', p: 'hazards' });
+  if (noRisk.length) {
+    acts.push({ n: noRisk.length, t: 'албанд эрсдэлийн үнэлгээ байршуулаагүй', c: '#7C3AED', i: 'ti-chart-pie-2', k: 'risk' });
+    DASH_DRILL.risk = {
+      title: 'Эрсдэлийн үнэлгээ байхгүй алба', page: 'hazards', pageLabel: 'Эрсдэлийн үнэлгээ цэс',
+      hint: 'Эдгээр албанд эрсдэлийн үнэлгээний дашбоард байршуулаагүй байна.',
+      rows: noRisk.map(function (d) {
+        var m = deptMembers(d);
+        return dashDrillRow(esc(d), m.length + ' ажилтан', 'байхгүй', '#DC2626');
+      })
+    };
+  }
 
   H += dashCard(
     dashH('⚡ Шаардлагатай арга хэмжээ', acts.length ? 'Эдгээр нь таны шийдвэр хүлээж байна. Дарж шууд орно уу.' : '') +
     (acts.length
       ? '<div class="dash-acts">' + acts.map(function (a) {
-        return '<div class="dash-act" data-gopage="' + a.p + '" style="border-color:' + a.c + '33;background:' + a.c + '0A">' +
+        return '<div class="dash-act" data-drill="' + a.k + '" style="border-color:' + a.c + '33;background:' + a.c + '0A">' +
           '<div style="width:38px;height:38px;border-radius:11px;background:' + a.c + '18;color:' + a.c + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + a.i + '" style="font-size:19px"></i></div>' +
           '<div style="flex:1;min-width:0"><div style="font-size:22px;font-weight:900;color:' + a.c + ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + a.n + '</div>' +
           '<div style="font-size:12.5px;color:#475569;line-height:1.35;margin-top:3px">' + a.t + '</div></div>' +
@@ -2567,6 +2683,42 @@ function renderAdminDashboard() {
     '<div style="font-size:30px;line-height:1.1;color:#334155">' + dashNum(depts.length) + '</div>' +
     '</div></div>'
   );
+
+  /* ═══════════ 2b. ӨГӨГДЛИЙН БҮРЭН БҮТЭН БАЙДАЛ ═══════════
+     ⚠ KPI нь ДАТАТАЙ үзүүлэлтүүдийн дунджаар бодогддог. Хэрэв зөвхөн
+     "Босго оноо" л дататай бол бүгд 100 болж, "бүх ажилтан Алтан" гэсэн
+     ХУУРАМЧ дүр зураг гарна. Үүнийг нуухгүй, ил хэлнэ. */
+  var covDefs = [
+    { k: 'Босго оноо', fn: kpiBosgo, why: 'осол, зөрчил бүртгэгдээгүй бол автоматаар 100' },
+    { k: 'Давтан + шалгалт', fn: kpiDavtan, why: 'энэ сард давтан зааварчилгаа товлогдоогүй бол тооцогдохгүй' },
+    { k: 'Видео сургалт', fn: kpiVideo, why: 'ажилтанд видео хичээл оногдуулаагүй бол тооцогдохгүй' },
+    { k: 'Даалгавар', fn: kpiTask, why: 'нэрлэн даалгавар өгөөгүй бол тооцогдохгүй' },
+    { k: 'Аюул мэдээлэл (бонус)', fn: empBonusScore, why: 'мэдээлэл ирээгүй бол 0' }
+  ];
+  var cov = covDefs.map(function (c) {
+    var n = 0;
+    emps.forEach(function (e) { var v = null; try { v = c.fn(e); } catch (err) {} if (v != null) n++; });
+    return { k: c.k, n: n, pct: emps.length ? Math.round(n / emps.length * 100) : 0, why: c.why };
+  });
+  var covOk = cov.filter(function (c) { return c.pct >= 50; }).length;
+
+  if (covOk < 3) {
+    H += '<div class="card" style="padding:20px;margin-bottom:14px;border:1.5px solid #FDE68A;background:#FFFBEB">' +
+      '<h3 style="margin:0 0 3px;font-size:15.5px;color:#92400E">⚠ Анхаар — оноо бодит гүйцэтгэлийг харуулахгүй байна</h3>' +
+      '<p style="font-size:12.5px;color:#B45309;margin:0 0 14px;line-height:1.55">' +
+      'KPI нь <b>өгөгдөлтэй</b> үзүүлэлтүүдийн дунджаар бодогддог. Одоогоор ' + covOk + ' үзүүлэлт л бодит дататай тул ' +
+      'ихэнх ажилтан автоматаар өндөр оноотой харагдаж байна. Доорх дутуу үзүүлэлтүүдийг бөглөснөөр оноо жинхэнэ утгатай болно.</p>' +
+      cov.map(function (c) {
+        var okc = c.pct >= 50 ? '#16A34A' : (c.pct > 0 ? '#D97706' : '#DC2626');
+        return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #FDE68A">' +
+          '<span style="font-size:16px">' + (c.pct >= 50 ? '✅' : (c.pct > 0 ? '⚠️' : '❌')) + '</span>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#78350F">' + c.k + '</div>' +
+          '<div style="font-size:11.5px;color:#B45309;line-height:1.4">' + c.why + '</div></div>' +
+          '<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:900;color:' + okc + '">' + c.n + ' / ' + emps.length + '</div>' +
+          '<div style="font-size:10.5px;color:#B45309">' + c.pct + '%</div></div></div>';
+      }).join('') +
+      '</div>';
+  }
 
   /* ═══════════ 3. ОНОО ХААНА АЛДАГДАЖ БАЙНА ═══════════ */
   var hasDavtanAny = depts.some(function (d) { return deptHasDavtan(d, salKey); });
@@ -2804,6 +2956,8 @@ function renderAdminDashboard() {
   if (!host._wired) {
     host._wired = true;
     host.addEventListener('click', function (ev) {
+      var dr = ev.target.closest('[data-drill]');
+      if (dr) { dashOpenDrill(dr.getAttribute('data-drill')); return; }
       var g = ev.target.closest('[data-gopage]');
       if (g) { switchPage(g.getAttribute('data-gopage')); return; }
       var d = ev.target.closest('[data-godept]');
