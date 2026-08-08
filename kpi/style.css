@@ -2174,6 +2174,12 @@ body.modal-open #hintHand, body.modal-open #hintRing, body.modal-open #hintTip {
 }
 .dash-emp:hover { background: #FAFBFF; }
 
+/* Дарж болох бүх элемент */
+.dash-click { cursor: pointer; border-radius: 10px; transition: background .12s ease, transform .12s ease; }
+.dash-click:hover { background: rgba(79, 70, 229, .06); }
+.dash-click:active { transform: scale(.985); }
+.dash-tbl tbody tr.dash-click:hover { background: #EEF2FF; }
+
 @media (max-width: 900px) {
   .dash-2col { grid-template-columns: 1fr; }
   .dash-3col { grid-template-columns: 1fr 1fr; gap: 10px; }

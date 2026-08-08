@@ -2512,6 +2512,47 @@ function dashOpenDrill(kind) {
   buildModal(d.title + ' — ' + d.rows.length, node, { width: '560px' });
 }
 
+/* Дарж болох элемент болгох туслах */
+function dashReg(key, title, rows, opts) {
+  if (!rows || !rows.length) return '';
+  DASH_DRILL[key] = {
+    title: title, rows: rows,
+    page: (opts && opts.page) || '', pageLabel: (opts && opts.pageLabel) || '',
+    hint: (opts && opts.hint) || ''
+  };
+  return key;
+}
+function dashClick(key) { return key ? ' data-drill="' + key + '" class="dash-click"' : ''; }
+
+/* Ажилтны жагсаалтыг мөр болгох */
+function dashEmpRows(list, valueFn, unit) {
+  return list.map(function (e) {
+    var v = valueFn ? valueFn(e) : empTotal(e);
+    return dashDrillRow(esc(e.name), esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : ''),
+      (v == null ? '—' : v + (unit || '')), dashTone(v));
+  });
+}
+function dashTaskRows(list) {
+  return list.map(function (x) {
+    var od = taskOverdueDays(x);
+    return dashDrillRow(esc(x.title), dashTaskWho(x) +
+      (x.dueDate ? ' · дуусах ' + esc(x.dueDate) : '') +
+      (x.status === 'approved' && x.score != null ? ' · үнэлгээ ' + x.score + '%' : ''),
+      od ? od + ' хоног хэтэрсэн' : '', '#DC2626');
+  });
+}
+function dashReportRows(list) {
+  return list.map(function (r) {
+    var who = (DB.employees || []).filter(function (x) { return reportBelongsTo(r, x); })[0];
+    return dashDrillRow(esc(r.desc || r.title || 'Мэдээлэл'),
+      (who ? esc(who.name) : esc(r.reporterName || '')) +
+      (reportDept(r) ? ' · ' + esc(reportDept(r)) : '') +
+      (r.date ? ' · ' + esc(String(r.date).slice(0, 10)) : ''),
+      r.type === 'near_miss' ? 'Near-miss' : 'Аюул',
+      r.status === 'verified' ? '#16A34A' : '#E11D48');
+  });
+}
+
 function renderAdminDashboard() {
   var page = pageEl('dashboard'); if (!page) return;
 
@@ -2673,7 +2714,11 @@ function renderAdminDashboard() {
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
     Object.keys(lv).map(function (k) {
       var pc = emps.length ? Math.round(lv[k] / emps.length * 100) : 0;
-      return '<div style="flex:1;min-width:96px;background:' + lvColor[k] + '0F;border:1px solid ' + lvColor[k] + '30;border-radius:12px;padding:10px 12px">' +
+      var lvList = emps.filter(function (e) { return kpiLevel(empTotal(e)).name === k; })
+        .sort(function (a, b) { return empTotal(b) - empTotal(a); });
+      var lvKey = dashReg('lv_' + k, k + ' түвшний ажилтан', dashEmpRows(lvList, null, ' оноо'),
+        { page: 'employees', pageLabel: 'Ажилтнууд цэс' });
+      return '<div' + dashClick(lvKey) + ' style="flex:1;min-width:96px;background:' + lvColor[k] + '0F;border:1px solid ' + lvColor[k] + '30;border-radius:12px;padding:10px 12px">' +
         '<div style="font-size:20px;font-weight:900;color:' + lvColor[k] + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + lv[k] + '</div>' +
         '<div style="font-size:11.5px;color:' + lvColor[k] + ';font-weight:700">' + k + '</div>' +
         '<div style="font-size:10.5px;color:#94A3B8">' + pc + '%</div></div>';
@@ -2740,7 +2785,11 @@ function renderAdminDashboard() {
       var maxPts = Math.round(100 * f.w / wsum);
       var got = Math.round(v * f.w / wsum);
       var lost = maxPts - got;
-      return '<div class="dash-fac" data-gopage="' + f.p + '">' +
+      var fList = emps.filter(function (e) { return f.fn(e) != null; })
+        .sort(function (a, b) { return (f.fn(a) || 0) - (f.fn(b) || 0); });
+      var fKey = dashReg('fac_' + f.k, f.k + ' — ажилтан тус бүрээр', dashEmpRows(fList, f.fn, '%'),
+        { page: f.p, hint: 'Хамгийн бага оноотойгоос эхлэн эрэмбэлсэн.' });
+      return '<div class="dash-fac dash-click"' + (fKey ? ' data-drill="' + fKey + '"' : ' data-gopage="' + f.p + '"') + '>' +
         '<div style="flex:1;min-width:0">' +
         '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">' +
         '<span style="font-size:13.5px;font-weight:700;color:#1E293B">' + f.k + '</span>' +
@@ -2776,7 +2825,10 @@ function renderAdminDashboard() {
     '</tr></thead><tbody>' +
     deptRows.map(function (r) {
       function cell(v) { return v == null ? '<td style="color:#CBD5E1">—</td>' : '<td style="color:' + dashTone(v) + ';font-weight:700">' + v + '</td>'; }
-      return '<tr data-godept="' + esc(r.d) + '">' +
+      var dList = deptMembers(r.d).sort(function (a, b) { return empTotal(b) - empTotal(a); });
+      var dKey = dashReg('dept_' + r.d, r.d + ' — ажилтнууд', dashEmpRows(dList, null, ' оноо'),
+        { page: 'employees', pageLabel: 'Ажилтнууд цэс' });
+      return '<tr' + (dKey ? ' data-drill="' + dKey + '"' : '') + '>' +
         '<td style="text-align:left;font-weight:600">' + esc(r.d) + '</td>' +
         '<td style="color:#64748B">' + r.n + '</td>' +
         '<td><span style="background:' + dashTone(r.kpi) + '18;color:' + dashTone(r.kpi) + ';border-radius:8px;padding:3px 9px;font-weight:800">' + r.kpi + '</span></td>' +
@@ -2810,14 +2862,30 @@ function renderAdminDashboard() {
         var pTr = r.vis ? Math.round(r.trained / r.vis * 100) : 0;
         var pEx = r.vis ? Math.round(r.taken / r.vis * 100) : 0;
         var pPa = r.taken ? Math.round(r.passed / r.taken * 100) : 0;
+        /* Модуль бүрийн 3 багана — дарахад ямар ажилтнууд болохыг харуулна */
+        function modList(test) {
+          return emps.filter(function (e) {
+            try { if (!isModTrainingVisible(e, r.k)) return false; return test(getEmpProg(e.id, r.k) || {}); }
+            catch (err) { return false; }
+          });
+        }
+        var kTr = dashReg('mod_tr_' + r.k, r.label + ' — сургалт ДУУСГААГҮЙ',
+          dashEmpRows(modList(function (pg) { return !pg.trainingCompleted; }), null, ' оноо'),
+          { page: 'employees', hint: 'Эдгээр ажилтан сургалтаа хараахан дуусгаагүй байна.' });
+        var kEx = dashReg('mod_ex_' + r.k, r.label + ' — шалгалт ӨГӨӨГҮЙ',
+          dashEmpRows(modList(function (pg) { return !pg.examTaken; }), null, ' оноо'),
+          { page: 'employees' });
+        var kPa = dashReg('mod_pa_' + r.k, r.label + ' — шалгалтад ТЭНЦЭЭГҮЙ',
+          dashEmpRows(modList(function (pg) { return pg.examTaken && !pg.examPassed; }), null, ' оноо'),
+          { page: 'employees', hint: 'Шалгалт өгсөн боловч тэнцээгүй ажилтнууд.' });
         return '<div style="padding:11px 0;border-top:1px solid #F5F7FB">' +
           '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:7px">' +
           '<span style="font-size:13.5px;font-weight:700;color:#1E293B">' + esc(r.label) + '</span>' +
           '<span style="font-size:11.5px;color:#94A3B8">' + r.vis + ' ажилтанд нээгдсэн' + (r.avg != null ? ' · дундаж дүн ' + r.avg + '%' : '') + '</span></div>' +
           '<div class="dash-3col">' +
-          '<div><div style="font-size:11px;color:#94A3B8">Сургалт дуусгасан</div>' + dashBar(pTr, '#4F46E5', 6) + '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-top:3px">' + r.trained + ' / ' + r.vis + ' · ' + pTr + '%</div></div>' +
-          '<div><div style="font-size:11px;color:#94A3B8">Шалгалт өгсөн</div>' + dashBar(pEx, '#0891B2', 6) + '<div style="font-size:11.5px;color:#0891B2;font-weight:700;margin-top:3px">' + r.taken + ' / ' + r.vis + ' · ' + pEx + '%</div></div>' +
-          '<div><div style="font-size:11px;color:#94A3B8">Тэнцсэн</div>' + dashBar(pPa, dashTone(pPa), 6) + '<div style="font-size:11.5px;color:' + dashTone(pPa) + ';font-weight:700;margin-top:3px">' + r.passed + ' / ' + (r.taken || 0) + ' · ' + pPa + '%</div></div>' +
+          '<div' + dashClick(kTr) + '><div style="font-size:11px;color:#94A3B8">Сургалт дуусгасан' + (kTr ? ' ›' : '') + '</div>' + dashBar(pTr, '#4F46E5', 6) + '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-top:3px">' + r.trained + ' / ' + r.vis + ' · ' + pTr + '%</div></div>' +
+          '<div' + dashClick(kEx) + '><div style="font-size:11px;color:#94A3B8">Шалгалт өгсөн' + (kEx ? ' ›' : '') + '</div>' + dashBar(pEx, '#0891B2', 6) + '<div style="font-size:11.5px;color:#0891B2;font-weight:700;margin-top:3px">' + r.taken + ' / ' + r.vis + ' · ' + pEx + '%</div></div>' +
+          '<div' + dashClick(kPa) + '><div style="font-size:11px;color:#94A3B8">Тэнцсэн' + (kPa ? ' ›' : '') + '</div>' + dashBar(pPa, dashTone(pPa), 6) + '<div style="font-size:11.5px;color:' + dashTone(pPa) + ';font-weight:700;margin-top:3px">' + r.passed + ' / ' + (r.taken || 0) + ' · ' + pPa + '%</div></div>' +
           '</div></div>';
       }).join('')
     );
@@ -2847,9 +2915,15 @@ function renderAdminDashboard() {
         ? '<div style="font-size:13px;color:#94A3B8">Видео сургалтын мэдээлэл серверээс ачаалагдаж байна. Дээрх «Шинэчлэх» товчийг дарж болно.</div>'
         : vTot
         ? '<div class="dash-3col">' +
-          '<div><div style="font-size:11px;color:#94A3B8">Оногдсон</div><div style="font-size:24px;color:#334155">' + dashNum(vTot) + '</div></div>' +
-          '<div><div style="font-size:11px;color:#94A3B8">Үзсэн</div><div style="font-size:24px;color:#C2410C">' + dashNum(vView) + '</div></div>' +
-          '<div><div style="font-size:11px;color:#94A3B8">Тэнцсэн</div><div style="font-size:24px;color:#16A34A">' + dashNum(vPass) + '</div></div>' +
+          '<div' + dashClick(dashReg('lms_all', 'Видео хичээл оногдсон ажилтан',
+            emps.map(function (e) { var s = null; try { s = empLmsStats(e); } catch (er) {} if (!s || !s.total) return ''; return dashDrillRow(esc(e.name), esc(e.dept || ''), s.passed + ' / ' + s.total + ' тэнцсэн', dashTone(s.passed / s.total * 100)); }).filter(Boolean),
+            { page: 'video-track' })) + '><div style="font-size:11px;color:#94A3B8">Оногдсон ›</div><div style="font-size:24px;color:#334155">' + dashNum(vTot) + '</div></div>' +
+          '<div' + dashClick(dashReg('lms_no', 'Видео сургалтаа бүрэн ҮЗЭЭГҮЙ ажилтан',
+            emps.map(function (e) { var s = null; try { s = empLmsStats(e); } catch (er) {} if (!s || !s.total || s.viewed >= s.total) return ''; return dashDrillRow(esc(e.name), esc(e.dept || ''), s.viewed + ' / ' + s.total + ' үзсэн', '#C2410C'); }).filter(Boolean),
+            { page: 'video-track' })) + '><div style="font-size:11px;color:#94A3B8">Үзсэн ›</div><div style="font-size:24px;color:#C2410C">' + dashNum(vView) + '</div></div>' +
+          '<div' + dashClick(dashReg('lms_fail', 'Видео сургалтад бүрэн ТЭНЦЭЭГҮЙ ажилтан',
+            emps.map(function (e) { var s = null; try { s = empLmsStats(e); } catch (er) {} if (!s || !s.total || s.passed >= s.total) return ''; return dashDrillRow(esc(e.name), esc(e.dept || ''), s.passed + ' / ' + s.total + ' тэнцсэн', '#DC2626'); }).filter(Boolean),
+            { page: 'video-track', hint: 'Оногдсон бүх хичээлдээ тэнцээгүй ажилтнууд.' })) + '><div style="font-size:11px;color:#94A3B8">Тэнцсэн ›</div><div style="font-size:24px;color:#16A34A">' + dashNum(vPass) + '</div></div>' +
           '</div><div style="margin-top:12px">' + dashBar(vTot ? vPass / vTot * 100 : 0, '#16A34A') +
           '<div style="font-size:12px;color:#64748B;margin-top:5px">Тэнцсэн хувь: <b>' + (vTot ? Math.round(vPass / vTot * 100) : 0) + '%</b></div></div>'
         : '<div style="font-size:13px;color:#94A3B8">Мэдээлэл алга</div>'),
@@ -2859,9 +2933,13 @@ function renderAdminDashboard() {
       dashH('ХАБЭА шалгалтын ахиц', 'Урьдчилсан ба дараах шалгалтын дундаж') +
       (postAvg != null || preAvg != null
         ? '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">' +
-          '<div><div style="font-size:11px;color:#94A3B8">Урьдчилсан</div><div style="font-size:26px;color:#64748B">' + dashNum(preAvg != null ? preAvg : '—', preAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + pre.length + ' хүн</div></div>' +
+          '<div' + dashClick(dashReg('ex_pre', 'Урьдчилсан шалгалтын дүн',
+            dashEmpRows(emps.filter(function (e) { return e.examPrev != null; }).sort(function (a, b) { return _f(a.examPrev) - _f(b.examPrev); }),
+              function (e) { return Math.round(_f(e.examPrev)); }, '%'), { page: 'employees' })) + '><div style="font-size:11px;color:#94A3B8">Урьдчилсан<div style="font-size:26px;color:#64748B">' + dashNum(preAvg != null ? preAvg : '—', preAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + pre.length + ' хүн</div></div>' +
           '<i class="ti ti-arrow-right" style="color:#CBD5E1;font-size:22px"></i>' +
-          '<div><div style="font-size:11px;color:#94A3B8">Дараах</div><div style="font-size:26px;color:' + dashTone(postAvg) + '">' + dashNum(postAvg != null ? postAvg : '—', postAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + post.length + ' хүн</div></div>' +
+          '<div' + dashClick(dashReg('ex_post', 'Дараах шалгалтын дүн',
+            dashEmpRows(emps.filter(function (e) { return e.examScore != null; }).sort(function (a, b) { return _f(a.examScore) - _f(b.examScore); }),
+              function (e) { return Math.round(_f(e.examScore)); }, '%'), { page: 'employees' })) + '><div style="font-size:11px;color:#94A3B8">Дараах ›</div><div style="font-size:26px;color:' + dashTone(postAvg) + '">' + dashNum(postAvg != null ? postAvg : '—', postAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + post.length + ' хүн</div></div>' +
           (preAvg != null && postAvg != null
             ? '<div style="margin-left:auto;background:' + (postAvg >= preAvg ? '#ECFDF5' : '#FEF2F2') + ';border-radius:12px;padding:10px 14px">' +
               '<div style="font-size:22px;font-weight:900;color:' + (postAvg >= preAvg ? '#16A34A' : '#DC2626') + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + (postAvg - preAvg >= 0 ? '+' : '') + (postAvg - preAvg) + '</div>' +
@@ -2890,9 +2968,9 @@ function renderAdminDashboard() {
     dashCard(
       dashH('Даалгаврын байдал', myTasks.length + ' даалгавар' + (tAvg != null ? ' · дундаж үнэлгээ ' + tAvg + '%' : '')) +
       '<div class="dash-3col">' +
-      '<div><div style="font-size:11px;color:#94A3B8">Хийгдэх</div><div style="font-size:24px;color:#D97706">' + dashNum(tOpen) + '</div></div>' +
-      '<div><div style="font-size:11px;color:#94A3B8">Хянагдаж буй</div><div style="font-size:24px;color:#7C3AED">' + dashNum(tRev) + '</div></div>' +
-      '<div><div style="font-size:11px;color:#94A3B8">Баталгаажсан</div><div style="font-size:24px;color:#16A34A">' + dashNum(tOk) + '</div></div>' +
+      '<div' + dashClick(dashReg('t_open', 'Хийгдэх даалгавар', dashTaskRows(myTasks.filter(function (x) { return x.status !== 'submitted' && !taskIsClosed(x); })), { page: 'tasks' })) + '><div style="font-size:11px;color:#94A3B8">Хийгдэх ›</div><div style="font-size:24px;color:#D97706">' + dashNum(tOpen) + '</div></div>' +
+      '<div' + dashClick(dashReg('t_rev', 'Хянагдаж буй даалгавар', dashTaskRows(myTasks.filter(function (x) { return x.status === 'submitted'; })), { page: 'tasks' })) + '><div style="font-size:11px;color:#94A3B8">Хянагдаж буй ›</div><div style="font-size:24px;color:#7C3AED">' + dashNum(tRev) + '</div></div>' +
+      '<div' + dashClick(dashReg('t_ok', 'Баталгаажсан даалгавар', dashTaskRows(myTasks.filter(taskIsClosed)), { page: 'tasks' })) + '><div style="font-size:11px;color:#94A3B8">Баталгаажсан ›</div><div style="font-size:24px;color:#16A34A">' + dashNum(tOk) + '</div></div>' +
       '</div>' +
       (overdueT.length ? '<div style="margin-top:12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#B91C1C;font-weight:700">⏰ ' + overdueT.length + ' даалгаврын хугацаа хэтэрсэн</div>' : '') +
       (tAvg != null ? '<div style="margin-top:12px">' + dashBar(tAvg, dashTone(tAvg)) + '</div>' : ''),
@@ -2901,9 +2979,9 @@ function renderAdminDashboard() {
     dashCard(
       dashH('Аюул / Near-miss мэдээлэл', reps.length + ' мэдээлэл · олгосон бонус ' + bonusPts + ' оноо') +
       '<div class="dash-3col">' +
-      '<div><div style="font-size:11px;color:#94A3B8">Баталгаажсан</div><div style="font-size:24px;color:#16A34A">' + dashNum(rVer) + '</div></div>' +
-      '<div><div style="font-size:11px;color:#94A3B8">Хүлээгдэж буй</div><div style="font-size:24px;color:' + (rPend ? '#DC2626' : '#94A3B8') + '">' + dashNum(rPend) + '</div></div>' +
-      '<div><div style="font-size:11px;color:#94A3B8">Аюул / NM</div><div style="font-size:24px;color:#7C3AED">' + dashNum(rHaz + ' / ' + rNm) + '</div></div>' +
+      '<div' + dashClick(dashReg('r_ver', 'Баталгаажсан мэдээлэл', dashReportRows(reps.filter(function (r) { return r.status === 'verified'; })), { page: 'reportflow' })) + '><div style="font-size:11px;color:#94A3B8">Баталгаажсан ›</div><div style="font-size:24px;color:#16A34A">' + dashNum(rVer) + '</div></div>' +
+      '<div' + dashClick(dashReg('r_pend', 'Хүлээгдэж буй мэдээлэл', dashReportRows(reps.filter(function (r) { return r.status === 'reported'; })), { page: 'reportflow' })) + '><div style="font-size:11px;color:#94A3B8">Хүлээгдэж буй ›</div><div style="font-size:24px;color:' + (rPend ? '#DC2626' : '#94A3B8') + '">' + dashNum(rPend) + '</div></div>' +
+      '<div' + dashClick(dashReg('r_all', 'Бүх мэдээлэл', dashReportRows(reps), { page: 'reportflow' })) + '><div style="font-size:11px;color:#94A3B8">Аюул / NM ›</div><div style="font-size:24px;color:#7C3AED">' + dashNum(rHaz + ' / ' + rNm) + '</div></div>' +
       '</div>' +
       (rPend ? '<div style="margin-top:12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#B91C1C;font-weight:700">' + rPend + ' мэдээлэл баталгаажуулалт хүлээж байна — ажилтны бонус хойшилж байна</div>' : ''),
       '18px'
@@ -2938,7 +3016,13 @@ function renderAdminDashboard() {
   var sorted = emps.slice().sort(function (a, b) { return empTotal(b) - empTotal(a); });
   function empRow(e, rank, bad) {
     var tv = empTotal(e), L = kpiLevel(tv);
-    return '<div class="dash-emp" data-goemp="' + esc(e.id) + '">' +
+    var rows = factors.map(function (f) {
+      var v = null; try { v = f.fn(e); } catch (err) {}
+      return dashDrillRow(f.k, f.d, v == null ? 'дата алга' : v + '%', v == null ? '#CBD5E1' : dashTone(v));
+    });
+    var ek = dashReg('emp_' + e.id, esc(e.name) + ' — оноо хаанаас бүрдсэн', rows,
+      { page: 'employees', hint: esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : '') + ' · нийт ' + tv + ' оноо' });
+    return '<div class="dash-emp dash-click"' + (ek ? ' data-drill="' + ek + '"' : '') + '>' +
       '<span style="width:26px;font-size:12px;color:#94A3B8;font-weight:700">' + rank + '</span>' +
       '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.name) + '</div>' +
       '<div style="font-size:11px;color:#94A3B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.dept || '') + '</div></div>' +
