@@ -1034,6 +1034,20 @@ function formModal(opts) {
         if (String(val) === String(f.value)) op.selected = true;
         ctrl.appendChild(op);
       });
+    } else if (f.type === 'file') {
+      ctrl = elc('div');
+      var fInp = elc('input'); fInp.type = 'file';
+      if (f.accept) fInp.accept = f.accept;
+      fInp.style.cssText = 'width:100%;font-size:13px;padding:9px;border:1px dashed #CBD5E1;border-radius:8px;background:#F8FAFC';
+      var fHid = elc('input'); fHid.type = 'hidden'; fHid.className = 'file-url'; fHid.value = f.value || '';
+      var fNam = elc('input'); fNam.type = 'hidden'; fNam.className = 'file-name'; fNam.value = f.fileName || '';
+      var fSt = elc('div'); fSt.className = 'file-status';
+      fSt.style.cssText = 'font-size:12px;color:#94A3B8;margin-top:5px';
+      if (f.value) { fSt.textContent = 'Хавсаргасан ✓'; fSt.style.color = '#16A34A'; }
+      fInp.addEventListener('change', function () {
+        if (fInp.files && fInp.files[0]) { fNam.value = fInp.files[0].name; taskUpload(fInp.files[0], fSt, fHid); }
+      });
+      ctrl.appendChild(fInp); ctrl.appendChild(fHid); ctrl.appendChild(fNam); ctrl.appendChild(fSt);
     } else if (f.type === 'checkboxlist') {
       ctrl = elc('div', 'chk-list');
       ctrl.style.cssText = 'max-height:180px;overflow-y:auto;border:1px solid #E2E8F0;border-radius:8px;padding:6px 8px';
@@ -1126,6 +1140,10 @@ function formModal(opts) {
         var sa = grp.querySelector('.sev-btn.active'); v = sa ? parseInt(sa.getAttribute('data-value'), 10) : 3;
       } else if (f.type === 'checkboxlist') {
         v = Array.prototype.slice.call(grp.querySelectorAll('.chk-list input[type=checkbox]:checked')).map(function (c) { return c.value; });
+      } else if (f.type === 'file') {
+        var _fu = grp.querySelector('.file-url'), _fn = grp.querySelector('.file-name');
+        v = _fu ? _fu.value : '';
+        vals[f.name + 'Name'] = _fn ? _fn.value : '';
       } else {
         v = grp.querySelector('input,select,textarea').value;
         if (typeof v === 'string') v = v.trim();
@@ -2772,6 +2790,126 @@ function taskScoreOf(t) {
   return 0;                                    // хийгээгүй / буцаагдсан
 }
 function taskIsClosed(t) { return !!t && (t.status === 'approved' || t.status === 'done'); }
+
+/* ── Ач холбогдол, ангилал, давтамж ── */
+var TASK_PRIO = {
+  urgent: { label: 'Яаралтай', color: '#DC2626', rank: 0 },
+  high:   { label: 'Өндөр',    color: '#EA580C', rank: 1 },
+  normal: { label: 'Энгийн',   color: '#0891B2', rank: 2 },
+  low:    { label: 'Бага',     color: '#94A3B8', rank: 3 }
+};
+var TASK_CAT = {
+  inspection: 'Шалгалт, хяналт',
+  repair:     'Засвар, арчилгаа',
+  training:   'Сургалт, зааварчилгаа',
+  report:     'Тайлан, бичиг баримт',
+  ppe:        'ХХХ хэрэгсэл',
+  hazard:     'Аюул арилгах',
+  other:      'Бусад'
+};
+var TASK_REPEAT = { daily: 'Өдөр бүр', weekly: '7 хоног тутам', monthly: 'Сар бүр', quarterly: 'Улирал тутам' };
+function taskPrio(x) { return TASK_PRIO[(x && x.priority) || 'normal'] || TASK_PRIO.normal; }
+
+/* ⚠ Огноог ХУАНЛИЙН ӨДРӨӨР харьцуулна (цагийн бүсээс болж 1 хоног зөрөхөөс сэргийлнэ) */
+function _dayNum(v) {
+  var d = (typeof v === 'string') ? new Date(v + 'T00:00:00') : new Date(v);
+  if (isNaN(d.getTime())) return NaN;
+  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000);
+}
+/* Огноог YYYY-MM-DD болгох — toISOString цагийн бүсээр гулсдаг тул ашиглахгүй */
+function _ymd(d) {
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+/* Хугацаа хэтэрсэн хоног (хаагдаагүй даалгаварт) */
+function taskOverdueDays(x) {
+  if (!x || !x.dueDate || taskIsClosed(x)) return 0;
+  var due = _dayNum(x.dueDate), today = _dayNum(new Date());
+  if (isNaN(due) || isNaN(today)) return 0;
+  var diff = today - due;
+  return diff > 0 ? diff : 0;
+}
+/* Дуусах хугацаа 3 хоногийн дотор ойртсон эсэх */
+function taskDueSoon(x) {
+  if (!x || !x.dueDate || taskIsClosed(x)) return false;
+  var due = _dayNum(x.dueDate), today = _dayNum(new Date());
+  if (isNaN(due) || isNaN(today)) return false;
+  var days = due - today;
+  return days >= 0 && days <= 3;
+}
+/* Хугацаа хоцроож илгээсэн хоног */
+function taskLateDays(x) {
+  if (!x || !x.dueDate || !x.submittedAt) return 0;
+  var due = _dayNum(x.dueDate), sub = _dayNum(new Date(x.submittedAt));
+  if (isNaN(due) || isNaN(sub)) return 0;
+  var diff = sub - due;
+  return diff > 0 ? diff : 0;
+}
+/* Эрэмбэ: яаралтай → хугацаа хэтэрсэн → дуусах ойрхон → шинэ */
+function taskSortFn(a, b) {
+  var pa = taskPrio(a).rank, pb = taskPrio(b).rank;
+  if (pa !== pb) return pa - pb;
+  var oa = taskOverdueDays(a), ob = taskOverdueDays(b);
+  if (oa !== ob) return ob - oa;
+  var da = a.dueDate || '9999-12-31', db2 = b.dueDate || '9999-12-31';
+  if (da !== db2) return da < db2 ? -1 : 1;
+  return new Date(b.createdAt) - new Date(a.createdAt);
+}
+
+/* ── Файл байршуулах (R2) ── */
+var TASK_R2 = 'https://monos-upload.buynt666.workers.dev';
+var TASK_R2_KEY = 'monos2026';
+function taskUpload(file, statusEl, hiddenEl) {
+  if (!file) return;
+  if (file.size > 12 * 1024 * 1024) {
+    statusEl.textContent = 'Файл 12MB-аас их байна. Багасгана уу.';
+    statusEl.style.color = '#DC2626'; return;
+  }
+  var fname = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  statusEl.textContent = 'Байршуулж байна...'; statusEl.style.color = '#D97706';
+  var xhr = new XMLHttpRequest();
+  xhr.open('PUT', TASK_R2 + '/' + fname);
+  xhr.setRequestHeader('X-Key', TASK_R2_KEY);
+  xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+  xhr.upload.onprogress = function (e) {
+    if (e.lengthComputable) statusEl.textContent = Math.round(e.loaded / e.total * 100) + '%';
+  };
+  xhr.onload = function () {
+    if (xhr.status === 200) {
+      try { var r = JSON.parse(xhr.responseText); hiddenEl.value = r.url || ''; } catch (e) {}
+      statusEl.textContent = 'Хавсаргалаа ✓'; statusEl.style.color = '#16A34A';
+    } else { statusEl.textContent = 'Алдаа ' + xhr.status; statusEl.style.color = '#DC2626'; }
+  };
+  xhr.onerror = function () { statusEl.textContent = 'Сүлжээний алдаа'; statusEl.style.color = '#DC2626'; };
+  xhr.send(file);
+}
+
+/* Давтагдах даалгаврын дараагийн удаагийг автоматаар үүсгэх */
+function taskRepeatNext(x) {
+  if (!x || !x.repeat || !TASK_REPEAT[x.repeat]) return;
+  function shift(ds) {
+    var d = ds ? new Date(ds + 'T00:00:00') : new Date();
+    if (isNaN(d.getTime())) d = new Date();
+    if (x.repeat === 'monthly') d.setMonth(d.getMonth() + 1);
+    else if (x.repeat === 'quarterly') d.setMonth(d.getMonth() + 3);
+    else if (x.repeat === 'weekly') d.setDate(d.getDate() + 7);
+    else d.setDate(d.getDate() + 1);
+    return _ymd(d);
+  }
+  DB.tasks = DB.tasks || [];
+  DB.tasks.unshift({
+    id: nextId('TSK', DB.tasks),
+    title: x.title, desc: x.desc || '', dept: x.dept || 'all',
+    empId: x.empId || '', empIds: (x.empIds || []).slice(),
+    startDate: shift(x.startDate || x.dueDate), dueDate: shift(x.dueDate || x.startDate),
+    priority: x.priority || 'normal', category: x.category || 'other', repeat: x.repeat,
+    refUrl: x.refUrl || '', refUrlName: x.refUrlName || '',
+    status: 'open', createdBy: x.createdBy || USER.name,
+    createdByEmail: x.createdByEmail || '',
+    createdAt: new Date().toISOString(), completedBy: '', completedAt: '',
+    repeatOf: x.id
+  });
+}
 
 /* Хэн хянаж, үнэлгээ өгөх эрхтэй вэ */
 function canReviewTask(t) {
@@ -5646,12 +5784,13 @@ function renderTasks() {
     }
     if (emp) return me && (t.empId === me.id || (t.empIds && t.empIds.indexOf(me.id) > -1) || t.dept === me.dept || t.dept === 'all');
     return false;
-  }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
+  }).sort(taskSortFn);
 
   var review = tasks.filter(function (x) { return x.status === 'submitted'; });
   var open   = tasks.filter(function (x) { return x.status !== 'submitted' && !taskIsClosed(x); });
   var closed = tasks.filter(taskIsClosed);
   var myReview = review.filter(canReviewTask);
+  var overdue = tasks.filter(function (x) { return taskOverdueDays(x) > 0; });
 
   /* Badge — хянагчид "хянах", ажилтанд "хийх" тоо */
   var badge = document.getElementById('taskBadge');
@@ -5667,6 +5806,7 @@ function renderTasks() {
     statCard('Нийт даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
     statCard('Хийгдэх', open.length, 'ti-clock', '#D97706') +
     statCard('Хянагдаж буй', review.length, 'ti-eye-search', '#7C3AED') +
+    statCard('Хугацаа хэтэрсэн', overdue.length, 'ti-alarm', '#DC2626') +
     statCard('Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
     '</div>';
 
@@ -5684,6 +5824,8 @@ function renderTasks() {
 
   function taskCard(x) {
     var closedT = taskIsClosed(x);
+    var od = taskOverdueDays(x), soon = taskDueSoon(x), late = taskLateDays(x);
+    var pr = taskPrio(x);
     var deptLabel = x.dept === 'all' ? 'Бүх алба' : esc(x.dept || '');
     var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
     var empLabel = ids.map(function (eid) { return esc(((DB.employees || []).filter(function (e) { return e.id === eid; })[0] || {}).name || eid); }).join(', ');
@@ -5704,16 +5846,24 @@ function renderTasks() {
       '<div style="width:36px;height:36px;border-radius:9px;background:' + ic + ';color:' + icc + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"><i class="ti ti-' + icn + '"></i></div>' +
       '<div style="flex:1;min-width:0">' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-        '<span style="font-weight:600;font-size:14px' + (closedT ? ';color:#94A3B8' : '') + '">' + esc(x.title) + '</span>' + statusPill(x) + '</div>' +
+        '<span style="font-weight:600;font-size:14px' + (closedT ? ';color:#94A3B8' : '') + '">' + esc(x.title) + '</span>' +
+        (!closedT && x.priority && x.priority !== 'normal' ? '<span style="background:' + pr.color + '18;color:' + pr.color + ';border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">' + esc(pr.label) + '</span>' : '') +
+        (od ? '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">⏰ ' + od + ' хоног хэтэрсэн</span>' : '') +
+        (!od && soon ? '<span style="background:#D9770618;color:#D97706;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хугацаа ойртсон</span>' : '') +
+        statusPill(x) + '</div>' +
         (x.desc ? '<div style="font-size:13px;color:#64748B;margin-top:3px">' + esc(x.desc) + '</div>' : '') +
         '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
+        (x.category && TASK_CAT[x.category] ? '<span><i class="ti ti-tag"></i> ' + esc(TASK_CAT[x.category]) + '</span>' : '') +
         (x.startDate ? '<span style="color:#0891B2"><i class="ti ti-player-play"></i> Эхлэх: ' + esc(x.startDate) + '</span>' : '') +
-        (x.dueDate ? '<span><i class="ti ti-calendar"></i> Дуусах: ' + esc(x.dueDate) + '</span>' : '') +
+        (x.dueDate ? '<span' + (od ? ' style="color:#DC2626;font-weight:700"' : (soon ? ' style="color:#D97706;font-weight:700"' : '')) + '><i class="ti ti-calendar"></i> Дуусах: ' + esc(x.dueDate) + '</span>' : '') +
+        (x.repeat && TASK_REPEAT[x.repeat] ? '<span style="color:#7C3AED"><i class="ti ti-repeat"></i> ' + esc(TASK_REPEAT[x.repeat]) + '</span>' : '') +
         '<span><i class="ti ti-user"></i> ' + esc(x.createdBy || 'Админ') + '</span>' +
-        (x.submittedAt ? '<span style="color:#7C3AED"><i class="ti ti-send"></i> ' + esc((x.submittedAt || '').slice(0, 10)) + '</span>' : '') +
+        (x.submittedAt ? '<span style="color:#7C3AED"><i class="ti ti-send"></i> ' + esc((x.submittedAt || '').slice(0, 10)) + (late ? ' (' + late + ' хоног хоцорсон)' : '') + '</span>' : '') +
         '</div>' +
+        (x.refUrl ? '<div style="margin-top:8px"><a href="' + esc(x.refUrl) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#4F46E5;text-decoration:none;background:#EEF2FF;border-radius:8px;padding:6px 11px"><i class="ti ti-paperclip"></i> Заавар файл' + (x.refUrlName ? ': ' + esc(x.refUrlName) : '') + '</a></div>' : '') +
         (x.submitNote ? '<div style="margin-top:8px;background:#F8FAFC;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#475569"><b>Ажилтны тайлбар:</b> ' + esc(x.submitNote) + '</div>' : '') +
+        (x.proofUrl ? '<div style="margin-top:6px"><a href="' + esc(x.proofUrl) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#047857;text-decoration:none;background:#ECFDF5;border-radius:8px;padding:6px 11px"><i class="ti ti-photo-check"></i> Гүйцэтгэлийн нотолгоо' + (x.proofName ? ': ' + esc(x.proofName) : '') + '</a></div>' : '') +
         (x.reviewComment ? '<div style="margin-top:6px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар' + (x.reviewedBy ? ' (' + esc(x.reviewedBy) + ')' : '') + ':</b> ' + esc(x.reviewComment) + '</div>' : '') +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
@@ -5769,12 +5919,16 @@ function actionSubmitTask(tid) {
     width: '480px',
     fields: [
       { name: 'note', label: 'Юу хийснээ товч бичнэ үү (заавал биш)', type: 'textarea', rows: 4,
-        placeholder: 'Жишээ: Цехийн гал унтраагуурыг бүрэн шалгаж, 2 ширхгийг сольсон.' }
+        placeholder: 'Жишээ: Цехийн гал унтраагуурыг бүрэн шалгаж, 2 ширхгийг сольсон.' },
+      { name: 'proof', label: '📷 Гүйцэтгэлийн нотолгоо — зураг эсвэл файл (заавал биш)', type: 'file',
+        accept: 'image/*,.pdf,.doc,.docx,.xls,.xlsx' }
     ],
     submitLabel: 'Хянуулахаар илгээх',
     onSubmit: function (v) {
       x.status = 'submitted';
       x.submitNote = (v.note || '').trim();
+      x.proofUrl = v.proof || '';
+      x.proofName = v.proofName || '';
       x.submittedBy = USER.name;
       x.submittedAt = new Date().toISOString();
       x.reviewComment = '';
@@ -5792,11 +5946,15 @@ function actionReviewTask(tid) {
   var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
   var who = ids.map(function (id) { return ((DB.employees || []).filter(function (e) { return e.id === id; })[0] || {}).name || id; }).join(', ');
 
+  var lateN = taskLateDays(x);
+  var lateTxt = lateN ? ' ⏰ ХУГАЦАА ' + lateN + ' ХОНОГ ХОЦОРСОН' : '';
+  var proofTxt = x.proofUrl ? ' 📎 Нотолгоо хавсаргасан' : ' ⚠ Нотолгоо хавсаргаагүй';
+
   formModal({
     title: 'Гүйцэтгэл хянах — ' + (x.title || ''),
     width: '540px',
     fields: [
-      { name: 'score', label: 'Гүйцэтгэлийн үнэлгээ' + (who ? ' · ' + who : ''), type: 'select',
+      { name: 'score', label: 'Гүйцэтгэлийн үнэлгээ' + (who ? ' · ' + who : '') + lateTxt + ' ·' + proofTxt, type: 'select',
         value: String(x.score != null ? x.score : 100),
         options: [
           { value: '100', label: '100% — Маш сайн, бүрэн гүйцэт' },
@@ -5831,8 +5989,9 @@ function actionReviewTask(tid) {
       x.score = s;
       x.completedBy = x.submittedBy || USER.name;
       x.completedAt = x.submittedAt || new Date().toISOString();
+      try { taskRepeatNext(x); } catch (err) { console.error('[task repeat]', err); }
       saveDB(); renderTasks(); renderDashboard();
-      toast('Баталгаажлаа · үнэлгээ ' + s + '% — KPI-д тооцогдлоо', 'success');
+      toast('Баталгаажлаа · үнэлгээ ' + s + '%' + (x.repeat ? ' · дараагийнх автоматаар үүслээ' : '') + ' — KPI-д тооцогдлоо', 'success');
     }
   });
 }
@@ -5846,11 +6005,25 @@ function actionAddTask() {
     fields: [
       { name: 'title', label: 'Даалгаврын гарчиг', type: 'text', required: true, placeholder: 'Юу хийх ёстой...' },
       { name: 'desc', label: 'Тайлбар (заавал биш)', type: 'textarea', placeholder: 'Дэлгэрэнгүй...' },
+      { name: 'category', label: 'Ангилал', type: 'select', value: 'other',
+        options: Object.keys(TASK_CAT).map(function (k) { return { value: k, label: TASK_CAT[k] }; }) },
+      { name: 'priority', label: 'Ач холбогдол', type: 'select', value: 'normal',
+        options: [
+          { value: 'urgent', label: '🔴 Яаралтай — нэн даруй хийх' },
+          { value: 'high',   label: '🟠 Өндөр — эн тэргүүнд' },
+          { value: 'normal', label: '🔵 Энгийн' },
+          { value: 'low',    label: '⚪ Бага — цаг гарвал' }
+        ] },
       { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: 'all' },
       { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist',
         options: empOpts, value: [], searchable: true, searchPlaceholder: '🔍 Ажилтны нэр эсвэл албаар хайх...' },
       { name: 'startDate', label: 'Эхлэх огноо (заавал биш)', type: 'date', value: '' },
-      { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' }
+      { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' },
+      { name: 'repeat', label: 'Давтамж — дуусмагц дараагийнх нь автоматаар үүснэ', type: 'select', value: '',
+        options: [{ value: '', label: 'Давтахгүй (нэг удаа)' }].concat(
+          Object.keys(TASK_REPEAT).map(function (k) { return { value: k, label: TASK_REPEAT[k] }; })) },
+      { name: 'refUrl', label: 'Заавар / загвар файл хавсаргах (заавал биш)', type: 'file',
+        accept: 'image/*,.pdf,.doc,.docx,.xls,.xlsx' }
     ],
     submitLabel: 'Нэмэх',
     onSubmit: function (v) {
@@ -5865,6 +6038,11 @@ function actionAddTask() {
         empIds: empIds,
         startDate: v.startDate || '',
         dueDate: v.dueDate || '',
+        priority: v.priority || 'normal',
+        category: v.category || 'other',
+        repeat: v.repeat || '',
+        refUrl: v.refUrl || '',
+        refUrlName: v.refUrlName || '',
         status: 'open',
         createdBy: USER.name,
         createdByEmail: (SESSION && SESSION.email) || '',
