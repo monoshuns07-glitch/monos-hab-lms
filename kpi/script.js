@@ -2407,10 +2407,392 @@ function renderEmployeeDashboard() {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ХЯНАЛТЫН САМБАР — ХАБЭА менежерийн бүрэн зураглал
+   Бүх цэсний өгөгдлийг нэг дэлгэцэд, шийдвэр гаргахад хэрэгтэй хэлбэрээр.
+   Дэс дараалал: юу хийх ёстой → нийт байдал → хаана алдагдаж байна → задаргаа
+   ══════════════════════════════════════════════════════════════════════ */
+
+function dashNum(v, unit) { return '<span style="font-family:\'Bricolage Grotesque\',sans-serif;font-weight:900">' + v + '</span>' + (unit ? '<span style="font-size:.6em;font-weight:600;color:#94A3B8">' + unit + '</span>' : ''); }
+
+function dashBar(pct, color, h) {
+  var v = clamp(Math.round(pct || 0), 0, 100);
+  return '<div style="height:' + (h || 7) + 'px;background:#EEF1F9;border-radius:99px;overflow:hidden">' +
+    '<div style="height:100%;width:' + v + '%;background:' + color + ';border-radius:99px"></div></div>';
+}
+
+function dashCard(inner, pad) {
+  return '<div class="card" style="padding:' + (pad || '20px') + ';margin-bottom:14px">' + inner + '</div>';
+}
+
+function dashH(title, sub) {
+  return '<h3 style="margin:0 0 3px;font-size:15.5px">' + title + '</h3>' +
+    (sub ? '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 14px;line-height:1.5">' + sub + '</p>' : '<div style="height:10px"></div>');
+}
+
+/* Өнгө: өндөр = сайн */
+function dashTone(v) {
+  if (v == null) return '#94A3B8';
+  if (v >= 85) return '#16A34A';
+  if (v >= 70) return '#0891B2';
+  if (v >= 55) return '#D97706';
+  return '#DC2626';
+}
+
+function renderAdminDashboard() {
+  var page = pageEl('dashboard'); if (!page) return;
+
+  /* Хуучин статик бүтцийг нуух — зөвхөн гарчиг, демо анхааруулга үлдээнэ */
+  Array.prototype.forEach.call(page.children, function (ch) {
+    if (ch.classList && ch.classList.contains('page-header')) return;
+    if (ch.id === 'dashPro' || ch.id === 'demoBanner') return;
+    ch.style.display = 'none';
+  });
+  var host = document.getElementById('dashPro');
+  if (!host) { host = document.createElement('div'); host.id = 'dashPro'; page.appendChild(host); }
+
+  var emps = (DB.employees || []).slice();
+  if (!emps.length) {
+    host.innerHTML = '<div class="card" style="padding:40px"><div class="empty-state">' +
+      '<i class="ti ti-users"></i><div>Ажилтны мэдээлэл ачаалагдаагүй байна.</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px">Хуудсыг дахин ачаална уу (Ctrl+Shift+R). Асуудал үргэлжилвэл Контент удирдлага цэснээс ажилтнуудаа шалгана уу.</div>' +
+      '</div></div>';
+    return;
+  }
+
+  var dh = isDeptHead() && SESSION && SESSION.dept ? SESSION.dept : '';
+  if (dh) emps = emps.filter(function (e) { return e.dept === dh; });
+
+  var salKey = currentSalaryKey();
+  var w = kpiCfg().weights;
+  var depts = deptList().filter(function (d) { return !dh || d === dh; });
+  var H = '';
+
+  /* ═══════════ 1. ШААРДЛАГАТАЙ АРГА ХЭМЖЭЭ ═══════════ */
+  var acts = [];
+
+  var pendingReview = (DB.tasks || []).filter(function (t) { return t.status === 'submitted' && canReviewTask(t); });
+  if (pendingReview.length) acts.push({ n: pendingReview.length, t: 'даалгавар хянаж үнэлгээ өгөх', c: '#7C3AED', i: 'ti-eye-search', p: 'tasks' });
+
+  var pendingReports = (DB.reports || []).filter(function (r) {
+    if (dh && r.dept !== dh) return false;
+    return r.status === 'reported';
+  });
+  if (pendingReports.length) acts.push({ n: pendingReports.length, t: 'аюул/near-miss баталгаажуулах', c: '#E11D48', i: 'ti-flag-2', p: 'reportflow' });
+
+  var overdueT = (DB.tasks || []).filter(function (t) {
+    if (dh && t.dept !== dh && t.dept !== 'all') return false;
+    return taskOverdueDays(t) > 0;
+  });
+  if (overdueT.length) acts.push({ n: overdueT.length, t: 'даалгаврын хугацаа хэтэрсэн', c: '#DC2626', i: 'ti-alarm', p: 'tasks' });
+
+  /* Шалгалт нээлттэй боловч өгөөгүй ажилтан */
+  var examWaiting = 0;
+  emps.forEach(function (e) {
+    Object.keys(TRAINING_MODULES).forEach(function (k) {
+      try { if (isModExamUnlocked(e, k) && !getEmpProg(e.id, k).examTaken) examWaiting++; } catch (err) {}
+    });
+  });
+  if (examWaiting) acts.push({ n: examWaiting, t: 'шалгалт нээлттэй ч өгөөгүй', c: '#0891B2', i: 'ti-pencil-check', p: 'employees' });
+
+  var lowEmps = emps.filter(function (e) { return empTotal(e) < 60; });
+  if (lowEmps.length) acts.push({ n: lowEmps.length, t: 'ажилтан 60-аас доош оноотой', c: '#D97706', i: 'ti-user-exclamation', p: 'employees' });
+
+  var noRisk = depts.filter(function (d) { return !((DB.riskDash || {})[d]); });
+  if (!DB.riskDash) noRisk = [];
+  if (noRisk.length) acts.push({ n: noRisk.length, t: 'албанд эрсдэлийн үнэлгээ байхгүй', c: '#7C3AED', i: 'ti-chart-pie-2', p: 'hazards' });
+
+  H += dashCard(
+    dashH('⚡ Шаардлагатай арга хэмжээ', acts.length ? 'Эдгээр нь таны шийдвэр хүлээж байна. Дарж шууд орно уу.' : '') +
+    (acts.length
+      ? '<div class="dash-acts">' + acts.map(function (a) {
+        return '<div class="dash-act" data-gopage="' + a.p + '" style="border-color:' + a.c + '33;background:' + a.c + '0A">' +
+          '<div style="width:38px;height:38px;border-radius:11px;background:' + a.c + '18;color:' + a.c + ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + a.i + '" style="font-size:19px"></i></div>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:22px;font-weight:900;color:' + a.c + ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + a.n + '</div>' +
+          '<div style="font-size:12.5px;color:#475569;line-height:1.35;margin-top:3px">' + a.t + '</div></div>' +
+          '<i class="ti ti-chevron-right" style="color:#CBD5E1"></i></div>';
+      }).join('') + '</div>'
+      : '<div style="display:flex;align-items:center;gap:12px;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:12px;padding:14px 16px">' +
+        '<i class="ti ti-circle-check" style="font-size:26px;color:#16A34A"></i>' +
+        '<div style="font-size:13.5px;color:#047857;font-weight:700">Хүлээгдэж буй ажил алга — бүх зүйл хяналтад байна.</div></div>')
+  );
+
+  /* ═══════════ 2. ЕРӨНХИЙ БАЙДАЛ ═══════════ */
+  var totals = emps.map(empTotal);
+  var avgAll = totals.length ? Math.round(avg(totals)) : 0;
+  var lv = { 'Алтан': 0, 'Мөнгөн': 0, 'Хүрэл': 0, 'Эхлэгч': 0 };
+  emps.forEach(function (e) { var L = kpiLevel(empTotal(e)); if (lv[L.name] != null) lv[L.name]++; });
+  var lvColor = { 'Алтан': '#D97706', 'Мөнгөн': '#0EA5E9', 'Хүрэл': '#B45309', 'Эхлэгч': '#16A34A' };
+  var salLbl = (function () { var q = salKey.split('-'); return q[0] + ' оны ' + parseInt(q[1], 10) + '-р сарын үе (25→24)'; })();
+
+  H += dashCard(
+    '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">' +
+    '<div style="min-width:180px">' +
+    '<div style="font-size:12.5px;color:#64748B">' + (dh ? esc(dh) + ' — дундаж KPI' : 'Компанийн дундаж KPI') + '</div>' +
+    '<div style="font-size:46px;line-height:1.05;color:' + dashTone(avgAll) + '">' + dashNum(avgAll, ' / 100') + '</div>' +
+    '<div style="font-size:12px;color:#94A3B8;margin-top:2px">' + salLbl + '</div></div>' +
+    '<div style="flex:1;min-width:260px">' +
+    '<div style="font-size:12.5px;color:#64748B;margin-bottom:8px">Түвшний тархалт — ' + emps.length + ' ажилтан</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    Object.keys(lv).map(function (k) {
+      var pc = emps.length ? Math.round(lv[k] / emps.length * 100) : 0;
+      return '<div style="flex:1;min-width:96px;background:' + lvColor[k] + '0F;border:1px solid ' + lvColor[k] + '30;border-radius:12px;padding:10px 12px">' +
+        '<div style="font-size:20px;font-weight:900;color:' + lvColor[k] + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + lv[k] + '</div>' +
+        '<div style="font-size:11.5px;color:' + lvColor[k] + ';font-weight:700">' + k + '</div>' +
+        '<div style="font-size:10.5px;color:#94A3B8">' + pc + '%</div></div>';
+    }).join('') + '</div></div>' +
+    '<div style="min-width:120px">' +
+    '<div style="font-size:12.5px;color:#64748B">Алба</div>' +
+    '<div style="font-size:30px;line-height:1.1;color:#334155">' + dashNum(depts.length) + '</div>' +
+    '</div></div>'
+  );
+
+  /* ═══════════ 3. ОНОО ХААНА АЛДАГДАЖ БАЙНА ═══════════ */
+  var hasDavtanAny = depts.some(function (d) { return deptHasDavtan(d, salKey); });
+  var factors = [
+    { k: 'Босго оноо', d: 'осол, зөрчилгүй байдал', fn: kpiBosgo, w: _f(w.bosgo), c: '#3730A3', p: 'violations' },
+    { k: 'Давтан + шалгалт', d: 'энэ сард товлогдсон албад', fn: kpiDavtan, w: _f(w.davtan), c: '#0891B2', p: 'employees' },
+    { k: 'Видео сургалт', d: 'оногдсоноос тэнцсэн хувь', fn: kpiVideo, w: _f(w.video), c: '#C2410C', p: 'video-track' },
+    { k: 'Даалгавар', d: 'хянагчийн үнэлгээгээр', fn: kpiTask, w: _f(w.task), c: '#16A34A', p: 'tasks' },
+    { k: 'Аюул мэдээлэл (бонус)', d: 'баталгаажсан мэдээллээр', fn: empBonusScore, w: _f(w.bonus), c: '#059669', p: 'reportflow' }
+  ];
+  var wsum = factors.reduce(function (a, f) { return a + f.w; }, 0) || 1;
+
+  H += dashCard(
+    dashH('Оноо хаанаас бүрдэж, хаана алдагдаж байна', 'Хүчин зүйл бүрийн компанийн дундаж. Улаан мөр нь хамгийн их оноо алддаг цэг.') +
+    factors.map(function (f) {
+      var vals = emps.map(f.fn).filter(function (v) { return v != null; });
+      if (!vals.length) return '';
+      var v = Math.round(avg(vals));
+      var maxPts = Math.round(100 * f.w / wsum);
+      var got = Math.round(v * f.w / wsum);
+      var lost = maxPts - got;
+      return '<div class="dash-fac" data-gopage="' + f.p + '">' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">' +
+        '<span style="font-size:13.5px;font-weight:700;color:#1E293B">' + f.k + '</span>' +
+        '<span style="font-size:12px;color:' + dashTone(v) + ';font-weight:800">' + v + '%</span></div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin:2px 0 6px">' + f.d + ' · ' + vals.length + ' ажилтан</div>' +
+        dashBar(v, f.c) + '</div>' +
+        '<div style="text-align:right;min-width:96px">' +
+        '<div style="font-size:17px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + got + '<span style="font-size:11px;color:#94A3B8">/' + maxPts + '</span></div>' +
+        (lost > 0 ? '<div style="font-size:11px;color:#DC2626;font-weight:700">−' + lost + ' алдсан</div>' : '<div style="font-size:11px;color:#16A34A;font-weight:700">бүтэн</div>') +
+        '</div></div>';
+    }).join('')
+  );
+
+  /* ═══════════ 4. АЛБА ТУС БҮРИЙН ЗУРАГЛАЛ ═══════════ */
+  var deptRows = depts.map(function (d) {
+    var m = deptMembers(d);
+    function av(fn) { var v = m.map(fn).filter(function (x) { return x != null; }); return v.length ? Math.round(avg(v)) : null; }
+    var viol = (DB.violations || []).filter(function (x) {
+      var e = emps.filter(function (y) { return y.id === x.empId; })[0];
+      return e && e.dept === d && salaryMonthKey(x.date || x.createdAt) === salKey;
+    }).length;
+    return {
+      d: d, n: m.length, kpi: deptScore(d),
+      bosgo: av(kpiBosgo), video: av(kpiVideo), task: av(kpiTask), bonus: av(empBonusScore),
+      viol: viol, risk: !!((DB.riskDash || {})[d])
+    };
+  }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.kpi - a.kpi; });
+
+  H += dashCard(
+    dashH('Алба тус бүрийн зураглал', 'Аль алба юугаараа хоцорч байгааг нэг харцаар. Мөр дээр дарж ажилтнуудыг үзнэ.') +
+    '<div style="overflow-x:auto"><table class="dash-tbl"><thead><tr>' +
+    '<th style="text-align:left">Алба</th><th>Хүн</th><th>KPI</th><th>Босго</th><th>Видео</th><th>Даалгавар</th><th>Бонус</th><th>Зөрчил</th><th>Эрсдэл</th>' +
+    '</tr></thead><tbody>' +
+    deptRows.map(function (r) {
+      function cell(v) { return v == null ? '<td style="color:#CBD5E1">—</td>' : '<td style="color:' + dashTone(v) + ';font-weight:700">' + v + '</td>'; }
+      return '<tr data-godept="' + esc(r.d) + '">' +
+        '<td style="text-align:left;font-weight:600">' + esc(r.d) + '</td>' +
+        '<td style="color:#64748B">' + r.n + '</td>' +
+        '<td><span style="background:' + dashTone(r.kpi) + '18;color:' + dashTone(r.kpi) + ';border-radius:8px;padding:3px 9px;font-weight:800">' + r.kpi + '</span></td>' +
+        cell(r.bosgo) + cell(r.video) + cell(r.task) + cell(r.bonus) +
+        '<td style="color:' + (r.viol ? '#DC2626' : '#CBD5E1') + ';font-weight:' + (r.viol ? '800' : '400') + '">' + (r.viol || '—') + '</td>' +
+        '<td>' + (r.risk ? '<span style="color:#16A34A">✓</span>' : '<span style="color:#DC2626">✕</span>') + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody></table></div>'
+  );
+
+  /* ═══════════ 5. ДОТООД СУРГАЛТ — МОДУЛЬ ТУС БҮР ═══════════ */
+  var modRows = Object.keys(TRAINING_MODULES).map(function (k) {
+    var vis = 0, trained = 0, taken = 0, passed = 0, sum = 0, cnt = 0;
+    emps.forEach(function (e) {
+      var visible = false;
+      try { visible = isModTrainingVisible(e, k); } catch (err) {}
+      if (!visible) return;
+      vis++;
+      var pg = {};
+      try { pg = getEmpProg(e.id, k) || {}; } catch (err) {}
+      if (pg.trainingCompleted) trained++;
+      if (pg.examTaken) { taken++; if (pg.examPassed) passed++; if (pg.examScore != null) { sum += _f(pg.examScore); cnt++; } }
+    });
+    return { k: k, label: TRAINING_MODULES[k], vis: vis, trained: trained, taken: taken, passed: passed, avg: cnt ? Math.round(sum / cnt) : null };
+  }).filter(function (r) { return r.vis > 0; });
+
+  if (modRows.length) {
+    H += dashCard(
+      dashH('Дотоод зааварчилгааны явц', 'Нээгдсэн ажилтнуудаас хэд нь сургалтаа дуусгаж, шалгалтаа өгч, тэнцсэн бэ.') +
+      modRows.map(function (r) {
+        var pTr = r.vis ? Math.round(r.trained / r.vis * 100) : 0;
+        var pEx = r.vis ? Math.round(r.taken / r.vis * 100) : 0;
+        var pPa = r.taken ? Math.round(r.passed / r.taken * 100) : 0;
+        return '<div style="padding:11px 0;border-top:1px solid #F5F7FB">' +
+          '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:7px">' +
+          '<span style="font-size:13.5px;font-weight:700;color:#1E293B">' + esc(r.label) + '</span>' +
+          '<span style="font-size:11.5px;color:#94A3B8">' + r.vis + ' ажилтанд нээгдсэн' + (r.avg != null ? ' · дундаж дүн ' + r.avg + '%' : '') + '</span></div>' +
+          '<div class="dash-3col">' +
+          '<div><div style="font-size:11px;color:#94A3B8">Сургалт дуусгасан</div>' + dashBar(pTr, '#4F46E5', 6) + '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-top:3px">' + r.trained + ' / ' + r.vis + ' · ' + pTr + '%</div></div>' +
+          '<div><div style="font-size:11px;color:#94A3B8">Шалгалт өгсөн</div>' + dashBar(pEx, '#0891B2', 6) + '<div style="font-size:11.5px;color:#0891B2;font-weight:700;margin-top:3px">' + r.taken + ' / ' + r.vis + ' · ' + pEx + '%</div></div>' +
+          '<div><div style="font-size:11px;color:#94A3B8">Тэнцсэн</div>' + dashBar(pPa, dashTone(pPa), 6) + '<div style="font-size:11.5px;color:' + dashTone(pPa) + ';font-weight:700;margin-top:3px">' + r.passed + ' / ' + (r.taken || 0) + ' · ' + pPa + '%</div></div>' +
+          '</div></div>';
+      }).join('')
+    );
+  }
+
+  /* ═══════════ 6. ВИДЕО СУРГАЛТ + ШАЛГАЛТЫН АХИЦ ═══════════ */
+  var vTot = 0, vPass = 0, vView = 0, vEmp = 0;
+  emps.forEach(function (e) {
+    var s = null; try { s = empLmsStats(e); } catch (err) {}
+    if (!s || !s.total) return;
+    vEmp++; vTot += s.total; vPass += s.passed; vView += s.viewed;
+  });
+  var pre = [], post = [];
+  emps.forEach(function (e) {
+    if (e.examPrev != null) pre.push(_f(e.examPrev));
+    if (e.examScore != null) post.push(_f(e.examScore));
+  });
+  var preAvg = pre.length ? Math.round(avg(pre)) : null;
+  var postAvg = post.length ? Math.round(avg(post)) : null;
+
+  H += '<div class="dash-2col">' +
+    dashCard(
+      dashH('Видео сургалт (MiSkill)', vEmp ? vEmp + ' ажилтанд хичээл оногдсон' : 'Хичээл оногдоогүй байна') +
+      (vTot
+        ? '<div class="dash-3col">' +
+          '<div><div style="font-size:11px;color:#94A3B8">Оногдсон</div><div style="font-size:24px;color:#334155">' + dashNum(vTot) + '</div></div>' +
+          '<div><div style="font-size:11px;color:#94A3B8">Үзсэн</div><div style="font-size:24px;color:#C2410C">' + dashNum(vView) + '</div></div>' +
+          '<div><div style="font-size:11px;color:#94A3B8">Тэнцсэн</div><div style="font-size:24px;color:#16A34A">' + dashNum(vPass) + '</div></div>' +
+          '</div><div style="margin-top:12px">' + dashBar(vTot ? vPass / vTot * 100 : 0, '#16A34A') +
+          '<div style="font-size:12px;color:#64748B;margin-top:5px">Тэнцсэн хувь: <b>' + (vTot ? Math.round(vPass / vTot * 100) : 0) + '%</b></div></div>'
+        : '<div style="font-size:13px;color:#94A3B8">Мэдээлэл алга</div>'),
+      '18px'
+    ) +
+    dashCard(
+      dashH('ХАБЭА шалгалтын ахиц', 'Урьдчилсан ба дараах шалгалтын дундаж') +
+      (postAvg != null || preAvg != null
+        ? '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">' +
+          '<div><div style="font-size:11px;color:#94A3B8">Урьдчилсан</div><div style="font-size:26px;color:#64748B">' + dashNum(preAvg != null ? preAvg : '—', preAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + pre.length + ' хүн</div></div>' +
+          '<i class="ti ti-arrow-right" style="color:#CBD5E1;font-size:22px"></i>' +
+          '<div><div style="font-size:11px;color:#94A3B8">Дараах</div><div style="font-size:26px;color:' + dashTone(postAvg) + '">' + dashNum(postAvg != null ? postAvg : '—', postAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + post.length + ' хүн</div></div>' +
+          (preAvg != null && postAvg != null
+            ? '<div style="margin-left:auto;background:' + (postAvg >= preAvg ? '#ECFDF5' : '#FEF2F2') + ';border-radius:12px;padding:10px 14px">' +
+              '<div style="font-size:22px;font-weight:900;color:' + (postAvg >= preAvg ? '#16A34A' : '#DC2626') + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + (postAvg - preAvg >= 0 ? '+' : '') + (postAvg - preAvg) + '</div>' +
+              '<div style="font-size:11px;color:#64748B">мэдлэгийн ахиц</div></div>' : '') +
+          '</div>'
+        : '<div style="font-size:13px;color:#94A3B8">Шалгалтын дүн бүртгэгдээгүй байна</div>'),
+      '18px'
+    ) + '</div>';
+
+  /* ═══════════ 7. ДААЛГАВАР + АЮУЛ МЭДЭЭЛЭЛ ═══════════ */
+  var myTasks = (DB.tasks || []).filter(function (t) { return !dh || t.dept === dh || t.dept === 'all'; });
+  var tOpen = myTasks.filter(function (t) { return t.status !== 'submitted' && !taskIsClosed(t); }).length;
+  var tRev = myTasks.filter(function (t) { return t.status === 'submitted'; }).length;
+  var tOk = myTasks.filter(taskIsClosed).length;
+  var tScores = myTasks.filter(function (t) { return t.status === 'approved' && t.score != null; }).map(function (t) { return _f(t.score); });
+  var tAvg = tScores.length ? Math.round(avg(tScores)) : null;
+
+  var reps = (DB.reports || []).filter(function (r) { return !dh || r.dept === dh; });
+  var rVer = reps.filter(function (r) { return r.status === 'verified'; }).length;
+  var rPend = reps.filter(function (r) { return r.status === 'reported'; }).length;
+  var rHaz = reps.filter(function (r) { return r.type === 'hazard'; }).length;
+  var rNm = reps.filter(function (r) { return r.type === 'near_miss'; }).length;
+  var bonusPts = emps.reduce(function (a, e) { return a + (empBonusPoints(e) || 0); }, 0);
+
+  H += '<div class="dash-2col">' +
+    dashCard(
+      dashH('Даалгаврын байдал', myTasks.length + ' даалгавар' + (tAvg != null ? ' · дундаж үнэлгээ ' + tAvg + '%' : '')) +
+      '<div class="dash-3col">' +
+      '<div><div style="font-size:11px;color:#94A3B8">Хийгдэх</div><div style="font-size:24px;color:#D97706">' + dashNum(tOpen) + '</div></div>' +
+      '<div><div style="font-size:11px;color:#94A3B8">Хянагдаж буй</div><div style="font-size:24px;color:#7C3AED">' + dashNum(tRev) + '</div></div>' +
+      '<div><div style="font-size:11px;color:#94A3B8">Баталгаажсан</div><div style="font-size:24px;color:#16A34A">' + dashNum(tOk) + '</div></div>' +
+      '</div>' +
+      (overdueT.length ? '<div style="margin-top:12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#B91C1C;font-weight:700">⏰ ' + overdueT.length + ' даалгаврын хугацаа хэтэрсэн</div>' : '') +
+      (tAvg != null ? '<div style="margin-top:12px">' + dashBar(tAvg, dashTone(tAvg)) + '</div>' : ''),
+      '18px'
+    ) +
+    dashCard(
+      dashH('Аюул / Near-miss мэдээлэл', reps.length + ' мэдээлэл · олгосон бонус ' + bonusPts + ' оноо') +
+      '<div class="dash-3col">' +
+      '<div><div style="font-size:11px;color:#94A3B8">Баталгаажсан</div><div style="font-size:24px;color:#16A34A">' + dashNum(rVer) + '</div></div>' +
+      '<div><div style="font-size:11px;color:#94A3B8">Хүлээгдэж буй</div><div style="font-size:24px;color:' + (rPend ? '#DC2626' : '#94A3B8') + '">' + dashNum(rPend) + '</div></div>' +
+      '<div><div style="font-size:11px;color:#94A3B8">Аюул / NM</div><div style="font-size:24px;color:#7C3AED">' + dashNum(rHaz + ' / ' + rNm) + '</div></div>' +
+      '</div>' +
+      (rPend ? '<div style="margin-top:12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#B91C1C;font-weight:700">' + rPend + ' мэдээлэл баталгаажуулалт хүлээж байна — ажилтны бонус хойшилж байна</div>' : ''),
+      '18px'
+    ) + '</div>';
+
+  /* ═══════════ 8. ОСОЛ / ЗӨРЧИЛ ═══════════ */
+  var viols = (DB.violations || []).filter(function (v) {
+    if (salaryMonthKey(v.date || v.createdAt) !== salKey) return false;
+    if (!dh) return true;
+    var e = (DB.employees || []).filter(function (y) { return y.id === v.empId; })[0];
+    return e && e.dept === dh;
+  });
+  var lostPts = viols.reduce(function (a, v) { return a + (_f(v.points) || 0); }, 0);
+  H += dashCard(
+    dashH('Осол, зөрчлийн бүртгэл — ' + salLbl,
+      viols.length ? viols.length + ' зөрчил бүртгэгдсэн, нийт ' + lostPts + ' оноо хасагдсан' : 'Энэ цалингийн сард зөрчил бүртгэгдээгүй ✓') +
+    (viols.length
+      ? '<div style="display:flex;flex-direction:column;gap:7px">' +
+        viols.slice(0, 8).map(function (v) {
+          var e = (DB.employees || []).filter(function (y) { return y.id === v.empId; })[0] || {};
+          return '<div style="display:flex;align-items:center;gap:10px;background:#FEF2F2;border-radius:10px;padding:9px 12px">' +
+            '<span style="font-size:13px;font-weight:700;color:#991B1B;min-width:120px">' + esc(e.name || v.empId) + '</span>' +
+            '<span style="flex:1;min-width:0;font-size:12.5px;color:#7F1D1D">' + esc(v.desc || '') + '</span>' +
+            '<span style="font-size:13px;font-weight:900;color:#DC2626">−' + (_f(v.points) || 0) + '</span></div>';
+        }).join('') +
+        (viols.length > 8 ? '<div style="font-size:12px;color:#94A3B8;text-align:center;margin-top:4px">…бас ' + (viols.length - 8) + ' зөрчил</div>' : '') +
+        '</div>'
+      : '')
+  );
+
+  /* ═══════════ 9. АНХААРАХ БА ТЭРГҮҮЛЭХ АЖИЛТНУУД ═══════════ */
+  var sorted = emps.slice().sort(function (a, b) { return empTotal(b) - empTotal(a); });
+  function empRow(e, rank, bad) {
+    var tv = empTotal(e), L = kpiLevel(tv);
+    return '<div class="dash-emp" data-goemp="' + esc(e.id) + '">' +
+      '<span style="width:26px;font-size:12px;color:#94A3B8;font-weight:700">' + rank + '</span>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#1E293B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.name) + '</div>' +
+      '<div style="font-size:11px;color:#94A3B8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.dept || '') + '</div></div>' +
+      '<span style="font-size:16px;font-weight:900;color:' + (bad ? '#DC2626' : L.color) + ';font-family:\'Bricolage Grotesque\',sans-serif">' + tv + '</span></div>';
+  }
+  H += '<div class="dash-2col">' +
+    dashCard(dashH('⚠ Анхаарах ажилтнууд', 'Хамгийн бага оноотой — тэдэнтэй ярилцах шаардлагатай') +
+      sorted.slice(-8).reverse().map(function (e, i) { return empRow(e, sorted.length - i, true); }).join(''), '18px') +
+    dashCard(dashH('🏆 Тэргүүлэгчид', 'Хамгийн өндөр оноотой ажилтнууд') +
+      sorted.slice(0, 8).map(function (e, i) { return empRow(e, i + 1, false); }).join(''), '18px') +
+    '</div>';
+
+  host.innerHTML = H;
+
+  if (!host._wired) {
+    host._wired = true;
+    host.addEventListener('click', function (ev) {
+      var g = ev.target.closest('[data-gopage]');
+      if (g) { switchPage(g.getAttribute('data-gopage')); return; }
+      var d = ev.target.closest('[data-godept]');
+      if (d) { switchPage('employees'); return; }
+      var e2 = ev.target.closest('[data-goemp]');
+      if (e2) { switchPage('employees'); return; }
+    });
+  }
+}
+
 function renderDashboard() {
   if (isEmp()) { renderEmployeeDashboard(); return; }
-  // Дараагийн алхмуудын аль нэг нь унасан ч дашбоард хоосон харагдахгүй
-  try { tidyDashboard(); } catch (e) {}
+  /* ══ ШИНЭ ХЯНАЛТЫН САМБАР — админ ба албаны дарга ══ */
+  try { renderAdminDashboard(); } catch (e) { console.error('[dashPro]', e); }
   // Демо дата анхааруулга (админд, эхний цэвэрлэлт хүртэл)
   try {
     var _dpage = document.querySelector('.page[data-page="dashboard"]');

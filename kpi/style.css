@@ -2139,6 +2139,47 @@ body.modal-open #hintHand, body.modal-open #hintRing, body.modal-open #hintTip {
 .help-row .ht span { font-size: 12.5px; color: #64748B; line-height: 1.5; }
 .help-note { background: #F8FAFC; border-radius: 12px; padding: 12px 14px; font-size: 12.5px; color: #475569; line-height: 1.55; margin-top: 14px; }
 
+/* ══════════ ХЯНАЛТЫН САМБАР (админ) ══════════ */
+#dashPro { display: block; }
+.dash-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.dash-act {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  border: 1.5px solid #E2E8F0; border-radius: 14px; padding: 12px 14px;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.dash-act:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(15, 23, 42, .10); }
+
+.dash-fac {
+  display: flex; align-items: center; gap: 14px; cursor: pointer;
+  padding: 11px 0; border-top: 1px solid #F5F7FB;
+}
+.dash-fac:hover { background: #FAFBFF; }
+
+.dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; align-items: start; }
+.dash-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+.dash-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 640px; }
+.dash-tbl th {
+  text-align: center; font-size: 11px; font-weight: 800; color: #64748B;
+  text-transform: uppercase; letter-spacing: .3px; padding: 8px 6px;
+  border-bottom: 1.5px solid #E2E8F0; white-space: nowrap;
+}
+.dash-tbl td { text-align: center; padding: 9px 6px; border-bottom: 1px solid #F5F7FB; }
+.dash-tbl tbody tr { cursor: pointer; }
+.dash-tbl tbody tr:hover { background: #FAFBFF; }
+
+.dash-emp {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 8px 6px; border-radius: 10px;
+}
+.dash-emp:hover { background: #FAFBFF; }
+
+@media (max-width: 900px) {
+  .dash-2col { grid-template-columns: 1fr; }
+  .dash-3col { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dash-acts { grid-template-columns: 1fr; }
+}
+
 /* Байр эзлэлт — 3 тэнцүү хайрцаг, өндөр нь тэгшилнэ */
 .rank-grid {
   display: grid;
