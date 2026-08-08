@@ -2442,12 +2442,6 @@ function dashTone(v) {
 function renderAdminDashboard() {
   var page = pageEl('dashboard'); if (!page) return;
 
-  /* Хуучин статик бүтцийг нуух — зөвхөн гарчиг, демо анхааруулга үлдээнэ */
-  Array.prototype.forEach.call(page.children, function (ch) {
-    if (ch.classList && ch.classList.contains('page-header')) return;
-    if (ch.id === 'dashPro' || ch.id === 'demoBanner') return;
-    ch.style.display = 'none';
-  });
   var host = document.getElementById('dashPro');
   if (!host) { host = document.createElement('div'); host.id = 'dashPro'; page.appendChild(host); }
 
@@ -2791,118 +2785,79 @@ function renderAdminDashboard() {
 
 function renderDashboard() {
   if (isEmp()) { renderEmployeeDashboard(); return; }
-  /* ══ ШИНЭ ХЯНАЛТЫН САМБАР — админ ба албаны дарга ══ */
-  try { renderAdminDashboard(); } catch (e) { console.error('[dashPro]', e); }
-  // Демо дата анхааруулга (админд, эхний цэвэрлэлт хүртэл)
-  try {
-    var _dpage = document.querySelector('.page[data-page="dashboard"]');
-    var _dbn = document.getElementById('demoBanner');
-    var _showDemo = isAdmin() && !(DB.settings && DB.settings.demoCleaned) && demoDataCount() > 0;
-    if (_showDemo && _dpage) {
-      if (!_dbn) { _dbn = document.createElement('div'); _dbn.id = 'demoBanner'; _dpage.insertBefore(_dbn, _dpage.firstChild); }
-      _dbn.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:16px';
-      _dbn.innerHTML = '<i class="ti ti-alert-triangle" style="color:#D97706;font-size:20px"></i>' +
-        '<div style="flex:1;min-width:200px"><div style="font-weight:700;color:#92400E;font-size:14px">Жишээ (демо) дата илэрлээ — ' + demoDataCount() + ' бичлэг</div>' +
-        '<div style="font-size:12px;color:#B45309">Прототипийн жишээ аюул/санал/ослын мэдээллийг устгаж, цэвэр эхлүүлнэ үү.</div></div>' +
-        '<button class="btn btn-primary btn-sm" id="demoClearBtn" style="background:#D97706;border-color:#D97706"><i class="ti ti-trash"></i> Бүгдийг цэвэрлэх</button>';
-      var _cb = document.getElementById('demoClearBtn');
-      if (_cb) _cb.onclick = function () { if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу? Энэ үйлдлийг буцаах боломжгүй.')) clearAllDemoData(); };
-    } else if (_dbn) { _dbn.remove(); }
-  } catch (e) {}
-  /* Дашбоардын дэд гарчиг — жинхэнэ цалингийн сар + шинэчлэлтийн цаг */
+
+  /* Дэд гарчиг — цалингийн сар ба шинэчлэгдсэн цаг */
   try {
     var ds = document.getElementById('dashSubtitle');
     if (ds) {
-      var key = currentSalaryKey();                       // "YYYY-MM"
-      var p2 = key.split('-');
+      var key = currentSalaryKey(), q = key.split('-');
       var now = new Date(), pad = function (n) { return String(n).padStart(2, '0'); };
-      ds.textContent = p2[0] + ' оны ' + parseInt(p2[1], 10) + '-р сарын цалингийн үе (25→24) · шинэчлэгдсэн ' +
+      ds.textContent = q[0] + ' оны ' + parseInt(q[1], 10) + '-р сарын цалингийн үе (25→24) · шинэчлэгдсэн ' +
         pad(now.getHours()) + ':' + pad(now.getMinutes());
     }
   } catch (e) {}
-  var a = avgKpi();
-  var hero = $('.page[data-page="dashboard"] .kpi-hero .kpi-value');
-  if (hero) hero.innerHTML = a.toFixed(1) + '<span class="kpi-unit">/100</span>';
-  var fill = $('.page[data-page="dashboard"] .kpi-hero .kpi-bar-fill');
-  if (fill) fill.style.width = a.toFixed(1) + '%';
 
-  var cards = $$('.page[data-page="dashboard"] .kpi-grid .kpi-card');
-  if (cards[2]) {
-    var v2 = cards[2].querySelector('.kpi-value');
-    var pendCnt = (DB.reports || []).filter(function (r) { return r.status === 'reported'; }).length;
-    if (v2) v2.textContent = (DB.reports || []).length;
-    var lbl2 = cards[2].querySelector('.kpi-label');
-    if (lbl2) lbl2.innerHTML = '<i class="ti ti-flag-2"></i> Аюул/near-miss мэдээлэл';
-    var sub2 = cards[2].querySelector('.kpi-sub');
-    if (sub2) sub2.textContent = pendCnt + ' хүлээгдэж буй';
-  }
-  if (cards[3]) {
-    var v3 = cards[3].querySelector('.kpi-value');
-    if (v3) v3.textContent = dayCounter();
-  }
-  /* Видео сургалтын хамрах — DB.employees-ээс динамикаар */
-  cards.forEach(function (card) {
-    var label = card.querySelector('.kpi-label');
-    if (label && /хамрах/i.test(label.textContent)) {
-      var total = DB.employees.length;
-      var trained = DB.employees.filter(function (e) { return kpiVideo(e) >= 60; }).length;
-      var pct = total ? Math.round(trained / total * 100) : 0;
-      var vv = card.querySelector('.kpi-value');
-      if (vv) vv.innerHTML = pct + '<span class="kpi-unit">%</span>';
-      var sub = card.querySelector('.kpi-sub');
-      if (sub) sub.textContent = trained + '/' + total + ' ажилтан';
+  /* Демо дата үлдсэн бол цэвэрлэх санал (зөвхөн админд) */
+  try {
+    var page = document.querySelector('.page[data-page="dashboard"]');
+    var bn = document.getElementById('demoBanner');
+    var show = isAdmin() && !(DB.settings && DB.settings.demoCleaned) && demoDataCount() > 0;
+    if (show && page) {
+      if (!bn) {
+        bn = document.createElement('div'); bn.id = 'demoBanner';
+        var hostEl = document.getElementById('dashPro');
+        if (hostEl) page.insertBefore(bn, hostEl); else page.appendChild(bn);
+      }
+      bn.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:16px';
+      bn.innerHTML = '<i class="ti ti-alert-triangle" style="color:#D97706;font-size:20px"></i>' +
+        '<div style="flex:1;min-width:200px"><div style="font-weight:700;color:#92400E;font-size:14px">Жишээ (демо) дата илэрлээ — ' + demoDataCount() + ' бичлэг</div>' +
+        '<div style="font-size:12px;color:#B45309">Прототипийн жишээ мэдээллийг устгаж, цэвэр эхлүүлнэ үү.</div></div>' +
+        '<button class="btn btn-primary btn-sm" id="demoClearBtn" style="background:#D97706;border-color:#D97706"><i class="ti ti-trash"></i> Бүгдийг цэвэрлэх</button>';
+      var cb = document.getElementById('demoClearBtn');
+      if (cb) cb.onclick = function () { if (confirm('Бүх жишээ (демо) датаг бүрмөсөн устгах уу?')) clearAllDemoData(); };
+    } else if (bn) { bn.remove(); }
+  } catch (e) {}
+
+  /* Толгойн товчнуудыг АЖИЛЛУУЛАХ — өмнө нь зүгээр чимэглэл байсан */
+  try {
+    var rb = document.getElementById('dashRefresh');
+    if (rb && !rb._w) {
+      rb._w = true;
+      rb.addEventListener('click', function () {
+        rb.disabled = true;
+        var old = rb.innerHTML;
+        rb.innerHTML = '<i class="ti ti-loader-2"></i> Шинэчилж байна…';
+        Promise.resolve()
+          .then(function () { return (typeof loadDB === 'function') ? loadDB() : null; })
+          .then(function (fresh) { if (fresh && fresh !== '__timeout__' && fresh.employees) DB = fresh; })
+          .then(function () { return (typeof loadLmsData === 'function') ? loadLmsData() : null; })
+          .catch(function (e) { console.error('[refresh]', e); })
+          .then(function () {
+            rb.disabled = false; rb.innerHTML = old;
+            try { renderAll(); } catch (e) {}
+            toast('Мэдээлэл шинэчлэгдлээ', 'success');
+          });
+      });
     }
-  });
+    var eb = document.getElementById('dashExport');
+    if (eb && !eb._w) {
+      eb._w = true;
+      eb.addEventListener('click', function () {
+        try { downloadReport(); } catch (e) { toast('Тайлан татахад алдаа гарлаа', 'error'); }
+      });
+    }
+  } catch (e) {}
 
-  /* Радар легенд — шинэ үзүүлэлтээр динамик */
-  var cat = categoryAverages();
-  var legVals = [cat.bosgo, cat.davtan, cat.video, cat.task, cat.bonus];
-  var legLabels = ['Босго', 'Давтан', 'Видео', 'Даалгавар', 'Бонус'];
-  $$('.page[data-page="dashboard"] .legend-item').forEach(function (li, i) {
-    if (legVals[i] == null) return;
-    var dot = li.querySelector('.dot') ? li.querySelector('.dot').outerHTML : '';
-    li.innerHTML = dot + legLabels[i] + ' <strong>' + legVals[i] + '</strong>';
-  });
-
-  /* Хэлтсүүдийн KPI breakdown — дашбоардын карт (алба тус бүрээр) */
-  var ddb = document.getElementById('dashDeptBreak');
-  if (ddb) {
-    var drows = deptList().map(function (d) {
-      var mem = DB.employees.filter(function (e) { return e.dept === d; });
-      return { dept: d, score: mem.length ? Math.round(avg(mem.map(empTotal))) : 0, n: mem.length };
-    }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.score - a.score; });
-    ddb.innerHTML = drows.length ? drows.map(function (r) {
-      var color = r.score >= 85 ? '#16A34A' : (r.score >= 70 ? '#D97706' : '#DC2626');
-      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #F1F5F9">' +
-        '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(r.dept) + '</div>' +
-        '<div style="font-size:11px;color:#8A94A6">' + r.n + ' ажилтан</div></div>' +
-        '<div style="width:110px">' + miniBar(r.score, color) + '</div>' +
-        '<div style="width:30px;text-align:right;font-weight:700">' + r.score + '</div></div>';
-    }).join('') : '<div class="empty-state" style="padding:24px"><i class="ti ti-building"></i><div>Алба олдсонгүй</div></div>';
+  /* Үндсэн самбар */
+  try { renderAdminDashboard(); }
+  catch (e) {
+    console.error('[dashPro]', e);
+    var hostErr = document.getElementById('dashPro');
+    if (hostErr) hostErr.innerHTML = '<div class="card" style="padding:30px"><div class="empty-state">' +
+      '<i class="ti ti-alert-triangle"></i><div>Хяналтын самбар зурахад алдаа гарлаа.</div>' +
+      '<div style="font-size:12px;color:#94A3B8;margin-top:6px">' + esc(String((e && e.message) || e)) + '</div></div></div>';
   }
-  var _dgo = document.querySelector('.page[data-page="dashboard"] [data-goemp]');
-  if (_dgo) _dgo.onclick = function () { switchPage('employees'); };
-
-  /* Албадын оноо (coverage + бонус + анхны тусламж + PPE) */
-  var deptListEl = $('.page[data-page="dashboard"] .dept-list');
-  if (deptListEl) {
-    var rows = deptList().map(function (d) {
-      return { dept: d, score: deptScore(d), n: DB.employees.filter(function (e) { return e.dept === d; }).length };
-    }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.score - a.score; });
-    deptListEl.innerHTML = rows.map(function (r) {
-      var color = r.score >= 85 ? 'var(--emerald)' : (r.score >= 70 ? 'var(--amber)' : 'var(--coral)');
-      return '<div class="dept-row"><div class="dept-name">' + esc(r.dept) +
-        ' · ' + r.n + ' ажилтан</div><div class="dept-bar-wrap"><div class="dept-bar" style="width:' +
-        r.score + '%; background:' + color + '"></div></div><div class="dept-score">' + r.score + '</div></div>';
-    }).join('');
-  }
-  renderActivity();
-  renderDashEmployees();
-  try { tidyDashboard(); } catch (e) {}
 }
-
-/* ---- Дашбоард дээрх ажилтны хайлт/шүүлт ---- */
-var dashEmpState = { q: '', dept: '', sort: 'kpi' };
 function renderDashEmployees() {
   var wrap = $('#dashEmpList'); if (!wrap) return;
   // Алба сонгох dropdown бөглөх
@@ -2965,80 +2920,6 @@ function renderDashEmployees() {
 /* Дашбоардын блокууд HTML дээр НУУГДМАЛ (display:none) эхэлдэг.
    Энэ функц зөвхөн ЖИНХЭНЭ ДАТАТАЙ хэсгийг харуулна — алдаа гарсан ч
    хоосон карт, утгагүй тэмдэг хэрэглэгчид харагдахгүй. */
-function tidyDashboard() {
-  var page = document.querySelector('.page[data-page="dashboard"]');
-  if (!page) return;
-  function card(el) { return el ? el.closest('.card') : null; }
-  function show(el, yes) { if (el) el.style.display = yes ? '' : 'none'; }
-
-  var hasEmp = (DB.employees || []).length > 0;
-
-  // 1) Дээд 4 KPI карт — ажилтны мэдээлэл байвал
-  show(page.querySelector('.kpi-grid'), hasEmp);
-
-  // 2) Хэлтсүүдийн KPI / Сүүлд мэдээлсэн (grid-2) — аль нэг нь дататай бол
-  var ddb = document.getElementById('dashDeptBreak');
-  var act = page.querySelector('.activity-list');
-  var deptHas = !!(ddb && ddb.children.length);
-  var actHas = !!(act && act.querySelector('.act-body'));
-  show(card(ddb), deptHas);
-  show(card(act), actHas);
-  var g2 = page.querySelector('.grid-2');
-  show(g2, deptHas || actHas);
-
-  // 3) ХАБЭА-н үзүүлэлтүүд (график) — ажилтантай бол
-  show(card(document.getElementById('trendChart')), hasEmp);
-
-  // 4) Хэлтсийн KPI харьцуулалт — мөртэй бол
-  var dl = page.querySelector('.dept-list');
-  show(card(dl), !!(dl && dl.children.length));
-
-  // 5) Ажилтнуудын мэдээлэл — ажилтантай бол
-  show(card(document.getElementById('dashEmpList')), hasEmp);
-
-  // 6) Ажилтан огт байхгүй бол — ойлгомжтой мэдэгдэл (ХООСОН дэлгэц ХЭЗЭЭ Ч гарахгүй)
-  var note = document.getElementById('dashNoData');
-  if (!hasEmp) {
-    if (!note) {
-      note = document.createElement('div');
-      note.id = 'dashNoData';
-      note.className = 'card';
-      // Дашбоардын хамгийн эхэнд (page-header-ийн дараа) заавал байрлана
-      var anchor = page.querySelector('.kpi-grid') || page.querySelector('.page-header');
-      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(note, anchor.nextSibling);
-      else page.appendChild(note);
-    }
-    var el = (typeof EMP_LOAD !== 'undefined') ? EMP_LOAD : { state: 'idle' };
-    var msg, hint, icon = 'ti-users-plus', showBtn = isAdmin();
-    if (!fbReady || el.state === 'nofb') {
-      icon = 'ti-cloud-off'; msg = 'Сервертэй холбогдож чадсангүй';
-      hint = 'Интернэт холболтоо шалгаад хуудсыг дахин ачаална уу.'; showBtn = false;
-    } else if (el.state === 'idle') {
-      icon = 'ti-loader-2'; msg = 'Мэдээлэл ачаалж байна…'; hint = ''; showBtn = false;
-    } else if (el.state === 'error') {
-      icon = 'ti-alert-triangle'; msg = 'Ажилтны мэдээлэл уншигдсангүй';
-      hint = 'Алдаа: ' + esc(el.error || '') + ' — хандах эрх дуусаагүй эсэхийг шалгана уу.'; showBtn = false;
-    } else if (!el.users) {
-      msg = 'Ажилтан бүртгэгдээгүй байна';
-      hint = 'Контент удирдлага → Хэрэглэгчид хэсгээс ажилтан нэмнэ. Бүртгэсний дараа KPI, сургалт энд автоматаар харагдана.';
-    } else {
-      msg = 'Ажилтны мэдээлэл боловсруулагдаагүй';
-      hint = 'Системд ' + el.users + ' хэрэглэгч байгаа ч ажилтны жагсаалт үүсээгүй байна. Хуудсыг дахин ачаална уу.';
-      showBtn = false;
-    }
-    note.innerHTML = '<div class="empty-state" style="padding:36px 20px">' +
-      '<i class="ti ' + icon + '"' + (icon === 'ti-loader-2' ? ' style="animation:spin 1s linear infinite"' : '') + '></i>' +
-      '<div style="font-weight:700;color:#4B5268;margin-top:6px;font-size:14px">' + msg + '</div>' +
-      (hint ? '<div style="font-size:12.5px;margin-top:6px;line-height:1.6;max-width:440px">' + hint + '</div>' : '') +
-      (showBtn ? '<button class="btn btn-primary btn-sm" style="margin-top:14px" data-go-users="1">' +
-        '<i class="ti ti-user-plus"></i> Ажилтан бүртгэх</button>' : '') +
-      '</div>';
-    note.style.display = '';
-    var goBtn = note.querySelector('[data-go-users]');
-    if (goBtn) goBtn.onclick = function () { switchPage('adminpanel'); };
-  } else if (note) { note.style.display = 'none'; }
-}
-
 function renderActivity() {
   var list = $('.page[data-page="dashboard"] .activity-list');
   if (!list) return;
@@ -6446,7 +6327,6 @@ function renderAll() {
     try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
   });
   // renderDashboard унасан ч дашбоардын харагдац цэвэрхэн үлдэнэ
-  try { tidyDashboard(); } catch (e) {}
 }
 
 /* ============ Үйлдлүүд: Эрсдэл мэдээлэх ============ */

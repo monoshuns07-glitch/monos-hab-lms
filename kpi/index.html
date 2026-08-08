@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
 <link rel="stylesheet" href="/forest-theme.css">
-<link rel="stylesheet" href="style.css?v=106">
+<link rel="stylesheet" href="style.css?v=107">
 <style>
   /* Сургалтын шатлалт мод цэс */
   .nav-tree { display: block; }
@@ -320,115 +320,12 @@
         <p class="page-subtitle" id="dashSubtitle"></p>
       </div>
       <div class="page-actions">
-        <div class="select-pill">
-          <i class="ti ti-calendar"></i>
-          <span>Энэ сар</span>
-          <i class="ti ti-chevron-down"></i>
-        </div>
-        <button class="btn btn-secondary"><i class="ti ti-download"></i> Тайлан татах</button>
-        <button class="btn btn-primary"><i class="ti ti-refresh"></i> Шинэчлэх</button>
+        <button class="btn btn-secondary" id="dashExport"><i class="ti ti-download"></i> Тайлан татах</button>
+        <button class="btn btn-primary" id="dashRefresh"><i class="ti ti-refresh"></i> Шинэчлэх</button>
       </div>
     </div>
-
-    <!-- Hero KPI cards -->
-    <div class="kpi-grid" style="display:none">
-      <div class="kpi-card kpi-hero">
-        <div class="kpi-label"><i class="ti ti-target"></i> Нийт KPI оноо</div>
-        <div class="kpi-value"><span class="kpi-unit">/100</span></div>
-        <div class="kpi-trend up"></div>
-        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:0%"></div></div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="ti ti-school"></i> Сургалтын хамрах</div>
-        <div class="kpi-value"><span class="kpi-unit">%</span></div>
-        <div class="kpi-sub"></div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="ti ti-alert-triangle"></i> Мэдээлсэн эрсдэл</div>
-        <div class="kpi-value"></div>
-        <div class="kpi-sub"></div>
-      </div>
-
-      <div class="kpi-card">
-        <div class="kpi-label"><i class="ti ti-shield-check"></i> Осолгүй өдөр</div>
-        <div class="kpi-value"></div>
-        <div class="kpi-trend up"></div>
-      </div>
-    </div>
-
-    <!-- KPI categories radar + activity feed -->
-    <div class="grid-2" style="display:none">
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h3>Хэлтсүүдийн KPI</h3>
-            <p class="card-subtitle">Алба тус бүрийн дундаж оноо</p>
-          </div>
-          <button class="link-btn" data-goemp="1">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
-        </div>
-        <div id="dashDeptBreak" style="max-height:330px;overflow:auto"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h3>Сүүлд мэдээлсэн</h3>
-            <p class="card-subtitle">Teams ба вэбээс ирсэн</p>
-          </div>
-          <button class="link-btn">Бүгд <i class="ti ti-arrow-right"></i></button>
-        </div>
-        <ul class="activity-list"></ul>
-      </div>
-    </div>
-
-    <!-- Trend chart full width -->
-    <div class="card" style="display:none">
-      <div class="card-header">
-        <div>
-          <h3>ХАБЭА-н үзүүлэлтүүд</h3>
-          <p class="card-subtitle">Одоогийн дундаж дүн (%) · багана дээр дарж дэлгэрэнгүй харна</p>
-        </div>
-        <select id="dashCatDept" class="cfg-input" style="width:auto;min-width:150px;height:auto;padding:8px 12px;font-size:13px"></select>
-      </div>
-      <div style="position:relative;height:340px;width:100%"><canvas id="trendChart"></canvas></div>
-    </div>
-
-    <!-- Хэлтсийн KPI харьцуулалт (бүтэн өргөн) -->
-    <div class="card" style="display:none">
-      <div class="card-header">
-        <h3>Хэлтсийн KPI харьцуулалт</h3>
-        <button class="link-btn" data-goemp="1">Дэлгэрэнгүй <i class="ti ti-arrow-right"></i></button>
-      </div>
-      <div class="dept-list"></div>
-    </div>
-
-    <!-- Ажилтнуудын мэдээлэл (хайлт/шүүлт) -->
-    <div class="card" data-admin-only="1" style="display:none">
-      <div class="card-header">
-        <div>
-          <h3>Ажилтнуудын мэдээлэл</h3>
-          <p class="card-subtitle">Хайж, шүүж, дэлгэрэнгүй харна</p>
-        </div>
-        <div id="dashEmpCount" style="font-size:13px;color:#94A3B8;font-weight:600"></div>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-        <div class="search-box flex-grow" style="min-width:200px">
-          <i class="ti ti-search"></i>
-          <input id="dashEmpSearch" type="text" placeholder="Нэр, алба, албан тушаалаар хайх...">
-        </div>
-        <select id="dashEmpDept" class="cfg-input" style="width:auto;min-width:150px;height:auto;padding:9px 12px;font-size:13px"></select>
-        <select id="dashEmpSort" class="cfg-input" style="width:auto;min-width:160px;height:auto;padding:9px 12px;font-size:13px">
-          <option value="kpi">KPI: өндөр → бага</option>
-          <option value="kpilow">KPI: бага → өндөр</option>
-          <option value="name">Нэрээр (А-Я)</option>
-        </select>
-      </div>
-      <div id="dashEmpList" style="max-height:520px;overflow-y:auto"></div>
-    </div>
+    <div id="dashPro"></div>
   </section>
-
   <!-- ============ PAGE: EMPLOYEES ============ -->
   <section class="page" data-page="employees">
     <div class="page-header">
@@ -1005,6 +902,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=106"></script>
+<script src="script.js?v=107"></script>
 </body>
 </html>
