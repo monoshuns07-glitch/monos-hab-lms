@@ -2935,7 +2935,7 @@ function renderAdminDashboard() {
         ? '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">' +
           '<div' + dashClick(dashReg('ex_pre', 'Урьдчилсан шалгалтын дүн',
             dashEmpRows(emps.filter(function (e) { return e.examPrev != null; }).sort(function (a, b) { return _f(a.examPrev) - _f(b.examPrev); }),
-              function (e) { return Math.round(_f(e.examPrev)); }, '%'), { page: 'employees' })) + '><div style="font-size:11px;color:#94A3B8">Урьдчилсан<div style="font-size:26px;color:#64748B">' + dashNum(preAvg != null ? preAvg : '—', preAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + pre.length + ' хүн</div></div>' +
+              function (e) { return Math.round(_f(e.examPrev)); }, '%'), { page: 'employees' })) + '><div style="font-size:11px;color:#94A3B8">Урьдчилсан ›</div><div style="font-size:26px;color:#64748B">' + dashNum(preAvg != null ? preAvg : '—', preAvg != null ? '%' : '') + '</div><div style="font-size:10.5px;color:#CBD5E1">' + pre.length + ' хүн</div></div>' +
           '<i class="ti ti-arrow-right" style="color:#CBD5E1;font-size:22px"></i>' +
           '<div' + dashClick(dashReg('ex_post', 'Дараах шалгалтын дүн',
             dashEmpRows(emps.filter(function (e) { return e.examScore != null; }).sort(function (a, b) { return _f(a.examScore) - _f(b.examScore); }),
