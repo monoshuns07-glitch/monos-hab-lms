@@ -1042,11 +1042,41 @@ function formModal(opts) {
         var lbl = (o && o.label != null) ? o.label : o;
         var row = elc('label', 'chk-row');
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:13px';
+        row.setAttribute('data-lbl', String(lbl).toLowerCase());
         var cb = elc('input'); cb.type = 'checkbox'; cb.value = val;
         if (f.value && f.value.indexOf(val) > -1) cb.checked = true;
         row.appendChild(cb); row.appendChild(document.createTextNode(lbl));
         ctrl.appendChild(row);
       });
+
+      /* ── Нэрээр хайх нүд (searchable: true үед) ── */
+      if (f.searchable) {
+        var listEl = ctrl;                 // ⚠ жагсаалтыг тусад нь барина
+        var box = elc('div');
+        var sInp = elc('input');
+        sInp.type = 'text';
+        sInp.placeholder = f.searchPlaceholder || '🔍 Нэрээр хайх...';
+        sInp.style.cssText = 'width:100%;padding:9px 12px;border:1px solid #E2E8F0;border-radius:8px;font-size:13px;margin-bottom:6px;font-family:inherit';
+        var cnt = elc('div');
+        cnt.style.cssText = 'font-size:11.5px;color:#94A3B8;margin-bottom:6px';
+        var _refresh = function () {
+          var q = (sInp.value || '').trim().toLowerCase();
+          var shown = 0, sel = 0;
+          Array.prototype.forEach.call(listEl.children, function (r) {
+            var cbx = r.querySelector('input[type=checkbox]');
+            if (cbx && cbx.checked) sel++;
+            var hit = !q || (r.getAttribute('data-lbl') || '').indexOf(q) > -1;
+            r.style.display = hit ? 'flex' : 'none';
+            if (hit) shown++;
+          });
+          cnt.textContent = 'Харагдаж буй: ' + shown + ' · Сонгосон: ' + sel;
+        };
+        sInp.addEventListener('input', _refresh);
+        listEl.addEventListener('change', _refresh);
+        box.appendChild(sInp); box.appendChild(cnt); box.appendChild(listEl);
+        ctrl = box;
+        setTimeout(_refresh, 0);
+      }
     } else if (f.type === 'chips') {
       ctrl = elc('div', 'chip-select');
       (f.options || []).forEach(function (o, i) {
@@ -5678,7 +5708,8 @@ function renderTasks() {
         (x.desc ? '<div style="font-size:13px;color:#64748B;margin-top:3px">' + esc(x.desc) + '</div>' : '') +
         '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
-        (x.dueDate ? '<span><i class="ti ti-calendar"></i> ' + esc(x.dueDate) + '</span>' : '') +
+        (x.startDate ? '<span style="color:#0891B2"><i class="ti ti-player-play"></i> Эхлэх: ' + esc(x.startDate) + '</span>' : '') +
+        (x.dueDate ? '<span><i class="ti ti-calendar"></i> Дуусах: ' + esc(x.dueDate) + '</span>' : '') +
         '<span><i class="ti ti-user"></i> ' + esc(x.createdBy || 'Админ') + '</span>' +
         (x.submittedAt ? '<span style="color:#7C3AED"><i class="ti ti-send"></i> ' + esc((x.submittedAt || '').slice(0, 10)) + '</span>' : '') +
         '</div>' +
@@ -5816,7 +5847,9 @@ function actionAddTask() {
       { name: 'title', label: 'Даалгаврын гарчиг', type: 'text', required: true, placeholder: 'Юу хийх ёстой...' },
       { name: 'desc', label: 'Тайлбар (заавал биш)', type: 'textarea', placeholder: 'Дэлгэрэнгүй...' },
       { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: 'all' },
-      { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist', options: empOpts, value: [] },
+      { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist',
+        options: empOpts, value: [], searchable: true, searchPlaceholder: '🔍 Ажилтны нэр эсвэл албаар хайх...' },
+      { name: 'startDate', label: 'Эхлэх огноо (заавал биш)', type: 'date', value: '' },
       { name: 'dueDate', label: 'Дуусах огноо (заавал биш)', type: 'date', value: '' }
     ],
     submitLabel: 'Нэмэх',
@@ -5830,6 +5863,7 @@ function actionAddTask() {
         dept: v.dept || 'all',
         empId: empIds[0] || '',
         empIds: empIds,
+        startDate: v.startDate || '',
         dueDate: v.dueDate || '',
         status: 'open',
         createdBy: USER.name,
