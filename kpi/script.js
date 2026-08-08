@@ -824,7 +824,7 @@ function kpiVideo(e) {
 function kpiTask(e) {
   var t = empTaskStats(e);
   if (!t.total) return null;
-  return Math.round(t.done / t.total * 100);
+  return Math.round(t.scoreSum / t.total);   // "хийсэн эсэх" биш — ҮНЭЛГЭЭГЭЭР
 }
 
 /* KPI-ийн хүчин зүйлс. Давтангүй сард давтангийн жин ВИДЕО руу автоматаар шилжинэ.
@@ -2174,10 +2174,13 @@ function renderEmployeeDashboard() {
       return vid.total
         ? vid.passed + ' / ' + vid.total + ' сургалт тэнцсэн'
         : 'Танд видео сургалт оногдоогүй байна';
-    if (key === 'Даалгавар')
-      return tsk.total
-        ? tsk.done + ' / ' + tsk.total + ' даалгавар биелүүлсэн'
-        : 'Танд даалгавар оногдоогүй байна';
+    if (key === 'Даалгавар') {
+      if (!tsk.total) return 'Танд даалгавар оногдоогүй байна';
+      var _avg = Math.round(tsk.scoreSum / tsk.total);
+      return tsk.done + ' / ' + tsk.total + ' баталгаажсан · дундаж үнэлгээ ' + _avg + '%'
+        + (tsk.pending ? ' · ' + tsk.pending + ' хянагдаж байна' : '')
+        + (tsk.returned ? ' · ' + tsk.returned + ' буцаагдсан' : '');
+    }
     return '';
   }
 
@@ -2203,13 +2206,19 @@ function renderEmployeeDashboard() {
       gain: gainOf(_vidW, kpiVideo(e) || 0) });
   }
 
-  // 3) Даалгавар
+  // 3) Даалгавар — гүйцэтгэлийн ҮНЭЛГЭЭГЭЭР тооцогдоно
   if (tsk.total) {
-    if (tsk.done >= tsk.total) goodList.push({ icon: 'ti-checkbox', txt: 'Бүх даалгавраа биелүүлсэн (' + tsk.total + '/' + tsk.total + ')' });
-    else todoList.push({ icon: 'ti-checkbox', color: '#16A34A',
-      txt: (tsk.total - tsk.done) + ' даалгавар хийгээгүй байна',
-      sub: 'Гүйцэтгээд тэмдэглэнэ үү', page: 'tasks',
+    var _notDone = tsk.total - tsk.done - tsk.pending;
+    if (tsk.pending) goodList.push({ icon: 'ti-send', txt: tsk.pending + ' даалгавар хянагдаж байна' });
+    if (tsk.returned) todoList.push({ icon: 'ti-arrow-back-up', color: '#DC2626',
+      txt: tsk.returned + ' даалгавар буцаагдсан байна',
+      sub: 'Хянагчийн тайлбарыг уншаад дахин гүйцэтгэнэ үү', page: 'tasks',
       gain: gainOf(_f(w.task), kpiTask(e) || 0) });
+    if (_notDone > 0) todoList.push({ icon: 'ti-checkbox', color: '#16A34A',
+      txt: _notDone + ' даалгавар хийгээгүй байна',
+      sub: 'Гүйцэтгээд «Гүйцэтгэсэн» товч дарж хянуулна уу', page: 'tasks',
+      gain: gainOf(_f(w.task), kpiTask(e) || 0) });
+    if (tsk.done >= tsk.total) goodList.push({ icon: 'ti-checkbox', txt: 'Бүх даалгавар баталгаажсан (' + tsk.total + '/' + tsk.total + ')' });
   }
 
   // 4) Давтан зааварчилгаа
@@ -2711,13 +2720,51 @@ function empReportStats(e) {
 }
 
 /* ---- Даалгавар: ажилтанд ЗААВЧИЛЖ өгсөн бол ажилтанд тооцно (албаны даалгавар энд ОРОХГҮЙ) ---- */
+/* ══════════════════════════════════════════════════════════════
+   ДААЛГАВРЫН ТӨЛӨВ БА ҮНЭЛГЭЭ
+   open/''    — хийгдээгүй
+   submitted  — ажилтан гүйцэтгээд ХЯНУУЛАХААР илгээсэн
+   approved   — хянагч ҮНЭЛГЭЭ өгч баталгаажуулсан (t.score 0–100)
+   returned   — хянагч буцаасан, дахин хийнэ
+   done       — хуучин хувилбарын бүртгэл (үнэлгээгүй, бүтэн тооцно)
+
+   KPI-д даалгаврын оноо нь "хийсэн эсэх" биш, ҮНЭЛГЭЭГЭЭР тооцогдоно.
+   Хянагч муу дүн тавьбал тухайн ажилтны оноо тэр хэмжээгээр буурна.
+   ══════════════════════════════════════════════════════════════ */
+function taskScoreOf(t) {
+  if (!t) return 0;
+  if (t.status === 'approved') {
+    var s = _f(t.score);
+    return isNaN(s) ? 100 : clamp(Math.round(s), 0, 100);
+  }
+  if (t.status === 'submitted') return 100;   // хянагдаж байгаа — түр бүтэн
+  if (t.status === 'done') return 100;        // хуучин бүртгэл
+  return 0;                                    // хийгээгүй / буцаагдсан
+}
+function taskIsClosed(t) { return !!t && (t.status === 'approved' || t.status === 'done'); }
+
+/* Хэн хянаж, үнэлгээ өгөх эрхтэй вэ */
+function canReviewTask(t) {
+  if (isAdmin()) return true;
+  if (!isDeptHead()) return false;
+  if (t && t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
+  var d = (SESSION && SESSION.dept) || '';
+  return !!d && !!t && (t.dept === d || t.dept === 'all');
+}
+
 function empTaskStats(e) {
   var assigned = (DB.tasks || []).filter(function (t) {
     var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
     return ids.indexOf(e.id) > -1; // зөвхөн нэрлэн оногдуулсан даалгавар
   });
-  var done = assigned.filter(function (t) { return t.status === 'done'; }).length;
-  return { total: assigned.length, done: done };
+  var done = 0, pending = 0, returned = 0, scoreSum = 0;
+  assigned.forEach(function (t) {
+    scoreSum += taskScoreOf(t);
+    if (taskIsClosed(t)) done++;
+    else if (t.status === 'submitted') pending++;
+    else if (t.status === 'returned') returned++;
+  });
+  return { total: assigned.length, done: done, pending: pending, returned: returned, scoreSum: scoreSum };
 }
 
 /* ---- Даалгавар: албанд (эсвэл бүх албанд) өгсөн даалгаврын дүн — албаны мөрөнд ---- */
@@ -2727,8 +2774,9 @@ function deptTaskStats(dept) {
     if (ids.length) return false; // нэрлэсэн даалгавар албанд тооцогдохгүй
     return t.dept === 'all' || t.dept === dept;
   });
-  var done = assigned.filter(function (t) { return t.status === 'done'; }).length;
-  return { total: assigned.length, done: done };
+  var done = 0, scoreSum = 0;
+  assigned.forEach(function (t) { scoreSum += taskScoreOf(t); if (taskIsClosed(t)) done++; });
+  return { total: assigned.length, done: done, scoreSum: scoreSum };
 }
 
 /* ---- Гадны сургалтын туслах функцүүд ---- */
@@ -5557,61 +5605,104 @@ function renderTasks() {
   sec.style.padding = '';
   DB.tasks = DB.tasks || [];
   var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
+  var me = emp ? myEmp() : null;
 
   /* Role-д тохирсон даалгаврыг шүүх */
   var tasks = DB.tasks.filter(function (t) {
     if (admin) return true;
-    if (dh && SESSION && SESSION.dept) return t.dept === SESSION.dept || t.dept === 'all';
-    if (emp) { var me = myEmp(); return me && (t.empId === me.id || (t.empIds && t.empIds.indexOf(me.id) > -1) || t.dept === me.dept || t.dept === 'all'); }
+    if (dh && SESSION) {
+      if (t.createdByEmail && t.createdByEmail === SESSION.email) return true;
+      return SESSION.dept ? (t.dept === SESSION.dept || t.dept === 'all') : false;
+    }
+    if (emp) return me && (t.empId === me.id || (t.empIds && t.empIds.indexOf(me.id) > -1) || t.dept === me.dept || t.dept === 'all');
     return false;
   }).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
 
-  var open = tasks.filter(function (t) { return t.status !== 'done'; });
-  var done = tasks.filter(function (t) { return t.status === 'done'; });
+  var review = tasks.filter(function (x) { return x.status === 'submitted'; });
+  var open   = tasks.filter(function (x) { return x.status !== 'submitted' && !taskIsClosed(x); });
+  var closed = tasks.filter(taskIsClosed);
+  var myReview = review.filter(canReviewTask);
 
-  /* Badge шинэчлэлт */
+  /* Badge — хянагчид "хянах", ажилтанд "хийх" тоо */
   var badge = document.getElementById('taskBadge');
-  if (badge) { badge.textContent = open.length; badge.style.display = open.length ? 'inline-block' : 'none'; }
+  var bn = (admin || dh) ? (myReview.length || open.length) : open.length;
+  if (badge) { badge.textContent = bn; badge.style.display = bn ? 'inline-block' : 'none'; }
 
   var html = '<div class="page-header"><div><h1>Даалгавар</h1>' +
-    '<p class="page-subtitle">Алба, ажилтнуудад өгсөн даалгавар ба биелэлт</p></div>' +
-    (admin ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
+    '<p class="page-subtitle">Даалгавар өгөх → ажилтан гүйцэтгэх → хянагч үнэлгээ өгч баталгаажуулах</p></div>' +
+    (admin || dh ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
     '</div>';
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
     statCard('Нийт даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
     statCard('Хийгдэх', open.length, 'ti-clock', '#D97706') +
-    statCard('Биелсэн', done.length, 'ti-circle-check', '#16A34A') +
+    statCard('Хянагдаж буй', review.length, 'ti-eye-search', '#7C3AED') +
+    statCard('Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
     '</div>';
 
-  function taskCard(t) {
-    var isDone = t.status === 'done';
-    var deptLabel = t.dept === 'all' ? 'Бүх алба' : esc(t.dept || '');
-    var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
-    var empLabel = ids.map(function (eid) { return esc((DB.employees.filter(function (e) { return e.id === eid; })[0] || {}).name || eid); }).join(', ');
+  function statusPill(x) {
+    if (x.status === 'approved') {
+      var s = taskScoreOf(x);
+      var c = s >= 85 ? '#16A34A' : (s >= 70 ? '#0891B2' : (s >= 50 ? '#D97706' : '#DC2626'));
+      return '<span style="background:' + c + '18;color:' + c + ';border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">✓ Баталгаажсан · ' + s + '%</span>';
+    }
+    if (x.status === 'done')      return '<span style="background:#16A34A18;color:#16A34A;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">✓ Биелсэн</span>';
+    if (x.status === 'submitted') return '<span style="background:#7C3AED18;color:#7C3AED;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">⏳ Хянагдаж байна</span>';
+    if (x.status === 'returned')  return '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">↩ Буцаагдсан</span>';
+    return '<span style="background:#64748B18;color:#64748B;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хийгдэх</span>';
+  }
+
+  function taskCard(x) {
+    var closedT = taskIsClosed(x);
+    var deptLabel = x.dept === 'all' ? 'Бүх алба' : esc(x.dept || '');
+    var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
+    var empLabel = ids.map(function (eid) { return esc(((DB.employees || []).filter(function (e) { return e.id === eid; })[0] || {}).name || eid); }).join(', ');
     var targetLabel = empLabel ? (deptLabel + ' · ' + empLabel) : deptLabel;
-    var canComplete = !isDone && (admin || dh || emp);
-    return '<div style="background:#fff;border:1px solid ' + (isDone ? '#D1FAE5' : '#EEF1F4') + ';border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px">' +
-      '<div style="width:36px;height:36px;border-radius:9px;background:' + (isDone ? '#D1FAE5' : '#EFF6FF') + ';color:' + (isDone ? '#065F46' : '#1D4ED8') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"><i class="ti ti-' + (isDone ? 'circle-check' : 'checkbox') + '"></i></div>' +
+
+    /* Ажилтан өөрт нь оногдсон, хийгдээгүй даалгаврыг ИЛГЭЭНЭ */
+    var mine = me && ids.indexOf(me.id) > -1;
+    var canSubmit = !closedT && x.status !== 'submitted' && (mine || (emp && !ids.length));
+    var canReview = x.status === 'submitted' && canReviewTask(x);
+    var canRegrade = x.status === 'approved' && canReviewTask(x);
+
+    var side = '#EEF1F4', ic = '#EFF6FF', icc = '#1D4ED8', icn = 'checkbox';
+    if (x.status === 'submitted') { side = '#DDD6FE'; ic = '#F5F3FF'; icc = '#7C3AED'; icn = 'eye-search'; }
+    else if (closedT)             { side = '#D1FAE5'; ic = '#D1FAE5'; icc = '#065F46'; icn = 'circle-check'; }
+    else if (x.status === 'returned') { side = '#FECACA'; ic = '#FEF2F2'; icc = '#DC2626'; icn = 'arrow-back-up'; }
+
+    return '<div style="background:#fff;border:1px solid ' + side + ';border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px">' +
+      '<div style="width:36px;height:36px;border-radius:9px;background:' + ic + ';color:' + icc + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px"><i class="ti ti-' + icn + '"></i></div>' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:600;font-size:14px' + (isDone ? ';color:#94A3B8;text-decoration:line-through' : '') + '">' + esc(t.title) + '</div>' +
-        (t.desc ? '<div style="font-size:13px;color:#64748B;margin-top:2px">' + esc(t.desc) + '</div>' : '') +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span style="font-weight:600;font-size:14px' + (closedT ? ';color:#94A3B8' : '') + '">' + esc(x.title) + '</span>' + statusPill(x) + '</div>' +
+        (x.desc ? '<div style="font-size:13px;color:#64748B;margin-top:3px">' + esc(x.desc) + '</div>' : '') +
         '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
-        (t.dueDate ? '<span><i class="ti ti-calendar"></i> ' + esc(t.dueDate) + '</span>' : '') +
-        '<span><i class="ti ti-user"></i> ' + esc(t.createdBy || 'Админ') + '</span>' +
-        (isDone ? '<span style="color:#16A34A"><i class="ti ti-circle-check"></i> ' + esc(t.completedBy || '') + ' ' + esc((t.completedAt || '').slice(0, 10)) + '</span>' : '') +
+        (x.dueDate ? '<span><i class="ti ti-calendar"></i> ' + esc(x.dueDate) + '</span>' : '') +
+        '<span><i class="ti ti-user"></i> ' + esc(x.createdBy || 'Админ') + '</span>' +
+        (x.submittedAt ? '<span style="color:#7C3AED"><i class="ti ti-send"></i> ' + esc((x.submittedAt || '').slice(0, 10)) + '</span>' : '') +
         '</div>' +
+        (x.submitNote ? '<div style="margin-top:8px;background:#F8FAFC;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#475569"><b>Ажилтны тайлбар:</b> ' + esc(x.submitNote) + '</div>' : '') +
+        (x.reviewComment ? '<div style="margin-top:6px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар' + (x.reviewedBy ? ' (' + esc(x.reviewedBy) + ')' : '') + ':</b> ' + esc(x.reviewComment) + '</div>' : '') +
       '</div>' +
-      '<div style="display:flex;gap:6px;flex-shrink:0">' +
-      (canComplete ? '<button class="btn btn-sm" style="background:#D1FAE5;color:#065F46;border-color:#A7F3D0" data-task-done="' + esc(t.id) + '"><i class="ti ti-check"></i> Биелсэн</button>' : '') +
-      (admin ? '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA" data-task-del="' + esc(t.id) + '"><i class="ti ti-trash"></i></button>' : '') +
+      '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
+      (canSubmit ? '<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '"><i class="ti ti-send"></i> Гүйцэтгэсэн</button>' : '') +
+      (canReview ? '<button class="btn btn-sm btn-primary" data-task-review="' + esc(x.id) + '"><i class="ti ti-eye-check"></i> Хянах</button>' : '') +
+      (canRegrade ? '<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '"><i class="ti ti-pencil"></i> Дүн засах</button>' : '') +
+      (admin ? '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA" data-task-del="' + esc(x.id) + '"><i class="ti ti-trash"></i></button>' : '') +
       '</div></div>';
   }
 
-  html += '<h3 style="margin:0 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
+  if (myReview.length) {
+    html += '<div style="background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:14px;padding:14px 16px;margin-bottom:16px">' +
+      '<div style="font-size:14px;font-weight:800;color:#5B21B6;margin-bottom:4px">⏳ Таны хянах ёстой ' + myReview.length + ' даалгавар</div>' +
+      '<div style="font-size:12.5px;color:#6D28D9">Гүйцэтгэлийг нь үзээд үнэлгээ өгнө үү. Үнэлгээ нь ажилтны KPI оноонд шууд нөлөөлнө.</div></div>';
+  }
+
+  html += (review.length ? '<h3 style="margin:0 0 10px;font-size:15px;color:#7C3AED">Хянагдаж буй ' + review.length + '</h3>' + review.map(taskCard).join('') : '') +
+    '<h3 style="margin:' + (review.length ? '18px' : '0') + ' 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
     (open.length ? open.map(taskCard).join('') : emptyBox('Хийгдэх даалгавар алга')) +
-    (done.length ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Биелсэн ' + done.length + '</h3>' + done.map(taskCard).join('') : '');
+    (closed.length ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Баталгаажсан ' + closed.length + '</h3>' + closed.map(taskCard).join('') : '');
 
   sec.innerHTML = html;
 
@@ -5619,28 +5710,100 @@ function renderTasks() {
     sec._taskWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#taskAdd')) { actionAddTask(); return; }
-      var db = ev.target.closest('[data-task-done]');
-      if (db) {
-        var tid = db.getAttribute('data-task-done');
-        var t = DB.tasks.filter(function (x) { return x.id === tid; })[0];
-        if (t) {
-          t.status = 'done';
-          t.completedBy = USER.name;
-          t.completedAt = new Date().toISOString();
-          saveDB(); renderTasks();
-          toast('Даалгавар биелсэн гэж тэмдэглэлээ', 'success');
-        }
-        return;
-      }
+
+      var sb = ev.target.closest('[data-task-submit]');
+      if (sb) { actionSubmitTask(sb.getAttribute('data-task-submit')); return; }
+
+      var rv = ev.target.closest('[data-task-review]');
+      if (rv) { actionReviewTask(rv.getAttribute('data-task-review')); return; }
+
       var dl = ev.target.closest('[data-task-del]');
       if (dl) {
         var tid2 = dl.getAttribute('data-task-del');
+        if (!confirm('Энэ даалгаврыг устгах уу?')) return;
         DB.tasks = DB.tasks.filter(function (x) { return x.id !== tid2; });
-        saveDB(); renderTasks();
+        saveDB(); renderTasks(); renderDashboard();
         toast('Даалгавар устгагдлаа', 'warn');
       }
     });
   }
+}
+
+/* ── Ажилтан гүйцэтгээд хянуулахаар илгээх ── */
+function actionSubmitTask(tid) {
+  var x = (DB.tasks || []).filter(function (y) { return y.id === tid; })[0];
+  if (!x) return;
+  formModal({
+    title: 'Даалгавар гүйцэтгэсэн — ' + (x.title || ''),
+    width: '480px',
+    fields: [
+      { name: 'note', label: 'Юу хийснээ товч бичнэ үү (заавал биш)', type: 'textarea', rows: 4,
+        placeholder: 'Жишээ: Цехийн гал унтраагуурыг бүрэн шалгаж, 2 ширхгийг сольсон.' }
+    ],
+    submitLabel: 'Хянуулахаар илгээх',
+    onSubmit: function (v) {
+      x.status = 'submitted';
+      x.submitNote = (v.note || '').trim();
+      x.submittedBy = USER.name;
+      x.submittedAt = new Date().toISOString();
+      x.reviewComment = '';
+      saveDB(); renderTasks(); renderDashboard();
+      toast('Хянуулахаар илгээгдлээ. Хянагч үнэлгээ өгнө.', 'success');
+    }
+  });
+}
+
+/* ── Хянагч үнэлгээ өгч баталгаажуулах ── */
+function actionReviewTask(tid) {
+  var x = (DB.tasks || []).filter(function (y) { return y.id === tid; })[0];
+  if (!x) return;
+  if (!canReviewTask(x)) { toast('Танд энэ даалгаврыг хянах эрх байхгүй', 'warn'); return; }
+  var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
+  var who = ids.map(function (id) { return ((DB.employees || []).filter(function (e) { return e.id === id; })[0] || {}).name || id; }).join(', ');
+
+  formModal({
+    title: 'Гүйцэтгэл хянах — ' + (x.title || ''),
+    width: '540px',
+    fields: [
+      { name: 'score', label: 'Гүйцэтгэлийн үнэлгээ' + (who ? ' · ' + who : ''), type: 'select',
+        value: String(x.score != null ? x.score : 100),
+        options: [
+          { value: '100', label: '100% — Маш сайн, бүрэн гүйцэт' },
+          { value: '85',  label: '85% — Сайн, бага зэрэг дутуу' },
+          { value: '70',  label: '70% — Дунд, засах зүйлтэй' },
+          { value: '50',  label: '50% — Хангалтгүй' },
+          { value: '30',  label: '30% — Маш муу' },
+          { value: '0',   label: '0% — Огт хийгээгүйтэй адил' }
+        ] },
+      { name: 'comment', label: 'Тайлбар (ажилтан харна)', type: 'textarea', rows: 3,
+        value: x.reviewComment || '', placeholder: 'Юуг сайжруулах ёстойг бичвэл ажилтанд тустай.' },
+      { name: 'decision', label: 'Шийдвэр', type: 'select', value: 'approve',
+        options: [
+          { value: 'approve', label: '✅ Баталгаажуулах (үнэлгээ хүчинтэй болно)' },
+          { value: 'return',  label: '↩ Буцаах — дахин хийлгэх' }
+        ] }
+    ],
+    submitLabel: 'Хадгалах',
+    onSubmit: function (v) {
+      x.reviewComment = (v.comment || '').trim();
+      x.reviewedBy = USER.name;
+      x.reviewedAt = new Date().toISOString();
+      if (v.decision === 'return') {
+        x.status = 'returned';
+        x.score = null;
+        saveDB(); renderTasks(); renderDashboard();
+        toast('Даалгавар буцаагдлаа. Ажилтан дахин гүйцэтгэнэ.', 'warn');
+        return;
+      }
+      var s = clamp(parseInt(v.score, 10) || 0, 0, 100);
+      x.status = 'approved';
+      x.score = s;
+      x.completedBy = x.submittedBy || USER.name;
+      x.completedAt = x.submittedAt || new Date().toISOString();
+      saveDB(); renderTasks(); renderDashboard();
+      toast('Баталгаажлаа · үнэлгээ ' + s + '% — KPI-д тооцогдлоо', 'success');
+    }
+  });
 }
 function actionAddTask() {
   var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
@@ -5670,6 +5833,7 @@ function actionAddTask() {
         dueDate: v.dueDate || '',
         status: 'open',
         createdBy: USER.name,
+        createdByEmail: (SESSION && SESSION.email) || '',
         createdAt: new Date().toISOString(),
         completedBy: '',
         completedAt: ''
