@@ -2439,8 +2439,36 @@ function dashTone(v) {
   return '#DC2626';
 }
 
+/* ⚠ Эрсдэлийн үнэлгээ нь DB-д БИШ, Firestore (kpi_risk_dashboards)-д байдаг.
+   Нэг удаа татаж кэшлэнэ. null = хараахан мэдэгдэхгүй → "—" гэж үзүүлнэ. */
+var RISK_DEPTS = null;
+function loadRiskDepts(cb) {
+  if (RISK_DEPTS) { if (cb) cb(RISK_DEPTS); return; }
+  if (loadRiskDepts._busy) return;
+  loadRiskDepts._busy = true;
+  try {
+    if (typeof fbReady === 'undefined' || !fbReady || !fdb) {
+      RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); return;
+    }
+    fdb.collection(RISK_COL).get().then(function (s) {
+      RISK_DEPTS = s.docs.map(function (d) { return d.id; });
+      loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS);
+    }).catch(function () { RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); });
+  } catch (e) { RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); }
+}
+
+/* Мэдээллийг аль алба гаргасныг тодорхойлох (r.dept байхгүй байж болно) */
+function reportDept(r) {
+  if (r && r.dept) return r.dept;
+  var e = (DB.employees || []).filter(function (x) { return reportBelongsTo(r, x); })[0];
+  return e ? (e.dept || '') : '';
+}
+
 function renderAdminDashboard() {
   var page = pageEl('dashboard'); if (!page) return;
+
+  /* Эрсдэлийн үнэлгээний жагсаалтыг нэг удаа татаад дахин зурна */
+  if (RISK_DEPTS === null) loadRiskDepts(function () { try { renderAdminDashboard(); } catch (e) {} });
 
   var host = document.getElementById('dashPro');
   if (!host) { host = document.createElement('div'); host.id = 'dashPro'; page.appendChild(host); }
@@ -2469,7 +2497,7 @@ function renderAdminDashboard() {
   if (pendingReview.length) acts.push({ n: pendingReview.length, t: 'даалгавар хянаж үнэлгээ өгөх', c: '#7C3AED', i: 'ti-eye-search', p: 'tasks' });
 
   var pendingReports = (DB.reports || []).filter(function (r) {
-    if (dh && r.dept !== dh) return false;
+    if (dh && reportDept(r) !== dh) return false;
     return r.status === 'reported';
   });
   if (pendingReports.length) acts.push({ n: pendingReports.length, t: 'аюул/near-miss баталгаажуулах', c: '#E11D48', i: 'ti-flag-2', p: 'reportflow' });
@@ -2492,9 +2520,8 @@ function renderAdminDashboard() {
   var lowEmps = emps.filter(function (e) { return empTotal(e) < 60; });
   if (lowEmps.length) acts.push({ n: lowEmps.length, t: 'ажилтан 60-аас доош оноотой', c: '#D97706', i: 'ti-user-exclamation', p: 'employees' });
 
-  var noRisk = depts.filter(function (d) { return !((DB.riskDash || {})[d]); });
-  if (!DB.riskDash) noRisk = [];
-  if (noRisk.length) acts.push({ n: noRisk.length, t: 'албанд эрсдэлийн үнэлгээ байхгүй', c: '#7C3AED', i: 'ti-chart-pie-2', p: 'hazards' });
+  var noRisk = (RISK_DEPTS === null) ? [] : depts.filter(function (d) { return RISK_DEPTS.indexOf(d) < 0; });
+  if (noRisk.length) acts.push({ n: noRisk.length, t: 'албанд эрсдэлийн үнэлгээ байршуулаагүй', c: '#7C3AED', i: 'ti-chart-pie-2', p: 'hazards' });
 
   H += dashCard(
     dashH('⚡ Шаардлагатай арга хэмжээ', acts.length ? 'Эдгээр нь таны шийдвэр хүлээж байна. Дарж шууд орно уу.' : '') +
@@ -2580,13 +2607,13 @@ function renderAdminDashboard() {
     var m = deptMembers(d);
     function av(fn) { var v = m.map(fn).filter(function (x) { return x != null; }); return v.length ? Math.round(avg(v)) : null; }
     var viol = (DB.violations || []).filter(function (x) {
-      var e = emps.filter(function (y) { return y.id === x.empId; })[0];
+      var e = (DB.employees || []).filter(function (y) { return y.id === x.empId; })[0];
       return e && e.dept === d && salaryMonthKey(x.date || x.createdAt) === salKey;
     }).length;
     return {
       d: d, n: m.length, kpi: deptScore(d),
       bosgo: av(kpiBosgo), video: av(kpiVideo), task: av(kpiTask), bonus: av(empBonusScore),
-      viol: viol, risk: !!((DB.riskDash || {})[d])
+      viol: viol, risk: (RISK_DEPTS === null) ? null : (RISK_DEPTS.indexOf(d) > -1)
     };
   }).filter(function (r) { return r.n > 0; }).sort(function (a, b) { return b.kpi - a.kpi; });
 
@@ -2603,7 +2630,7 @@ function renderAdminDashboard() {
         '<td><span style="background:' + dashTone(r.kpi) + '18;color:' + dashTone(r.kpi) + ';border-radius:8px;padding:3px 9px;font-weight:800">' + r.kpi + '</span></td>' +
         cell(r.bosgo) + cell(r.video) + cell(r.task) + cell(r.bonus) +
         '<td style="color:' + (r.viol ? '#DC2626' : '#CBD5E1') + ';font-weight:' + (r.viol ? '800' : '400') + '">' + (r.viol || '—') + '</td>' +
-        '<td>' + (r.risk ? '<span style="color:#16A34A">✓</span>' : '<span style="color:#DC2626">✕</span>') + '</td>' +
+        '<td>' + (r.risk === null ? '<span style="color:#CBD5E1">…</span>' : (r.risk ? '<span style="color:#16A34A">✓</span>' : '<span style="color:#DC2626">✕</span>')) + '</td>' +
         '</tr>';
     }).join('') + '</tbody></table></div>'
   );
@@ -2661,8 +2688,12 @@ function renderAdminDashboard() {
 
   H += '<div class="dash-2col">' +
     dashCard(
-      dashH('Видео сургалт (MiSkill)', vEmp ? vEmp + ' ажилтанд хичээл оногдсон' : 'Хичээл оногдоогүй байна') +
-      (vTot
+      dashH('Видео сургалт (MiSkill)',
+        (typeof LMS !== 'undefined' && !LMS.loaded) ? 'Мэдээлэл ачаалж байна…'
+          : (vEmp ? vEmp + ' ажилтанд хичээл оногдсон' : 'Хичээл оногдоогүй байна')) +
+      ((typeof LMS !== 'undefined' && !LMS.loaded)
+        ? '<div style="font-size:13px;color:#94A3B8">Видео сургалтын мэдээлэл серверээс ачаалагдаж байна. Дээрх «Шинэчлэх» товчийг дарж болно.</div>'
+        : vTot
         ? '<div class="dash-3col">' +
           '<div><div style="font-size:11px;color:#94A3B8">Оногдсон</div><div style="font-size:24px;color:#334155">' + dashNum(vTot) + '</div></div>' +
           '<div><div style="font-size:11px;color:#94A3B8">Үзсэн</div><div style="font-size:24px;color:#C2410C">' + dashNum(vView) + '</div></div>' +
@@ -2696,7 +2727,7 @@ function renderAdminDashboard() {
   var tScores = myTasks.filter(function (t) { return t.status === 'approved' && t.score != null; }).map(function (t) { return _f(t.score); });
   var tAvg = tScores.length ? Math.round(avg(tScores)) : null;
 
-  var reps = (DB.reports || []).filter(function (r) { return !dh || r.dept === dh; });
+  var reps = (DB.reports || []).filter(function (r) { return !dh || reportDept(r) === dh; });
   var rVer = reps.filter(function (r) { return r.status === 'verified'; }).length;
   var rPend = reps.filter(function (r) { return r.status === 'reported'; }).length;
   var rHaz = reps.filter(function (r) { return r.type === 'hazard'; }).length;
