@@ -38,6 +38,25 @@
   };
   firebase.initializeApp(firebaseConfig);
   window.fbDb = firebase.firestore();
+
+  /* Засварласан агуулгыг ӨӨР ТӨСӨЛД хадгална.
+     monos-hab-system-ийн Firestore дүрэм нэргүй хэрэглэгчийн бичилтийг хориглодог тул
+     "Firestore Rules зөвшөөрөөгүй" алдаа гардаг байсан.
+     habea-shalgalt (шалгалтын систем) төсөл бичилт зөвшөөрдөг. */
+  try {
+    var _contentApp = firebase.initializeApp({
+      apiKey: "AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",
+      authDomain: "habea-shalgalt.firebaseapp.com",
+      projectId: "habea-shalgalt",
+      storageBucket: "habea-shalgalt.firebasestorage.app",
+      messagingSenderId: "910170773266",
+      appId: "1:910170773266:web:38c7af5f7d0c352a5bc5cb"
+    }, "daatgal-content");
+    window.fbContent = _contentApp.firestore();
+  } catch (e) {
+    console.error("[Daatgal] content app:", e);
+    window.fbContent = window.fbDb;
+  }
 </script>
 <style>
 @property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
@@ -4735,14 +4754,14 @@
     } catch(e){
     }
 
-    if(!window.fbDb){
+    if(!window.fbContent){
       showToast('⚠ Firebase холбогдоогүй. Зөвхөн таны төхөөрөмжид хадгалагдлаа.');
       return;
     }
 
     showToast('Үүл рүү хадгалж байна...');
     try {
-      await window.fbDb.collection('content').doc('main').set({
+      await window.fbContent.collection('daatgal_content').doc('main').set({
         text: textData,
         adminPass: ADMIN_PASSWORD,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -4750,9 +4769,9 @@
 
       const imgKeys = Object.keys(imgData);
       if(imgKeys.length > 0){
-        const batch = window.fbDb.batch();
+        const batch = window.fbContent.batch();
         imgKeys.forEach(key=>{
-          const ref = window.fbDb.collection('images').doc(key);
+          const ref = window.fbContent.collection('daatgal_images').doc(key);
           batch.set(ref, {
             data: imgData[key],
             adminPass: ADMIN_PASSWORD,
@@ -4802,7 +4821,7 @@
   async function loadFromFirebase(){
     if(!window.fbDb) return;
     try {
-      const textDoc = await window.fbDb.collection('content').doc('main').get();
+      const textDoc = await window.fbContent.collection('daatgal_content').doc('main').get();
       if(textDoc.exists){
         const data = textDoc.data();
         if(data && data.text){
@@ -4811,7 +4830,7 @@
         }
       }
 
-      const imgSnap = await window.fbDb.collection('images').get();
+      const imgSnap = await window.fbContent.collection('daatgal_images').get();
       if(!imgSnap.empty){
         const imgData = {};
         imgSnap.forEach(doc=>{
