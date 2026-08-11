@@ -1573,7 +1573,7 @@ function renderModAdmin(sec, key, mod, title) {
     '<input type="text" id="modEmpSearch" placeholder="Ажилтан, хэлтсээр хайх..."></div></div>' +
     '<div style="padding:9px 16px;background:#F8FAFF;border-bottom:1px solid #F1F5F9;font-size:11.5px;color:#64748B">' +
     'Албаар нээгдсэн ажилтанд <b style="color:#16A34A">Албаар</b> гэж харагдана. Тухайн ажилтанд <b>дангаар</b> нээхийг хүсвэл доорх товчийг ашиглана.</div>' +
-    '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:640px"><thead><tr>' +
+    '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:580px"><thead><tr>' +
     '<th>Ажилтан</th><th>Хэлтэс</th>' +
     '<th style="text-align:center">Сургалт нээх</th><th style="text-align:center">Шалгалт нээх</th>' +
     '<th style="text-align:center">Үзсэн</th><th style="text-align:center">Дүн</th></tr></thead>' +
@@ -1653,7 +1653,7 @@ function renderModSubadmin(sec, key, mod, title, myDept) {
       '<div style="font-weight:600;font-size:13px">' + esc(myDept) + ' — ажилтан бүрээр нээх (<span style="color:#16A34A;font-weight:700">' + dDone + '</span>/' + dEmps.length + ' үзсэн)</div>' +
       '<div class="search-box" style="min-width:180px;flex:1;max-width:300px"><i class="ti ti-search"></i>' +
       '<input type="text" id="modEmpSearch" placeholder="Ажилтнаар хайх..."></div></div>' +
-      '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:640px"><thead><tr>' +
+      '<div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:580px"><thead><tr>' +
       '<th>Ажилтан</th><th>Хэлтэс</th><th style="text-align:center">Сургалт нээх</th><th style="text-align:center">Шалгалт нээх</th>' +
       '<th style="text-align:center">Үзсэн</th><th style="text-align:center">Дүн</th></tr></thead>' +
       '<tbody id="modEmpTbody">' + empRows + '</tbody></table></div></div>' : '') +
@@ -3706,7 +3706,7 @@ function renderEmployees() {
         return deptRow(d, groups[d]) + groups[d].map(rowHTML).join('');
       }).join('');
 
-  wrap.innerHTML = '<table class="data-table" style="min-width:700px">' + thead +
+  wrap.innerHTML = '<table class="data-table" style="min-width:640px">' + thead +
     '<tbody id="empTableBody">' + tbodyHtml + '</tbody></table>';
 
   // footer
