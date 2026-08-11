@@ -1197,6 +1197,14 @@ function openMenu(anchor, items, onSelect) {
 function switchPage(pageId) {
   // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
   if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
+  /* «Контент удирдлага» (admin.html) дотор шинэ хэрэглэгч нэмсэн байж болзошгүй.
+     Тэндээс гарахад ажилтны жагсаалтыг ДАХИН татна — бүтэн reload хийх шаардлагагүй. */
+  try {
+    if (switchPage._prev === 'adminpanel' && pageId !== 'adminpanel' && fbReady && !DEMO && isAdmin()) {
+      refreshEmployeesNow();
+    }
+    switchPage._prev = pageId;
+  } catch (e) {}
   try { rememberPage(pageId); } catch (e) {}   // refresh хийхэд энэ хуудсандаа үлдэнэ
   $$('.nav-item').forEach(function (it) {
     it.classList.toggle('active', it.getAttribute('data-page') === pageId);
@@ -6731,35 +6739,105 @@ function openSuggestionDetail(id) {
 }
 
 /* ============ Үйлдлүүд: Ажилтан ============ */
+
+/* ⚠ ӨМНӨХ АЛДАА: энэ форм зөвхөн ЛОКАЛ хуурамч мөр үүсгэдэг байсан —
+   uid ч, имэйл ч байхгүй тул сургалт/шалгалт/видео/даалгаврын дата хэзээ ч
+   холбогддоггүй, дараагийн ачаалалтад syncEmployeesWithRealData() бүрмөсөн
+   устгадаг байв. Одоо ЖИНХЭНЭ бүртгэл (Firebase Auth + users) үүсгэнэ. */
+
+/* Хоёрдогч Firebase апп — шинэ хэрэглэгч үүсгэхэд админы сешн тасрахаас сэргийлнэ */
+var _regApp = null;
+function regApp() {
+  if (_regApp) return _regApp;
+  try { _regApp = firebase.app('kpi-reg'); }
+  catch (e) { _regApp = firebase.initializeApp(firebaseConfig, 'kpi-reg'); }
+  return _regApp;
+}
+/* Дүрэм нь "хэрэглэгч зөвхөн өөрийн баримтаа бичнэ" байж болзошгүй тул
+   эхлээд ШИНЭ хэрэглэгчийн эрхээр, бүтэхгүй бол админы эрхээр бичнэ */
+async function _writeBoth(ref1, ref2, data) {
+  try { await ref1.set(data, { merge: true }); return null; }
+  catch (e1) { try { await ref2.set(data, { merge: true }); return null; } catch (e2) { return e2; } }
+}
+
+/* Бүтэн reload хийхгүйгээр ажилтны жагсаалтыг Firestore-оос дахин татаж, дэлгэцийг шинэчилнэ */
+async function refreshEmployeesNow() {
+  try { await syncEmployeesWithRealData(); } catch (e) {}
+  try { saveDB(); } catch (e) {}
+  try { empState.page = 1; } catch (e) {}
+  try { renderEmployees(); } catch (e) {}
+  try { renderDashboard(); } catch (e) {}
+  try { renderKpiPage(); } catch (e) {}
+  try { renderSidebar(); } catch (e) {}
+  try { if (charts.radar) renderCharts(); } catch (e) {}
+}
+
+async function registerEmployee(v, em, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Бүртгэж байна…'; }
+  try {
+    var app = regApp(), sAuth = app.auth(), sdb = app.firestore();
+    var cred = await sAuth.createUserWithEmailAndPassword(em, v.password);
+    var uid = cred.user.uid;
+    var userData = {
+      email: em, uid: uid,
+      lastName: v.lastName, firstName: v.firstName,
+      position: v.position, department: v.dept,
+      role: 'employee', isActive: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      totalSiteTime: 0
+    };
+    var uErr = await _writeBoth(
+      sdb.collection('users').doc(uid),
+      fdb.collection('users').doc(uid), userData);
+    await _writeBoth(
+      fdb.collection('allowed_users').doc(uid),
+      sdb.collection('allowed_users').doc(uid),
+      { email: em, uid: uid, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    try { await sAuth.signOut(); } catch (e) {}
+    if (uErr) throw new Error('«users» цуглуулгад бичих эрх алга. Firebase Rules дээр match /users/{uid} → allow create: if request.auth != null; нэмнэ үү. (' + uErr.message + ')');
+    closeModal();
+    toast('Ажилтан бүртгэгдлээ — ' + v.lastName.charAt(0) + '. ' + v.firstName, 'success');
+    await refreshEmployeesNow();
+  } catch (e) {
+    var c = e && e.code;
+    var msg = c === 'auth/email-already-in-use' ? 'Энэ Gmail хаяг аль хэдийн бүртгэлтэй байна'
+            : c === 'auth/invalid-email' ? 'Gmail хаяг буруу форматтай байна'
+            : c === 'auth/weak-password' ? 'Нууц үг хэт сул байна (6+ тэмдэгт)'
+            : 'Алдаа: ' + ((e && e.message) || e);
+    toast(msg, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Бүртгэх'; }
+  }
+}
+
 function actionAddEmployee() {
+  if (DEMO || !fbReady || !fdb) { toast('Сервертэй холбогдоогүй тул ажилтан бүртгэх боломжгүй', 'error'); return; }
+  if (!isAdmin()) { toast('Зөвхөн ХАБЭА админ ажилтан бүртгэнэ', 'error'); return; }
+  var depts = deptList();
   formModal({
-    title: 'Шинэ ажилтан нэмэх',
+    title: 'Шинэ ажилтан бүртгэх',
     width: '520px',
     fields: [
-      { name: 'name', label: 'Овог нэр', type: 'text', required: true, placeholder: 'Ж: Б. Болд' },
-      { name: 'role', label: 'Албан тушаал', type: 'select', options: ROLES },
-      { name: 'dept', label: 'Хэлтэс', type: 'select', options: deptList() },
-      { name: 'training', label: 'Сургалт (0-100)', type: 'number', value: 80, min: 0, max: 100 },
-      { name: 'participation', label: 'Идэвхтэй оролцоо (0-100)', type: 'number', value: 75, min: 0, max: 100 },
-      { name: 'discipline', label: 'Дүрэм сахилт (0-100)', type: 'number', value: 80, min: 0, max: 100 },
-      { name: 'health', label: 'Эрүүл мэнд (0-100)', type: 'number', value: 90, min: 0, max: 100 },
-      { name: 'leadership', label: 'Манлайлал (0-100)', type: 'number', value: 70, min: 0, max: 100 }
+      { name: 'lastName',  label: 'Овог', type: 'text', required: true, placeholder: 'Ж: Батбаяр' },
+      { name: 'firstName', label: 'Нэр',  type: 'text', required: true, placeholder: 'Ж: Болд' },
+      { name: 'position',  label: 'Албан тушаал', type: 'text', required: true, placeholder: 'Ж: Оператор' },
+      { name: 'dept',      label: 'Алба', type: 'select', options: depts, required: true },
+      { name: 'email',     label: 'Gmail хаяг', type: 'email', required: true, placeholder: 'ner@gmail.com',
+        hint: 'Ажилтан ЭНЭ хаягаар нэвтэрч сургалт үзэж, шалгалт өгнө. Шалгалтын нэг удаагийн код ч энэ хаяг руу очно — тиймээс зөв бичнэ үү.' },
+      { name: 'password',  label: 'Нууц үг', type: 'password', required: true, placeholder: 'Хамгийн багадаа 6 тэмдэгт' },
+      { name: 'password2', label: 'Нууц үг давтах', type: 'password', required: true }
     ],
-    submitLabel: 'Нэмэх',
+    submitLabel: 'Бүртгэх',
     onSubmit: function (v) {
-      var e = {
-        id: nextId('EMP', DB.employees), initials: makeInitials(v.name), name: v.name,
-        role: v.role, dept: v.dept,
-        training: clamp(num(v.training, 80), 0, 100), participation: clamp(num(v.participation, 75), 0, 100),
-        discipline: clamp(num(v.discipline, 80), 0, 100), health: clamp(num(v.health, 90), 0, 100),
-        leadership: clamp(num(v.leadership, 70), 0, 100), onLeave: false
-      };
-      DB.employees.unshift(e);
-      saveDB();
-      empState.page = 1;
-      renderEmployees(); renderDashboard(); renderKpiPage(); renderSidebar();
-      if (charts.radar) renderCharts();
-      toast('Ажилтан нэмэгдлээ — ' + e.name);
+      var em = String(v.email || '').toLowerCase().trim();
+      var btn = document.querySelector('.modal-foot .btn-primary');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Gmail хаяг буруу байна', 'error'); return false; }
+      if (String(v.password || '').length < 6) { toast('Нууц үг доод тал нь 6 тэмдэгт байх ёстой', 'error'); return false; }
+      if (v.password !== v.password2) { toast('Нууц үг таарахгүй байна', 'error'); return false; }
+      if ((DB.employees || []).some(function (x) { return String(x.email || '').toLowerCase() === em; })) {
+        toast('Энэ хаягаар ажилтан аль хэдийн бүртгэлтэй байна', 'error'); return false;
+      }
+      registerEmployee(v, em, btn);
+      return false;   // хариу иртэл модал хаагдахгүй
     }
   });
 }
