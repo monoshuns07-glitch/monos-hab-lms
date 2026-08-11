@@ -927,7 +927,7 @@ function buildExcelData(data){
     r.examType==="pre"?"Урьдчилсан":"Дараах",
     r.timestamp instanceof Date?r.timestamp.toLocaleDateString("mn-MN"):"—",
     r.passed?"Тэнцсэн":"Тэнцээгүй",
-    r.signature?"":"— байхгүй —"
+    r.signCode?("Тоон гарын үсэг: "+r.signCode):(r.signature?"(зурсан гарын үсэг)":"— байхгүй —")
   ]);
 
   // Footer (нэг нэмэлт багана учир 13 урт болгоно)
@@ -1082,6 +1082,7 @@ function doExcelExportLegacy(data,suffix=""){
 // ── Detail Modal ──
 function openDetail(id){
   const r=allResults.find(x=>x.id===id);if(!r)return;
+  window.__curRec=r;   /* Бөглөгдсөн шалгалтын хуудас үүсгэхэд ашиглана */
   document.getElementById("dTitle").textContent=esc(r.name)+" — Дэлгэрэнгүй";
   const maxPts=totalPts();
   const g=letterGrade(r.percent||0);
@@ -1115,6 +1116,15 @@ function openDetail(id){
       <div style="display:flex;justify-content:space-between;font-size:10px;font-weight:600;color:var(--muted);margin-top:3px"><span>Дундаж</span><span>Энэ ажилтан</span></div>
       <div style="margin-top:8px"><span class="badge ${r.passed?"badge-pass":"badge-fail"}">${r.passed?"Тэнцсэн":"Тэнцээгүй"}</span> · ${fmtDateTime(r.timestamp)}</div>
     </div>
+  </div>
+  <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">🔐 Тоон гарын үсэг</div>
+  <div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div style="font-family:Consolas,monospace;font-size:26px;font-weight:900;letter-spacing:.24em;color:#0B4DA2;background:#EEF4FF;border-radius:10px;padding:10px 18px">${r.signCode?esc(r.signCode):"—"}</div>
+    <div style="flex:1;min-width:200px;font-size:12.5px;color:var(--muted);line-height:1.55">
+      ${r.signCode?"Ажилтны и-мэйлээр баталгаажуулсан нэг удаагийн код. Гараар зурсан гарын үсэгтэй адил хүчинтэй.":"Энэ шалгалт тоон гарын үсэггүй (хуучин бүртгэл)."}
+      ${r.recordHash?`<br><span style="font-size:11px;opacity:.75">Бүрэн бүтэн байдал: ${esc(String(r.recordHash).slice(0,24))}</span>`:""}
+    </div>
+    <button class="btn btn-primary" onclick='openAnswerSheet(window.__curRec)' style="flex-shrink:0">📄 Бөглөгдсөн шалгалтын хуудас</button>
   </div>
   ${r.signature?`
   <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">✍️ Ажилтны гарын үсэг</div>
@@ -1535,6 +1545,142 @@ setInterval(()=>{
     }).catch(()=>{});
   }
 },300000);
+
+/* ══════════════════════════════════════════════════════════════
+   БӨГЛӨГДСӨН ШАЛГАЛТЫН ХУУДАС — цаасан маягтын дагуу
+   Ажилтны хариулт тэмдэглэгдсэн, дүн бөглөгдсөн, гарын үсгийн
+   талбарт НЭГ УДААГИЙН КОД бичигдсэн байдлаар хэвлэх/PDF болгоно.
+   ══════════════════════════════════════════════════════════════ */
+function sheetEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function sheetAnswerBlock(q, a){
+  var t = q.type, H = "";
+  if (t === "single" || t === "multi") {
+    var picked = (t === "multi") ? (Array.isArray(a) ? a : []) : (a ? [a] : []);
+    H += '<div class="opts">';
+    (q.options || []).forEach(function(o){
+      var on = picked.indexOf(o.id) > -1;
+      H += '<div class="opt' + (on ? ' on' : '') + '">' +
+           '<span class="mark">' + (on ? "●" : "") + '</span>' +
+           '<span class="oid">' + sheetEsc(String(o.id).toUpperCase()) + '.</span> ' +
+           '<span>' + sheetEsc(o.text) + '</span></div>';
+    });
+    H += '</div>';
+  } else if (t === "matching") {
+    var map = (a && typeof a === "object") ? a : {};
+    H += '<div class="match">';
+    (q.leftItems || []).forEach(function(L){
+      var rid = map[L.id];
+      var R = (q.rightItems || []).filter(function(x){ return String(x.id) === String(rid); })[0];
+      H += '<div class="mrow"><span class="mleft">' + sheetEsc(L.id) + '. ' + sheetEsc(L.text) + '</span>' +
+           '<span class="marrow">→</span>' +
+           '<span class="mright">' + (R ? sheetEsc(R.id) + ') ' + sheetEsc(R.text) : '<i class="empty">хариулаагүй</i>') + '</span></div>';
+    });
+    H += '</div>';
+  } else if (t === "words3" || t === "mistakes3") {
+    var arr = Array.isArray(a) ? a : [];
+    H += '<div class="lines">';
+    for (var i = 0; i < 3; i++) {
+      H += '<div class="lrow"><span class="lnum">' + (i + 1) + '.</span><span class="lval">' +
+           (arr[i] ? sheetEsc(arr[i]) : '<i class="empty">хоосон</i>') + '</span></div>';
+    }
+    H += '</div>';
+  } else {
+    H += '<div class="openans">' + (a ? sheetEsc(a) : '<i class="empty">хариулаагүй</i>') + '</div>';
+  }
+  return H;
+}
+
+function openAnswerSheet(r, QSlist){
+  var QSx = QSlist || (typeof QS !== "undefined" ? QS : []);
+  var ans = r.answers || {};
+  var dt = r.timestamp instanceof Date ? r.timestamp : (r.timestamp && r.timestamp.toDate ? r.timestamp.toDate() : new Date());
+  var pad = function(n){ return String(n).padStart(2, "0"); };
+  var dstr = dt.getFullYear() + " он " + (dt.getMonth() + 1) + " сар " + dt.getDate() + " өдөр";
+  var sign = r.signCode || "";
+
+  var qHtml = QSx.map(function(q, i){
+    var earned = "";
+    if (r.breakdown) {
+      var b = r.breakdown.filter(function(x){ return String(x.id) === String(q.id); })[0];
+      if (b) earned = b.earned + " / " + (b.pts != null ? b.pts : (q.points || 0));
+    }
+    return '<div class="q">' +
+      '<div class="qh"><span class="qn">' + (i + 1) + '.</span>' +
+      '<span class="qt">' + sheetEsc(q.question) + '</span>' +
+      (earned ? '<span class="qp">' + earned + '</span>' : '') + '</div>' +
+      sheetAnswerBlock(q, ans[q.id]) + '</div>';
+  }).join("");
+
+  var html = '<!doctype html><html lang="mn"><head><meta charset="utf-8">' +
+    '<title>' + sheetEsc(r.name || "Шалгалт") + ' — шалгалтын хуудас</title><style>' +
+    '@page{size:A4;margin:14mm 12mm}' +
+    'body{font-family:"Times New Roman",Georgia,serif;color:#111;font-size:12.5px;line-height:1.45;margin:0}' +
+    '.logo{font-family:Arial,sans-serif;font-weight:900;font-size:22px;color:#0B4DA2;letter-spacing:-.5px}' +
+    '.logo span{color:#E30613}' +
+    'table{width:100%;border-collapse:collapse;margin:10px 0}' +
+    'th,td{border:1px solid #111;padding:6px 8px;font-size:12px;vertical-align:middle}' +
+    'th{background:#F1F1F1;font-weight:700;text-align:center}' +
+    '.code{font-family:Consolas,monospace;font-weight:900;font-size:16px;letter-spacing:.22em;color:#0B4DA2;text-align:center}' +
+    'h1{font-size:14.5px;text-align:center;margin:14px 0 4px;font-weight:700}' +
+    '.sub{text-align:center;font-size:12px;color:#444;margin-bottom:12px}' +
+    '.q{margin:0 0 11px;page-break-inside:avoid}' +
+    '.qh{display:flex;gap:7px;align-items:flex-start;margin-bottom:4px}' +
+    '.qn{font-weight:700;flex-shrink:0}' +
+    '.qt{flex:1;font-weight:600}' +
+    '.qp{flex-shrink:0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;color:#0B4DA2;border:1px solid #0B4DA2;border-radius:9px;padding:1px 7px;white-space:nowrap}' +
+    '.opts{margin-left:20px}' +
+    '.opt{display:flex;gap:6px;align-items:flex-start;padding:1.5px 0}' +
+    '.opt.on{font-weight:700}' +
+    '.mark{width:13px;flex-shrink:0;color:#111;font-size:14px;line-height:1.2}' +
+    '.oid{flex-shrink:0;width:16px}' +
+    '.match{margin-left:20px}' +
+    '.mrow{display:flex;gap:8px;align-items:flex-start;padding:2px 0}' +
+    '.mleft{flex:0 0 40%}' +
+    '.marrow{flex-shrink:0;font-weight:700}' +
+    '.mright{flex:1;font-weight:700}' +
+    '.lines{margin-left:20px}' +
+    '.lrow{display:flex;gap:7px;border-bottom:1px solid #999;padding:3px 0}' +
+    '.lnum{flex-shrink:0;font-weight:700}' +
+    '.lval{flex:1;font-weight:700}' +
+    '.openans{margin-left:20px;border-bottom:1px solid #999;min-height:19px;padding:3px 0;font-weight:700}' +
+    '.empty{color:#999;font-style:italic;font-weight:400}' +
+    '.foot{margin-top:14px;page-break-inside:avoid}' +
+    '.note{margin-top:8px;font-size:10.5px;color:#555;text-align:center}' +
+    '@media print{.noprint{display:none}}' +
+    '.noprint{position:fixed;top:10px;right:10px;display:flex;gap:8px;z-index:9}' +
+    '.noprint button{font:600 13px Arial;padding:9px 16px;border-radius:8px;border:0;cursor:pointer;background:#0B4DA2;color:#fff}' +
+    '.noprint button.sec{background:#eee;color:#333}' +
+    '</style></head><body>' +
+    '<div class="noprint"><button onclick="window.print()">🖨 Хэвлэх / PDF</button>' +
+    '<button class="sec" onclick="window.close()">Хаах</button></div>' +
+    '<div class="logo">МОНОС<span> ХҮНС</span></div>' +
+    '<table><tr><th style="width:34%">Ажилтны овог нэр</th><th style="width:33%">Албан тушаал</th><th>Гарын үсэг (тоон)</th></tr>' +
+    '<tr><td>' + sheetEsc(r.name || "") + '</td><td>' + sheetEsc(r.position || "") + '</td>' +
+    '<td class="code">' + (sign ? sheetEsc(sign) : "—") + '</td></tr></table>' +
+    '<div style="font-size:11.5px">' + sheetEsc(dstr) + (r.department ? " · " + sheetEsc(r.department) : "") + '</div>' +
+    '<h1>' + sheetEsc(r.examTitle || "Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн шалгалт") + '</h1>' +
+    '<div class="sub">' + (r.examType === "pre" ? "Урьдчилсан шалгалт" : "Сургалтын дараах шалгалт") + '</div>' +
+    qHtml +
+    '<div class="foot"><table>' +
+    '<tr><th>Тэнцсэн эсэх</th><th>Авсан оноо</th><th>Хувь</th><th>Шалгалт авсан ажилтан</th><th>Гарын үсэг (тоон)</th></tr>' +
+    '<tr><td style="text-align:center;font-weight:700">' + (r.passed ? "Тэнцсэн" : "Тэнцээгүй") + '</td>' +
+    '<td style="text-align:center">' + (r.total != null ? r.total : "") + '</td>' +
+    '<td style="text-align:center;font-weight:700">' + (r.percent != null ? r.percent + "%" : "") + '</td>' +
+    '<td></td><td class="code">' + (sign ? sheetEsc(sign) : "—") + '</td></tr>' +
+    '<tr><th style="text-align:left" colspan="5">Нэмэлт тайлбар</th></tr>' +
+    '<tr><td colspan="5" style="height:42px"></td></tr></table>' +
+    '<div class="note">Энэ хуудсыг ' + sheetEsc(r.name || "") + ' ажилтны цахим шалгалтын бүртгэлээс автоматаар үүсгэв. ' +
+    'Гарын үсгийн талбар дахь тоон код нь ажилтны и-мэйлээр баталгаажуулсан нэг удаагийн код бөгөөд гараар зурсан гарын үсэгтэй адил хүчинтэй.' +
+    (r.recordHash ? '<br>Бүрэн бүтэн байдлын код: ' + sheetEsc(String(r.recordHash).slice(0, 24)) : '') + '</div>' +
+    '</div></body></html>';
+
+  var w = window.open("", "_blank");
+  if (!w) { alert("Цонх нээхийг зөвшөөрнө үү (popup blocker)."); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+window.openAnswerSheet=openAnswerSheet;
 </script>
 </body>
 </html>
