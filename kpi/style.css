@@ -2356,13 +2356,16 @@ body.modal-open #hazardFab { display: none; }
   .page { max-width: 100%; overflow-x: hidden; }
   .card, .kpi-card, .stat-strip, .kpi-cat-card, .ppe-card, .report-card { max-width: 100%; }
 
-  /* — Дээд баар — */
-  .topbar { gap: 8px; padding: 0 12px; }
+  /* — Дээд баар (гар утсанд жоохон томруулсан) — */
+  :root { --topbar-h: 72px; }
+  .topbar { gap: 10px; padding: 0 14px; }
+  .menu-toggle { font-size: 24px; }
   .search-box { display: none; }
   .breadcrumb .bc-home, .breadcrumb .bc-sep { display: none; }
-  .bc-current { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48vw; display: block; }
-  .topbar-actions { gap: 6px; margin-left: auto; }
-  .icon-btn { width: 34px; height: 34px; font-size: 15px; border-radius: 10px; }
+  .bc-current { font-size: 15.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; display: block; }
+  .topbar-actions { gap: 8px; margin-left: auto; }
+  .icon-btn { width: 40px; height: 40px; font-size: 17.5px; border-radius: 12px; }
+  .notif-dot { top: 8px; right: 8px; width: 9px; height: 9px; }
 
   /* — Хуудасны толгой ба үйлдлийн товчнууд — */
   .page { padding: 16px 12px 96px; } /* доод зай — хөвөгч "Апп суулгах" товчны оронд */
