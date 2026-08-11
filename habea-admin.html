@@ -1655,10 +1655,10 @@ function openAnswerSheet(r, QSlist){
     '<div class="noprint"><button onclick="window.print()">🖨 Хэвлэх / PDF</button>' +
     '<button class="sec" onclick="window.close()">Хаах</button></div>' +
     '<div class="logo">МОНОС<span> ХҮНС</span></div>' +
-    '<table><tr><th style="width:34%">Ажилтны овог нэр</th><th style="width:33%">Албан тушаал</th><th>Гарын үсэг (тоон)</th></tr>' +
-    '<tr><td>' + sheetEsc(r.name || "") + '</td><td>' + sheetEsc(r.position || "") + '</td>' +
+    '<table><tr><th style="width:27%">Ажилтны овог нэр</th><th style="width:26%">Алба</th><th style="width:24%">Албан тушаал</th><th>Гарын үсэг (тоон)</th></tr>' +
+    '<tr><td>' + sheetEsc(r.name || "") + '</td><td>' + sheetEsc(r.department || "") + '</td><td>' + sheetEsc(r.position || "") + '</td>' +
     '<td class="code">' + (sign ? sheetEsc(sign) : "—") + '</td></tr></table>' +
-    '<div style="font-size:11.5px">' + sheetEsc(dstr) + (r.department ? " · " + sheetEsc(r.department) : "") + '</div>' +
+    '<div style="font-size:11.5px">' + sheetEsc(dstr) + '</div>' +
     '<h1>' + sheetEsc(r.examTitle || "Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн шалгалт") + '</h1>' +
     '<div class="sub">' + (r.examType === "pre" ? "Урьдчилсан шалгалт" : "Сургалтын дараах шалгалт") + '</div>' +
     qHtml +
