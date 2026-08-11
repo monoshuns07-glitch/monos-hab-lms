@@ -164,7 +164,11 @@ textarea.inp{resize:none;min-height:120px}
   box-shadow:0 8px 22px rgba(37,99,235,.30);font-family:inherit;
   -webkit-tap-highlight-color:transparent}
 #sigPhotoBtn:active{transform:translateY(1px)}
-.sig-or{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:#94A3B8;font-size:12px;font-weight:700}
+.sig-or{display:none !important}
+#sigPhotoBtn{display:none !important}
+.sig-tools{display:none !important}
+.sig-wrap{display:none !important}
+.sig-diag{display:none !important}
 .sig-saved{display:none;align-items:center;gap:11px;background:#ECFDF5;border:1.5px solid #A7F3D0;border-radius:14px;padding:11px 14px;margin-bottom:12px}
 .sig-saved .ss-t{flex:1;min-width:0;font-size:13px;font-weight:700;color:#047857;line-height:1.4}
 .sig-saved .ss-t span{display:block;font-weight:500;font-size:11.5px;color:#059669;margin-top:2px}
@@ -328,14 +332,14 @@ textarea.inp{resize:none;min-height:120px}
 <div id="screenSignature" class="screen">
   <div class="hdr">
     <div class="hdr-logo">✍️</div>
-    <div><div class="hdr-title">Гарын үсэг</div><div class="hdr-sub">Шалгалтын баталгаажуулалт</div></div>
+    <div><div class="hdr-title">Баталгаажуулалт</div><div class="hdr-sub">И-мэйлээр ирэх нэг удаагийн код</div></div>
   </div>
   <div class="sig-page" style="max-width:680px;margin:0 auto;padding:32px 20px 60px;width:100%">
     <button class="btn btn-ghost" style="margin-bottom:20px" onclick="backToExam()">← Шалгалт руу буцах</button>
     <div class="card slide-in" style="padding:32px">
       <div class="sig-badge" style="display:inline-flex;align-items:center;gap:8px;background:var(--bl);border:1px solid #C7D2FE;border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;color:var(--blue);margin-bottom:16px">📝 Эцсийн алхам</div>
-      <h2 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:8px;letter-spacing:-.3px">Гарын үсгээ зурна уу</h2>
-      <p class="sig-desc" style="color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:20px">Доорх талбарт <b style="color:var(--ink2)">хуруу, бал (стилус) эсвэл харандаагаар</b> гарын үсгээ зурна уу. Утсыг хэвтээ эргүүлбэл илүү том талбар гарна. Зурж дуусаад <b style="color:var(--ink2)">Илгээх</b> товчийг дарна.</p>
+      <h2 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:8px;letter-spacing:-.3px">Шалгалтаа баталгаажуулна уу</h2>
+      <p class="sig-desc" style="color:var(--muted);font-size:14px;line-height:1.65;margin-bottom:20px">Таны и-мэйл рүү ирэх <b style="color:var(--ink2)">нэг удаагийн код</b> нь гарын үсгийн үүрэг гүйцэтгэнэ. Доорх нүдийг тэмдэглээд код авч баталгаажуулна уу.</p>
 
       <div class="sig-userbox" style="background:var(--bg);border-radius:14px;padding:16px;margin-bottom:18px;display:flex;align-items:center;gap:12px">
         <div style="width:44px;height:44px;background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0">👤</div>
@@ -350,14 +354,14 @@ textarea.inp{resize:none;min-height:120px}
         <div class="ss-t">Таны бүртгэлтэй гарын үсэг ашиглагдаж байна<span>Дахин зурах шаардлагагүй. Өөрчлөхийг хүсвэл баруун талд дарна уу.</span></div>
         <button type="button" id="sigRedrawBtn">✎ Шинээр</button>
       </div>
-      <div class="sig-tools">
+      <div class="sig-tools" style="display:none">
         <button type="button" class="sig-tool on" data-sigtool="pen">🖊️ Бал</button>
         <button type="button" class="sig-tool" data-sigtool="pencil">✏️ Харандаа</button>
         <label class="sig-thick">Зузаан <input type="range" id="sigThick" min="1" max="5" step="1" value="3"></label>
         <span class="sig-kind" id="sigInputKind">Хүлээж байна…</span>
       </div>
       <div class="sig-note">Дэлгэц дээр <b>хуруу</b> эсвэл <b>стилус (S Pen)</b>-ээр зурна уу — юугаар зурж байгааг өөрөө таниад тохируулна. Энгийн бал, харандааг мэдрэх дэлгэц байдаггүй.</div>
-      <div class="sig-wrap" id="sigWrap">
+      <div class="sig-wrap" id="sigWrap" style="display:none">
         <canvas id="sigCanvas" class="sig-canvas"></canvas>
         <div class="sig-hint" id="sigHint">✍️ Энд гарын үсгээ зур</div>
         <div class="sig-baseline"></div>
@@ -399,7 +403,7 @@ textarea.inp{resize:none;min-height:120px}
         <button class="btn btn-outline btn-lg" style="flex:1" onclick="backToExam()">← Буцах</button>
         <button class="btn btn-primary btn-lg" id="btnFinalSubmit" style="flex:2" onclick="finalSubmit()" disabled>📤 Шалгалт илгээх</button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">Гарын үсэг зурж, дээрх нүдийг тэмдэглэсний дараа илгээх товч идэвхжинэ</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:10px;text-align:center;line-height:1.5">Зөвшөөрлийн нүдийг тэмдэглээд и-мэйлээр баталгаажуулсны дараа илгээх товч идэвхжинэ</p>
     </div>
   </div>
 </div>
@@ -1150,7 +1154,7 @@ function sigHasSignature(){
 function sigUpdateSubmit(){
   var c=document.getElementById("sigConsent");
   var box=document.getElementById("sigConsentBox");
-  var base=sigHasSignature() && (!c || c.checked);
+  var base=(!c || c.checked);   /* гарын үсэг заавал биш — код нь орлоно */
   var b=document.getElementById("btnFinalSubmit");
   if(b) b.disabled=!(base && (OTP_OK || OTP_BYPASS));
   if(box&&c) box.classList.toggle("ok",c.checked);
@@ -1183,6 +1187,7 @@ async function sigMakeHash(obj){
 var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
 var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false, OTP_LAST_TRIED="";
 var OTP_BYPASS=false, OTP_SKIP_REASON="";
+var OTP_CODE="";                     /* баталгаажсан код — ГАРЫН ҮСГИЙН ҮҮРЭГ гүйцэтгэнэ */
 var OTP_TTL_H=12;                    // баталгаажилт хэдэн цаг хүчинтэй вэ
 
 function otpEl(id){ return document.getElementById(id); }
@@ -1211,7 +1216,7 @@ function otpCacheKey(){ return "habea_otpok_"+otpEmail(); }
 
 function otpSaveCache(){
   try{
-    localStorage.setItem(otpCacheKey(), JSON.stringify({ at:OTP_VERIFIED_AT, id:OTP_ID }));
+    localStorage.setItem(otpCacheKey(), JSON.stringify({ at:OTP_VERIFIED_AT, id:OTP_ID, code:OTP_CODE }));
   }catch(e){}
 }
 function otpReadCache(){
@@ -1270,7 +1275,7 @@ function otpApplyCached(){
   if(OTP_OK) return;
   var c=otpReadCache();
   if(!c) return;
-  OTP_VERIFIED_AT=c.at; OTP_ID=c.id||"";
+  OTP_VERIFIED_AT=c.at; OTP_ID=c.id||""; OTP_CODE=c.code||"";
   otpSetVerified(true);
 }
 
@@ -1296,7 +1301,7 @@ function otpStartPoll(){
     try{
       db.collection("habea_otp").doc(OTP_ID).get().then(function(s){
         var d=(s&&s.exists)?s.data():null;
-        if(d&&d.verified===true) otpSetVerified(false);
+        if(d&&d.verified===true){ if(d.code) OTP_CODE=String(d.code); otpSetVerified(false); }
       }).catch(function(){});
     }catch(e){}
   },2500);
@@ -1388,7 +1393,8 @@ async function otpCheckTyped(){
     if(d.expiresAt && new Date(d.expiresAt).getTime()<Date.now()){ otpMsg("Кодын хугацаа дууссан.","err"); return; }
     var h=await otpSha(code+"|"+OTP_ID+"|"+String(d.email||""));
     if(h!==d.hash){ otpMsg("❌ Код таарахгүй байна. Дахин шалгана уу.","err"); return; }
-    try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
+    OTP_CODE=code;
+    try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,code:code,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
     otpSetVerified(false);
   }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
 }
@@ -1612,7 +1618,7 @@ function getSignatureDataUrl(){
 }
 
 async function finalSubmit(){ sigRelease();
-  if(!SIG_PHOTO&&(!signaturePad||signaturePad.isEmpty())){toast("✍️ Гарын үсгээ зураагүй байна");return}
+  /* Гарын үсэг зурах шаардлагагүй — нэг удаагийн код нь тоон гарын үсэг болно */
   var _cons=document.getElementById("sigConsent");
   if(_cons&&!_cons.checked){ toast("☑️ Баталгаажуулах нүдийг тэмдэглэнэ үү"); return; }
   if(!OTP_OK && !OTP_BYPASS){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
@@ -1653,6 +1659,9 @@ async function finalSubmit(){ sigRelease();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
   doc.hashAlg="SHA-256";
+  /* ── ТООН ГАРЫН ҮСЭГ: нэг удаагийн код нь зурсан гарын үсгийг орлоно ── */
+  doc.signCode=OTP_CODE||"";
+  doc.signMethod=OTP_CODE?"otp":(SIG_PHOTO?"photo":"draw");
   doc.emailVerified=!!OTP_OK;
   doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
   if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
@@ -1702,7 +1711,8 @@ async function finalSubmit(){ sigRelease();
     var _old=document.getElementById("sigProof"); if(_old) _old.remove();
     if(_host&&SIG_HASH){
       var _d=document.createElement("div"); _d.id="sigProof"; _d.className="sig-proof";
-      _d.innerHTML="Баталгааны код: <b>"+SIG_HASH.slice(0,16)+"</b><br><span>Гарын үсэг, хариулт, дүн өөрчлөгдөөгүйг энэ код нотолно.</span>";
+      _d.innerHTML=(OTP_CODE?"Таны тоон гарын үсэг: <b style=\"font-size:16px;letter-spacing:.2em\">"+OTP_CODE+"</b><br>":"")+
+        "Баталгааны код: <b>"+SIG_HASH.slice(0,16)+"</b><br><span>Хариулт, дүн өөрчлөгдөөгүйг энэ код нотолно.</span>";
       var _c=_host.querySelector(".card")||_host; _c.appendChild(_d);
     }
   }catch(e){}

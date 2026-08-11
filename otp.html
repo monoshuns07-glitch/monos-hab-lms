@@ -69,7 +69,7 @@ async function sha256Hex(str){
     const h=await sha256Hex(code+"|"+id+"|"+String(d.email||""));
     if(h!==d.hash){ show("⚠️","Код таарахгүй байна","И-мэйл дэх товчийг дахин дарна уу.","err"); return; }
 
-    await ref.update({ verified:true, verifiedAt:firebase.firestore.FieldValue.serverTimestamp() });
+    await ref.update({ verified:true, code:code, verifiedAt:firebase.firestore.FieldValue.serverTimestamp() });
     show("✅","Баталгаажлаа!",
       "Шалгалтын хуудас руу буцаж очиход <b>өөрөө үргэлжилнэ</b>.<br>Энэ цонхыг хааж болно.","ok",
       '<div class="note">Хэрэв автоматаар үргэлжлээгүй бол шалгалтын хуудсан дээрх нүдэнд доорх кодыг оруулна уу.</div>'+
