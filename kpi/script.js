@@ -3423,13 +3423,45 @@ function r2Catalog(meta) {
   } catch (e) {}
 }
 
+/* ── Байршуулах ТҮР ЗУУРЫН эрх (15 мин) ──
+   Vercel-ийн /api/file-token нь нэвтэрсэн эсэхийг шалгаад гарын үсэг олгоно.
+   Ингэснээр байнгын түлхүүр хөтөч дээр байх шаардлагагүй болно.
+   Хэрэв функц бэлэн биш бол null буцааж, хуучин аргаар ажиллуулна (тасралтгүй). */
+async function r2Grant(key) {
+  try {
+    if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) return null;
+    var idToken = await fauth.currentUser.getIdToken();
+    var r = await fetch('/api/file-token/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'up', key: key, idToken: idToken })
+    });
+    if (!r.ok) return null;
+    var j = await r.json();
+    if (!j || !j.ok || !j.token || !j.exp) return null;
+    return { token: j.token, exp: j.exp };
+  } catch (e) { return null; }
+}
+
+/* Хүсэлт бүрт эрхээ хавсаргана: шинэ гарын үсэг эсвэл хуучин түлхүүр */
+function r2Auth(xhr, grant) {
+  if (grant) { xhr.setRequestHeader('X-Up', grant.token); xhr.setRequestHeader('X-Exp', grant.exp); }
+  else { xhr.setRequestHeader('X-Key', TASK_R2_KEY); }
+}
+function r2AuthHeaders(grant, extra) {
+  var h = extra || {};
+  if (grant) { h['X-Up'] = grant.token; h['X-Exp'] = grant.exp; }
+  else { h['X-Key'] = TASK_R2_KEY; }
+  return h;
+}
+
 /* file → R2. onProgress(loaded,total). Promise<url> буцаана. */
 async function r2Put(file, key, onProgress) {
+  var grant = await r2Grant(key);
   if (file.size <= R2_SIMPLE_MAX) {
     return await new Promise(function (res, rej) {
       var xhr = new XMLHttpRequest();
       xhr.open('PUT', TASK_R2 + '/' + encodeURIComponent(key));
-      xhr.setRequestHeader('X-Key', TASK_R2_KEY);
+      r2Auth(xhr, grant);
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       xhr.upload.onprogress = function (e) { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
       xhr.onload = function () {
@@ -3445,7 +3477,7 @@ async function r2Put(file, key, onProgress) {
   var total = file.size, numParts = Math.ceil(total / R2_CHUNK);
   var createRes = await fetch(TASK_R2 + '/?action=mpu-create&key=' + encodeURIComponent(key) +
     '&type=' + encodeURIComponent(file.type || 'application/octet-stream'),
-    { method: 'POST', headers: { 'X-Key': TASK_R2_KEY } });
+    { method: 'POST', headers: r2AuthHeaders(grant) });
   if (!createRes.ok) throw new Error('Том файл байршуулах үйлчилгээ бэлэн биш (' + createRes.status + ')');
   var uploadId = (await createRes.json()).uploadId;
   var parts = [], uploaded = 0;
@@ -3457,7 +3489,7 @@ async function r2Put(file, key, onProgress) {
         var xhr = new XMLHttpRequest();
         xhr.open('PUT', TASK_R2 + '/?action=mpu-part&key=' + encodeURIComponent(key) +
           '&uploadId=' + encodeURIComponent(uploadId) + '&part=' + pn);
-        xhr.setRequestHeader('X-Key', TASK_R2_KEY);
+        r2Auth(xhr, grant);
         xhr.upload.onprogress = function (e) { if (e.lengthComputable && onProgress) onProgress(uploaded + e.loaded, total); };
         xhr.onload = function () {
           if (xhr.status === 200) { try { res(JSON.parse(xhr.responseText)); } catch (er) { rej(er); } }
@@ -3471,7 +3503,7 @@ async function r2Put(file, key, onProgress) {
   }
   var compRes = await fetch(TASK_R2 + '/?action=mpu-complete&key=' + encodeURIComponent(key) +
     '&uploadId=' + encodeURIComponent(uploadId),
-    { method: 'POST', headers: { 'X-Key': TASK_R2_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(parts) });
+    { method: 'POST', headers: r2AuthHeaders(grant, { 'Content-Type': 'application/json' }), body: JSON.stringify(parts) });
   if (!compRes.ok) throw new Error('Файлыг нэгтгэж чадсангүй (' + compRes.status + ')');
   var done = await compRes.json();
   return done.url || (TASK_R2 + '/' + encodeURIComponent(key));
