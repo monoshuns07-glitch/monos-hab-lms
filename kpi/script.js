@@ -3396,32 +3396,111 @@ function taskSortFn(a, b) {
   return new Date(b.createdAt) - new Date(a.createdAt);
 }
 
-/* ── Файл байршуулах (R2) ── */
+/* ══ Файл байршуулах (Cloudflare R2) ══
+   Том файлыг 50MB-ын хэсгүүдэд хувааж илгээнэ (multipart) — видео 5GB хүртэл.
+   Өмнө нь энд 12MB-ын таг байсан тул PPT/видео хавсаргах боломжгүй байв. */
 var TASK_R2 = 'https://monos-upload.buynt666.workers.dev';
 var TASK_R2_KEY = 'monos2026';
+var R2_CHUNK = 50 * 1024 * 1024;      // нэг хэсэг
+var R2_SIMPLE_MAX = 90 * 1024 * 1024; // үүнээс жижиг бол энгийн PUT
+
+function fmtSize(b) {
+  if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  return Math.max(1, Math.round(b / 1024)) + ' KB';
+}
+
+/* Бүх байршуулалтыг Firestore-д бүртгэнэ — юу, хэн, хэзээ, хэдэн МБ (файлын каталог) */
+function r2Catalog(meta) {
+  try {
+    if (!fbReady || !fdb || DEMO) return;
+    fdb.collection('files').add({
+      name: meta.name || '', key: meta.key || '', url: meta.url || '',
+      size: meta.size || 0, type: meta.type || '', context: meta.context || 'task',
+      uploadedBy: (SESSION && SESSION.email) || 'admin',
+      uploadedAt: new Date().toISOString()
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+/* file → R2. onProgress(loaded,total). Promise<url> буцаана. */
+async function r2Put(file, key, onProgress) {
+  if (file.size <= R2_SIMPLE_MAX) {
+    return await new Promise(function (res, rej) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', TASK_R2 + '/' + encodeURIComponent(key));
+      xhr.setRequestHeader('X-Key', TASK_R2_KEY);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total); };
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          try { res(JSON.parse(xhr.responseText).url); }
+          catch (_) { res(TASK_R2 + '/' + encodeURIComponent(key)); }
+        } else rej(new Error('R2 ' + xhr.status));
+      };
+      xhr.onerror = function () { rej(new Error('Сүлжээний алдаа')); };
+      xhr.send(file);
+    });
+  }
+  var total = file.size, numParts = Math.ceil(total / R2_CHUNK);
+  var createRes = await fetch(TASK_R2 + '/?action=mpu-create&key=' + encodeURIComponent(key) +
+    '&type=' + encodeURIComponent(file.type || 'application/octet-stream'),
+    { method: 'POST', headers: { 'X-Key': TASK_R2_KEY } });
+  if (!createRes.ok) throw new Error('Том файл байршуулах үйлчилгээ бэлэн биш (' + createRes.status + ')');
+  var uploadId = (await createRes.json()).uploadId;
+  var parts = [], uploaded = 0;
+  for (var i = 0; i < numParts; i++) {
+    var chunk = file.slice(i * R2_CHUNK, Math.min((i + 1) * R2_CHUNK, total));
+    var pn = i + 1;
+    var part = await (function (chunk, pn, uploaded) {
+      return new Promise(function (res, rej) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('PUT', TASK_R2 + '/?action=mpu-part&key=' + encodeURIComponent(key) +
+          '&uploadId=' + encodeURIComponent(uploadId) + '&part=' + pn);
+        xhr.setRequestHeader('X-Key', TASK_R2_KEY);
+        xhr.upload.onprogress = function (e) { if (e.lengthComputable && onProgress) onProgress(uploaded + e.loaded, total); };
+        xhr.onload = function () {
+          if (xhr.status === 200) { try { res(JSON.parse(xhr.responseText)); } catch (er) { rej(er); } }
+          else rej(new Error('Хэсэг ' + pn + ' алдаа ' + xhr.status));
+        };
+        xhr.onerror = function () { rej(new Error('Сүлжээний алдаа (хэсэг ' + pn + ')')); };
+        xhr.send(chunk);
+      });
+    })(chunk, pn, uploaded);
+    parts.push(part); uploaded += chunk.size;
+  }
+  var compRes = await fetch(TASK_R2 + '/?action=mpu-complete&key=' + encodeURIComponent(key) +
+    '&uploadId=' + encodeURIComponent(uploadId),
+    { method: 'POST', headers: { 'X-Key': TASK_R2_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(parts) });
+  if (!compRes.ok) throw new Error('Файлыг нэгтгэж чадсангүй (' + compRes.status + ')');
+  var done = await compRes.json();
+  return done.url || (TASK_R2 + '/' + encodeURIComponent(key));
+}
+
 function taskUpload(file, statusEl, hiddenEl) {
   if (!file) return;
-  if (file.size > 12 * 1024 * 1024) {
-    statusEl.textContent = 'Файл 12MB-аас их байна. Багасгана уу.';
+  var isVideo = /^video\//.test(file.type || '');
+  var lim = isVideo ? 5 * 1024 * 1024 * 1024 : 500 * 1024 * 1024;
+  if (file.size > lim) {
+    statusEl.textContent = 'Файл ' + (isVideo ? '5GB' : '500MB') + '-аас их байна (' + fmtSize(file.size) + ')';
     statusEl.style.color = '#DC2626'; return;
   }
-  var fname = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  statusEl.textContent = 'Байршуулж байна...'; statusEl.style.color = '#D97706';
-  var xhr = new XMLHttpRequest();
-  xhr.open('PUT', TASK_R2 + '/' + fname);
-  xhr.setRequestHeader('X-Key', TASK_R2_KEY);
-  xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-  xhr.upload.onprogress = function (e) {
-    if (e.lengthComputable) statusEl.textContent = Math.round(e.loaded / e.total * 100) + '%';
-  };
-  xhr.onload = function () {
-    if (xhr.status === 200) {
-      try { var r = JSON.parse(xhr.responseText); hiddenEl.value = r.url || ''; } catch (e) {}
-      statusEl.textContent = 'Хавсаргалаа ✓'; statusEl.style.color = '#16A34A';
-    } else { statusEl.textContent = 'Алдаа ' + xhr.status; statusEl.style.color = '#DC2626'; }
-  };
-  xhr.onerror = function () { statusEl.textContent = 'Сүлжээний алдаа'; statusEl.style.color = '#DC2626'; };
-  xhr.send(file);
+  var key = (isVideo ? 'vid_task_' : 'att_task_') + Date.now() + '_' +
+            file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  statusEl.style.color = '#D97706';
+  statusEl.textContent = 'Байршуулж байна… 0% (' + fmtSize(file.size) + ')';
+  r2Put(file, key, function (loaded, total) {
+    statusEl.textContent = 'Байршуулж байна… ' + Math.round(loaded / total * 100) + '% (' +
+      fmtSize(loaded) + ' / ' + fmtSize(total) + ')';
+  }).then(function (url) {
+    if (hiddenEl) hiddenEl.value = url || '';
+    statusEl.textContent = 'Хавсаргалаа ✓ (' + fmtSize(file.size) + ')';
+    statusEl.style.color = '#16A34A';
+    r2Catalog({ name: file.name, key: key, url: url, size: file.size, type: file.type, context: 'task' });
+  }).catch(function (e) {
+    statusEl.textContent = (e && e.message) || 'Байршуулахад алдаа гарлаа';
+    statusEl.style.color = '#DC2626';
+  });
 }
 
 /* Давтагдах даалгаврын дараагийн удаагийг автоматаар үүсгэх */
