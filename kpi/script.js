@@ -705,11 +705,16 @@ var _saveTimer = null;
    ⚠ Санах ой дахь DB-ийн бүтэц ЯГ ХЭВЭЭРЭЭ — тиймээс харуулах кодод
    (470 KB) огт гар хүрэхгүй. Зөвхөн унших/бичих давхарга солигдоно.
    ══════════════════════════════════════════════════════════════════════ */
+/* ⚠ ЗӨВХӨН МАССИВ хэлбэрийн жагсаалтууд. extAttendance / davtanMonths зэрэг нь
+   объект (зураглал) тул энд ОРОХГҮЙ — тэдгээр нь жижиг, үндсэн баримтад үлдэнэ. */
 var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
-  'extTrainings', 'extAttendance', 'externalTrainings', 'miskillStats'];
+  'extTrainings', 'externalTrainings', 'miskillStats'];
 var COL_PREFIX = 'kpi_';
 function colRef(key) { return fdb.collection(COL_PREFIX + key); }
+/* Хамгаалалт: түлхүүр ямар ч шалтгаанаар массив биш болсон бол хоосон гэж үзнэ */
+function colArr(k) { return Array.isArray(DB[k]) ? DB[k] : []; }
+function isColKey(k) { return COL_KEYS.indexOf(k) >= 0 && Array.isArray(DB[k]); }
 function isSplit() { return !!(DB && DB.settings && DB.settings.splitV2); }
 
 /* employees нь users цуглуулгаас ачаалалт бүрд ДАХИН үүсдэг тул хадгалахгүй.
@@ -746,7 +751,7 @@ function snapshotCols() {
   _colShadow = {};
   COL_KEYS.forEach(function (k) {
     var m = {};
-    (DB[k] || []).forEach(function (x) {
+    colArr(k).forEach(function (x) {
       if (x && x.id != null) { try { m[String(x.id)] = JSON.stringify(x); } catch (e) {} }
     });
     _colShadow[k] = m;
@@ -755,7 +760,7 @@ function snapshotCols() {
 /* id-гүй бичлэгт id олгоно (эс бөгөөс баримт болгож хадгалж чадахгүй) */
 function ensureIds() {
   COL_KEYS.forEach(function (k) {
-    (DB[k] || []).forEach(function (x, i) {
+    colArr(k).forEach(function (x, i) {
       if (x && (x.id == null || x.id === '')) x.id = k.toUpperCase().slice(0, 3) + '-' + Date.now() + '-' + i;
     });
   });
@@ -769,7 +774,7 @@ async function saveCols() {
   for (var i = 0; i < COL_KEYS.length; i++) {
     var k = COL_KEYS[i];
     var prev = _colShadow[k] || {}, cur = {};
-    (DB[k] || []).forEach(function (x) { if (x && x.id != null) cur[String(x.id)] = x; });
+    colArr(k).forEach(function (x) { if (x && x.id != null) cur[String(x.id)] = x; });
     for (var id in cur) {
       var s = '';
       try { s = JSON.stringify(cur[id]); } catch (e) { continue; }
@@ -861,7 +866,7 @@ function mainDocPayload() {
   var out = {};
   Object.keys(DB).forEach(function (k) {
     if (k === 'employees') return;            // users-ээс дахин үүснэ
-    if (COL_KEYS.indexOf(k) >= 0) return;     // цуглуулгад очсон
+    if (isColKey(k)) return;                  // цуглуулгад очсон
     out[k] = DB[k];
   });
   out.empOverrides = buildEmpOverrides();
@@ -2815,10 +2820,10 @@ async function migrateToCollections(onStep) {
   /* ② Бүх мөрийг цуглуулга руу */
   ensureIds();
   var total = 0;
-  COL_KEYS.forEach(function (k) { total += (DB[k] || []).length; });
+  COL_KEYS.forEach(function (k) { total += colArr(k).length; });
   var done = 0, batch = fdb.batch(), ops = 0;
   for (var i = 0; i < COL_KEYS.length; i++) {
-    var k = COL_KEYS[i], list = DB[k] || [];
+    var k = COL_KEYS[i], list = colArr(k);
     for (var j = 0; j < list.length; j++) {
       var x = list[j]; if (!x || x.id == null) continue;
       batch.set(colRef(k).doc(String(x.id)), x);
@@ -2836,7 +2841,7 @@ async function migrateToCollections(onStep) {
   DB.settings.splitV2 = true;
   DB.settings.splitAt = new Date().toISOString();
   var payload = mainDocPayload();
-  COL_KEYS.forEach(function (k) { payload[k] = firebase.firestore.FieldValue.delete(); });
+  COL_KEYS.forEach(function (k) { if (Array.isArray(DB[k])) payload[k] = firebase.firestore.FieldValue.delete(); });
   payload.employees = firebase.firestore.FieldValue.delete();
   await KPI_DOC().set(payload, { merge: true });
 
