@@ -3454,9 +3454,23 @@ function r2AuthHeaders(grant, extra) {
   return h;
 }
 
-/* file → R2. onProgress(loaded,total). Promise<url> буцаана. */
+/* file → R2.
+   ЭХЛЭЭД гарын үсэгтэй шинэ аргаар, бүтэхгүй бол ХУУЧИН түлхүүрээр дахин оролдоно.
+   Ингэснээр Cloudflare Worker шинэчлэгдсэн ч, шинэчлэгдээгүй ч байршуулалт тасрахгүй. */
 async function r2Put(file, key, onProgress) {
   var grant = await r2Grant(key);
+  if (!grant) return await r2PutWith(file, key, onProgress, null);
+  try {
+    return await r2PutWith(file, key, onProgress, grant);
+  } catch (e) {
+    /* Worker хуучин хэвээр (гарын үсгийг танихгүй / CORS хаасан) — хуучин аргаар нөхнө */
+    console.warn('[r2] signed upload failed, falling back to legacy key:', e && e.message);
+    return await r2PutWith(file, key, onProgress, null);
+  }
+}
+
+/* Нэг тодорхой эрхээр байршуулна (grant=null бол хуучин түлхүүр) */
+async function r2PutWith(file, key, onProgress, grant) {
   if (file.size <= R2_SIMPLE_MAX) {
     return await new Promise(function (res, rej) {
       var xhr = new XMLHttpRequest();
