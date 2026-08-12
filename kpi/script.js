@@ -4817,7 +4817,8 @@ function renderHazards() {
     '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
     ((isAdmin() || isDeptHead())
       ? '<div class="page-actions">' +
-        '<button class="btn btn-primary" data-risk-import="1"><i class="ti ti-file-spreadsheet"></i> Excel-ээс оруулах</button>' +
+        '<button class="btn btn-primary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер оруулах</button>' +
+        '<button class="btn btn-secondary" data-risk-import="1"><i class="ti ti-file-spreadsheet"></i> Нэг файл (гараар тааруулах)</button>' +
         '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> Дашбоард файл</button></div>'
       : '') + '</div>';
 
@@ -4839,6 +4840,7 @@ function renderHazards() {
   if (!sec._riskActWired) {
     sec._riskActWired = true;
     sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-risk-folder]')) { actionRiskFolder(); return; }
       if (ev.target.closest('[data-risk-import]')) { actionRiskImport(); return; }
       if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
     });
@@ -4876,6 +4878,169 @@ function riskLoadXlsx(cb) {
   s.onload = function () { cb(true); };
   s.onerror = function () { cb(false); };
   document.head.appendChild(s);
+}
+
+/* ── Хүснэгтийн ЖИНХЭНЭ толгой мөрийг олох ──
+   Эрсдэлийн үнэлгээний файлын эхэнд ихэвчлэн гарчиг, лого, огноо байдаг тул
+   толгой нь 1-р мөр байдаггүй. Эхний 15 мөрөөс хамгийн олон танил үг
+   агуулсныг нь толгой гэж үзнэ. */
+function riskFindHeader(aoa) {
+  var best = -1, bestHit = 0;
+  for (var r = 0; r < Math.min(15, aoa.length); r++) {
+    var row = aoa[r] || [], hit = 0;
+    for (var c = 0; c < row.length; c++) {
+      var v = String(row[c] == null ? '' : row[c]).toLowerCase().trim();
+      if (!v) continue;
+      for (var f = 0; f < RISK_IMPORT_FIELDS.length; f++) {
+        if (RISK_IMPORT_FIELDS[f].syn.some(function (s) { return v.indexOf(s) >= 0; })) { hit++; break; }
+      }
+    }
+    if (hit > bestHit) { bestHit = hit; best = r; }
+  }
+  return bestHit >= 2 ? best : (aoa.length ? 0 : -1);
+}
+/* Файлын нэр эсвэл фолдероос албыг таана */
+function riskDeptFromName(path, depts) {
+  var s = String(path || '').toLowerCase().replace(/\\/g, '/');
+  for (var i = 0; i < depts.length; i++) {
+    var d = String(depts[i] || '').toLowerCase().trim();
+    if (d && s.indexOf(d) >= 0) return depts[i];
+  }
+  return '';
+}
+/* Нэг хуудсыг эрсдэлийн мөр болгож задлана */
+function riskParseSheet(wb, fileName, depts, lockDept) {
+  var out = { rows: [], dept: '', cols: [], err: '' };
+  try {
+    var sh = wb.Sheets[wb.SheetNames[0]];
+    var aoa = XLSX.utils.sheet_to_json(sh, { header: 1, defval: '' });
+    var hr = riskFindHeader(aoa);
+    if (hr < 0) { out.err = 'хоосон'; return out; }
+    var head = (aoa[hr] || []).map(function (x) { return String(x == null ? '' : x).trim(); });
+    out.cols = head.filter(Boolean);
+
+    var map = {};
+    RISK_IMPORT_FIELDS.forEach(function (fd) { map[fd.k] = riskGuessCol(fd, head); });
+    var deptCol = '';
+    head.forEach(function (h) { var l = h.toLowerCase(); if (!deptCol && (l.indexOf('алба') >= 0 || l.indexOf('хэлтэс') >= 0)) deptCol = h; });
+
+    var fileDept = lockDept || riskDeptFromName(fileName, depts);
+    out.dept = fileDept;
+
+    var idx = function (name) { return name ? head.indexOf(name) : -1; };
+    var g = function (row, key) { var i = idx(map[key]); return i < 0 ? '' : String(row[i] == null ? '' : row[i]).trim(); };
+    var di = idx(deptCol);
+
+    for (var r = hr + 1; r < aoa.length; r++) {
+      var row = aoa[r] || [];
+      if (!row.length) continue;
+      var hz = g(row, 'hazard');
+      if (!hz || hz.length < 2) continue;
+      var dept = fileDept || (di >= 0 ? String(row[di] == null ? '' : row[di]).trim() : '');
+      if (!dept) continue;
+      var posRaw = g(row, 'positions');
+      out.rows.push({
+        dept: dept,
+        process: g(row, 'process'), hazard: hz,
+        cause: g(row, 'cause'), consequence: g(row, 'consequence'),
+        positions: posRaw ? posRaw.split(/[,;/\n]+/).map(function (x) { return x.trim(); }).filter(Boolean) : [],
+        empIds: [],
+        prob: clamp(Math.round(_f(g(row, 'prob'), 0)), 0, 5),
+        sev: clamp(Math.round(_f(g(row, 'sev'), 0)), 0, 5),
+        controls: g(row, 'controls'), actions: g(row, 'actions'),
+        responsible: g(row, 'responsible'), due: g(row, 'due')
+      });
+    }
+  } catch (e) { out.err = e.message || 'уншиж чадсангүй'; }
+  return out;
+}
+
+/* ══ ФОЛДЕР ЧИРЭХЭД БҮГДИЙГ АВТОМАТААР ══ */
+function actionRiskFolder() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ/туслах админ оруулна', 'error'); return; }
+  var lockDept = isDeptHead() ? (SESSION && SESSION.dept) || '' : '';
+  var depts = deptList();
+
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13.5px;color:#475569;line-height:1.7;margin-bottom:14px">' +
+    'Эрсдэлийн үнэлгээний <b>фолдероо бүхэлд нь</b> сонгоно уу. Дотор нь хэдэн ч Excel файл байж болно.<br>' +
+    'Систем өөрөө: <b>толгой мөрийг олж</b> · <b>багануудыг таниж</b> · <b>файлын нэрээс албыг тодорхойлж</b> оруулна.' +
+    (lockDept ? '<br><br>Таны алба: <b>' + esc(lockDept) + '</b> — бүх мөр энэ албанд орно.' : '') + '</div>' +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap">' +
+    '<label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px">' +
+    '<input type="file" id="riskFolder" webkitdirectory directory multiple style="display:none">' +
+    '<i class="ti ti-folder"></i> Фолдер сонгох</label>' +
+    '<label class="btn btn-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px">' +
+    '<input type="file" id="riskFiles" accept=".xlsx,.xls,.csv" multiple style="display:none">' +
+    '<i class="ti ti-files"></i> Файлууд сонгох</label></div>' +
+    '<div id="riskFolderSt" style="margin-top:16px"></div>');
+  buildModal('Эрсдэлийн үнэлгээ — фолдероор оруулах', node, { width: '640px' });
+
+  var handle = function (files) {
+    var st = document.getElementById('riskFolderSt');
+    var xl = Array.prototype.filter.call(files, function (f) { return /\.(xlsx|xls|csv)$/i.test(f.name); });
+    if (!xl.length) { st.innerHTML = '<div style="color:#DC2626;font-size:13px">Excel файл олдсонгүй.</div>'; return; }
+    st.innerHTML = '<div style="font-size:13px;color:#64748B">Excel уншигч ачаалж байна…</div>';
+    riskLoadXlsx(function (ok) {
+      if (!ok) { st.innerHTML = '<div style="color:#DC2626;font-size:13px">Excel уншигч ачаалагдсангүй.</div>'; return; }
+      var done = 0, report = [], staged = [];
+      xl.forEach(function (f) {
+        var rd = new FileReader();
+        rd.onload = function (e) {
+          var res;
+          try {
+            var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            res = riskParseSheet(wb, f.webkitRelativePath || f.name, depts, lockDept);
+          } catch (er) { res = { rows: [], dept: '', err: er.message }; }
+          report.push({ name: f.name, dept: res.dept, n: res.rows.length, err: res.err });
+          res.rows.forEach(function (r) { staged.push(r); });
+          if (++done === xl.length) finish(report, staged, st);
+        };
+        rd.onerror = function () {
+          report.push({ name: f.name, dept: '', n: 0, err: 'уншиж чадсангүй' });
+          if (++done === xl.length) finish(report, staged, st);
+        };
+        rd.readAsArrayBuffer(f);
+      });
+    });
+  };
+
+  var finish = function (report, staged, st) {
+    var okN = staged.length;
+    var rows = report.sort(function (a, b) { return b.n - a.n; }).map(function (r) {
+      var good = r.n > 0;
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+        '<span style="font-size:15px">' + (good ? '✅' : '⚠️') + '</span>' +
+        '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.name) + '</span>' +
+        '<span style="font-size:12px;color:#64748B;flex-shrink:0">' + (r.dept ? esc(r.dept) : '<span style="color:#DC2626">алба тодорхойгүй</span>') + '</span>' +
+        '<span style="font-size:13px;font-weight:800;color:' + (good ? '#16A34A' : '#94A3B8') + ';flex-shrink:0;width:52px;text-align:right">' + r.n + '</span></div>';
+    }).join('');
+    st.innerHTML =
+      '<div style="background:' + (okN ? '#F0FDF4' : '#FEF2F2') + ';border:1px solid ' + (okN ? '#BBF7D0' : '#FECACA') +
+      ';border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+      '<div style="font-size:20px;font-weight:900;color:' + (okN ? '#16A34A' : '#DC2626') + ';font-family:\'Bricolage Grotesque\',sans-serif">' +
+      okN + ' эрсдэл</div><div style="font-size:12.5px;color:#475569">' + report.length + ' файлаас уншлаа</div></div>' +
+      '<div style="max-height:240px;overflow:auto;margin-bottom:12px">' + rows + '</div>' +
+      (okN ? '<button class="btn btn-primary" id="riskFolderGo" style="width:100%"><i class="ti ti-database-import"></i> ' + okN + ' эрсдлийг системд оруулах</button>'
+           : '<div style="font-size:12.5px;color:#DC2626;line-height:1.6">Нэг ч эрсдэл уншигдсангүй. Файлын толгой мөрөнд «аюул», «магадлал», «хүндрэл» гэх мэт багана байгаа эсэхийг шалгана уу.</div>');
+    var go = document.getElementById('riskFolderGo');
+    if (go) go.addEventListener('click', function () {
+      go.disabled = true; go.innerHTML = '<i class="ti ti-loader-2"></i> Оруулж байна…';
+      var now = Date.now();
+      staged.forEach(function (r, i) {
+        r.id = 'RSK-' + now + '-' + i;
+        r.createdAt = new Date().toISOString();
+        r.createdBy = (SESSION && SESSION.email) || 'admin';
+        (DB.risks = DB.risks || []).push(r);
+      });
+      saveDB();
+      toast(staged.length + ' эрсдэл оруулагдлаа', 'success');
+      closeModal(); renderHazards();
+    });
+  };
+
+  document.getElementById('riskFolder').addEventListener('change', function () { handle(this.files); });
+  document.getElementById('riskFiles').addEventListener('change', function () { handle(this.files); });
 }
 
 function actionRiskImport() {
