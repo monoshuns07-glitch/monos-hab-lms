@@ -1788,5 +1788,53 @@ init();
   <div style="font-size:14px;opacity:.82;line-height:1.6;max-width:330px">Гарын үсгээ том, тод зурахын тулд утсаа хажуу тийш эргүүлнэ үү. (Дэлгэц эргэх тохиргоо асаалттай эсэхээ шалгаарай.)</div>
   <button type="button" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.45)" onclick="sigHideRotate()">Ингэж үргэлжлүүлэх</button>
 </div>
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   ТАНИХ МЭДЭЭЛЭЛГҮЙ БОЛ ШАЛГАЛТ ӨГӨХИЙГ ХОРИГЛОНО
+   ----------------------------------------------------------------------
+   Шалгалтын дүн ажилтантай И-МЭЙЛЭЭР холбогддог. Хэрэв хаягийг шууд
+   бичиж (эсвэл хуучин холбоосоор) орвол ?email= дутуу болж, дүн нь
+   ЯМАР Ч АЖИЛТАНТАЙ ХОЛБОГДОХГҮЙ — ажилтан бүтэн шалгалт өгөөд дэмий
+   хөдөлмөрлөнө. Тиймээс эхлэхээс нь өмнө зогсооно.
+   ══════════════════════════════════════════════════════════════════════ */
+(function () {
+  try {
+    var q = new URLSearchParams(location.search);
+    var em = (q.get('email') || '').trim();
+    if (em) return;   /* системээр дамжин орсон — хэвийн */
+
+    var block = function () {
+      var d = document.createElement('div');
+      d.id = 'noIdGuard';
+      d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;' +
+        'justify-content:center;padding:24px;background:linear-gradient(135deg,#EEF1FF,#F5F0FF 55%,#FDF2FB);' +
+        'font-family:Inter,"Segoe UI",Arial,sans-serif;overflow:auto';
+      d.innerHTML =
+        '<div style="width:100%;max-width:460px;background:#fff;border-radius:22px;padding:38px 30px;' +
+        'text-align:center;box-shadow:0 18px 50px rgba(15,23,42,.14)">' +
+        '<div style="font-size:56px;line-height:1;margin-bottom:16px">🔒</div>' +
+        '<h1 style="font-size:21px;font-weight:900;color:#0F172A;margin:0 0 10px;letter-spacing:-.3px">' +
+        'Системээр дамжин орно уу</h1>' +
+        '<p style="font-size:14.5px;color:#475569;line-height:1.7;margin:0 0 20px">' +
+        'Энэ шалгалтыг шууд хаягаар нь нээж өгөх боломжгүй. Ингэвэл таны дүн ' +
+        '<b style="color:#0F172A">бүртгэлд холбогдохгүй</b> — шалгалт өгсөн ч тооцогдохгүй үлдэнэ.</p>' +
+        '<div style="background:#F8FAFC;border-radius:14px;padding:14px 16px;font-size:13px;color:#475569;' +
+        'line-height:1.65;text-align:left;margin-bottom:22px">' +
+        '<b style="color:#0F172A">Хэрхэн орох вэ:</b><br>' +
+        '1. Системд и-мэйлээрээ нэвтэрнэ<br>' +
+        '2. <b>ХАБЭА Шалгалт</b> цэс рүү орно<br>' +
+        '3. Тэндээс шалгалтаа сонгоно</div>' +
+        '<a href="/kpi/" style="display:block;padding:14px;border-radius:12px;background:#4F46E5;color:#fff;' +
+        'font-weight:800;font-size:15px;text-decoration:none">Системд нэвтрэх</a>' +
+        '</div>';
+      document.body.appendChild(d);
+      try { document.documentElement.style.overflow = 'hidden'; } catch (e) {}
+    };
+
+    if (document.body) block();
+    else document.addEventListener('DOMContentLoaded', block);
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>
