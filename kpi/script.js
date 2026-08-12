@@ -709,7 +709,7 @@ var _saveTimer = null;
    объект (зураглал) тул энд ОРОХГҮЙ — тэдгээр нь жижиг, үндсэн баримтад үлдэнэ. */
 var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
-  'extTrainings', 'externalTrainings', 'miskillStats'];
+  'extTrainings', 'externalTrainings', 'miskillStats', 'risks'];
 var COL_PREFIX = 'kpi_';
 function colRef(key) { return fdb.collection(COL_PREFIX + key); }
 /* Хамгаалалт: түлхүүр ямар ч шалтгаанаар массив биш болсон бол хоосон гэж үзнэ */
@@ -803,7 +803,7 @@ function colQueries(key) {
 
     if (isDeptHead()) {
       if (!dept) return [c];
-      if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks'].indexOf(key) >= 0) {
+      if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks', 'risks'].indexOf(key) >= 0) {
         return [c.where('dept', '==', dept)];
       }
       /* Албатай холбоогүй, ХУВИЙН бүртгэлүүд — зөвхөн өөрийнх
@@ -824,6 +824,7 @@ function colQueries(key) {
       case 'notifications': return [c.where('uid', '==', uid)];
       case 'incidents':     return [c.where('uid', '==', uid)];
       case 'violations':    return [c.where('empId', '==', uid)];
+      case 'risks':         return dept ? [c.where('dept', '==', dept)] : [c];
       case 'tasks':
         var qs = [c.where('empIds', 'array-contains', uid)];
         if (dept) qs.push(c.where('dept', '==', dept));
@@ -4605,16 +4606,391 @@ function deleteRiskDashboard(dept, cb) {
     .then(function () { cb(true); }).catch(function () { cb(false); });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН БҮРТГЭЛ — бүтэцтэй өгөгдөл + интерактив дашбоард
+   ----------------------------------------------------------------------
+   Хэн юу харах вэ:
+     • Админ         — бүх алба
+     • Туслах админ  — ЗӨВХӨН өөрийн алба (өмнө нь бүгдийг хардаг байсан)
+     • Ажилтан       — өөрийн албаны эрсдлээс ӨӨРИЙН АЛБАН ТУШААЛД
+                       хамаарах нь (эсвэл нэрлэн зааснууд)
+   ══════════════════════════════════════════════════════════════════════ */
+var RISK_LEVELS = [
+  { max: 4,  name: 'Бага',      color: '#16A34A', bg: '#F0FDF4', bd: '#BBF7D0' },
+  { max: 9,  name: 'Дунд',      color: '#D97706', bg: '#FFFBEB', bd: '#FDE68A' },
+  { max: 15, name: 'Өндөр',     color: '#EA580C', bg: '#FFF7ED', bd: '#FED7AA' },
+  { max: 99, name: 'Маш өндөр', color: '#DC2626', bg: '#FEF2F2', bd: '#FECACA' }
+];
+function riskScore(r) {
+  var p = clamp(Math.round(_f(r && r.prob, 0)), 0, 5);
+  var s = clamp(Math.round(_f(r && r.sev, 0)), 0, 5);
+  return p * s;
+}
+function riskLevel(r) {
+  var sc = typeof r === 'number' ? r : riskScore(r);
+  for (var i = 0; i < RISK_LEVELS.length; i++) if (sc <= RISK_LEVELS[i].max) return RISK_LEVELS[i];
+  return RISK_LEVELS[RISK_LEVELS.length - 1];
+}
+function riskPositions(r) {
+  var p = (r && r.positions) || [];
+  if (typeof p === 'string') p = p.split(/[,;/]+/);
+  return p.map(function (x) { return String(x || '').trim().toLowerCase(); }).filter(Boolean);
+}
+/* Тухайн эрсдэл энэ ажилтанд хамаарах уу? */
+function riskAppliesTo(r, emp) {
+  if (!r || !emp) return false;
+  if (r.dept && emp.dept && r.dept !== emp.dept) return false;
+  var ids = (r.empIds || []);
+  if (ids.length) return ids.indexOf(emp.id) >= 0 || ids.indexOf(emp.uid) >= 0;
+  var pos = riskPositions(r);
+  if (!pos.length) return true;                    // албан тушаал заагаагүй = бүх ажилтанд
+  var mine = String(emp.role || emp.pos || '').trim().toLowerCase();
+  if (!mine) return true;
+  return pos.some(function (p) { return p === mine || mine.indexOf(p) >= 0 || p.indexOf(mine) >= 0; });
+}
+/* Эрхээс хамаарсан жагсаалт */
+function risksForView() {
+  var all = (DB.risks || []).slice();
+  if (isAdmin()) return all;
+  if (isDeptHead()) {
+    var d = SESSION && SESSION.dept;
+    return d ? all.filter(function (r) { return r.dept === d; }) : all;
+  }
+  var me = myEmp();
+  if (!me) return [];
+  return all.filter(function (r) { return riskAppliesTo(r, me); });
+}
+
+var RISK_FILTER = { level: '', q: '' };
+
+/* ── Интерактив дашбоард (бүх эрхэд нийтлэг) ── */
+function riskDashHTML(list, subtitle) {
+  var byLevel = [0, 0, 0, 0];
+  list.forEach(function (r) {
+    var L = riskLevel(r);
+    var i = RISK_LEVELS.indexOf(L); if (i >= 0) byLevel[i]++;
+  });
+  var total = list.length;
+
+  var cards = RISK_LEVELS.map(function (L, i) {
+    var on = RISK_FILTER.level === L.name;
+    return '<button class="risk-lv" data-risk-lv="' + esc(L.name) + '" style="flex:1;min-width:110px;text-align:left;' +
+      'background:' + (on ? L.color : L.bg) + ';border:1.5px solid ' + (on ? L.color : L.bd) + ';' +
+      'border-radius:14px;padding:12px 14px;cursor:pointer;font-family:inherit;transition:all .15s">' +
+      '<div style="font-size:26px;font-weight:900;color:' + (on ? '#fff' : L.color) + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + byLevel[i] + '</div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:' + (on ? '#fff' : L.color) + ';margin-top:3px">' + L.name + '</div>' +
+      '</button>';
+  }).join('');
+
+  /* 5×5 матриц — нүд дээр дарж шүүнэ */
+  var grid = '';
+  for (var s = 5; s >= 1; s--) {
+    grid += '<div style="display:flex;gap:4px;align-items:center">' +
+      '<span style="width:16px;font-size:10px;color:#94A3B8;text-align:right">' + s + '</span>';
+    for (var p = 1; p <= 5; p++) {
+      var sc = p * s, L = riskLevel(sc);
+      var n = list.filter(function (r) { return riskScore(r) === sc; }).length;
+      grid += '<div title="Магадлал ' + p + ' × Хүндрэл ' + s + ' = ' + sc + ' (' + L.name + ')" ' +
+        (n ? 'data-risk-cell="' + sc + '" style="cursor:pointer;' : 'style="') +
+        'flex:1;aspect-ratio:1;border-radius:6px;background:' + (n ? L.color : L.bg) +
+        ';border:1px solid ' + L.bd + ';display:flex;align-items:center;justify-content:center;' +
+        'font-size:13px;font-weight:900;color:' + (n ? '#fff' : 'transparent') + '">' + (n || '') + '</div>';
+    }
+    grid += '</div>';
+  }
+  grid += '<div style="display:flex;gap:4px;margin-top:3px"><span style="width:16px"></span>' +
+    [1, 2, 3, 4, 5].map(function (p) { return '<span style="flex:1;text-align:center;font-size:10px;color:#94A3B8">' + p + '</span>'; }).join('') + '</div>';
+
+  /* Шүүсэн жагсаалт */
+  var shown = list.filter(function (r) {
+    if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
+    if (RISK_FILTER.cell && riskScore(r) !== RISK_FILTER.cell) return false;
+    if (RISK_FILTER.q) {
+      var hay = [r.hazard, r.process, r.consequence, r.controls, r.actions, r.responsible].join(' ').toLowerCase();
+      if (hay.indexOf(RISK_FILTER.q) < 0) return false;
+    }
+    return true;
+  }).sort(function (a, b) { return riskScore(b) - riskScore(a); });
+
+  var rows = shown.map(function (r) {
+    var L = riskLevel(r), sc = riskScore(r);
+    var pos = (r.positions || []).length ? esc((r.positions || []).join(', ')) : 'Бүх ажилтан';
+    return '<div class="risk-row" data-risk-open="' + esc(r.id) + '" style="border:1px solid #E2E8F0;border-left:4px solid ' + L.color +
+      ';border-radius:12px;padding:12px 14px;margin-bottom:9px;cursor:pointer;background:#fff">' +
+      '<div style="display:flex;align-items:flex-start;gap:12px">' +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:14px;font-weight:700;color:#1E293B;line-height:1.4">' + esc(r.hazard || 'Нэргүй эрсдэл') + '</div>' +
+      (r.process ? '<div style="font-size:12px;color:#64748B;margin-top:3px">' + esc(r.process) + '</div>' : '') +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-top:5px">👤 ' + pos + (r.responsible ? ' · 🎯 ' + esc(r.responsible) : '') + '</div>' +
+      '</div>' +
+      '<div style="text-align:center;flex-shrink:0">' +
+      '<div style="font-size:20px;font-weight:900;color:' + L.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + sc + '</div>' +
+      '<div style="font-size:10.5px;font-weight:700;color:' + L.color + ';background:' + L.bg + ';border-radius:6px;padding:2px 7px;margin-top:4px">' + L.name + '</div>' +
+      '</div></div></div>';
+  }).join('') || '<div class="empty-state" style="padding:30px"><i class="ti ti-shield-check"></i><div>Тохирох эрсдэл олдсонгүй</div></div>';
+
+  return '<div class="card" style="padding:18px;margin-bottom:14px">' +
+    '<div style="font-size:15px;font-weight:800;color:#1E293B;margin-bottom:2px">Эрсдэлийн зураглал</div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-bottom:12px">' + esc(subtitle || '') + ' · нийт <b>' + total + '</b> эрсдэл</div>' +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px">' + cards + '</div>' +
+    '<div class="dash-2col" style="gap:18px">' +
+    '<div><div style="font-size:12px;font-weight:700;color:#94A3B8;margin-bottom:6px">МАТРИЦ · хүндрэл (босоо) × магадлал (хэвтээ)</div>' +
+    '<div style="display:flex;flex-direction:column;gap:4px;max-width:260px">' + grid + '</div></div>' +
+    '<div><div style="font-size:12px;font-weight:700;color:#94A3B8;margin-bottom:6px">ХАЙХ</div>' +
+    '<input type="text" id="riskSearch" placeholder="Аюул, ажлын байр, хариуцагчаар хайх…" value="' + esc(RISK_FILTER.q || '') + '" ' +
+    'style="width:100%;padding:10px 13px;border:1.5px solid #E2E8F0;border-radius:10px;font-size:13px;font-family:inherit">' +
+    ((RISK_FILTER.level || RISK_FILTER.cell || RISK_FILTER.q)
+      ? '<button class="btn btn-sm" data-risk-clear="1" style="margin-top:9px;background:#F1F5F9;color:#475569;border-color:#E2E8F0"><i class="ti ti-x"></i> Шүүлтүүр цэвэрлэх</button>' : '') +
+    '</div></div></div>' +
+    '<div style="font-size:13px;font-weight:800;color:#475569;margin:0 0 9px">Эрсдлүүд (' + shown.length + ')</div>' + rows;
+}
+
+function riskOpenDetail(id) {
+  var r = (DB.risks || []).filter(function (x) { return String(x.id) === String(id); })[0];
+  if (!r) return;
+  var L = riskLevel(r), sc = riskScore(r);
+  var row = function (t, v, big) {
+    if (!v) return '';
+    return '<div style="padding:9px 0;border-bottom:1px solid #F1F5F9">' +
+      '<div style="font-size:11.5px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.3px">' + t + '</div>' +
+      '<div style="font-size:' + (big ? '14.5px' : '13.5px') + ';color:#1E293B;margin-top:3px;line-height:1.6">' + esc(v) + '</div></div>';
+  };
+  var html =
+    '<div style="background:' + L.bg + ';border:1px solid ' + L.bd + ';border-radius:12px;padding:14px;margin-bottom:12px;display:flex;align-items:center;gap:14px">' +
+    '<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:' + L.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + sc + '</div>' +
+    '<div style="font-size:12px;font-weight:800;color:' + L.color + ';margin-top:3px">' + L.name + '</div></div>' +
+    '<div style="flex:1;font-size:12.5px;color:#475569;line-height:1.6">' +
+    'Магадлал <b>' + clamp(Math.round(_f(r.prob, 0)), 0, 5) + '</b> × Хүндрэл <b>' + clamp(Math.round(_f(r.sev, 0)), 0, 5) + '</b><br>' +
+    'Алба: <b>' + esc(r.dept || '—') + '</b></div></div>' +
+    row('Ажлын байр / үйл ажиллагаа', r.process) +
+    row('Аюулын эх үүсвэр', r.hazard, true) +
+    row('Шалтгаан', r.cause) +
+    row('Үр дагавар', r.consequence) +
+    row('Хамаарах албан тушаал', (r.positions || []).join(', ') || 'Бүх ажилтан') +
+    row('Одоогийн хяналт', r.controls) +
+    row('Нэмэлт арга хэмжээ', r.actions) +
+    row('Хариуцагч', r.responsible) +
+    row('Хугацаа', r.due);
+  buildModal('Эрсдэлийн дэлгэрэнгүй', elc('div', 'modal-info', html), { width: '520px' });
+}
+
+/* Дашбоардын товч/шүүлтүүрийг холбоно */
+function riskWire(sec, redraw) {
+  if (sec._riskDashWired) return;
+  sec._riskDashWired = true;
+  sec.addEventListener('click', function (ev) {
+    var lv = ev.target.closest('[data-risk-lv]');
+    if (lv) { var n = lv.getAttribute('data-risk-lv'); RISK_FILTER.level = (RISK_FILTER.level === n ? '' : n); RISK_FILTER.cell = 0; redraw(); return; }
+    var cl = ev.target.closest('[data-risk-cell]');
+    if (cl) { var c = parseInt(cl.getAttribute('data-risk-cell'), 10); RISK_FILTER.cell = (RISK_FILTER.cell === c ? 0 : c); RISK_FILTER.level = ''; redraw(); return; }
+    var cr = ev.target.closest('[data-risk-clear]');
+    if (cr) { RISK_FILTER = { level: '', q: '', cell: 0 }; redraw(); return; }
+    var op = ev.target.closest('[data-risk-open]');
+    if (op) { riskOpenDetail(op.getAttribute('data-risk-open')); return; }
+  });
+  sec.addEventListener('input', function (ev) {
+    if (ev.target && ev.target.id === 'riskSearch') {
+      RISK_FILTER.q = String(ev.target.value || '').trim().toLowerCase();
+      clearTimeout(riskWire._t);
+      riskWire._t = setTimeout(function () {
+        redraw();
+        var i = document.getElementById('riskSearch');
+        if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+      }, 260);
+    }
+  });
+}
+
 function renderHazards() {
   var sec = $$('.page[data-page="hazards"]')[0]; if (!sec) return;
-  sec.style.padding = '0';
-  if (isAdmin() || isDeptHead()) {
-    renderRiskAdmin(sec);
+  sec.style.padding = '';
+  var me = myEmp();
+  var myDept = (SESSION && SESSION.dept) || (me && me.dept) || '';
+  var list = risksForView();
+
+  var head, sub;
+  if (isAdmin()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
+  else if (isDeptHead()) { head = 'Эрсдэлийн үнэлгээ'; sub = myDept || 'Таны алба'; }
+  else { head = 'Миний ажлын байрны эрсдэл'; sub = (myDept ? myDept + ' · ' : '') + (me && (me.role || me.pos) ? (me.role || me.pos) : 'Бүх ажилтан'); }
+
+  var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
+    '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
+    ((isAdmin() || isDeptHead())
+      ? '<div class="page-actions">' +
+        '<button class="btn btn-primary" data-risk-import="1"><i class="ti ti-file-spreadsheet"></i> Excel-ээс оруулах</button>' +
+        '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> Дашбоард файл</button></div>'
+      : '') + '</div>';
+
+  if (!list.length) {
+    H += '<div class="card" style="padding:40px"><div class="empty-state">' +
+      '<i class="ti ti-shield-search"></i>' +
+      '<div>' + (isAdmin() || isDeptHead() ? 'Эрсдэлийн үнэлгээ оруулаагүй байна' : 'Танд хамаарах эрсдэл бүртгэгдээгүй байна') + '</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px">' +
+      (isAdmin() || isDeptHead()
+        ? '«Excel-ээс оруулах» товчоор эрсдэлийн үнэлгээгээ оруулна уу.'
+        : 'ХАБЭА ажилтан таны ажлын байрны эрсдэлийн үнэлгээг оруулсны дараа энд харагдана.') +
+      '</div></div></div>';
   } else {
-    var e = myEmp();
-    var dept = (SESSION && SESSION.dept) || (e && e.dept) || '';
-    renderRiskDept(sec, dept);
+    H += riskDashHTML(list, sub);
   }
+  sec.innerHTML = H;
+  riskWire(sec, renderHazards);
+
+  if (!sec._riskActWired) {
+    sec._riskActWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-risk-import]')) { actionRiskImport(); return; }
+      if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
+    });
+  }
+}
+
+/* ══ EXCEL-ЭЭС ЭРСДЭЛ ОРУУЛАХ ══
+   Ямар ч бүтэцтэй файлыг хүлээж авна: баганын нэрийг автоматаар таамаглаад,
+   буруу таасан бол хэрэглэгч өөрөө сонгож засна. */
+var RISK_IMPORT_FIELDS = [
+  { k: 'process',     t: 'Ажлын байр / үйл ажиллагаа', syn: ['ажлын байр', 'үйл ажиллагаа', 'процесс', 'ажиллагаа', 'process'] },
+  { k: 'hazard',      t: 'Аюулын эх үүсвэр',           syn: ['аюул', 'эрсдэл', 'ослын эх', 'hazard', 'аюулын'] , req: true },
+  { k: 'cause',       t: 'Шалтгаан',                   syn: ['шалтгаан', 'cause'] },
+  { k: 'consequence', t: 'Үр дагавар',                 syn: ['үр дагавар', 'хохирол', 'consequence', 'үр нөлөө'] },
+  { k: 'positions',   t: 'Хамаарах албан тушаал',      syn: ['албан тушаал', 'тушаал', 'мэргэжил', 'position', 'ажилтан'] },
+  { k: 'prob',        t: 'Магадлал (1-5)',             syn: ['магадлал', 'магадал', 'probability', 'давтамж'] },
+  { k: 'sev',         t: 'Хүндрэл (1-5)',              syn: ['хүндрэл', 'ноцтой', 'severity', 'хүнд', 'үр дагаврын'] },
+  { k: 'controls',    t: 'Одоогийн хяналт',            syn: ['одоогийн хяналт', 'хяналт', 'арга хэмжээ авсан', 'control'] },
+  { k: 'actions',     t: 'Нэмэлт арга хэмжээ',         syn: ['нэмэлт', 'арга хэмжээ', 'төлөвлөгөө', 'action'] },
+  { k: 'responsible', t: 'Хариуцагч',                  syn: ['хариуцагч', 'хариуцах', 'responsible', 'хэрэгжүүлэгч'] },
+  { k: 'due',         t: 'Хугацаа',                    syn: ['хугацаа', 'огноо', 'due', 'дуусах'] }
+];
+function riskGuessCol(header, cols) {
+  var h = cols.map(function (c) { return String(c || '').toLowerCase().trim(); });
+  for (var i = 0; i < header.syn.length; i++) {
+    var s = header.syn[i];
+    for (var j = 0; j < h.length; j++) if (h[j] && h[j].indexOf(s) >= 0) return cols[j];
+  }
+  return '';
+}
+function riskLoadXlsx(cb) {
+  if (typeof XLSX !== 'undefined') { cb(true); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload = function () { cb(true); };
+  s.onerror = function () { cb(false); };
+  document.head.appendChild(s);
+}
+
+function actionRiskImport() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ/туслах админ оруулна', 'error'); return; }
+  var lockDept = isDeptHead() ? (SESSION && SESSION.dept) || '' : '';
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13px;color:#475569;line-height:1.65;margin-bottom:12px">' +
+    'Excel (.xlsx / .csv) файлаа сонгоно уу. Эхний мөр нь <b>баганын нэр</b> байх ёстой. ' +
+    'Багануудыг автоматаар таамаглаад харуулна — буруу байвал өөрөө засна.</div>' +
+    '<label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px">' +
+    '<input type="file" id="riskXlsx" accept=".xlsx,.xls,.csv" style="display:none">' +
+    '<i class="ti ti-upload"></i> Файл сонгох</label>' +
+    '<div id="riskMapArea" style="margin-top:14px"></div>');
+  var m = buildModal('Excel-ээс эрсдэл оруулах', node, { width: '640px' });
+
+  var inp = document.getElementById('riskXlsx');
+  inp.addEventListener('change', function () {
+    var f = inp.files && inp.files[0]; if (!f) return;
+    var area = document.getElementById('riskMapArea');
+    area.innerHTML = '<div style="color:#64748B;font-size:13px">Уншиж байна…</div>';
+    riskLoadXlsx(function (ok) {
+      if (!ok) { area.innerHTML = '<div style="color:#DC2626;font-size:13px">Excel уншигч ачаалагдсангүй. Интернэт холболтоо шалгана уу.</div>'; return; }
+      var rd = new FileReader();
+      rd.onload = function (e) {
+        var rows = [];
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+        } catch (er) { area.innerHTML = '<div style="color:#DC2626;font-size:13px">Файл уншиж чадсангүй: ' + esc(er.message) + '</div>'; return; }
+        if (!rows.length) { area.innerHTML = '<div style="color:#DC2626;font-size:13px">Мөр олдсонгүй.</div>'; return; }
+        var cols = Object.keys(rows[0]);
+        var sel = RISK_IMPORT_FIELDS.map(function (fd) {
+          return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
+            '<span style="flex:0 0 190px;font-size:12.5px;color:#475569">' + esc(fd.t) + (fd.req ? ' <b style="color:#DC2626">*</b>' : '') + '</span>' +
+            '<select data-rmap="' + fd.k + '" style="flex:1;padding:7px 9px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:12.5px;font-family:inherit">' +
+            '<option value="">— ашиглахгүй —</option>' +
+            cols.map(function (c) {
+              var g = riskGuessCol(fd, cols);
+              return '<option value="' + esc(c) + '"' + (c === g ? ' selected' : '') + '>' + esc(c) + '</option>';
+            }).join('') + '</select></div>';
+        }).join('');
+        area.innerHTML =
+          '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#166534;margin-bottom:12px">' +
+          '✓ <b>' + rows.length + '</b> мөр, <b>' + cols.length + '</b> багана уншлаа</div>' +
+          (lockDept
+            ? '<div style="font-size:12.5px;color:#64748B;margin-bottom:10px">Алба: <b>' + esc(lockDept) + '</b> (таны алба)</div>'
+            : '<div style="display:flex;align-items:center;gap:10px;padding:5px 0 12px">' +
+              '<span style="flex:0 0 190px;font-size:12.5px;color:#475569">Алба <b style="color:#DC2626">*</b></span>' +
+              '<select id="riskDeptSel" style="flex:1;padding:7px 9px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:12.5px;font-family:inherit">' +
+              '<option value="__col">— Excel-ийн баганаас —</option>' +
+              deptList().map(function (d) { return '<option value="' + esc(d) + '">' + esc(d) + '</option>'; }).join('') +
+              '</select></div>' +
+              '<div style="display:flex;align-items:center;gap:10px;padding:0 0 12px" id="riskDeptColRow">' +
+              '<span style="flex:0 0 190px;font-size:12.5px;color:#94A3B8">↳ аль багана вэ?</span>' +
+              '<select data-rmap="dept" style="flex:1;padding:7px 9px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:12.5px;font-family:inherit">' +
+              '<option value="">—</option>' + cols.map(function (c) {
+                var lc = String(c).toLowerCase();
+                return '<option value="' + esc(c) + '"' + (lc.indexOf('алба') >= 0 || lc.indexOf('хэлтэс') >= 0 ? ' selected' : '') + '>' + esc(c) + '</option>';
+              }).join('') + '</select></div>') +
+          '<div style="font-size:12px;font-weight:700;color:#94A3B8;margin:10px 0 4px">БАГАНА ТААРУУЛАХ</div>' + sel +
+          '<button class="btn btn-primary" id="riskDoImport" style="margin-top:14px;width:100%">' +
+          '<i class="ti ti-database-import"></i> ' + rows.length + ' эрсдэл оруулах</button>' +
+          '<div id="riskImpSt" style="margin-top:9px;font-size:12.5px;color:#64748B"></div>';
+
+        document.getElementById('riskDoImport').addEventListener('click', function () {
+          var map = {};
+          Array.prototype.forEach.call(area.querySelectorAll('[data-rmap]'), function (s2) { map[s2.getAttribute('data-rmap')] = s2.value; });
+          if (!map.hazard) { toast('«Аюулын эх үүсвэр» баганыг заавал сонгоно', 'error'); return; }
+          var fixedDept = lockDept;
+          if (!fixedDept) {
+            var ds = document.getElementById('riskDeptSel');
+            fixedDept = (ds && ds.value !== '__col') ? ds.value : '';
+            if (!fixedDept && !map.dept) { toast('Алба сонгоно уу эсвэл баганыг нь заана уу', 'error'); return; }
+          }
+          var st = document.getElementById('riskImpSt');
+          var val = function (row, key) { return map[key] ? String(row[map[key]] == null ? '' : row[map[key]]).trim() : ''; };
+          var added = 0, skipped = 0, now = Date.now();
+          rows.forEach(function (row, i) {
+            var hz = val(row, 'hazard'); if (!hz) { skipped++; return; }
+            var dept = fixedDept || val(row, 'dept'); if (!dept) { skipped++; return; }
+            var posRaw = val(row, 'positions');
+            var rec = {
+              id: 'RSK-' + now + '-' + i,
+              dept: dept,
+              process: val(row, 'process'), hazard: hz,
+              cause: val(row, 'cause'), consequence: val(row, 'consequence'),
+              positions: posRaw ? posRaw.split(/[,;/]+/).map(function (x) { return x.trim(); }).filter(Boolean) : [],
+              empIds: [],
+              prob: clamp(Math.round(_f(val(row, 'prob'), 0)), 0, 5),
+              sev: clamp(Math.round(_f(val(row, 'sev'), 0)), 0, 5),
+              controls: val(row, 'controls'), actions: val(row, 'actions'),
+              responsible: val(row, 'responsible'), due: val(row, 'due'),
+              createdAt: new Date().toISOString(),
+              createdBy: (SESSION && SESSION.email) || 'admin'
+            };
+            (DB.risks = DB.risks || []).push(rec); added++;
+          });
+          saveDB();
+          if (st) st.innerHTML = '<span style="color:#16A34A;font-weight:700">✓ ' + added + ' эрсдэл нэмэгдлээ' +
+            (skipped ? ' · ' + skipped + ' мөр алгасав (аюул эсвэл алба хоосон)' : '') + '</span>';
+          toast(added + ' эрсдэл оруулагдлаа', 'success');
+          setTimeout(function () { closeModal(); renderHazards(); }, 900);
+        });
+      };
+      rd.readAsArrayBuffer(f);
+    });
+  });
+}
+
+/* Хуучин HTML дашбоард байршуулах хэсэг — тусдаа цонхонд үлдээв */
+function actionRiskFiles() {
+  var host = elc('div', 'modal-info', '<div id="riskFileHost"></div>');
+  buildModal('Эрсдэлийн дашбоард файл (HTML)', host, { width: '640px' });
+  var inner = document.getElementById('riskFileHost');
+  if (inner) renderRiskAdmin(inner);
 }
 
 function renderRiskAdmin(sec) {
