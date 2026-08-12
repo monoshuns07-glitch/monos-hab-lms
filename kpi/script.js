@@ -4651,17 +4651,133 @@ function riskPositions(r) {
   if (!p.length && r.position) p = String(r.position).split(/[,;/]+/);
   return p.map(function (x) { return String(x || '').trim().toLowerCase(); }).filter(Boolean);
 }
+/* ══ ЗӨӨЛӨН ТААРУУЛАЛТ ══
+   Эрсдэлийн файлын алба нь ТОВЧЛОЛ («Ложистик», «ХХҮ»), ажилтны бүртгэл дэх
+   алба нь бүтэн нэр («Ложистикийн алба») байдаг тул яг тэнцүү байх шаардвал
+   бүгд салдаг. Тиймээс дагавар/нэмэлт үгийг хасаад харьцуулна. */
+function riskNormName(s) {
+  return String(s || '').toLowerCase()
+    .replace(/[«»"'`.,\-–—()]/g, ' ')
+    .replace(/\b(алба|хэлтэс|нэгж|газар|тасаг|цех|баг)\b/g, ' ')
+    .replace(/(ийн|ын|ний|ны|гийн|тэй|той)\s*$/g, '')
+    .replace(/(ийн|ын|ний|ны|гийн)\b/g, '')
+    .replace(/\s+/g, ' ').trim();
+}
+/* Хоёр нэр ижил зүйлийг заасан эсэх */
+function riskNameMatch(a, b) {
+  var x = riskNormName(a), y = riskNormName(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.length >= 3 && y.indexOf(x) >= 0) return true;
+  if (y.length >= 3 && x.indexOf(y) >= 0) return true;
+  return false;
+}
+/* Админы гараар тохируулсан зураглал: эрсдэлийн файлын алба → системийн алба */
+function riskDeptMap() { return (DB.settings && DB.settings.riskDeptMap) || {}; }
+function riskSameDept(a, b) {
+  if (!a || !b) return true;              // аль нэг нь тодорхойгүй бол хориглохгүй
+  var mapped = riskDeptMap()[String(a).trim()];
+  if (mapped) return String(mapped).trim() === String(b).trim();   // гараар заасан нь давамгайлна
+  if (String(a).trim() === String(b).trim()) return true;
+  return riskNameMatch(a, b);
+}
+
+/* Хэдэн эрсдэл ажилтантай холбогдсоныг тоолно — таамаглахгүй, БОДИТООР */
+function riskCoverage(list) {
+  var emps = (DB.employees || []);
+  var linked = 0, byDept = {};
+  (list || []).forEach(function (r) {
+    var hit = emps.some(function (e) { return riskAppliesTo(r, e); });
+    if (hit) linked++;
+    var d = r.dept || '—';
+    if (!byDept[d]) byDept[d] = { total: 0, linked: 0 };
+    byDept[d].total++; if (hit) byDept[d].linked++;
+  });
+  return { total: (list || []).length, linked: linked, byDept: byDept };
+}
+
+function riskCoverageHTML(list) {
+  var cv = riskCoverage(list);
+  if (!cv.total) return '';
+  var pct = Math.round(cv.linked / cv.total * 100);
+  var bad = pct < 90;
+  var rows = Object.keys(cv.byDept).sort(function (a, b) { return cv.byDept[b].total - cv.byDept[a].total; })
+    .map(function (d) {
+      var x = cv.byDept[d], ok = x.linked > 0;
+      var mp = riskDeptMap()[d];
+      return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+        '<span style="font-size:14px">' + (ok ? '✅' : '⚠️') + '</span>' +
+        '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:#1E293B">' + esc(d) +
+        (mp ? '<span style="color:#94A3B8;font-weight:400"> → ' + esc(mp) + '</span>' : '') + '</span>' +
+        '<span style="font-size:12px;color:' + (ok ? '#16A34A' : '#DC2626') + ';font-weight:700;flex-shrink:0">' +
+        x.linked + ' / ' + x.total + '</span></div>';
+    }).join('');
+  return dashCard(
+    dashH('🔗 Ажилтантай холбогдолт', 'Эрсдэл ажилтанд харагдахын тулд алба нь ажилтны бүртгэлтэй таарах ёстой') +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">' +
+    '<span style="font-size:30px;font-weight:900;color:' + (bad ? '#DC2626' : '#16A34A') + ';font-family:\'Bricolage Grotesque\',sans-serif">' + pct + '%</span>' +
+    '<span style="font-size:13px;color:#64748B">' + cv.linked + ' / ' + cv.total + ' эрсдэл ажилтантай холбогдсон</span></div>' +
+    (bad ? '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#991B1B;line-height:1.6;margin-bottom:10px">' +
+      'Холбогдоогүй эрсдлүүд <b>ажилтанд харагдахгүй</b>. Ихэвчлэн албаны нэр таарахгүй байгаагаас болдог ' +
+      '(жишээ: файлд «Ложистик», бүртгэлд «Ложистикийн алба»). Доорх товчоор гараар тааруулна уу.</div>' : '') +
+    rows +
+    '<button class="btn ' + (bad ? 'btn-primary' : 'btn-secondary') + ' btn-sm" data-risk-map="1" style="margin-top:12px">' +
+    '<i class="ti ti-arrows-left-right"></i> Албуудыг тааруулах</button>', '18px');
+}
+
+function actionRiskDeptMap() {
+  var sys = deptList();
+  var fileDepts = {};
+  (DB.risks || []).forEach(function (r) { if (r.dept) fileDepts[r.dept] = (fileDepts[r.dept] || 0) + 1; });
+  var names = Object.keys(fileDepts).sort(function (a, b) { return fileDepts[b] - fileDepts[a]; });
+  if (!names.length) { toast('Эрсдэл оруулаагүй байна', 'warn'); return; }
+  var cur = riskDeptMap();
+  var body = '<div style="font-size:13px;color:#475569;line-height:1.65;margin-bottom:14px">' +
+    'Зүүн талд <b>эрсдэлийн файлын алба</b>, баруун талд <b>системд бүртгэлтэй алба</b>. ' +
+    'Тааруулсны дараа тэр албаны ажилтнууд өөрсдийн эрсдлээ харна.</div>' +
+    names.map(function (n) {
+      return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">' +
+        '<span style="flex:0 0 46%;font-size:12.5px;font-weight:600;color:#1E293B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+        esc(n) + ' <span style="color:#94A3B8;font-weight:400">(' + fileDepts[n] + ')</span></span>' +
+        '<span style="color:#CBD5E1">→</span>' +
+        '<select data-dmap="' + esc(n) + '" style="flex:1;padding:7px 9px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:12.5px;font-family:inherit">' +
+        '<option value="">— автоматаар —</option>' +
+        sys.map(function (d) {
+          return '<option value="' + esc(d) + '"' + (cur[n] === d ? ' selected' : '') + '>' + esc(d) + '</option>';
+        }).join('') + '</select></div>';
+    }).join('');
+  var node = elc('div', 'modal-info', body);
+  var m = buildModal('Албуудыг тааруулах', node, { width: '620px' });
+  var foot = elc('div', 'modal-foot');
+  var cancel = elc('button', 'btn btn-secondary', 'Цуцлах');
+  cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+  var save = elc('button', 'btn btn-primary', 'Хадгалах');
+  save.type = 'button';
+  save.addEventListener('click', function () {
+    var map = {};
+    Array.prototype.forEach.call(node.querySelectorAll('[data-dmap]'), function (s) {
+      if (s.value) map[s.getAttribute('data-dmap')] = s.value;
+    });
+    if (!DB.settings) DB.settings = seedDB().settings;
+    DB.settings.riskDeptMap = map;
+    saveDB(); closeModal(); renderHazards();
+    toast('Тааруулалт хадгалагдлаа', 'success');
+  });
+  foot.appendChild(cancel); foot.appendChild(save);
+  m.modal.appendChild(foot);
+}
+
 /* Тухайн эрсдэл энэ ажилтанд хамаарах уу? */
 function riskAppliesTo(r, emp) {
   if (!r || !emp) return false;
-  if (r.dept && emp.dept && r.dept !== emp.dept) return false;
+  if (r.dept && emp.dept && !riskSameDept(r.dept, emp.dept)) return false;
   var ids = (r.empIds || []);
   if (ids.length) return ids.indexOf(emp.id) >= 0 || ids.indexOf(emp.uid) >= 0;
   var pos = riskPositions(r);
-  if (!pos.length) return true;                    // албан тушаал заагаагүй = бүх ажилтанд
-  var mine = String(emp.role || emp.pos || '').trim().toLowerCase();
+  if (!pos.length) return true;                    // ажлын байр заагаагүй = албаны бүх ажилтанд
+  var mine = String(emp.role || emp.pos || '').trim();
   if (!mine) return true;
-  return pos.some(function (p) { return p === mine || mine.indexOf(p) >= 0 || p.indexOf(mine) >= 0; });
+  return pos.some(function (p) { return riskNameMatch(p, mine); });
 }
 /* Эрхээс хамаарсан жагсаалт */
 function risksForView() {
@@ -4822,7 +4938,7 @@ function riskEmpDetail(empId) {
 }
 
 function riskAdminSectionsHTML(list) {
-  var H = '';
+  var H = riskCoverageHTML(list);
 
   /* ── Албадаар ── */
   if (isAdmin()) {
@@ -5006,6 +5122,7 @@ function renderHazards() {
   if (!sec._riskActWired) {
     sec._riskActWired = true;
     sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-risk-map]')) { actionRiskDeptMap(); return; }
       if (ev.target.closest('[data-risk-folder]')) { actionRiskFolder(); return; }
       if (ev.target.closest('[data-risk-import]')) { actionRiskImport(); return; }
       if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
