@@ -5157,6 +5157,7 @@ function renderHazards() {
     '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
     ((isAdmin() || isDeptHead())
       ? '<div class="page-actions">' +
+        '<button class="btn btn-primary" data-risk-assign="1"><i class="ti ti-user-check"></i> Арга хэмжээ хувиарлах</button>' +
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
         '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
@@ -5196,6 +5197,7 @@ function renderHazards() {
   if (!sec._riskActWired) {
     sec._riskActWired = true;
     sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-risk-assign]')) { actionRiskAssign(); return; }
       if (ev.target.closest('[data-risk-tpl]')) { actionRiskTemplate(); return; }
       if (ev.target.closest('[data-risk-tplin]')) { actionRiskTemplateImport(); return; }
       if (ev.target.closest('[data-risk-map]')) { actionRiskDeptMap(); return; }
@@ -5203,6 +5205,123 @@ function renderHazards() {
       if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
     });
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН АРГА ХЭМЖЭЭГ АВТОМАТААР ХУВИАРЛАХ
+   ----------------------------------------------------------------------
+   Бодит датаны онцлог (867 эрсдэл дээр судалсан):
+     • «Хэн хяналт тавих» нь ихэвчлэн ХҮНИЙ НЭР биш, АЛБАН ТУШААЛ
+       (ХАБЭА менежер · ахлах ажилтан · Машинист · ЛМ · ИТА инженер)
+     • Ихэвчлэн ОЛОН хариуцагчтай, таслалаар зааглагдсан
+     • «Хэзээ» нь огноо биш ДАВТАМЖ (Тухай бүр · Өдөр бүр · Сар бүр)
+   Тиймээс: нэр → албан тушаал → товчлол гэсэн дарааллаар буулгана.
+   ══════════════════════════════════════════════════════════════════════ */
+function riskOwnerParts(text) {
+  return String(text || '')
+    .split(/\s*[,\/;]\s*|\s+ба\s+|\s+болон\s+/)
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return s && s.length > 1; });
+}
+
+/* Нэг хариуцагчийг бодит ажилтан руу буулгана */
+function riskResolveParty(party, dept) {
+  var emps = DB.employees || [];
+  var p = String(party || '').trim();
+  if (!p) return { emps: [], kind: 'none', label: party };
+
+  /* Хэт ерөнхий утга — тодорхой хүн заах боломжгүй */
+  if (/^(ажилтан өөрөө|ажилтан|тухайн хэсгийн ахлах ажилтан|бүх ажилтан)$/i.test(p)) {
+    return { emps: [], kind: 'generic', label: p };
+  }
+
+  /* 1) Ажилтны НЭРээр */
+  var byName = emps.filter(function (e) { return e.name && riskNameMatch(e.name, p); });
+  if (byName.length && byName.length <= 3) return { emps: byName, kind: 'emp', label: p };
+
+  /* 2) Албан тушаалаар — эхлээд ТУХАЙН албанд */
+  var inDept = emps.filter(function (e) {
+    return (!dept || riskSameDept(dept, e.dept)) && (e.role || e.pos) && riskNameMatch(e.role || e.pos, p);
+  });
+  if (inDept.length) return { emps: inDept, kind: 'pos', label: p };
+
+  /* 3) Албан тушаалаар — БҮХ компанид (ХАБЭА, ИТА зэрэг хөндлөнгийн алба) */
+  var anyDept = emps.filter(function (e) { return (e.role || e.pos) && riskNameMatch(e.role || e.pos, p); });
+  if (anyDept.length) return { emps: anyDept, kind: 'pos', label: p };
+
+  /* 4) АЛБА-ны нэр/товчлолоор (ХАБЭА, ИТА, ЛМ …) */
+  var byDept = emps.filter(function (e) { return e.dept && riskNameMatch(e.dept, p); });
+  if (byDept.length) return { emps: byDept, kind: 'dept', label: p };
+
+  return { emps: [], kind: 'none', label: p };
+}
+
+/* Эрсдэл бүрийн хариуцагчийг бүрэн буулгана */
+function riskResolveOwners(r) {
+  var parts = riskOwnerParts(r && r.responsible);
+  var seen = {}, emps = [], unresolved = [], kinds = [];
+  parts.forEach(function (p) {
+    var res = riskResolveParty(p, r && r.dept);
+    kinds.push(res);
+    if (res.emps.length) {
+      res.emps.forEach(function (e) { if (!seen[e.id]) { seen[e.id] = 1; emps.push(e); } });
+    } else unresolved.push(p);
+  });
+  return { emps: emps, unresolved: unresolved, parts: kinds };
+}
+
+/* «Хэзээ» → давтамж ба огноо */
+function riskDueToSchedule(text) {
+  var s = String(text || '').toLowerCase().trim();
+  if (!s) return { repeat: '', due: '', label: '' };
+  if (/өдөр\s*бүр|өдөр\s*тутам/.test(s)) return { repeat: 'daily', due: '', label: 'Өдөр бүр' };
+  if (/7\s*хоног|долоо\s*хоног|долооног/.test(s)) return { repeat: 'weekly', due: '', label: '7 хоног тутам' };
+  if (/сар\s*бүр|сар\s*тутам/.test(s) && !/\d\s*сар\s*тутам/.test(s)) return { repeat: 'monthly', due: '', label: 'Сар бүр' };
+  if (/улирал|3\s*сар\s*тутам|улиралд/.test(s)) return { repeat: 'quarterly', due: '', label: 'Улирал тутам' };
+  if (/6\s*сар\s*тутам|хагас\s*жил/.test(s)) return { repeat: 'quarterly', due: '', label: 'Улирал тутам (6 сар тутмыг ойртуулав)' };
+  /* «06 сард», «6-р сард» — тухайн сарын эцэс */
+  var m = s.match(/(\d{1,2})\s*(?:-?р)?\s*сар/);
+  if (m) {
+    var mon = parseInt(m[1], 10);
+    if (mon >= 1 && mon <= 12) {
+      var y = new Date().getFullYear();
+      var last = new Date(y, mon, 0);
+      return { repeat: '', due: _ymd(last), label: mon + '-р сард' };
+    }
+  }
+  /* «Тухай бүр», «ажилбар бүрт» — тодорхой хугацаагүй */
+  return { repeat: '', due: '', label: text };
+}
+
+/* Эрсдэлээс даалгавар үүсгэх (хараахан хадгалахгүй — урьдчилан харуулна) */
+function riskBuildTask(r) {
+  var own = riskResolveOwners(r);
+  var sch = riskDueToSchedule(r.due);
+  var L = riskLevel(r);
+  var prio = L.code === 'A' ? 'urgent' : L.code === 'B' ? 'high' : L.code === 'C' ? 'normal' : 'low';
+  /* Хэт олон хүнд оногдвол ажилтнаар биш АЛБААР өгнө */
+  var many = own.emps.length > 10;
+  return {
+    risk: r, own: own, sch: sch, level: L,
+    task: {
+      title: 'Эрсдэл бууруулах: ' + String(r.hazard || '').slice(0, 70),
+      desc: (r.actions || '') +
+        '\n\n— Эрсдэл: ' + (r.hazard || '') +
+        (r.process ? '\n— Ажиллагаа: ' + r.process : '') +
+        (r.location ? '\n— Байршил: ' + r.location : '') +
+        '\n— Үнэлгээ: R=' + riskScore(r) + ' (' + L.code + ' · ' + L.name + ')' +
+        (r.responsible ? '\n— Хариуцагч (файлаас): ' + r.responsible : '') +
+        (sch.label ? '\n— Давтамж: ' + sch.label : ''),
+      category: 'hazard',
+      priority: prio,
+      dept: many ? r.dept : '',
+      empIds: many ? [] : own.emps.map(function (e) { return e.id; }),
+      dueDate: sch.due,
+      repeat: sch.repeat,
+      status: 'open',
+      riskId: r.id
+    }
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -5675,6 +5794,116 @@ function actionRiskFolder() {
 
   document.getElementById('riskFolder').addEventListener('change', function () { handle(this.files); });
   document.getElementById('riskFiles').addEventListener('change', function () { handle(this.files); });
+}
+
+/* ══ АРГА ХЭМЖЭЭГ ХУВИАРЛАХ — урьдчилан харуулж, зөвшөөрлөөр даалгавар үүсгэнэ ══ */
+var RISK_ASSIGN_MIN = 'B';   // анхдагч: зөвхөн өндөр эрсдэл (A, B)
+
+function actionRiskAssign() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ/туслах админ хувиарлана', 'error'); return; }
+  var node = elc('div', 'modal-info', '<div id="raBody"></div>');
+  buildModal('Арга хэмжээг автоматаар хувиарлах', node, { width: '720px' });
+  raRender();
+}
+
+function raRender() {
+  var host = document.getElementById('raBody'); if (!host) return;
+  var all = risksForView().filter(function (r) {
+    return r.actions && String(r.actions).trim().length > 5 && !r.taskId;
+  });
+  var order = { E: 0, D: 1, C: 2, B: 3, A: 4 };
+  var minRank = order[RISK_ASSIGN_MIN];
+  var pick = all.filter(function (r) { return order[riskLevel(r).code] >= minRank; });
+  var built = pick.map(riskBuildTask);
+  var okList = built.filter(function (b) { return b.own.emps.length || b.task.dept; });
+  var badList = built.filter(function (b) { return !b.own.emps.length && !b.task.dept; });
+
+  /* Түвшний сонголт */
+  var counts = {};
+  ['A', 'B', 'C', 'D', 'E'].forEach(function (c) {
+    counts[c] = all.filter(function (r) { return order[riskLevel(r).code] >= order[c]; }).length;
+  });
+  var chips = [
+    { c: 'A', t: 'Зөвхөн A' }, { c: 'B', t: 'A + B' },
+    { c: 'C', t: 'A + B + C' }, { c: 'D', t: 'D-ээс дээш' }, { c: 'E', t: 'Бүгд' }
+  ].map(function (x) {
+    var on = RISK_ASSIGN_MIN === x.c;
+    return '<button data-ra-lv="' + x.c + '" style="padding:7px 13px;border-radius:9px;cursor:pointer;font-family:inherit;' +
+      'font-size:12.5px;font-weight:700;border:1.5px solid ' + (on ? '#4F46E5' : '#E2E8F0') + ';' +
+      'background:' + (on ? '#4F46E5' : '#fff') + ';color:' + (on ? '#fff' : '#475569') + '">' +
+      x.t + ' <span style="opacity:.75">' + counts[x.c] + '</span></button>';
+  }).join('');
+
+  var rows = okList.slice(0, 60).map(function (b) {
+    var who = b.task.dept
+      ? '<span style="color:#7C3AED;font-weight:700">' + esc(b.task.dept) + ' (бүх ажилтан)</span>'
+      : b.own.emps.slice(0, 4).map(function (e) { return esc(e.name); }).join(', ') +
+        (b.own.emps.length > 4 ? ' <span style="color:#94A3B8">+' + (b.own.emps.length - 4) + '</span>' : '');
+    return '<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px solid #F1F5F9">' +
+      '<span style="flex:0 0 42px;text-align:center;font-size:12px;font-weight:900;color:' + b.level.color + '">' + b.level.code + '</span>' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:block;font-size:12.5px;font-weight:600;color:#1E293B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(b.risk.hazard) + '</span>' +
+      '<span style="display:block;font-size:11.5px;color:#64748B;margin-top:2px">👤 ' + who +
+      (b.sch.label ? ' · 🔁 ' + esc(b.sch.label) : '') + '</span></span></div>';
+  }).join('');
+
+  var badRows = badList.length
+    ? '<div style="margin-top:12px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px">' +
+      '<div style="font-size:12.5px;font-weight:700;color:#92400E;margin-bottom:5px">' +
+      '⚠️ ' + badList.length + ' эрсдлийн хариуцагчийг тодорхойлж чадсангүй</div>' +
+      '<div style="font-size:12px;color:#92400E;line-height:1.6">' +
+      esc(Object.keys(badList.reduce(function (a, b) {
+        b.own.unresolved.forEach(function (u) { a[u] = 1; });
+        if (!b.risk.responsible) a['(хариуцагч хоосон)'] = 1;
+        return a;
+      }, {})).slice(0, 10).join(' · ')) +
+      '<br>Эдгээрийг Даалгавар цэснээс гараар өгнө үү.</div></div>'
+    : '';
+
+  host.innerHTML =
+    '<div style="font-size:13px;color:#475569;line-height:1.65;margin-bottom:12px">' +
+    'Эрсдэл бүрийн <b>«Авах арга хэмжээ»</b>-г хариуцагчид нь даалгавар болгож өгнө. ' +
+    'Хариуцагчийг файлын <b>«Хэн хяналт тавих»</b> баганаас уншиж, ажилтны албан тушаалтай тааруулна.</div>' +
+    '<div style="font-size:12px;font-weight:700;color:#94A3B8;margin-bottom:6px">АЛЬ ТҮВШНЭЭС ДЭЭШ ХУВИАРЛАХ</div>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">' + chips + '</div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:12px">' +
+    '<div style="flex:1;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:900;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif">' + okList.length + '</div>' +
+    '<div style="font-size:11.5px;color:#166534">хувиарлагдана</div></div>' +
+    '<div style="flex:1;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px;text-align:center">' +
+    '<div style="font-size:22px;font-weight:900;color:#D97706;font-family:\'Bricolage Grotesque\',sans-serif">' + badList.length + '</div>' +
+    '<div style="font-size:11.5px;color:#92400E">хариуцагч тодорхойгүй</div></div></div>' +
+    (okList.length
+      ? '<div style="max-height:280px;overflow:auto;border-top:1px solid #F1F5F9">' + rows +
+        (okList.length > 60 ? '<div style="font-size:12px;color:#94A3B8;padding:8px 0">…нийт ' + okList.length + '</div>' : '') + '</div>'
+      : '<div style="font-size:12.5px;color:#94A3B8;padding:16px 0">Энэ түвшинд хувиарлах эрсдэл алга.</div>') +
+    badRows +
+    (okList.length
+      ? '<button class="btn btn-primary" id="raGo" style="width:100%;margin-top:14px">' +
+        '<i class="ti ti-user-check"></i> ' + okList.length + ' даалгавар үүсгэж хувиарлах</button>'
+      : '');
+
+  host.querySelectorAll('[data-ra-lv]').forEach(function (b) {
+    b.addEventListener('click', function () { RISK_ASSIGN_MIN = b.getAttribute('data-ra-lv'); raRender(); });
+  });
+  var go = document.getElementById('raGo');
+  if (go) go.addEventListener('click', function () {
+    go.disabled = true; go.innerHTML = '<i class="ti ti-loader-2"></i> Үүсгэж байна…';
+    var now = Date.now(), n = 0;
+    okList.forEach(function (b, i) {
+      var t = b.task;
+      t.id = 'TSK-' + now + '-' + i;
+      t.createdAt = new Date().toISOString();
+      t.createdBy = (SESSION && SESSION.email) || 'admin';
+      (DB.tasks = DB.tasks || []).push(t);
+      b.risk.taskId = t.id;                       // давхардахаас сэргийлнэ
+      n++;
+    });
+    saveDB(); closeModal();
+    toast(n + ' даалгавар үүсч хувиарлагдлаа', 'success');
+    try { renderHazards(); } catch (e) {}
+    try { renderTasks(); } catch (e) {}
+  });
 }
 
 /* ══ ЗАГВАРААР бөглөсөн файлыг оруулах — мөр бүрийг ШАЛГАЖ, алдааг заана ══ */
