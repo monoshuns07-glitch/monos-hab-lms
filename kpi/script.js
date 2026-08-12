@@ -2779,20 +2779,41 @@ function dashReportRows(list) {
 var FS_DOC_LIMIT = 1048576;   // 1 MiB — Firestore-ийн хатуу хязгаар
 
 function dbSizeInfo() {
-  var out = { total: 0, pct: 0, parts: [], ok: false };
+  var out = { total: 0, pct: 0, parts: [], ok: false, split: false, recs: 0, recParts: [] };
   try {
     if (!DB) return out;
+    out.split = isSplit();
+
+    /* ⚠ Задарсны дараа Firestore-т ҮНЭХЭЭР хадгалагддаг зүйл нь зөвхөн
+       тохиргоо (mainDocPayload). employees болон бүртгэлүүд тэнд БАЙХГҮЙ —
+       employees нь users-ээс дахин үүсдэг, бүртгэлүүд цуглуулгад байдаг.
+       Тиймээс хэмжихдээ ЖИНХЭНЭ хадгалагддаг хэсгийг л хэмжинэ. */
+    var src = DB;
+    if (out.split) { try { src = mainDocPayload(); } catch (e) { src = DB; } }
+
     var total = 0, parts = [];
-    Object.keys(DB).forEach(function (k) {
+    Object.keys(src).forEach(function (k) {
       var n = 0;
-      try { n = JSON.stringify(DB[k] !== undefined ? DB[k] : null).length; } catch (e) { n = 0; }
+      try { n = JSON.stringify(src[k] !== undefined ? src[k] : null).length; } catch (e) { n = 0; }
       total += n;
-      parts.push({ key: k, bytes: n, count: Array.isArray(DB[k]) ? DB[k].length : null });
+      parts.push({ key: k, bytes: n, count: Array.isArray(src[k]) ? src[k].length : null });
     });
     parts.sort(function (a, b) { return b.bytes - a.bytes; });
     out.total = total;
     out.pct = Math.round(total / FS_DOC_LIMIT * 1000) / 10;
     out.parts = parts;
+
+    /* Цуглуулгад хэдэн бичлэг байгаа — хязгаарлагдахгүй хэсэг */
+    if (out.split) {
+      var rp = [];
+      COL_KEYS.forEach(function (k) {
+        var n = colArr(k).length;
+        if (n) rp.push({ key: k, count: n });
+        out.recs += n;
+      });
+      rp.sort(function (a, b) { return b.count - a.count; });
+      out.recParts = rp;
+    }
     out.ok = true;
   } catch (e) {}
   return out;
@@ -2910,11 +2931,13 @@ function dbSizeCardHTML() {
   var col = pct >= 85 ? '#DC2626' : pct >= 70 ? '#D97706' : '#16A34A';
   var bg = pct >= 85 ? '#FEF2F2' : pct >= 70 ? '#FFFBEB' : '#F0FDF4';
   var bd = pct >= 85 ? '#FECACA' : pct >= 70 ? '#FDE68A' : '#BBF7D0';
-  var note = pct >= 85
-    ? '🔴 <b>Яаралтай.</b> Хязгаарт ойртлоо — хүрмэгц БҮХ хадгалалт зогсоно. Бүтцийг задлах ажлыг нэн даруй хийх шаардлагатай.'
-    : pct >= 70
-      ? '🟠 <b>Анхаарах.</b> Хагасаас хэтэрсэн. Бүтцийг задлах ажлыг төлөвлөх цаг болжээ.'
-      : '🟢 Хэвийн. Одоохондоо хангалттай зайтай.';
+  var note = s.split
+    ? '🟢 <b>Хязгаар арилсан.</b> Тохиргооны баримт ургадаггүй. Даалгавар, тайлан, зөрчил зэрэг бүх бүртгэл тусдаа цуглуулгад — хэдэн зуун мянга болсон ч асуудалгүй.'
+    : pct >= 85
+      ? '🔴 <b>Яаралтай.</b> Хязгаарт ойртлоо — хүрмэгц БҮХ хадгалалт зогсоно. Бүтцийг задлах ажлыг нэн даруй хийх шаардлагатай.'
+      : pct >= 70
+        ? '🟠 <b>Анхаарах.</b> Хагасаас хэтэрсэн. Бүтцийг задлах ажлыг төлөвлөх цаг болжээ.'
+        : '🟢 Хэвийн. Одоохондоо хангалттай зайтай.';
   var kb = function (b) { return (b / 1024).toFixed(1) + ' KB'; };
   var top = s.parts.filter(function (p) { return p.bytes > 512; }).slice(0, 6).map(function (p) {
     var w = Math.max(2, Math.round(p.bytes / (s.total || 1) * 100));
@@ -2926,8 +2949,28 @@ function dbSizeCardHTML() {
       '<span style="flex:0 0 66px;text-align:right;font-size:12px;color:#64748B">' + kb(p.bytes) + '</span></div>';
   }).join('');
 
+  /* Задарсны дараа — бүртгэлүүд хязгааргүй цуглуулгад байгааг харуулна */
+  var recBox = '';
+  if (s.split) {
+    var chips = s.recParts.slice(0, 8).map(function (p) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;color:#475569">' +
+        esc(p.key) + ' <b style="color:#0F172A">' + p.count + '</b></span>';
+    }).join('');
+    recBox = '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #F1F5F9">' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">' +
+      '<span style="font-size:12px;color:#94A3B8;font-weight:700">ЦУГЛУУЛГАД (ХЯЗГААРГҮЙ)</span>' +
+      '<span style="margin-left:auto;font-size:20px;font-weight:900;color:#0F172A;font-family:\'Bricolage Grotesque\',sans-serif">' + s.recs + '</span>' +
+      '<span style="font-size:12.5px;color:#64748B">бичлэг</span></div>' +
+      (chips ? '<div style="display:flex;flex-wrap:wrap;gap:6px">' + chips + '</div>'
+             : '<div style="font-size:12.5px;color:#94A3B8">Одоогоор бүртгэл алга — ажил эхлэхэд энд хуримтлагдана.</div>') +
+      '</div>';
+  }
+
   return dashCard(
-    dashH('🗄 Өгөгдлийн сангийн хэмжээ', 'Бүх KPI бүртгэл Firestore-ийн ГАНЦ баримтад багтдаг. Хязгаар нь 1 МБ.') +
+    dashH('🗄 Өгөгдлийн сангийн хэмжээ',
+      s.split
+        ? 'Бүртгэлүүд тусдаа цуглуулгад — хязгааргүй. Доорх нь зөвхөн тохиргооны баримт.'
+        : 'Бүх KPI бүртгэл Firestore-ийн ГАНЦ баримтад багтдаг. Хязгаар нь 1 МБ.') +
     '<div style="display:flex;align-items:baseline;gap:10px;margin:4px 0 8px">' +
     '<span style="font-size:32px;font-weight:900;color:' + col + ';font-family:\'Bricolage Grotesque\',sans-serif">' + kb(s.total) + '</span>' +
     '<span style="font-size:14px;color:#94A3B8">/ 1024 KB</span>' +
@@ -2935,7 +2978,9 @@ function dbSizeCardHTML() {
     '<div style="height:12px;background:#F1F5F9;border-radius:6px;overflow:hidden;margin-bottom:10px">' +
     '<div style="height:100%;width:' + pct + '%;background:' + col + ';border-radius:6px;transition:width .4s"></div></div>' +
     '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:#334155;margin-bottom:12px">' + note + '</div>' +
-    '<div style="font-size:12px;color:#94A3B8;font-weight:700;margin-bottom:4px">ХАМГИЙН ИХ ЗАЙ ЭЗЭЛЖ БУЙ ХЭСЭГ</div>' + top +
+    '<div style="font-size:12px;color:#94A3B8;font-weight:700;margin-bottom:4px">' +
+    (s.split ? 'ТОХИРГООНЫ БАРИМТ ДОТОР' : 'ХАМГИЙН ИХ ЗАЙ ЭЗЭЛЖ БУЙ ХЭСЭГ') + '</div>' + top +
+    recBox +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
     '<button class="btn btn-secondary btn-sm" data-db-backup="1">' +
     '<i class="ti ti-download"></i> Нөөц хуулбар татах (JSON)</button>' +
