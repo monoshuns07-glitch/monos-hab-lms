@@ -591,10 +591,14 @@ async function loadDB() {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
+    /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
+    if (isSplit()) { try { await loadCols(); } catch (e) {} }
     // Хуучин прототипийн жишээ (демо) датаг нэг удаа цэвэрлэнэ — зөвхөн админ
     try { await cleanupDemoData(); } catch (e) {}
     // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
     try { await syncEmployeesWithRealData(); } catch (e) {}
+    // Гараар засварласан утгыг эргүүлж тавина (v2-т employees хадгалагддаггүй)
+    try { applyEmpOverrides(); } catch (e) {}
     // Ажилтан бол DB-г зөвхөн өөрийнхөөр шүүнэ (admin бүгдийг хардаг)
     try { scopeDataForEmployee(); } catch (e) {}
   } else {
@@ -688,15 +692,159 @@ function scopeDataForDeptHead() {
 }
 
 var _saveTimer = null;
+/* ══════════════════════════════════════════════════════════════════════
+   ХАДГАЛАХ ДАВХАРГА v2 — 1 МБ-ын хязгаарыг БҮРМӨСӨН арилгана
+   ----------------------------------------------------------------------
+   Асуудал: бүх бүртгэл kpi_state/main гэсэн ГАНЦ баримтад байсан.
+   Firestore нэг баримтыг 1 МБ-аар хатуу хязгаарладаг (ямар ч төлбөрөөр
+   өөрчлөгдөхгүй). Хязгаарт хүрвэл БҮХ хадгалалт зогсоно.
+
+   Шийдэл: ургадаг жагсаалт бүрийг ТУСДАА ЦУГЛУУЛГА болгож, бичлэг тус
+   бүрийг өөрийн баримт болгоно. Цуглуулгад тоон хязгаар БАЙХГҮЙ.
+
+   ⚠ Санах ой дахь DB-ийн бүтэц ЯГ ХЭВЭЭРЭЭ — тиймээс харуулах кодод
+   (470 KB) огт гар хүрэхгүй. Зөвхөн унших/бичих давхарга солигдоно.
+   ══════════════════════════════════════════════════════════════════════ */
+var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
+  'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
+  'extTrainings', 'extAttendance', 'externalTrainings', 'miskillStats'];
+var COL_PREFIX = 'kpi_';
+function colRef(key) { return fdb.collection(COL_PREFIX + key); }
+function isSplit() { return !!(DB && DB.settings && DB.settings.splitV2); }
+
+/* employees нь users цуглуулгаас ачаалалт бүрд ДАХИН үүсдэг тул хадгалахгүй.
+   Зөвхөн гараар засварласан утгыг нь жижиг зурагласнаар хадгална. */
+var EMP_OVERRIDE_FIELDS = ['discipline', 'health', 'leadership'];
+/* Анхдагч утга — buildEmployeesFromRealData-тай ижил. Эдгээртэй тэнцүү бол
+   хадгалахгүй (267 ажилтны ижил утгыг дэмий хадгалахгүйн тулд). */
+var EMP_OVERRIDE_DEFAULTS = { discipline: 100, health: 75, leadership: 60 };
+function buildEmpOverrides() {
+  var o = {};
+  (DB.employees || []).forEach(function (e) {
+    if (!e || !e.uid) return;
+    var v = {}, has = false;
+    EMP_OVERRIDE_FIELDS.forEach(function (f) {
+      if (e[f] === undefined || e[f] === null) return;
+      if (e[f] === EMP_OVERRIDE_DEFAULTS[f]) return;   // анхдагчаас ялгаагүй — алгасна
+      v[f] = e[f]; has = true;
+    });
+    if (has) o[e.uid] = v;
+  });
+  return o;
+}
+function applyEmpOverrides() {
+  var o = (DB && DB.empOverrides) || {};
+  (DB.employees || []).forEach(function (e) {
+    var v = e && e.uid && o[e.uid]; if (!v) return;
+    EMP_OVERRIDE_FIELDS.forEach(function (f) { if (v[f] !== undefined) e[f] = v[f]; });
+  });
+}
+
+/* Сүүлд хадгалсан төлөв — зөвхөн ӨӨРЧЛӨГДСӨН бичлэгийг л бичихэд ашиглана */
+var _colShadow = {};
+function snapshotCols() {
+  _colShadow = {};
+  COL_KEYS.forEach(function (k) {
+    var m = {};
+    (DB[k] || []).forEach(function (x) {
+      if (x && x.id != null) { try { m[String(x.id)] = JSON.stringify(x); } catch (e) {} }
+    });
+    _colShadow[k] = m;
+  });
+}
+/* id-гүй бичлэгт id олгоно (эс бөгөөс баримт болгож хадгалж чадахгүй) */
+function ensureIds() {
+  COL_KEYS.forEach(function (k) {
+    (DB[k] || []).forEach(function (x, i) {
+      if (x && (x.id == null || x.id === '')) x.id = k.toUpperCase().slice(0, 3) + '-' + Date.now() + '-' + i;
+    });
+  });
+}
+
+/* Зөвхөн ялгааг бичнэ: шинэ/өөрчлөгдсөнийг set, устгагдсаныг delete */
+async function saveCols() {
+  if (!fbReady || !fdb) return;
+  ensureIds();
+  var batch = fdb.batch(), ops = 0;
+  for (var i = 0; i < COL_KEYS.length; i++) {
+    var k = COL_KEYS[i];
+    var prev = _colShadow[k] || {}, cur = {};
+    (DB[k] || []).forEach(function (x) { if (x && x.id != null) cur[String(x.id)] = x; });
+    for (var id in cur) {
+      var s = '';
+      try { s = JSON.stringify(cur[id]); } catch (e) { continue; }
+      if (prev[id] !== s) { batch.set(colRef(k).doc(id), cur[id]); ops++; }
+      if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
+    }
+    for (var id2 in prev) {
+      if (!(id2 in cur)) { batch.delete(colRef(k).doc(id2)); ops++; }
+      if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
+    }
+  }
+  if (ops) await batch.commit();
+  snapshotCols();
+}
+
+/* Цуглуулгуудыг зэрэг татна (аль нэг нь уншигдахгүй бол тэр нэгийг л алгасна) */
+async function loadCols() {
+  if (!fbReady || !fdb) return;
+  var res = await Promise.all(COL_KEYS.map(function (k) {
+    return colRef(k).get().then(function (snap) {
+      var arr = [];
+      snap.forEach(function (d) { var x = d.data() || {}; if (x.id == null) x.id = d.id; arr.push(x); });
+      return { k: k, arr: arr };
+    }).catch(function () { return { k: k, arr: null }; });
+  }));
+  res.forEach(function (r) { if (r.arr) DB[r.k] = r.arr; });
+  snapshotCols();
+}
+
+/* Үндсэн баримтад үлдэх ЖИЖИГ тохиргоо (ургадаггүй хэсгүүд) */
+function mainDocPayload() {
+  var out = {};
+  Object.keys(DB).forEach(function (k) {
+    if (k === 'employees') return;            // users-ээс дахин үүснэ
+    if (COL_KEYS.indexOf(k) >= 0) return;     // цуглуулгад очсон
+    out[k] = DB[k];
+  });
+  out.empOverrides = buildEmpOverrides();
+  return out;
+}
+
 function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   if (!fbReady) return;
   if (isAdmin()) {
-    // Admin — бүтэн датаг хадгална (бүгдийг харж, удирдана)
     if (_saveTimer) clearTimeout(_saveTimer);
     _saveTimer = setTimeout(function () {
-      KPI_DOC().set(DB).catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+      if (isSplit()) {
+        /* v2 — тохиргоо үндсэн баримтад, бүртгэлүүд цуглуулгад */
+        KPI_DOC().set(mainDocPayload())
+          .then(function () { return saveCols(); })
+          .catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+      } else {
+        /* v1 — хуучнаараа (шилжүүлэг хийгээгүй байхад) */
+        KPI_DOC().set(DB).catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+      }
     }, 700);
+  } else if (isSplit()) {
+    /* v2 — ажилтан зөвхөн ӨӨРИЙН шинэ бичлэгээ тусдаа баримт болгож нэмнэ.
+       Бусдын датанд огт хүрэхгүй тул мөргөлдөх боломжгүй. */
+    try {
+      ensureIds();
+      var addOne = function (key, ids) {
+        (DB[key] || []).forEach(function (x) {
+          if (!x || x.id == null) return;
+          if (ids && ids[x.id]) return;
+          colRef(key).doc(String(x.id)).set(x)
+            .then(function () { if (ids) ids[x.id] = 1; })
+            .catch(function () { toast('Хадгалахад алдаа гарлаа', 'error'); });
+        });
+      };
+      addOne('hazards', _empHazIds);
+      addOne('suggestions', _empSugIds);
+      addOne('reports', _empRepIds);
+    } catch (e) {}
   } else {
     // Ажилтан — зөвхөн өөрийн ШИНЭ эрсдэл/санал/мэдээллийг бусдын датаг эвдэлгүйгээр нэмнэ (arrayUnion)
     try {
@@ -2588,6 +2736,96 @@ function dbSizeInfo() {
   return out;
 }
 
+/* ══ НЭГ УДААГИЙН ШИЛЖҮҮЛЭГ: ганц баримт → цуглуулгууд ══
+   Зөвхөн админ, зөвхөн ГАРААР товч дарж ажиллуулна (автоматаар ажиллахгүй).
+   Алхам: ① Firestore-т нөөц хуулбар ② бүх мөрийг цуглуулга руу
+          ③ үндсэн баримтаас массивуудыг устгах ④ туг тавих */
+async function migrateToCollections(onStep) {
+  var step = onStep || function () {};
+  if (!fbReady || !fdb) throw new Error('Сервертэй холбогдоогүй байна');
+  if (!isAdmin()) throw new Error('Зөвхөн админ гүйцэтгэнэ');
+  if (isSplit()) throw new Error('Аль хэдийн шилжсэн байна');
+
+  /* ① Нөөц хуулбар — Firestore дотор (1 МБ-д багтаж байвал) */
+  step('Нөөц хуулбар үүсгэж байна…');
+  var snapJson = '';
+  try { snapJson = JSON.stringify(DB); } catch (e) { snapJson = ''; }
+  if (snapJson && snapJson.length < 900000) {
+    try { await fdb.collection('kpi_backup').doc('pre_split_' + Date.now()).set(DB); }
+    catch (e) { throw new Error('Нөөц хуулбар үүсгэж чадсангүй: ' + (e && e.message)); }
+  }
+
+  /* ② Бүх мөрийг цуглуулга руу */
+  ensureIds();
+  var total = 0;
+  COL_KEYS.forEach(function (k) { total += (DB[k] || []).length; });
+  var done = 0, batch = fdb.batch(), ops = 0;
+  for (var i = 0; i < COL_KEYS.length; i++) {
+    var k = COL_KEYS[i], list = DB[k] || [];
+    for (var j = 0; j < list.length; j++) {
+      var x = list[j]; if (!x || x.id == null) continue;
+      batch.set(colRef(k).doc(String(x.id)), x);
+      ops++; done++;
+      if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
+      if (done % 25 === 0) step('Бичлэг зөөж байна… ' + done + ' / ' + total);
+    }
+  }
+  if (ops) await batch.commit();
+  step('Бичлэг зөөгдлөө (' + done + ')');
+
+  /* ③ Үндсэн баримтыг ЖИЖИГ болгож дахин бичнэ (массивууд + employees устна) */
+  step('Үндсэн баримтыг цэгцэлж байна…');
+  if (!DB.settings) DB.settings = seedDB().settings;
+  DB.settings.splitV2 = true;
+  DB.settings.splitAt = new Date().toISOString();
+  var payload = mainDocPayload();
+  COL_KEYS.forEach(function (k) { payload[k] = firebase.firestore.FieldValue.delete(); });
+  payload.employees = firebase.firestore.FieldValue.delete();
+  await KPI_DOC().set(payload, { merge: true });
+
+  snapshotCols();
+  step('Дууслаа');
+  return { moved: done, before: snapJson.length };
+}
+
+function actionSplitDb() {
+  if (!isAdmin()) { toast('Зөвхөн админ гүйцэтгэнэ', 'error'); return; }
+  if (isSplit()) { toast('Аль хэдийн шилжсэн байна', 'warn'); return; }
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13.5px;line-height:1.7;color:#334155">' +
+    '<p style="margin:0 0 10px">Бүх бүртгэлийг <b>тусдаа цуглуулга</b> болгож задална. Ингэснээр Firestore-ийн <b>1 МБ-ын хязгаар бүрмөсөн арилна</b>.</p>' +
+    '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+    '<b>Юу өөрчлөгдөхгүй вэ:</b> дэлгэц, цэс, тайлан, тоо — бүгд яг хэвээрээ. Зөвхөн дотоод хадгалалт солигдоно.</div>' +
+    '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+    '<b>Аюулгүй байдал:</b> эхлээд Firestore дотор бүтэн нөөц хуулбар үүснэ (<code>kpi_backup</code>). Түүнээс гадна «Нөөц хуулбар татах» товчоор JSON файл авсан байвал бүр сайн.</div>' +
+    '<p style="margin:0;color:#64748B;font-size:12.5px">Ажиллах хугацаа: хэдхэн секунд. Дуустал цонхыг хааж болохгүй.</p>' +
+    '<div id="splitLog" style="margin-top:12px;font-size:12.5px;color:#4F46E5;font-weight:700;min-height:20px"></div>' +
+    '</div>');
+  var m = buildModal('Бүтцийг задлах — нэг удаагийн үйлдэл', node, { width: '520px' });
+  var foot = elc('div', 'modal-foot');
+  var cancel = elc('button', 'btn btn-secondary', 'Цуцлах');
+  cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+  var go = elc('button', 'btn btn-primary', 'Задлах');
+  go.type = 'button';
+  go.addEventListener('click', function () {
+    go.disabled = true; cancel.disabled = true; go.textContent = 'Ажиллаж байна…';
+    var log = document.getElementById('splitLog');
+    migrateToCollections(function (s) { if (log) log.textContent = s; })
+      .then(function (r) {
+        try { saveDB(); } catch (e) {}
+        toast('Бүтэц задарлаа — ' + r.moved + ' бичлэг зөөгдсөн', 'success');
+        closeModal();
+        try { renderAdminDashboard(); } catch (e) {}
+      })
+      .catch(function (e) {
+        if (log) log.innerHTML = '<span style="color:#DC2626">Алдаа: ' + esc((e && e.message) || e) + '</span>';
+        go.disabled = false; cancel.disabled = false; go.textContent = 'Дахин оролдох';
+      });
+  });
+  foot.appendChild(cancel); foot.appendChild(go);
+  m.modal.appendChild(foot);
+}
+
 /* Бүтэн нөөц хуулбарыг JSON файлаар татаж авна (Firestore-оос ГАДНА хадгална) */
 function dbBackupDownload() {
   try {
@@ -2636,9 +2874,18 @@ function dbSizeCardHTML() {
     '<div style="height:100%;width:' + pct + '%;background:' + col + ';border-radius:6px;transition:width .4s"></div></div>' +
     '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:#334155;margin-bottom:12px">' + note + '</div>' +
     '<div style="font-size:12px;color:#94A3B8;font-weight:700;margin-bottom:4px">ХАМГИЙН ИХ ЗАЙ ЭЗЭЛЖ БУЙ ХЭСЭГ</div>' + top +
-    '<button class="btn btn-secondary btn-sm" data-db-backup="1" style="margin-top:12px">' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' +
+    '<button class="btn btn-secondary btn-sm" data-db-backup="1">' +
     '<i class="ti ti-download"></i> Нөөц хуулбар татах (JSON)</button>' +
-    '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px;line-height:1.5">Татсан файлыг компьютертээ хадгална уу. Бүтцийг өөрчлөх ажлын өмнө заавал нэгийг ав.</div>',
+    (isSplit()
+      ? '<span style="display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:9px;font-size:12.5px;font-weight:700;color:#15803D">✓ Бүтэц задарсан — хязгааргүй</span>'
+      : '<button class="btn btn-primary btn-sm" data-db-split="1"><i class="ti ti-arrows-split"></i> Бүтцийг задлах (хязгаарыг арилгах)</button>') +
+    '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px;line-height:1.5">' +
+    (isSplit()
+      ? 'Бүртгэлүүд тусдаа цуглуулгад хадгалагдаж байна. Дээрх хэмжээ нь зөвхөн тохиргооных — 1 МБ-ын хязгаар цаашид хамаарахгүй.'
+      : 'Эхлээд JSON нөөцөө татаж компьютертээ хадгална уу. Дараа нь «Бүтцийг задлах» дарвал 1 МБ-ын хязгаар бүрмөсөн арилна.') +
+    '</div>',
     '18px');
 }
 
@@ -3134,6 +3381,8 @@ function renderAdminDashboard() {
     host.addEventListener('click', function (ev) {
       var bk = ev.target.closest('[data-db-backup]');
       if (bk) { dbBackupDownload(); return; }
+      var sp = ev.target.closest('[data-db-split]');
+      if (sp) { actionSplitDb(); return; }
       var dr = ev.target.closest('[data-drill]');
       if (dr) { dashOpenDrill(dr.getAttribute('data-drill')); return; }
       var g = ev.target.closest('[data-gopage]');
