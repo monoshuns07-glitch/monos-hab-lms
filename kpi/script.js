@@ -2561,6 +2561,87 @@ function dashReportRows(list) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ӨГӨГДЛИЙН САНГИЙН ХЭМЖЭЭ — Firestore нэг баримтыг 1 МБ-аар
+   хатуу хязгаарладаг. Бүх KPI бүртгэл ГАНЦ баримтад (kpi_state/main)
+   байдаг тул хязгаарт хүрвэл БҮХ хадгалалт зогсоно. Тиймээс хэмжинэ.
+   ══════════════════════════════════════════════════════════════ */
+var FS_DOC_LIMIT = 1048576;   // 1 MiB — Firestore-ийн хатуу хязгаар
+
+function dbSizeInfo() {
+  var out = { total: 0, pct: 0, parts: [], ok: false };
+  try {
+    if (!DB) return out;
+    var total = 0, parts = [];
+    Object.keys(DB).forEach(function (k) {
+      var n = 0;
+      try { n = JSON.stringify(DB[k] !== undefined ? DB[k] : null).length; } catch (e) { n = 0; }
+      total += n;
+      parts.push({ key: k, bytes: n, count: Array.isArray(DB[k]) ? DB[k].length : null });
+    });
+    parts.sort(function (a, b) { return b.bytes - a.bytes; });
+    out.total = total;
+    out.pct = Math.round(total / FS_DOC_LIMIT * 1000) / 10;
+    out.parts = parts;
+    out.ok = true;
+  } catch (e) {}
+  return out;
+}
+
+/* Бүтэн нөөц хуулбарыг JSON файлаар татаж авна (Firestore-оос ГАДНА хадгална) */
+function dbBackupDownload() {
+  try {
+    var stamp = _ymd(new Date()) + '_' + String(new Date().getHours()).padStart(2, '0') +
+                String(new Date().getMinutes()).padStart(2, '0');
+    var blob = new Blob([JSON.stringify(DB, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'monos-kpi-nooc-' + stamp + '.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    toast('Нөөц хуулбар татагдлаа', 'success');
+  } catch (e) { toast('Нөөц татахад алдаа гарлаа', 'error'); }
+}
+
+function dbSizeCardHTML() {
+  var s = dbSizeInfo();
+  if (!s.ok) return '';
+  var pct = Math.min(100, s.pct);
+  var col = pct >= 85 ? '#DC2626' : pct >= 70 ? '#D97706' : '#16A34A';
+  var bg = pct >= 85 ? '#FEF2F2' : pct >= 70 ? '#FFFBEB' : '#F0FDF4';
+  var bd = pct >= 85 ? '#FECACA' : pct >= 70 ? '#FDE68A' : '#BBF7D0';
+  var note = pct >= 85
+    ? '🔴 <b>Яаралтай.</b> Хязгаарт ойртлоо — хүрмэгц БҮХ хадгалалт зогсоно. Бүтцийг задлах ажлыг нэн даруй хийх шаардлагатай.'
+    : pct >= 70
+      ? '🟠 <b>Анхаарах.</b> Хагасаас хэтэрсэн. Бүтцийг задлах ажлыг төлөвлөх цаг болжээ.'
+      : '🟢 Хэвийн. Одоохондоо хангалттай зайтай.';
+  var kb = function (b) { return (b / 1024).toFixed(1) + ' KB'; };
+  var top = s.parts.filter(function (p) { return p.bytes > 512; }).slice(0, 6).map(function (p) {
+    var w = Math.max(2, Math.round(p.bytes / (s.total || 1) * 100));
+    return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
+      '<span style="flex:0 0 150px;font-size:12.5px;color:#475569;font-weight:600">' + esc(p.key) +
+      (p.count !== null ? ' <span style="color:#94A3B8;font-weight:400">(' + p.count + ')</span>' : '') + '</span>' +
+      '<span style="flex:1;height:7px;background:#F1F5F9;border-radius:4px;overflow:hidden">' +
+      '<span style="display:block;height:100%;width:' + w + '%;background:' + col + ';border-radius:4px"></span></span>' +
+      '<span style="flex:0 0 66px;text-align:right;font-size:12px;color:#64748B">' + kb(p.bytes) + '</span></div>';
+  }).join('');
+
+  return dashCard(
+    dashH('🗄 Өгөгдлийн сангийн хэмжээ', 'Бүх KPI бүртгэл Firestore-ийн ГАНЦ баримтад багтдаг. Хязгаар нь 1 МБ.') +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin:4px 0 8px">' +
+    '<span style="font-size:32px;font-weight:900;color:' + col + ';font-family:\'Bricolage Grotesque\',sans-serif">' + kb(s.total) + '</span>' +
+    '<span style="font-size:14px;color:#94A3B8">/ 1024 KB</span>' +
+    '<span style="margin-left:auto;font-size:20px;font-weight:900;color:' + col + '">' + s.pct + '%</span></div>' +
+    '<div style="height:12px;background:#F1F5F9;border-radius:6px;overflow:hidden;margin-bottom:10px">' +
+    '<div style="height:100%;width:' + pct + '%;background:' + col + ';border-radius:6px;transition:width .4s"></div></div>' +
+    '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:#334155;margin-bottom:12px">' + note + '</div>' +
+    '<div style="font-size:12px;color:#94A3B8;font-weight:700;margin-bottom:4px">ХАМГИЙН ИХ ЗАЙ ЭЗЭЛЖ БУЙ ХЭСЭГ</div>' + top +
+    '<button class="btn btn-secondary btn-sm" data-db-backup="1" style="margin-top:12px">' +
+    '<i class="ti ti-download"></i> Нөөц хуулбар татах (JSON)</button>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px;line-height:1.5">Татсан файлыг компьютертээ хадгална уу. Бүтцийг өөрчлөх ажлын өмнө заавал нэгийг ав.</div>',
+    '18px');
+}
+
 function renderAdminDashboard() {
   var page = pageEl('dashboard'); if (!page) return;
 
@@ -3043,11 +3124,16 @@ function renderAdminDashboard() {
       sorted.slice(0, 8).map(function (e, i) { return empRow(e, i + 1, false); }).join(''), '18px') +
     '</div>';
 
+  /* ═══════════ 10. СИСТЕМИЙН ЭРҮҮЛ МЭНД — сангийн хэмжээ ═══════════ */
+  if (isAdmin()) H += dbSizeCardHTML();
+
   host.innerHTML = H;
 
   if (!host._wired) {
     host._wired = true;
     host.addEventListener('click', function (ev) {
+      var bk = ev.target.closest('[data-db-backup]');
+      if (bk) { dbBackupDownload(); return; }
       var dr = ev.target.closest('[data-drill]');
       if (dr) { dashOpenDrill(dr.getAttribute('data-drill')); return; }
       var g = ev.target.closest('[data-gopage]');
