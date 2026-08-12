@@ -5129,25 +5129,180 @@ function riskWire(sec, redraw) {
      цаашид хэрэгтэй бол дахин ашиглаж болно. */
 function renderHazards() {
   var sec = $$('.page[data-page="hazards"]')[0]; if (!sec) return;
-  sec.style.padding = '0';
-  if (isAdmin() || isDeptHead()) {
-    renderRiskAdmin(sec);
-    return;
-  }
-  var e = myEmp();
-  var dept = (SESSION && SESSION.dept) || (e && e.dept) || '';
-  var pos = (e && (e.role || e.pos)) || '';
+  var me = myEmp();
+  var myDept = (SESSION && SESSION.dept) || (me && me.dept) || '';
+  var myPos = (me && (me.role || me.pos)) || '';
+  var list = risksForView();
 
-  /* Дашбоардын жагсаалт ачаалагдаагүй бол эхлээд татна */
-  if (RISK_DEPTS === null) {
-    sec.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8">' +
-      '<i class="ti ti-loader-2" style="font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:8px"></i>Ачаалж байна…</div>';
-    loadRiskDepts(function () { renderHazards(); });
-    return;
+  /* Ажилтанд бүтэцтэй эрсдэл байхгүй бол — хуучин HTML дашбоард руу шилжинэ */
+  if (!isAdmin() && !isDeptHead() && !list.length) {
+    sec.style.padding = '0';
+    if (RISK_DEPTS === null) {
+      sec.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8">' +
+        '<i class="ti ti-loader-2" style="font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:8px"></i>Ачаалж байна…</div>';
+      loadRiskDepts(function () { renderHazards(); });
+      return;
+    }
+    var k = riskKeyForEmp(myDept, myPos);
+    if (k) { renderRiskDept(sec, k); return; }
   }
-  /* Ажлын байрных нь байвал ТЭР, эс бөгөөс албаных */
-  var key = riskKeyForEmp(dept, pos) || dept;
-  renderRiskDept(sec, key);
+
+  sec.style.padding = '';
+  var head, sub;
+  if (isAdmin()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
+  else if (isDeptHead()) { head = 'Эрсдэлийн үнэлгээ'; sub = myDept || 'Таны алба'; }
+  else { head = 'Миний ажлын байрны эрсдэл'; sub = (myDept ? myDept + ' · ' : '') + (myPos || 'Бүх ажилтан'); }
+
+  var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
+    '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
+    ((isAdmin() || isDeptHead())
+      ? '<div class="page-actions">' +
+        '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
+        '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
+        '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
+        '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> HTML дашбоард</button></div>'
+      : '') + '</div>';
+
+  if (!list.length) {
+    H += '<div class="card" style="padding:40px"><div class="empty-state">' +
+      '<i class="ti ti-shield-search"></i>' +
+      '<div>' + (isAdmin() || isDeptHead() ? 'Эрсдэлийн үнэлгээ оруулаагүй байна' : 'Танд хамаарах эрсдэл бүртгэгдээгүй байна') + '</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px;line-height:1.6">' +
+      (isAdmin() || isDeptHead()
+        ? '<b>Загвар татах</b> → бөглөх → <b>Загвараар оруулах</b>. Ингэвэл нэр таарахгүй байх асуудал гарахгүй.<br>Эсвэл одоо байгаа файлуудаа <b>Фолдер / ZIP</b>-ээр шууд оруулна.'
+        : 'ХАБЭА ажилтан таны ажлын байрны эрсдэлийн үнэлгээг оруулсны дараа энд харагдана.') +
+      '</div></div></div>';
+  } else {
+    H += riskDashHTML(list, sub);
+    if (isAdmin() || isDeptHead()) H += riskAdminSectionsHTML(list);
+  }
+  sec.innerHTML = H;
+  riskWire(sec, renderHazards);
+
+  if (!sec._riskTblWired) {
+    sec._riskTblWired = true;
+    sec.addEventListener('click', function (ev) {
+      var em = ev.target.closest('[data-risk-emp]');
+      if (em) { riskEmpDetail(em.getAttribute('data-risk-emp')); return; }
+      var df = ev.target.closest('[data-risk-dept-f]');
+      if (df) {
+        var dv = df.getAttribute('data-risk-dept-f') || '';
+        RISK_FILTER.dept = (RISK_FILTER.dept === dv ? '' : dv);
+        RISK_FILTER.level = ''; RISK_FILTER.cell = 0;
+        renderHazards(); return;
+      }
+    });
+  }
+  if (!sec._riskActWired) {
+    sec._riskActWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-risk-tpl]')) { actionRiskTemplate(); return; }
+      if (ev.target.closest('[data-risk-tplin]')) { actionRiskTemplateImport(); return; }
+      if (ev.target.closest('[data-risk-map]')) { actionRiskDeptMap(); return; }
+      if (ev.target.closest('[data-risk-folder]')) { actionRiskFolder(); return; }
+      if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
+    });
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН ЗАГВАР (Excel) — АЛДААГҮЙ ОРУУЛАХ
+   ----------------------------------------------------------------------
+   Загварыг СИСТЕМЭЭС ӨӨРӨӨС НЬ үүсгэнэ: «Лавлах» хуудсанд таны бүртгэл
+   дэх алба, албан тушаалын ЯГ ЖАГСААЛТ орно. Тэндээс хуулж бөглөвөл
+   нэр таарахгүй байх асуудал үүсэхгүй.
+   R = P × N × H нь ТОМЬЁОГООР бодогдоно — гараар бодох шаардлагагүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var RISK_TPL_COLS = [
+  'Алба', 'Албан тушаал', 'Үйл ажиллагаа', 'Болзошгүй аюул', 'Аюулын байршил', 'Шалтгаан',
+  'P магадлал (1-5)', 'N үр дагавар (1-5)', 'H санал (1-5)', 'R эрсдэлийн зэрэг',
+  'Авах арга хэмжээ', 'Хэн хяналт тавих', 'Хэзээ',
+  'P2 (дараа)', 'N2 (дараа)', 'H2 (дараа)', 'R2 үлдэгдэл эрсдэл'
+];
+
+function actionRiskTemplate() {
+  riskLoadXlsx(function (ok) {
+    if (!ok) { toast('Excel үүсгэгч ачаалагдсангүй', 'error'); return; }
+    var emps = DB.employees || [];
+    var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '') : '';
+
+    /* Системд БОДИТООР байгаа алба, албан тушаал */
+    var depts = {}, poss = {};
+    emps.forEach(function (e) {
+      if (lockDept && e.dept !== lockDept) return;
+      if (e.dept) depts[e.dept] = (depts[e.dept] || 0) + 1;
+      var p = e.role || e.pos;
+      if (p) poss[p] = (poss[p] || 0) + 1;
+    });
+    var dNames = Object.keys(depts).sort();
+    var pNames = Object.keys(poss).sort();
+    var d0 = dNames[0] || 'Алба', p0 = pNames[0] || '';
+
+    var wb = XLSX.utils.book_new();
+
+    /* ── 1. ЗААВАР ── */
+    var guide = [
+      ['ЭРСДЭЛИЙН ҮНЭЛГЭЭ ОРУУЛАХ ЗААВАР'], [],
+      ['1', 'Эрсдэл гэсэн хуудсыг бөглөнө. Мөр бүр = НЭГ эрсдэл.'],
+      ['2', 'Алба ба Албан тушаалыг «Лавлах» хуудаснаас ХУУЛЖ тавина (гараар бүү бич).'],
+      ['3', 'Албан тушаалыг хоосон орхивол тэр албаны БҮХ ажилтанд харагдана.'],
+      ['4', 'Нэг эрсдэл олон албан тушаалд хамаарвал таслалаар зааглана. Ж: Оператор, Технологич'],
+      ['5', 'P, N, H-д зөвхөн 1-5 хүртэлх бүхэл тоо бичнэ. R өөрөө бодогдоно.'],
+      ['6', 'P2, N2, H2 = арга хэмжээ авсны ДАРААХ үнэлгээ (заавал биш).'],
+      [], ['АРГАЧЛАЛ: R = P × N × H'], [],
+      ['P', 'Аюул үүсэх магадлал', '1 тохиолдлын · 2 бага · 3 магадлалтай · 4 бүрэн · 5 тогтмол'],
+      ['N', 'Үр дагаврын хэмжээ', '1 чадвар алдахгүй · 2 хөнгөн · 3 эмнэлэгт · 4 удаан эмчилгээ · 5 амь нас'],
+      ['H', 'Ажилчдын санал', '1 маш бага · 2 бага · 3 их · 4 маш их · 5 ноцтой'],
+      [], ['R-ийн зэрэглэл'], [],
+      ['A', 'R ≥ 100', 'Үл зөвшөөрөгдөх'],
+      ['B', 'R = 51-100', 'Ихээхэн'],
+      ['C', 'R = 11-50', 'Дундаж'],
+      ['D', 'R = 4-10', 'Зөвшөөрөгдөх'],
+      ['E', 'R = 1-3', 'Бага']
+    ];
+    var wsG = XLSX.utils.aoa_to_sheet(guide);
+    wsG['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, wsG, 'Заавар');
+
+    /* ── 2. ЭРСДЭЛ (бөглөх хуудас) ── */
+    var rows = [RISK_TPL_COLS];
+    var ex = function (dept, pos, act, hz, loc, cause, p, n, h, meas, who, when) {
+      return [dept, pos, act, hz, loc, cause, p, n, h, '', meas, who, when, '', '', '', ''];
+    };
+    rows.push(ex(d0, p0, 'Ачаа өргөх', 'Нурууны гэмтэл', 'Агуулах',
+      'Гараар хүнд ачаа өргөх', 3, 3, 2, 'Гараар ачаа өргөх сургалт', 'ХАБЭА', 'Тухай бүр'));
+    rows.push(ex(d0, '', 'Ажилдаа ирж буцах', 'Замын осол', 'Ажилдаа ирэх зам',
+      'Замын хөдөлгөөний дүрэм зөрчих', 2, 2, 1, 'Давтан зааварчилгаа', 'ХАБЭА', 'Улирал бүр'));
+    for (var i = 0; i < 60; i++) rows.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    /* R ба R2-г ТОМЬЁО болгоно — гараар бодох шаардлагагүй, алдаа гарахгүй */
+    for (var r = 2; r <= rows.length; r++) {
+      ws['J' + r] = { t: 'n', f: 'IF(COUNT(G' + r + ':I' + r + ')=3,G' + r + '*H' + r + '*I' + r + ',"")' };
+      ws['Q' + r] = { t: 'n', f: 'IF(COUNT(N' + r + ':P' + r + ')=3,N' + r + '*O' + r + '*P' + r + ',"")' };
+    }
+    ws['!cols'] = [{ wch: 26 }, { wch: 24 }, { wch: 26 }, { wch: 40 }, { wch: 20 }, { wch: 34 },
+      { wch: 15 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 36 }, { wch: 18 }, { wch: 14 },
+      { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 17 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Эрсдэл');
+
+    /* ── 3. ЛАВЛАХ (системийн ЯГ жагсаалт) ── */
+    var ref = [['СИСТЕМД БҮРТГЭЛТЭЙ АЛБА', 'Ажилтан', '', 'СИСТЕМД БҮРТГЭЛТЭЙ АЛБАН ТУШААЛ', 'Ажилтан']];
+    var maxLen = Math.max(dNames.length, pNames.length);
+    for (var k = 0; k < maxLen; k++) {
+      ref.push([
+        dNames[k] || '', dNames[k] ? depts[dNames[k]] : '', '',
+        pNames[k] || '', pNames[k] ? poss[pNames[k]] : ''
+      ]);
+    }
+    var wsR = XLSX.utils.aoa_to_sheet(ref);
+    wsR['!cols'] = [{ wch: 34 }, { wch: 9 }, { wch: 3 }, { wch: 34 }, { wch: 9 }];
+    XLSX.utils.book_append_sheet(wb, wsR, 'Лавлах');
+
+    var stamp = _ymd(new Date());
+    XLSX.writeFile(wb, 'Эрсдэлийн-үнэлгээ-загвар-' + stamp + '.xlsx');
+    toast('Загвар татагдлаа — «Лавлах» хуудсаас алба, албан тушаалаа хуулна уу', 'success');
+  });
 }
 
 /* ══ EXCEL-ЭЭС ЭРСДЭЛ ОРУУЛАХ ══
@@ -5520,6 +5675,124 @@ function actionRiskFolder() {
 
   document.getElementById('riskFolder').addEventListener('change', function () { handle(this.files); });
   document.getElementById('riskFiles').addEventListener('change', function () { handle(this.files); });
+}
+
+/* ══ ЗАГВАРААР бөглөсөн файлыг оруулах — мөр бүрийг ШАЛГАЖ, алдааг заана ══ */
+function actionRiskTemplateImport() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ/туслах админ оруулна', 'error'); return; }
+  var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '') : '';
+  var emps = DB.employees || [];
+  var sysDepts = {}, sysPos = {};
+  emps.forEach(function (e) {
+    if (e.dept) sysDepts[String(e.dept).trim().toLowerCase()] = e.dept;
+    var p = e.role || e.pos;
+    if (p) sysPos[String(p).trim().toLowerCase()] = p;
+  });
+
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13.5px;color:#475569;line-height:1.7;margin-bottom:14px">' +
+    'Загвараар бөглөсөн Excel файлаа сонгоно уу. Систем мөр бүрийг шалгаж, ' +
+    '<b>алдаатай мөрийг тус бүрд нь заана</b> — алдаатай бол юу ч хадгалагдахгүй.</div>' +
+    '<label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px">' +
+    '<input type="file" id="riskTplFile" accept=".xlsx,.xls" style="display:none">' +
+    '<i class="ti ti-upload"></i> Бөглөсөн файлаа сонгох</label>' +
+    '<div id="riskTplSt" style="margin-top:16px"></div>');
+  buildModal('Загвараар оруулах', node, { width: '660px' });
+
+  document.getElementById('riskTplFile').addEventListener('change', function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var st = document.getElementById('riskTplSt');
+    st.innerHTML = '<div style="font-size:13px;color:#64748B">Шалгаж байна…</div>';
+    riskLoadXlsx(function (ok) {
+      if (!ok) { st.innerHTML = '<div style="color:#DC2626;font-size:13px">Excel уншигч ачаалагдсангүй.</div>'; return; }
+      var rd = new FileReader();
+      rd.onload = function (e) {
+        var aoa;
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          var sh = wb.Sheets['Эрсдэл'] || wb.Sheets[wb.SheetNames[0]];
+          aoa = XLSX.utils.sheet_to_json(sh, { header: 1, defval: '' });
+        } catch (er) { st.innerHTML = '<div style="color:#DC2626;font-size:13px">Файл уншиж чадсангүй.</div>'; return; }
+
+        var head = (aoa[0] || []).map(function (x) { return String(x || '').trim(); });
+        var idx = {}; RISK_TPL_COLS.forEach(function (c) { idx[c] = head.indexOf(c); });
+        if (idx['Болзошгүй аюул'] < 0 || idx['Алба'] < 0) {
+          st.innerHTML = '<div style="color:#DC2626;font-size:13px;line-height:1.6">' +
+            'Энэ файл загварын бүтэцтэй биш байна. «Загвар татах» товчоор загварыг аваад түүн дээрээ бөглөнө үү.</div>';
+          return;
+        }
+        var g = function (row, c) { var i = idx[c]; return i < 0 ? '' : String(row[i] == null ? '' : row[i]).replace(/\s+/g, ' ').trim(); };
+        var errs = [], good = [];
+        for (var r = 1; r < aoa.length; r++) {
+          var row = aoa[r] || [];
+          var hz = g(row, 'Болзошгүй аюул');
+          var dept = lockDept || g(row, 'Алба');
+          if (!hz && !g(row, 'Алба')) continue;                       // хоосон мөр — алгасна
+          var line = r + 1, bad = [];
+          if (!hz) bad.push('«Болзошгүй аюул» хоосон');
+          if (!dept) bad.push('«Алба» хоосон');
+          else if (!sysDepts[dept.toLowerCase()]) bad.push('«' + dept + '» гэсэн алба системд алга');
+          var posRaw = g(row, 'Албан тушаал');
+          var posList = posRaw ? posRaw.split(/\s*,\s*/).filter(Boolean) : [];
+          posList.forEach(function (p) {
+            if (!sysPos[p.toLowerCase()]) bad.push('«' + p + '» гэсэн албан тушаал системд алга');
+          });
+          var P = _f(g(row, 'P магадлал (1-5)'), 0), N = _f(g(row, 'N үр дагавар (1-5)'), 0), H = _f(g(row, 'H санал (1-5)'), 0);
+          [['P', P], ['N', N], ['H', H]].forEach(function (x) {
+            if (!(x[1] >= 1 && x[1] <= 5)) bad.push(x[0] + ' нь 1-5 хооронд байх ёстой (одоо: ' + (x[1] || 'хоосон') + ')');
+          });
+          if (bad.length) { errs.push({ line: line, msg: bad.join(' · ') }); continue; }
+          var P2 = _f(g(row, 'P2 (дараа)'), 0), N2 = _f(g(row, 'N2 (дараа)'), 0), H2 = _f(g(row, 'H2 (дараа)'), 0);
+          good.push({
+            dept: sysDepts[dept.toLowerCase()],
+            positions: posList.map(function (p) { return sysPos[p.toLowerCase()]; }),
+            position: posList.length === 1 ? sysPos[posList[0].toLowerCase()] : '',
+            process: g(row, 'Үйл ажиллагаа'),
+            hazard: hz, location: g(row, 'Аюулын байршил'), cause: g(row, 'Шалтгаан'),
+            prob: P, sev: N, hcoef: H, r: P * N * H,
+            rAfter: (P2 && N2 && H2) ? P2 * N2 * H2 : 0,
+            actions: g(row, 'Авах арга хэмжээ'), responsible: g(row, 'Хэн хяналт тавих'),
+            due: g(row, 'Хэзээ'), empIds: []
+          });
+        }
+
+        if (errs.length) {
+          st.innerHTML =
+            '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:12px 14px;margin-bottom:10px">' +
+            '<div style="font-size:18px;font-weight:900;color:#DC2626">' + errs.length + ' мөрөнд алдаа байна</div>' +
+            '<div style="font-size:12.5px;color:#991B1B">Засаад дахин оруулна уу. Одоохондоо юу ч хадгалагдаагүй.</div></div>' +
+            '<div style="max-height:260px;overflow:auto">' +
+            errs.slice(0, 40).map(function (x) {
+              return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+                '<span style="flex:0 0 62px;font-size:12px;font-weight:800;color:#DC2626">мөр ' + x.line + '</span>' +
+                '<span style="flex:1;font-size:12.5px;color:#334155;line-height:1.5">' + esc(x.msg) + '</span></div>';
+            }).join('') + '</div>' +
+            (errs.length > 40 ? '<div style="font-size:12px;color:#94A3B8;margin-top:8px">…нийт ' + errs.length + '</div>' : '');
+          return;
+        }
+        if (!good.length) { st.innerHTML = '<div style="color:#DC2626;font-size:13px">Бөглөсөн мөр олдсонгүй.</div>'; return; }
+
+        st.innerHTML =
+          '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:12px 14px;margin-bottom:12px">' +
+          '<div style="font-size:20px;font-weight:900;color:#16A34A;font-family:\'Bricolage Grotesque\',sans-serif">' + good.length + ' эрсдэл</div>' +
+          '<div style="font-size:12.5px;color:#166534">Бүх мөр зөв — алдаа алга ✓</div></div>' +
+          '<button class="btn btn-primary" id="riskTplGo" style="width:100%">' +
+          '<i class="ti ti-database-import"></i> ' + good.length + ' эрсдлийг системд оруулах</button>';
+        document.getElementById('riskTplGo').addEventListener('click', function () {
+          var now = Date.now();
+          good.forEach(function (x, i) {
+            x.id = 'RSK-' + now + '-' + i;
+            x.createdAt = new Date().toISOString();
+            x.createdBy = (SESSION && SESSION.email) || 'admin';
+            (DB.risks = DB.risks || []).push(x);
+          });
+          saveDB(); closeModal(); renderHazards();
+          toast(good.length + ' эрсдэл оруулагдлаа', 'success');
+        });
+      };
+      rd.readAsArrayBuffer(f);
+    });
+  });
 }
 
 function actionRiskImport() {
