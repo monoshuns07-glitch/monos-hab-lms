@@ -785,13 +785,70 @@ async function saveCols() {
   snapshotCols();
 }
 
+/* ══ УНШИЛТЫГ ХЭМНЭХ — эрхээс хамаарч ЗӨВХӨН хэрэгтэй бичлэгийг татна ══
+   Ажилтан бүх бүртгэлийг татах шаардлагагүй (хараад ч чадахгүй) — зөвхөн
+   өөрийнхөө. Ингэснээр дата 100 мянга болоход ч ажилтны нэг ачаалалт
+   хэдхэн бичлэг хэвээр үлдэнэ. Албаны дарга — зөвхөн өөрийн алба.
+   Админ — бүгд (админ цөөхөн тул нийт ачаалалд нөлөөлөхгүй). */
+function colQueries(key) {
+  var c = colRef(key);
+  try {
+    if (isAdmin() || !SESSION) return [c];
+    var uid = SESSION.uid, dept = SESSION.dept;
+
+    if (isDeptHead()) {
+      if (!dept) return [c];
+      if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks'].indexOf(key) >= 0) {
+        return [c.where('dept', '==', dept)];
+      }
+      /* Албатай холбоогүй, ХУВИЙН бүртгэлүүд — зөвхөн өөрийнх
+         (өмнө нь бүх хүнийхийг татдаг байсан нь уншилтын гол зарлага байв) */
+      if (uid) {
+        if (key === 'hazards')       return [c.where('reporterUid', '==', uid)];
+        if (key === 'notifications') return [c.where('uid', '==', uid)];
+        if (key === 'incidents')     return [c.where('uid', '==', uid)];
+      }
+      return [c];
+    }
+
+    if (!uid) return [c];
+    switch (key) {
+      case 'hazards':       return [c.where('reporterUid', '==', uid)];
+      case 'suggestions':   return [c.where('authorUid', '==', uid)];
+      case 'reports':       return [c.where('reporterUid', '==', uid)];
+      case 'notifications': return [c.where('uid', '==', uid)];
+      case 'incidents':     return [c.where('uid', '==', uid)];
+      case 'violations':    return [c.where('empId', '==', uid)];
+      case 'tasks':
+        var qs = [c.where('empIds', 'array-contains', uid)];
+        if (dept) qs.push(c.where('dept', '==', dept));
+        return qs;
+      default: return [c];
+    }
+  } catch (e) { return [c]; }
+}
+
 /* Цуглуулгуудыг зэрэг татна (аль нэг нь уншигдахгүй бол тэр нэгийг л алгасна) */
 async function loadCols() {
   if (!fbReady || !fdb) return;
   var res = await Promise.all(COL_KEYS.map(function (k) {
-    return colRef(k).get().then(function (snap) {
-      var arr = [];
-      snap.forEach(function (d) { var x = d.data() || {}; if (x.id == null) x.id = d.id; arr.push(x); });
+    var queries = colQueries(k);
+    return Promise.all(queries.map(function (q) {
+      return q.get().catch(function () {
+        /* Шүүлттэй хүсэлт бүтэхгүй бол (индекс дутуу г.м.) бүтнээр нь татна */
+        return colRef(k).get().catch(function () { return null; });
+      });
+    })).then(function (snaps) {
+      var seen = {}, arr = [];
+      snaps.forEach(function (snap) {
+        if (!snap) return;
+        snap.forEach(function (d) {
+          if (seen[d.id]) return;                 // 2 хүсэлтээс давхардвал нэгийг нь
+          seen[d.id] = 1;
+          var x = d.data() || {}; if (x.id == null) x.id = d.id;
+          arr.push(x);
+        });
+      });
       return { k: k, arr: arr };
     }).catch(function () { return { k: k, arr: null }; });
   }));
