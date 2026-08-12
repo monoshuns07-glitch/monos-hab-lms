@@ -4663,6 +4663,28 @@ function riskNormName(s) {
     .replace(/(ийн|ын|ний|ны|гийн)\b/g, '')
     .replace(/\s+/g, ' ').trim();
 }
+/* ТОВЧЛОЛ таних: «ИТА» = «Инженер Техникийн Алба» (үгсийн эхний үсгүүд).
+   Монгол байгууллагад алба нэрлэх түгээмэл хэлбэр тул заавал дэмжинэ. */
+function riskAcronym(s) {
+  return String(s || '').replace(/[^\wА-Яа-яӨөҮүЁё\s]/g, ' ')
+    .split(/\s+/).filter(Boolean)
+    .map(function (w) { return w.charAt(0); }).join('').toUpperCase();
+}
+function riskAcronymMatch(a, b) {
+  var A = String(a || '').replace(/\s+/g, ''), B = String(b || '').replace(/\s+/g, '');
+  if (!A || !B) return false;
+  var shortOne = A.length <= B.length ? A : B;
+  var longOne = A.length <= B.length ? b : a;
+  if (shortOne.length < 2 || shortOne.length > 6) return false;
+  if (String(longOne).trim().split(/\s+/).length < 2) return false;   // урт нь олон үгтэй байх ёстой
+  var ac = riskAcronym(longOne);
+  var sh = shortOne.toUpperCase();
+  if (ac === sh) return true;
+  if (ac.indexOf(sh) === 0) return true;          // ИТА ⊂ ИТАХ гэх мэт
+  if (sh.indexOf(ac) === 0 && ac.length >= 2) return true;
+  return false;
+}
+
 /* Хоёр нэр ижил зүйлийг заасан эсэх */
 function riskNameMatch(a, b) {
   var x = riskNormName(a), y = riskNormName(b);
@@ -4670,6 +4692,7 @@ function riskNameMatch(a, b) {
   if (x === y) return true;
   if (x.length >= 3 && y.indexOf(x) >= 0) return true;
   if (y.length >= 3 && x.indexOf(y) >= 0) return true;
+  if (riskAcronymMatch(a, b)) return true;
   return false;
 }
 /* Админы гараар тохируулсан зураглал: эрсдэлийн файлын алба → системийн алба */
@@ -5066,67 +5089,20 @@ function riskWire(sec, redraw) {
   });
 }
 
+/* ══ ЭРСДЭЛИЙН ҮНЭЛГЭЭ — HTML ДАШБОАРД ФАЙЛААР (хуучин, батлагдсан хэлбэр) ══
+   Алба бүрд нэг HTML дашбоард байршуулна. Ажилтан өөрийн албаныхаа
+   дашбоардыг бүтнээр нь харна.
+   ⚠ Excel-ээс задалж оруулсан бүтэцтэй эрсдлүүд (DB.risks) УСТААГҮЙ —
+     цаашид хэрэгтэй бол дахин ашиглаж болно. */
 function renderHazards() {
   var sec = $$('.page[data-page="hazards"]')[0]; if (!sec) return;
-  sec.style.padding = '';
-  var me = myEmp();
-  var myDept = (SESSION && SESSION.dept) || (me && me.dept) || '';
-  var list = risksForView();
-
-  var head, sub;
-  if (isAdmin()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
-  else if (isDeptHead()) { head = 'Эрсдэлийн үнэлгээ'; sub = myDept || 'Таны алба'; }
-  else { head = 'Миний ажлын байрны эрсдэл'; sub = (myDept ? myDept + ' · ' : '') + (me && (me.role || me.pos) ? (me.role || me.pos) : 'Бүх ажилтан'); }
-
-  var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
-    '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
-    ((isAdmin() || isDeptHead())
-      ? '<div class="page-actions">' +
-        '<button class="btn btn-primary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер оруулах</button>' +
-        '<button class="btn btn-secondary" data-risk-import="1"><i class="ti ti-file-spreadsheet"></i> Нэг файл (гараар тааруулах)</button>' +
-        '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> Дашбоард файл</button></div>'
-      : '') + '</div>';
-
-  if (!list.length) {
-    H += '<div class="card" style="padding:40px"><div class="empty-state">' +
-      '<i class="ti ti-shield-search"></i>' +
-      '<div>' + (isAdmin() || isDeptHead() ? 'Эрсдэлийн үнэлгээ оруулаагүй байна' : 'Танд хамаарах эрсдэл бүртгэгдээгүй байна') + '</div>' +
-      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px">' +
-      (isAdmin() || isDeptHead()
-        ? '«Excel-ээс оруулах» товчоор эрсдэлийн үнэлгээгээ оруулна уу.'
-        : 'ХАБЭА ажилтан таны ажлын байрны эрсдэлийн үнэлгээг оруулсны дараа энд харагдана.') +
-      '</div></div></div>';
+  sec.style.padding = '0';
+  if (isAdmin() || isDeptHead()) {
+    renderRiskAdmin(sec);
   } else {
-    H += riskDashHTML(list, sub);
-    if (isAdmin() || isDeptHead()) H += riskAdminSectionsHTML(list);
-  }
-  sec.innerHTML = H;
-  riskWire(sec, renderHazards);
-
-  if (!sec._riskTblWired) {
-    sec._riskTblWired = true;
-    sec.addEventListener('click', function (ev) {
-      var em = ev.target.closest('[data-risk-emp]');
-      if (em) { riskEmpDetail(em.getAttribute('data-risk-emp')); return; }
-      var df = ev.target.closest('[data-risk-dept-f]');
-      if (df) {
-        var dv = df.getAttribute('data-risk-dept-f') || '';
-        RISK_FILTER.dept = (RISK_FILTER.dept === dv ? '' : dv);
-        RISK_FILTER.level = ''; RISK_FILTER.cell = 0;
-        renderHazards();
-        return;
-      }
-    });
-  }
-
-  if (!sec._riskActWired) {
-    sec._riskActWired = true;
-    sec.addEventListener('click', function (ev) {
-      if (ev.target.closest('[data-risk-map]')) { actionRiskDeptMap(); return; }
-      if (ev.target.closest('[data-risk-folder]')) { actionRiskFolder(); return; }
-      if (ev.target.closest('[data-risk-import]')) { actionRiskImport(); return; }
-      if (ev.target.closest('[data-risk-files]')) { actionRiskFiles(); return; }
-    });
+    var e = myEmp();
+    var dept = (SESSION && SESSION.dept) || (e && e.dept) || '';
+    renderRiskDept(sec, dept);
   }
 }
 
@@ -5618,10 +5594,18 @@ function actionRiskFiles() {
 }
 
 function renderRiskAdmin(sec) {
+  /* Туслах админ — ЗӨВХӨН өөрийн алба (өмнө нь бүх албыг хардаг байсан) */
+  var myDept = isDeptHead() ? ((SESSION && SESSION.dept) || '') : '';
   var depts = deptList();
+  if (myDept) depts = depts.filter(function (d) { return d === myDept; });
+
   var html = '<div style="padding:24px 28px 0">' +
     '<h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">Эрсдэлийн үнэлгээ</h1>' +
-    '<p style="font-size:13px;color:#64748B;margin:0 0 20px">Алба бүрд интерактив эрсдэлийн үнэлгээний дашбоард HTML файл байршуулна. Ажилтнууд өөрийн албаны дашбоардыг автоматаар харна.</p></div>' +
+    '<p style="font-size:13px;color:#64748B;margin:0 0 20px">' +
+    (myDept
+      ? 'Таны албаны (' + esc(myDept) + ') эрсдэлийн үнэлгээний дашбоард. Албаны ажилтнууд үүнийг харна.'
+      : 'Алба бүрд интерактив эрсдэлийн үнэлгээний дашбоард HTML файл байршуулна. Ажилтнууд өөрийн албаны дашбоардыг автоматаар харна.') +
+    '</p></div>' +
     '<div style="padding:0 28px 28px" id="riskAdminCards">' +
     depts.map(function (d) {
       var key = d.replace(/[\s\/]+/g, '_');
