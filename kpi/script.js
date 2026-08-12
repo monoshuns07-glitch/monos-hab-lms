@@ -4543,6 +4543,39 @@ function hazardSrcTag(s) {
 /* ============ Эрсдэлийн үнэлгээ — HTML дашбоард байршуулалт ============ */
 var RISK_COL = 'kpi_risk_dashboards';
 
+/* ══ Дашбоардын түлхүүр ══
+   Албаных     : «Ложистикийн алба»
+   Ажлын байрных: «Ложистикийн алба::Бэлтгэгч»
+   Ингэснээр HTML файлаар харуулах хэлбэр ХЭВЭЭР үлдэж, зөвхөн ХЭН аль
+   дашбоардыг харах нь эрхээс хамаарна. */
+function riskKey(dept, pos) { return pos ? (dept + '::' + pos) : dept; }
+function riskKeyParts(key) {
+  var i = String(key || '').indexOf('::');
+  return i < 0 ? { dept: key, pos: '' } : { dept: key.slice(0, i), pos: key.slice(i + 2) };
+}
+/* Тухайн албанд байгаа БҮХ дашбоард (албаных + ажлын байрных) */
+function riskKeysForDept(dept) {
+  var out = [];
+  (RISK_DEPTS || []).forEach(function (k) {
+    var p = riskKeyParts(k);
+    if (p.dept === dept) out.push(k);
+  });
+  return out;
+}
+/* Ажилтанд ХАМГИЙН тохирох дашбоард: ажлын байрных нь, байхгүй бол албаных */
+function riskKeyForEmp(dept, pos) {
+  var keys = riskKeysForDept(dept);
+  if (pos) {
+    var exact = keys.filter(function (k) {
+      var p = riskKeyParts(k).pos;
+      return p && riskNameMatch(p, pos);
+    });
+    if (exact.length) return exact[0];
+  }
+  var plain = keys.filter(function (k) { return !riskKeyParts(k).pos; });
+  return plain.length ? plain[0] : (keys.length ? null : null);
+}
+
 function loadRiskDashboard(dept, cb) {
   if (DEMO) {
     try { cb(JSON.parse(localStorage.getItem('rdash_' + dept) || 'null')); } catch (e) { cb(null); }
@@ -5099,11 +5132,22 @@ function renderHazards() {
   sec.style.padding = '0';
   if (isAdmin() || isDeptHead()) {
     renderRiskAdmin(sec);
-  } else {
-    var e = myEmp();
-    var dept = (SESSION && SESSION.dept) || (e && e.dept) || '';
-    renderRiskDept(sec, dept);
+    return;
   }
+  var e = myEmp();
+  var dept = (SESSION && SESSION.dept) || (e && e.dept) || '';
+  var pos = (e && (e.role || e.pos)) || '';
+
+  /* Дашбоардын жагсаалт ачаалагдаагүй бол эхлээд татна */
+  if (RISK_DEPTS === null) {
+    sec.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8">' +
+      '<i class="ti ti-loader-2" style="font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:8px"></i>Ачаалж байна…</div>';
+    loadRiskDepts(function () { renderHazards(); });
+    return;
+  }
+  /* Ажлын байрных нь байвал ТЭР, эс бөгөөс албаных */
+  var key = riskKeyForEmp(dept, pos) || dept;
+  renderRiskDept(sec, key);
 }
 
 /* ══ EXCEL-ЭЭС ЭРСДЭЛ ОРУУЛАХ ══
@@ -5609,17 +5653,39 @@ function renderRiskAdmin(sec) {
     '<div style="padding:0 28px 28px" id="riskAdminCards">' +
     depts.map(function (d) {
       var key = d.replace(/[\s\/]+/g, '_');
-      return '<div class="card" style="padding:16px 18px;display:flex;align-items:center;gap:14px;margin-bottom:10px" data-risk-dept="' + esc(d) + '">' +
+      /* Тухайн албанд байгаа АЖЛЫН БАЙРНЫ дашбоардууд */
+      var posKeys = riskKeysForDept(d).filter(function (k) { return !!riskKeyParts(k).pos; });
+      var posRows = posKeys.map(function (k) {
+        var p = riskKeyParts(k).pos;
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0 7px 14px;border-top:1px solid #F1F5F9">' +
+          '<i class="ti ti-user" style="font-size:15px;color:#7C3AED"></i>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p) + '</span>' +
+          '<button class="btn btn-sm" data-risk-view="' + esc(k) + '"><i class="ti ti-eye"></i> Харах</button>' +
+          '<button class="btn btn-sm" data-risk-del="' + esc(k) + '" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA"><i class="ti ti-trash"></i></button>' +
+          '</div>';
+      }).join('');
+
+      return '<div class="card" style="padding:16px 18px;margin-bottom:10px" data-risk-dept="' + esc(d) + '">' +
+        '<div style="display:flex;align-items:center;gap:14px">' +
         '<div style="width:44px;height:44px;border-radius:12px;background:#EFF6FF;color:#1D4ED8;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building" style="font-size:20px"></i></div>' +
         '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:14px">' + esc(d) + '</div>' +
         '<div style="font-size:12px;color:#94A3B8;margin-top:2px" id="riskSt_' + key + '"><i class="ti ti-loader-2" style="animation:spin 1s linear infinite"></i> Уншиж байна...</div></div>' +
-        '<div style="display:flex;gap:8px;flex-shrink:0">' +
-        '<label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">' +
+        '<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
+        '<label class="btn btn-primary btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px" title="Албаны нэгдсэн дашбоард — ажлын байрных байхгүй ажилтнууд үүнийг харна">' +
         '<input type="file" accept=".html,text/html" style="display:none" data-risk-upload="' + esc(d) + '">' +
-        '<i class="ti ti-upload"></i> Байршуулах</label>' +
+        '<i class="ti ti-upload"></i> Албаных</label>' +
+        '<label class="btn btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#F5F3FF;color:#6D28D9;border-color:#DDD6FE" title="Файлын нэрээс ажлын байрыг таана. Олон файл нэг дор сонгож болно.">' +
+        '<input type="file" accept=".html,text/html" multiple style="display:none" data-risk-upload-pos="' + esc(d) + '">' +
+        '<i class="ti ti-users-plus"></i> Ажлын байрны</label>' +
         '<button class="btn btn-sm" data-risk-view="' + esc(d) + '" style="display:none"><i class="ti ti-eye"></i> Харах</button>' +
         '<button class="btn btn-sm" data-risk-del="' + esc(d) + '" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA;display:none"><i class="ti ti-trash"></i></button>' +
-        '</div></div>';
+        '</div></div>' +
+        (posRows
+          ? '<div style="margin-top:10px">' +
+            '<div style="font-size:11px;font-weight:700;color:#94A3B8;letter-spacing:.3px;padding-left:14px">АЖЛЫН БАЙРААР (' + posKeys.length + ')</div>' +
+            posRows + '</div>'
+          : '') +
+        '</div>';
     }).join('') + '</div>';
   sec.innerHTML = html;
 
@@ -5646,6 +5712,37 @@ function renderRiskAdmin(sec) {
   // Файл upload + харах + устгах event
   if (sec._riskWired) return;
   sec._riskWired = true;
+  /* ── АЖЛЫН БАЙРНЫ дашбоард: олон файлыг нэг дор, нэрээс нь ажлын байрыг таана ── */
+  sec.addEventListener('change', function (ev) {
+    var pin = ev.target.closest('[data-risk-upload-pos]');
+    if (!pin || !pin.files || !pin.files.length) return;
+    var pdept = pin.getAttribute('data-risk-upload-pos');
+    var files = Array.prototype.slice.call(pin.files);
+    pin.value = '';
+    var done = 0, okN = 0, skip = [];
+    toast(files.length + ' файл байршуулж байна…', 'info');
+    files.forEach(function (f) {
+      var pos = riskCleanPos(f.name);
+      if (!pos) { skip.push(f.name); if (++done === files.length) finishPos(); return; }
+      if (f.size > 10000000) { skip.push(f.name + ' (хэт том)'); if (++done === files.length) finishPos(); return; }
+      var rd2 = new FileReader();
+      rd2.onload = function (e2) {
+        saveRiskDashboard(riskKey(pdept, pos), e2.target.result, function (ok) {
+          if (ok) okN++; else skip.push(f.name);
+          if (++done === files.length) finishPos();
+        });
+      };
+      rd2.onerror = function () { skip.push(f.name); if (++done === files.length) finishPos(); };
+      rd2.readAsText(f, 'UTF-8');
+    });
+    function finishPos() {
+      RISK_DEPTS = null;                       // жагсаалтыг дахин татуулна
+      loadRiskDepts(function () { renderRiskAdmin(sec); });
+      toast(okN + ' ажлын байрны дашбоард байршлаа' + (skip.length ? ' · ' + skip.length + ' алгасав' : ''),
+        okN ? 'success' : 'error');
+    }
+  });
+
   sec.addEventListener('change', function (ev) {
     var inp = ev.target.closest('[data-risk-upload]');
     if (!inp || !inp.files || !inp.files[0]) return;
@@ -5785,9 +5882,12 @@ function renderRiskDept(sec, dept) {
       emptyBox('Таны алба тодорхойгүй байна. ХАБЭА ажилтантай холбогдоно уу.') + '</div>';
     return;
   }
+  var _kp = riskKeyParts(dept);
   sec.innerHTML = '<div style="padding:18px 24px 10px;border-bottom:1px solid #F1F5F9">' +
-    '<h1 style="font-size:20px;font-weight:700;margin:0;color:#1E293B">Эрсдэлийн үнэлгээ</h1>' +
-    '<p style="font-size:12px;color:#64748B;margin:2px 0 0">' + esc(dept) + '</p></div>' +
+    '<h1 style="font-size:20px;font-weight:700;margin:0;color:#1E293B">' +
+    (_kp.pos ? 'Миний ажлын байрны эрсдэл' : 'Эрсдэлийн үнэлгээ') + '</h1>' +
+    '<p style="font-size:12px;color:#64748B;margin:2px 0 0">' + esc(_kp.dept) +
+    (_kp.pos ? ' · ' + esc(_kp.pos) : '') + '</p></div>' +
     '<div id="riskEmpArea" style="padding:16px">' +
     '<div style="text-align:center;padding:32px;color:#94A3B8"><i class="ti ti-loader-2" style="font-size:28px;animation:spin 1s linear infinite;display:block;margin-bottom:8px"></i>Дашбоард ачаалж байна...</div></div>';
   loadRiskDashboard(dept, function (data) {
