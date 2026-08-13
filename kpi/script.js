@@ -4780,7 +4780,32 @@ function riskPositions(r) {
    Эрсдэлийн файлын алба нь ТОВЧЛОЛ («Ложистик», «ХХҮ»), ажилтны бүртгэл дэх
    алба нь бүтэн нэр («Ложистикийн алба») байдаг тул яг тэнцүү байх шаардвал
    бүгд салдаг. Тиймээс дагавар/нэмэлт үгийг хасаад харьцуулна. */
+/* ══ ТААРУУЛАЛТЫН КЭШ — хурдны төлөө ═══════════════════════════════════
+   Хамралт тооцоход эрсдэл бүрийг ажилтан бүртэй тулгадаг: 960 × 268 ≈
+   257,000 харьцуулалт. Тус бүр нь 6 регекс ажиллуулдаг байсан тул цэс
+   нээхэд хэдэн секунд зогсдог байв. Оролт нь цөөхөн (12 алба, ~50 ажлын
+   байр) тул үр дүнг кэшлэхэд бодит тооцоолол хэдэн зуу болж багасна.
+   ⚠ Албуудын гар зураглал өөрчлөгдвөл riskMatchCacheClear() дуудна. */
+var _rnCache = {}, _rnN = 0, _racCache = {}, _racN = 0;
+var _rnmCache = {}, _rnmN = 0, _rsdCache = {}, _rsdN = 0;
+function riskMatchCacheClear() {
+  _rnCache = {}; _rnN = 0; _racCache = {}; _racN = 0;
+  _rnmCache = {}; _rnmN = 0; _rsdCache = {}; _rsdN = 0;
+}
+/* Кэш хязгааргүй өсөхөөс сэргийлнэ (санах ой) */
+function _cachePut(cache, n, key, val, cap) {
+  if (n > (cap || 20000)) return { hit: false, n: n };
+  cache[key] = val; return { hit: true, n: n + 1 };
+}
+
 function riskNormName(s) {
+  var k = String(s || '');
+  if (_rnCache.hasOwnProperty(k)) return _rnCache[k];
+  var v = _riskNormNameRaw(k);
+  var r = _cachePut(_rnCache, _rnN, k, v); _rnN = r.n;
+  return v;
+}
+function _riskNormNameRaw(s) {
   return String(s || '').toLowerCase()
     .replace(/[«»"'`.,\-–—()]/g, ' ')
     .replace(/\b(алба|хэлтэс|нэгж|газар|тасаг|цех|баг)\b/g, ' ')
@@ -4791,6 +4816,13 @@ function riskNormName(s) {
 /* ТОВЧЛОЛ таних: «ИТА» = «Инженер Техникийн Алба» (үгсийн эхний үсгүүд).
    Монгол байгууллагад алба нэрлэх түгээмэл хэлбэр тул заавал дэмжинэ. */
 function riskAcronym(s) {
+  var k = String(s || '');
+  if (_racCache.hasOwnProperty(k)) return _racCache[k];
+  var v = _riskAcronymRaw(k);
+  var r = _cachePut(_racCache, _racN, k, v); _racN = r.n;
+  return v;
+}
+function _riskAcronymRaw(s) {
   return String(s || '').replace(/[^\wА-Яа-яӨөҮүЁё\s]/g, ' ')
     .split(/\s+/).filter(Boolean)
     .map(function (w) { return w.charAt(0); }).join('').toUpperCase();
@@ -4815,6 +4847,13 @@ function riskAcronymMatch(a, b) {
 
 /* Хоёр нэр ижил зүйлийг заасан эсэх */
 function riskNameMatch(a, b) {
+  var k = String(a || '') + ' ' + String(b || '');
+  if (_rnmCache.hasOwnProperty(k)) return _rnmCache[k];
+  var v = _riskNameMatchRaw(a, b);
+  var r = _cachePut(_rnmCache, _rnmN, k, v); _rnmN = r.n;
+  return v;
+}
+function _riskNameMatchRaw(a, b) {
   var x = riskNormName(a), y = riskNormName(b);
   if (!x || !y) return false;
   if (x === y) return true;
@@ -4847,6 +4886,13 @@ function riskPosIsAny(d) { return RISK_POS_ANY.indexOf(riskDeptKey(d)) >= 0; }
 function riskDeptFix(d) { return RISK_DEPT_ALIAS[riskDeptKey(d)] || d; }
 
 function riskSameDept(a, b) {
+  var k = String(a || '') + ' ' + String(b || '');
+  if (_rsdCache.hasOwnProperty(k)) return _rsdCache[k];
+  var v = _riskSameDeptRaw(a, b);
+  var r = _cachePut(_rsdCache, _rsdN, k, v); _rsdN = r.n;
+  return v;
+}
+function _riskSameDeptRaw(a, b) {
   if (!a || !b) return true;              // аль нэг нь тодорхойгүй бол хориглохгүй
   var mapped = riskDeptMap()[String(a).trim()];
   if (mapped) return String(mapped).trim() === String(b).trim();   // гараар заасан нь давамгайлна
@@ -4933,6 +4979,7 @@ function actionRiskDeptMap() {
     });
     if (!DB.settings) DB.settings = seedDB().settings;
     DB.settings.riskDeptMap = map;
+    riskMatchCacheClear();          // зураглал өөрчлөгдсөн — кэш хүчингүй
     saveDB(); closeModal(); renderHazards();
     toast('Тааруулалт хадгалагдлаа', 'success');
   });
@@ -4970,6 +5017,8 @@ function risksForView() {
 }
 
 var RISK_FILTER = { level: '', q: '', cell: 0, dept: '' };
+/* Нэг дор зурах мөрийн тоо — шүүлтүүр солигдоход эхнээс нь эхэлнэ */
+var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
 
 /* ── Интерактив дашбоард (бүх эрхэд нийтлэг) ── */
 function riskDashHTML(list, subtitle) {
@@ -5031,7 +5080,14 @@ function riskDashHTML(list, subtitle) {
     return true;
   }).sort(function (a, b) { return riskScore(b) - riskScore(a); });
 
-  var rows = shown.map(function (r) {
+  /* ⚡ ХУУДАСЛАЛТ — 960 мөрийг нэг дор зурахад ~1 МБ DOM үүсч, цэс нээхэд
+     хэдэн секунд зогсдог байв. Эхний хэсгийг л зурж, үлдсэнийг товчоор нэмнэ. */
+  var sig = [RISK_FILTER.dept, RISK_FILTER.level, RISK_FILTER.cell, RISK_FILTER.q].join('|');
+  if (sig !== _riskShownSig) { _riskShownSig = sig; _riskShown = RISK_PAGE; }
+  var page = shown.slice(0, _riskShown);
+  var more = shown.length - page.length;
+
+  var rows = page.map(function (r) {
     var L = riskLevel(r), sc = riskScore(r);
     var pl = riskPositions(r);
     var pos = (r.position ? esc(r.position) : (pl.length ? esc((r.positions || []).join(', ')) : 'Бүх ажилтан'));
@@ -5049,6 +5105,12 @@ function riskDashHTML(list, subtitle) {
       '</div></div></div>';
   }).join('') || '<div class="empty-state" style="padding:30px"><i class="ti ti-shield-check"></i><div>Тохирох эрсдэл олдсонгүй</div></div>';
 
+  if (more > 0) {
+    rows += '<button class="btn" data-risk-more="1" style="width:100%;margin-top:4px;padding:11px;' +
+      'background:#F8FAFC;color:#475569;border:1.5px dashed #CBD5E1;border-radius:12px;font-weight:700">' +
+      '<i class="ti ti-chevron-down"></i> Дараагийн ' + Math.min(more, RISK_PAGE) + '-ыг үзэх (' + more + ' үлдсэн)</button>';
+  }
+
   return '<div class="card" style="padding:18px;margin-bottom:14px">' +
     '<div style="font-size:15px;font-weight:800;color:#1E293B;margin-bottom:2px">Эрсдэлийн зураглал</div>' +
     '<div style="font-size:12.5px;color:#64748B;margin-bottom:12px">' + esc(subtitle || '') + ' · нийт <b>' + total + '</b> эрсдэл</div>' +
@@ -5062,7 +5124,8 @@ function riskDashHTML(list, subtitle) {
     ((RISK_FILTER.level || RISK_FILTER.cell || RISK_FILTER.q || RISK_FILTER.dept)
       ? '<button class="btn btn-sm" data-risk-clear="1" style="margin-top:9px;background:#F1F5F9;color:#475569;border-color:#E2E8F0"><i class="ti ti-x"></i> Шүүлтүүр цэвэрлэх</button>' : '') +
     '</div></div></div>' +
-    '<div style="font-size:13px;font-weight:800;color:#475569;margin:0 0 9px">Эрсдлүүд (' + shown.length + ')</div>' + rows;
+    '<div style="font-size:13px;font-weight:800;color:#475569;margin:0 0 9px">Эрсдлүүд (' +
+    (more > 0 ? page.length + ' / ' + shown.length : shown.length) + ')</div>' + rows;
 }
 
 /* ══ АДМИН/ТУСЛАХ АДМИНД: алба ба ажилтнаар цэгцэлсэн харагдац ══ */
@@ -5309,6 +5372,9 @@ function riskWire(sec, redraw) {
     if (cl) { var c = parseInt(cl.getAttribute('data-risk-cell'), 10); RISK_FILTER.cell = (RISK_FILTER.cell === c ? 0 : c); RISK_FILTER.level = ''; redraw(); return; }
     var cr = ev.target.closest('[data-risk-clear]');
     if (cr) { RISK_FILTER = { level: '', q: '', cell: 0, dept: '' }; redraw(); return; }
+    /* «Дараагийн …-ыг үзэх» — зурах мөрийн тоог нэмээд дахин зурна */
+    var mo = ev.target.closest('[data-risk-more]');
+    if (mo) { _riskShown += RISK_PAGE; redraw(); return; }
     var op = ev.target.closest('[data-risk-open]');
     if (op) { riskOpenDetail(op.getAttribute('data-risk-open')); return; }
   });
