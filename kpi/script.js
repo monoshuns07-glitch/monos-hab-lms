@@ -536,7 +536,11 @@ async function buildEmployeesFromRealData() {
       }
       out.push({
         id: uid, uid: uid, initials: makeInitials(name), name: name,
-        role: u.position || 'Ажилтан', dept: u.department || 'Тодорхойгүй', email: u.email || '',
+        /* ⚠ Албан тушаалыг ХОЁУЛАНД нь бичнэ. Дэлгэцийн зарим хэсэг e.role,
+           зарим нь e.pos-ыг уншдаг. Зөвхөн role бичдэг байсан тул ажилтны
+           профайл, хяналтын самбар, хайлтад албан тушаал ХООСОН харагддаг байв. */
+        role: u.position || 'Ажилтан', pos: u.position || '',
+        dept: u.department || 'Тодорхойгүй', email: u.email || '',
         training: training, participation: participation,
         video: video, examScore: examScore, examPrev: examPrev, firstTry: firstTry,
         habeaExams: (hx && hx.list) ? hx.list : [],
@@ -563,7 +567,7 @@ async function syncEmployeesWithRealData() {
     var prev = prevByUid[r.uid];
     if (prev) {
       return Object.assign({}, prev, {
-        name: r.name, dept: r.dept, role: r.role, email: r.email, initials: r.initials,
+        name: r.name, dept: r.dept, role: r.role, pos: r.pos, email: r.email, initials: r.initials,
         training: r.training, participation: r.participation, onLeave: r.onLeave,
         video: r.video, examScore: r.examScore, examPrev: r.examPrev, firstTry: r.firstTry, habeaExams: r.habeaExams
       });
