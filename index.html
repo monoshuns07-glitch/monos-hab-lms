@@ -605,7 +605,12 @@ body{background:transparent !important}
         <input type="password" class="form-input" id="inputPassword" placeholder="••••••••••" autocomplete="current-password" />
       </div>
       <button class="login-btn" id="loginBtn">Нэвтрэх</button>
+      <button type="button" id="forgotBtn" style="display:block;width:100%;margin-top:12px;background:none;border:none;
+        color:rgba(255,255,255,.82);font-family:inherit;font-size:13.5px;text-decoration:underline;cursor:pointer;padding:6px">
+        Нууц үгээ мартсан уу?</button>
       <div class="login-err" id="loginErr"></div>
+      <div id="loginOk" style="display:none;margin-top:10px;padding:11px 13px;border-radius:10px;font-size:13px;line-height:1.6;
+        background:rgba(16,185,129,.16);border:1px solid rgba(16,185,129,.4);color:#D1FAE5"></div>
     </div>
   </div>
   <div class="login-footer">© 2025 МОНОС ХҮНС ХК — ХАБЭА-н алба &nbsp;·&nbsp; Зөвхөн бүртгэлтэй ажилтнууд нэвтрэх боломжтой</div>
@@ -929,6 +934,35 @@ auth.onAuthStateChanged(async fbUser=>{
 });
 loginBtn.addEventListener('click', doLogin);
 
+/* ══ НУУЦ ҮГ СЭРГЭЭХ ══════════════════════════════════════════════════
+   Өмнө нь нууц үг Firestore-т ил хадгалагдаж, админ хайж өгдөг байсан.
+   Аюулгүй байдлын үүднээс тэдгээрийг устгасан тул ажилтан ӨӨРӨӨ сэргээх
+   зам заавал хэрэгтэй. Firebase сэргээх холбоосыг и-мэйлээр илгээнэ. */
+const forgotBtn = document.getElementById('forgotBtn');
+const loginOk   = document.getElementById('loginOk');
+function showOk(m){ if(loginOk){ loginOk.textContent=m; loginOk.style.display='block'; } }
+function hideOk(){ if(loginOk) loginOk.style.display='none'; }
+
+if (forgotBtn) forgotBtn.addEventListener('click', async ()=>{
+  const email = document.getElementById('inputEmail').value.trim().toLowerCase();
+  loginErr.classList.remove('show'); hideOk();
+  if(!email){ showErr('Эхлээд Gmail хаягаа бичнэ үү, дараа нь энэ товчийг дарна уу.'); return; }
+  forgotBtn.disabled = true; forgotBtn.textContent = 'Илгээж байна…';
+  try{
+    await auth.sendPasswordResetEmail(email);
+    showOk('✓ ' + email + ' хаяг руу сэргээх холбоос илгээлээ. И-мэйлээ шалгаад (Spam хавтсыг ч хараарай) шинэ нууц үгээ тавина уу.');
+  }catch(e){
+    const c = e.code || '';
+    if(c === 'auth/user-not-found')       showErr('Энэ хаяг системд бүртгэлгүй байна. ХАБЭА-н албанд хандана уу.');
+    else if(c === 'auth/invalid-email')   showErr('И-мэйл хаяг буруу бичигдсэн байна.');
+    else if(c === 'auth/too-many-requests') showErr('Хэт олон удаа оролдлоо. 30 минутын дараа дахин оролдоно уу.');
+    else if(c === 'auth/network-request-failed') showErr('Сүлжээ тасарлаа. Интернэт холболтоо шалгаад дахин оролдоно уу.');
+    else showErr('Илгээж чадсангүй ['+c+']: '+e.message);
+  }finally{
+    forgotBtn.disabled = false; forgotBtn.textContent = 'Нууц үгээ мартсан уу?';
+  }
+});
+
 async function doLogin(){
   const email    = document.getElementById('inputEmail').value.trim();
   const password = document.getElementById('inputPassword').value;
@@ -959,7 +993,11 @@ async function doLogin(){
     const code = e.code||'';
     let msg;
     if(code==='auth/wrong-password'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials'){
-      msg='Нууц үг буруу байна.';
+      /* Firebase энэ нэг кодоор «нууц үг буруу» ба «хаяг байхгүй» хоёуланг
+         буцаадаг тул аль нь болохыг баттай хэлж болохгүй. Сэргээх зам зааж өгнө. */
+      msg='Нууц үг буруу байна. Мартсан бол доорх «Нууц үгээ мартсан уу?» товчийг дарна уу.';
+    } else if(code==='auth/network-request-failed'){
+      msg='Сүлжээ тасарлаа. Интернэт холболтоо шалгаад дахин оролдоно уу.';
     } else if(code==='auth/user-not-found'){
       msg='Энэ Gmail хаяг системд бүртгэлгүй байна.';
     } else if(code==='auth/too-many-requests'){
@@ -974,7 +1012,7 @@ async function doLogin(){
   }
 }
 
-function showErr(msg){ loginErr.textContent=msg; loginErr.classList.add('show'); }
+function showErr(msg){ hideOk(); loginErr.textContent=msg; loginErr.classList.add('show'); }
 
 async function showMain(user){
   // ✨ Light flash transition — "walking out into a beautiful place"

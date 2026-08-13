@@ -439,7 +439,29 @@ async function buildEmployeesFromRealData() {
   if (!fbReady) { EMP_LOAD = { state: 'nofb', users: 0, error: 'Сервертэй холбогдоогүй' }; return null; }
   try {
     var usersSnap = await fdb.collection('users').get();
-    EMP_LOAD = { state: 'ok', users: usersSnap.size, error: '' };
+    /* Бүх хэрэглэгчийг нэг мөр болгож авна */
+    var docs = [];
+    usersSnap.forEach(function (d) {
+      var x = d.data() || {};
+      docs.push({ id: d.id, data: function () { return x; } });
+    });
+
+    /* ⚠ Ажилтны эрхээр «users» цуглуулга бүтнээр нь уншигдахгүй (эсвэл хоосон
+       ирэх) тохиолдол бий. Ажилтанд ӨӨРИЙНХӨӨ бүртгэл л хэрэгтэй тул түүнийг
+       нэрлэсэн баримтаар шууд татна. Ингэснээр «Ажилтан бүртгэгдээгүй байна»
+       гэж худал зурвас гарахаа болино. */
+    var selfOnly = false;
+    if (!docs.length && SESSION && SESSION.uid) {
+      try {
+        var own = await fdb.collection('users').doc(SESSION.uid).get();
+        if (own && own.exists) {
+          var ox = own.data() || {};
+          docs.push({ id: own.id, data: function () { return ox; } });
+          selfOnly = true;
+        }
+      } catch (e) { console.error('[buildEmployees] өөрийн бүртгэл ч уншигдсангүй', e); }
+    }
+    EMP_LOAD = { state: 'ok', users: docs.length, error: '', selfOnly: selfOnly };
     var examByUser = {}, progByUser = {};
     try {
       var examSnap = await fdb.collection('exam_results').get();
@@ -457,7 +479,7 @@ async function buildEmployeesFromRealData() {
     (DB.suggestions || []).forEach(function (s) { if (s.authorUid) reportByUid[s.authorUid] = (reportByUid[s.authorUid] || 0) + 1; });
 
     var out = [];
-    usersSnap.forEach(function (d) {
+    docs.forEach(function (d) {
       var u = d.data() || {}; var uid = u.uid || d.id;
       if (u.role === 'admin' && !(u.firstName || u.lastName)) return; // нэргүй админ системийн бүртгэл алгасна
       var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
@@ -10714,9 +10736,18 @@ function ensureDashboardNotEmpty() {
     msg = 'Ажилтны мэдээлэл уншигдсангүй';
     hint = 'Алдаа: ' + esc(el.error || '') + '. Дахин нэвтэрч үзнэ үү.';
   } else if (el.state === 'ok' && !el.users) {
-    msg = 'Ажилтан бүртгэгдээгүй байна';
-    hint = 'Контент удирдлага → Хэрэглэгчид хэсгээс ажилтан нэмнэ. Бүртгэсний дараа KPI, сургалт, тайлан энд автоматаар харагдана.';
-    btn = isAdmin();
+    if (isAdmin()) {
+      msg = 'Ажилтан бүртгэгдээгүй байна';
+      hint = 'Контент удирдлага → Хэрэглэгчид хэсгээс ажилтан нэмнэ. Бүртгэсний дараа KPI, сургалт, тайлан энд автоматаар харагдана.';
+      btn = true;
+    } else {
+      /* Ажилтанд «бүртгэл нэм» гэж хэлэх нь утгагүй — тэр эрхгүй.
+         Жинхэнэ шалтгаан нь өөрийнх нь бүртгэл олдоогүйд байна. */
+      icon = 'ti-user-question';
+      msg = 'Таны бүртгэл олдсонгүй';
+      hint = 'Таны хаяг (' + esc((SESSION && SESSION.email) || '') + ') ажилтны бүртгэлтэй холбогдоогүй байна. ' +
+        'ХАБЭА ажилтанд хандаж бүртгэлээ шалгуулна уу.';
+    }
   } else if (el.state === 'ok') {
     msg = 'Ажилтны жагсаалт үүсээгүй';
     hint = 'Системд ' + el.users + ' хэрэглэгч байна. Хуудсыг дахин ачаалж (Ctrl+Shift+R) үзнэ үү.';
