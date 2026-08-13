@@ -1024,12 +1024,32 @@ async function showMain(user){
   try{
     const snap=await db.collection('users').doc(user.uid).get();
     if(!snap.exists){
-      await db.collection('users').doc(user.uid).set({
-        email:user.email, uid:user.uid,
-        role:'employee', isActive:true,
-        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
-        totalSiteTime:0
-      });
+      /* ⚠ ЭНД ШУУД ШИНЭ БАРИМТ ҮҮСГЭЖ БОЛОХГҮЙ.
+         Ажилтны жинхэнэ бүртгэл админаар үүсгэгдэхдээ ӨӨР id (авто-id) авсан
+         байж болно. Тэр тохиолдолд uid-гаар шинэ баримт үүсгэвэл овог, нэр,
+         албан тушаал, албагүй ХООСОН давхардал бий болж, ажилтны жагсаалт
+         эвдэрч харагдана. Эхлээд и-мэйлээр нь хайж, олдвол зөвхөн uid-г нь
+         нөхөж холбоно (бусад талбарт хүрэхгүй). */
+      let linked=false;
+      const em=(user.email||'').toLowerCase();
+      for(const val of [user.email, em]){
+        if(linked || !val) continue;
+        try{
+          const q=await db.collection('users').where('email','==',val).limit(1).get();
+          if(!q.empty){
+            await q.docs[0].ref.set({ uid:user.uid }, { merge:true });   // merge — юу ч дарж бичихгүй
+            linked=true;
+          }
+        }catch(e){ /* индекс/эрх байхгүй — доор шинээр үүсгэнэ */ }
+      }
+      if(!linked){
+        await db.collection('users').doc(user.uid).set({
+          email:user.email, uid:user.uid,
+          role:'employee', isActive:true,
+          createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+          totalSiteTime:0
+        });
+      }
     }
   } catch(e){ /* fall through */ }
 
