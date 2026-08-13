@@ -43,7 +43,19 @@ var ADMIN_EMAILS = ['buynt666@gmail.com'];
 function isAdmin() { return SESSION && SESSION.role === 'admin'; }
 function isDeptHead() { return SESSION && SESSION.role === 'depthead'; }
 function isEmp() { return SESSION && SESSION.role === 'employee'; }
-function myEmp() { return SESSION && SESSION.empId ? DB.employees.filter(function (e) { return e.id === SESSION.empId; })[0] : null; }
+/* ⚠ Нэвтэрсэн хүнийг ЗӨВХӨН empId-ээр хайж болохгүй. Ажилтны бүртгэл нь
+   users цуглуулгаас ачаалалт бүрд дахин үүсдэг тул id нь өөрчлөгдөж болно.
+   Системийн бусад хэсэг бүгд uid → и-мэйл → empId гэсэн дарааллаар хайдаг;
+   myEmp зөвхөн empId-ээр хайдаг байсан тул «Таны мэдээлэл олдсонгүй» гарч,
+   ажилтанд өөрийн гүйцэтгэл ч, эрсдэл ч харагдахгүй байв. */
+function myEmp() {
+  if (!SESSION) return null;
+  var list = DB.employees || [], m = null;
+  if (SESSION.uid)   m = list.filter(function (e) { return e.uid && e.uid === SESSION.uid; })[0];
+  if (!m && SESSION.email) m = list.filter(function (e) { return _sameEmail(e.email, SESSION.email); })[0];
+  if (!m && SESSION.empId) m = list.filter(function (e) { return e.id === SESSION.empId; })[0];
+  return m || null;
+}
 
 /* Нэвтрэх эрхийн 3 түвшин:
    - admin (ХАБЭА ажилтан): бүгдийг хардаг, удирддаг
@@ -4772,7 +4784,10 @@ function riskAcronymMatch(a, b) {
   var sh = shortOne.toUpperCase();
   if (ac === sh) return true;
   if (ac.indexOf(sh) === 0) return true;          // ИТА ⊂ ИТАХ гэх мэт
-  if (sh.indexOf(ac) === 0 && ac.length >= 2) return true;
+  /* ⚠ Урт нэрийн акроним нь товчлолын ЭХЛЭЛ байх тохиолдол — маш болгоомжтой.
+     ac ≥ 3 үсэг байхыг шаардана. Эс бөгөөс «Хангамжийн алба»(ХА) нь «ХАБЭА»-д
+     таарч, хоёр огт өөр алба нэгдэж, эрсдэл буруу хүнд харагдана. */
+  if (ac.length >= 3 && sh.indexOf(ac) === 0) return true;
   return false;
 }
 
@@ -4788,10 +4803,32 @@ function riskNameMatch(a, b) {
 }
 /* Админы гараар тохируулсан зураглал: эрсдэлийн файлын алба → системийн алба */
 function riskDeptMap() { return (DB.settings && DB.settings.riskDeptMap) || {}; }
+
+/* ── Файлын «алба» багана дахь АЛБА БИШ утгууд ──────────────────────────
+   Эрсдэлийн файлууд фолдероор ирдэг тул фолдерын нэр шууд «алба» болж
+   орсон тохиолдол бий. Датаг нь хөндөхгүйгээр эндээс залруулна. */
+/* Фолдерын нэр албаных биш байсан тохиолдлууд:
+   • «Санхүү болсон»  — нэрэнд тэмдэглэл наалдсан → Санхүү
+   • «Ажилбарын эрсдэлийн үнэлгээ» — автокран, өндөрт гагнуур, өндрийн
+     цэвэрлэгээ. Эдгээрийг ГҮЙЦЭТГЭДЭГ нь Инженер техникийн алба
+     (файлын хяналтын багана «ИТА-гийн ДБХ ахлах инженер» гэж бичсэн).
+     ХАБЭА нь гүйцэтгэгч биш, хянагч тул эзэн алба нь ИТА. */
+var RISK_DEPT_ALIAS = {
+  'санхүү болсон': 'Санхүү',
+  'ажилбарын эрсдэлийн үнэлгээ': 'Инженер техникийн алба'
+};
+/* Эдгээр файлд «албан тушаал» багананд АЖЛЫН НЭР бичигдсэн (албан тушаал биш)
+   тул албан тушаалаар шүүвэл хэнд ч харагдахгүй — албаны бүх ажилтанд хамаарна */
+var RISK_POS_ANY = ['ажилбарын эрсдэлийн үнэлгээ'];
+function riskDeptKey(d) { return String(d || '').trim().toLowerCase(); }
+function riskPosIsAny(d) { return RISK_POS_ANY.indexOf(riskDeptKey(d)) >= 0; }
+function riskDeptFix(d) { return RISK_DEPT_ALIAS[riskDeptKey(d)] || d; }
+
 function riskSameDept(a, b) {
   if (!a || !b) return true;              // аль нэг нь тодорхойгүй бол хориглохгүй
   var mapped = riskDeptMap()[String(a).trim()];
   if (mapped) return String(mapped).trim() === String(b).trim();   // гараар заасан нь давамгайлна
+  a = riskDeptFix(a);
   if (String(a).trim() === String(b).trim()) return true;
   return riskNameMatch(a, b);
 }
@@ -4887,6 +4924,9 @@ function riskAppliesTo(r, emp) {
   if (r.dept && emp.dept && !riskSameDept(r.dept, emp.dept)) return false;
   var ids = (r.empIds || []);
   if (ids.length) return ids.indexOf(emp.id) >= 0 || ids.indexOf(emp.uid) >= 0;
+  /* Ажилбарын үнэлгээнд «албан тушаал» гэж ажлын нэр (автокран, гагнуур …)
+     бичигдсэн байдаг тул албан тушаалаар шүүвэл хэнд ч харагдахгүй болно */
+  if (riskPosIsAny(r.dept)) return true;
   var pos = riskPositions(r);
   if (!pos.length) return true;                    // ажлын байр заагаагүй = албаны бүх ажилтанд
   var mine = String(emp.role || emp.pos || '').trim();
