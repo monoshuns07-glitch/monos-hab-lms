@@ -863,8 +863,7 @@ body{
     </div>
     <button class="btn btn-secondary" id="bulkUserBtn">📥 Excel-ээс оруулах</button>
     <button class="btn btn-primary" id="addUserBtn">➕ Ажилтан нэмэх</button>
-    <button class="btn" id="sendCredsBtn" style="background:rgba(0,229,255,.12);color:var(--cyan);border:1px solid rgba(0,229,255,.25)">🔑 Сэргээх холбоос илгээх</button>
-    <button class="btn" id="purgePwdBtn" onclick="purgePasswords()" title="users цуглуулгад ил хадгалагдсан нууц үгийг бүрмөсөн устгана" style="background:rgba(245,158,11,.14);color:#F59E0B;border:1px solid rgba(245,158,11,.3)">🔒 Нууц үгийг цэвэрлэх</button>
+    <button class="btn" id="sendCredsBtn" style="background:rgba(0,229,255,.12);color:var(--cyan);border:1px solid rgba(0,229,255,.25)">📧 Login илгээх</button>
     <button class="btn" id="emailjsSettingsBtn" title="EmailJS тохиргоо" style="background:rgba(255,255,255,.04);color:var(--muted);border:1px solid rgba(255,255,255,.08);padding:0 12px">⚙️</button>
     <button class="btn" id="deleteAllUsersBtn" style="background:rgba(227,6,19,.12);color:#FF6B6B;border:1px solid rgba(227,6,19,.25)">🗑 Firestore устгах</button>
     <button class="btn" id="deleteAllAuthBtn" style="background:rgba(227,6,19,.2);color:#FF4060;border:1px solid rgba(227,6,19,.4)">🔥 Auth+Firestore бүгд устгах</button>
@@ -1938,19 +1937,15 @@ function renderUsersTable(){
     content.innerHTML=`<div class="empty"><h3>${allUsers.length===0?'Ажилтан бүртгэгдээгүй байна':'Үр дүн олдсонгүй'}</h3><p>${allUsers.length===0?'Ажилтан нэмэх товч дарна уу':'Өөр хаяг оролдоно уу'}</p></div>`;
     return;
   }
-  const allEligibleSelected = filteredUsers.length > 0 && filteredUsers.filter(u=>u.email).every(u=>_credSelected.has(u.id));
+  const allEligibleSelected = filteredUsers.length > 0 && filteredUsers.filter(u=>u.email&&u.password).every(u=>_credSelected.has(u.id));
   content.innerHTML=`<table class="user-table"><thead><tr><th style="width:32px"><input type="checkbox" id="userSelectAll" ${allEligibleSelected?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)"></th><th>#</th><th>Овог</th><th>Нэр</th><th>Албан тушаал</th><th>Алба</th><th>Email</th><th>Нууц үг</th><th>Огноо</th><th>Цаг</th><th></th></tr></thead><tbody>${filteredUsers.map((u,i)=>{
     const dt=(u.createdAt?.toDate?.()||u.created_at?.toDate?.())?.toLocaleDateString('mn-MN')||'—';
     const secs=u.totalSiteTime||0;
     const hrs=Math.floor(secs/3600),mins=Math.floor((secs%3600)/60);
     const timeStr=hrs>0?`${hrs}ц ${mins}м`:secs>0?`${mins}м`:'—';
-    /* ⚠ НУУЦ ҮГИЙГ ХАРУУЛАХГҮЙ. Firebase нууц үгийг өөрөө хэшлэн хадгалдаг тул
-       энд ил хадгалах/харуулах шаардлагагүй. Оронд нь ажилтан руу сэргээх
-       холбоос илгээнэ — тэр өөрөө шинэ нууц үгээ тавина. */
-    const pwdCell = u.email
-      ? `<button class="pwd-btn" data-reset="${escapeHtml(u.email)}" onclick="sendResetLink(this)" title="Ажилтанд нууц үг сэргээх холбоос илгээнэ" style="background:rgba(255,255,255,.04);border:1px solid var(--input-border);color:var(--muted);padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer">🔑 Сэргээх</button>`
-      : `<span style="color:var(--muted);font-size:11px">—</span>`;
-    const canSelect = !!u.email;
+    const pwd=u.password||'';
+    const pwdCell=pwd?`<button class="pwd-btn" data-pwd="${escapeHtml(pwd)}" onclick="togglePwd(this)" style="background:rgba(255,255,255,.04);border:1px solid var(--input-border);color:var(--muted);padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-family:monospace">••••••</button>`:`<span style="color:var(--muted);font-size:11px">—</span>`;
+    const canSelect = u.email && u.password;
     const checked = _credSelected.has(u.id);
     const cb = canSelect
       ? `<input type="checkbox" class="user-cb" data-uid="${u.id}" ${checked?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--cyan)">`
@@ -1980,7 +1975,7 @@ function renderUsersTable(){
     });
   });
   document.getElementById('userSelectAll')?.addEventListener('change', e => {
-    const eligible = filteredUsers.filter(u => u.email);
+    const eligible = filteredUsers.filter(u => u.email && u.password);
     if (e.target.checked) eligible.forEach(u => _credSelected.add(u.id));
     else eligible.forEach(u => _credSelected.delete(u.id));
     renderUsersTable();
@@ -2001,33 +1996,26 @@ window.togglePwd=function(btn){
   else{ btn.textContent='••••••'; btn.style.color='var(--muted)'; }
 }
 window.deleteUser = async id=>{
-  if(!confirm('Энэ ажилтныг устгахдаа итгэлтэй байна уу?\n\nСистемийн бүртгэл (Firestore) устна. Ажилтан цаашид системд орж чадахгүй болно.')) return;
+  if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёроос ХОЁУЛАНГ устгана.')) return;
   try{
-    /* Auth бүртгэлийг устгахын тулд өмнө нь ил хадгалсан нууц үгээр нь нэвтэрдэг
-       байсан. Нууц үгийг ил хадгалахаа больсон тул энэ арга ажиллахгүй.
-       Firestore-оос устгахад ажилтан системд орох боломжгүй болно (апп users
-       баримтыг шалгадаг). Auth бүртгэлийг бүрмөсөн устгах шаардлагатай бол
-       Firebase Console → Authentication хэсгээс гараар устгана. */
-    let authLeft = false;
+    // 1. Auth устгах — сервергүй арга: хадгалсан нууц үгээр нь secondary app-д нэвтэрч устгана
     const u=(allUsers||[]).find(x=>x.id===id)||{};
-    if(u.email && u.password){
+    if(u.email&&u.password){
       try{
         const cred=await secondaryAuth.signInWithEmailAndPassword(u.email,u.password);
         await cred.user.delete();
       }catch(authErr){
-        authLeft = true; console.warn('Auth delete skipped:',authErr.message);
+        console.warn('Auth delete skipped:',authErr.message);
       }finally{
         try{ await secondaryAuth.signOut(); }catch(e2){}
       }
-    } else if(u.email){ authLeft = true; }
-
+    }
+    // 2. Firestore устгах
     await Promise.all([
       db.collection('users').doc(id).delete(),
       db.collection('allowed_users').doc(id).delete().catch(()=>{})
     ]);
-    toast(authLeft
-      ? 'Бүртгэл устлаа. Нэвтрэх эрхийг нь бүрмөсөн хаахын тулд Firebase Console → Authentication-аас ' + (u.email||'') + ' -г устгана уу.'
-      : 'Ажилтан устгагдлаа', 'success');
+    toast('Ажилтан устгагдлаа','success');
     loadUsers();
   }
   catch(e){ toast('Алдаа: '+e.message,'error'); }
@@ -2058,9 +2046,7 @@ document.getElementById('deleteAllAuthBtn').addEventListener('click',async()=>{
     if(!allUsers.length){ const s=await db.collection('users').get(); allUsers=s.docs.map(d=>({id:d.id,...d.data()})); }
     let authDel=0, fsDel=0;
     for(const u of allUsers){
-      /* Нууц үг ил хадгалагдахаа больсон тул Auth-аас устгах боломжгүй.
-         Firestore-оос устгахад системд орох эрх хаагдана. */
-      if(u.email && u.password){
+      if(u.email&&u.password){
         try{
           const cred=await secondaryAuth.signInWithEmailAndPassword(u.email,u.password);
           await cred.user.delete(); authDel++;
@@ -2128,88 +2114,61 @@ document.getElementById('emailjsSettingsBtn')?.addEventListener('click',()=>{
 // Selection state for credentials send
 let _credSelected = new Set();
 
-/* ══ ИЛ ХАДГАЛАГДСАН НУУЦ ҮГИЙГ ЦЭВЭРЛЭХ ══
-   users цуглуулгад нууц үг уншигдах хэлбэрээр хадгалагдаж байсан. Firestore
-   дүрэм нь "нэвтэрсэн хэн ч users уншина" гэсэн тул ажилтан бүр бусдын нууц
-   үгийг харах боломжтой байв. Firebase Auth нууц үгийг өөрөө хэшлэн хадгалдаг
-   тул энэ хуулбар огт шаардлагагүй — бүрмөсөн устгана. */
-async function purgePasswords(){
-  if(!allUsers.length){
-    const s=await db.collection('users').get();
-    allUsers=s.docs.map(d=>({id:d.id,...d.data()}));
-  }
-  const has = allUsers.filter(u=>u.password!==undefined && u.password!==null);
-  if(!has.length){ toast('Ил хадгалсан нууц үг олдсонгүй — аль хэдийн цэвэр байна','success'); return; }
-  if(!confirm(
-    `${has.length} ажилтны нууц үг ил хадгалагдсан байна.\n\n`+
-    `Тэдгээрийг Firestore-оос БҮРМӨСӨН устгах уу?\n\n`+
-    `• Ажилтнуудын нэвтрэлт ТАСРАХГҮЙ — нууц үг нь Firebase Auth дотор хэвээрээ\n`+
-    `• Мартсан хүнд «🔑 Сэргээх» товчоор холбоос илгээнэ\n`+
-    `• Энэ үйлдлийг буцаах боломжгүй`
-  )) return;
-  const btn=document.getElementById('purgePwdBtn');
-  if(btn){ btn.disabled=true; btn.innerHTML='<span class="spinner-sm"></span>Цэвэрлэж байна…'; }
-  let done=0, err=0;
-  for(let i=0;i<has.length;i+=400){
-    const batch=db.batch();
-    has.slice(i,i+400).forEach(u=>{
-      batch.update(db.collection('users').doc(u.id), {
-        password: firebase.firestore.FieldValue.delete()
-      });
-    });
-    try{ await batch.commit(); done+=Math.min(400,has.length-i); }
-    catch(e){ err++; console.error('[purge]', e); }
-    if(btn) btn.innerHTML=`<span class="spinner-sm"></span>${done}/${has.length}…`;
-  }
-  if(btn){ btn.disabled=false; btn.innerHTML='🔒 Нууц үгийг цэвэрлэх'; }
-  if(err) toast(`${done} цэвэрлэгдсэн, ${err} багц алдаатай. Дахин оролдоно уу.`,'error');
-  else toast(`✓ ${done} ажилтны ил нууц үг бүрмөсөн устлаа`,'success');
-  loadUsers();
-}
-
-/* ══ НУУЦ ҮГ СЭРГЭЭХ ХОЛБООС ══
-   Өмнө нь ажилтны нууц үгийг ил хадгалж, и-мэйлээр буцаан илгээдэг байсан.
-   Одоо Firebase өөрөө сэргээх холбоос илгээнэ — ажилтан шинэ нууц үгээ
-   өөрөө тавина. Систем нууц үгийг мэдэх шаардлагагүй болно. */
-async function sendResetLink(btn){
-  const email = btn && btn.getAttribute('data-reset');
-  if(!email) return;
-  const old = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '…';
-  try{
-    await auth.sendPasswordResetEmail(email);
-    btn.innerHTML = '✓ Илгээсэн';
-    toast(email + ' рүү сэргээх холбоос илгээлээ','success');
-  }catch(e){
-    btn.innerHTML = old; btn.disabled = false;
-    toast('Илгээж чадсангүй: ' + (e.code||e.message),'error');
-  }
-}
-
 document.getElementById('sendCredsBtn').addEventListener('click',async()=>{
-  const targets = allUsers.filter(u => _credSelected.has(u.id) && u.email);
+  const targets = allUsers.filter(u => _credSelected.has(u.id) && u.email && u.password);
   if(targets.length===0){
     toast('Хүснэгтээс ажилтан сонгоно уу (зүүн талын checkbox)','error');
     return;
   }
-  if(!confirm(`${targets.length} ажилтанд НУУЦ ҮГ СЭРГЭЭХ холбоос илгээх үү?\n\nАжилтан бүр и-мэйлээрээ холбоос хүлээн авч, шинэ нууц үгээ өөрөө тавина.`)) return;
+  // Check EmailJS SDK loaded
+  if(typeof emailjs === 'undefined' || !emailjs?.send){
+    toast('EmailJS SDK ачаалагдаагүй байна. Хуудсаа дахин ачаалаад үзнэ үү.','error');
+    console.error('emailjs is undefined or send method missing');
+    return;
+  }
+  const svcId=localStorage.getItem('emailjs_service')||'';
+  const tplId=localStorage.getItem('emailjs_template_creds')||localStorage.getItem('emailjs_template')||'';
+  const pubKey=localStorage.getItem('emailjs_key')||'';
+  if(!svcId||!tplId||!pubKey){ toast('EmailJS тохиргоо хийгдээгүй. ⚙️ дарж тохируулна уу.','error'); return; }
+  console.log('[EmailJS] service:', svcId, 'template:', tplId, 'key:', pubKey.slice(0,4)+'...');
+  if(!confirm(`${targets.length} ажилтанд login email/password илгээх үү?`)) return;
   const btn=document.getElementById('sendCredsBtn');
   btn.disabled=true;
+  try { emailjs.init({ publicKey: pubKey }); }
+  catch(e){ console.error('emailjs.init failed:', e); toast('EmailJS init: '+e.message,'error'); btn.disabled=false; return; }
   let sent=0,failed=0,lastErr='';
+  const siteUrl=window.location.origin;
   for(let i=0;i<targets.length;i++){
     const u=targets[i];
-    try{ await auth.sendPasswordResetEmail(u.email); sent++; }
-    catch(e){ failed++; lastErr=e.code||e.message||String(e); console.error('[reset] '+u.email, e); }
+    const params = {
+      to_email:u.email,
+      to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
+      login_email:u.email,
+      login_password:u.password,
+      site_url:siteUrl
+    };
+    try{
+      const res = await emailjs.send(svcId,tplId,params);
+      console.log(`[EmailJS] sent to ${u.email}:`, res.status, res.text);
+      sent++;
+    } catch(e){
+      failed++;
+      lastErr=e.text||e.message||(typeof e==='object'?JSON.stringify(e):String(e));
+      console.error(`[EmailJS] failed for ${u.email}:`, e, 'params:', params);
+    }
     btn.innerHTML = `<span class="spinner-sm"></span>${i+1}/${targets.length}...`;
   }
-  if(sent===0 && failed>0) toast(`✗ Бүгд (${failed}) илгээгдсэнгүй. ${lastErr.slice(0,160)}`,'error');
-  else toast(`✓ ${sent} сэргээх холбоос илгээгдлээ${failed>0?` · ✗ ${failed} алдаа`:''}`,sent>0?'success':'error');
+  if(sent===0 && failed>0){
+    toast(`✗ Бүгд (${failed}) илгээгдсэнгүй. Алдаа: ${lastErr.slice(0,180)}`,'error');
+  } else {
+    toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа`:''}`,sent>0?'success':'error');
+  }
   btn.disabled=false;
   updateSendCredsBtn();
 });
 
 function renderCredsList(filterText){
-  const eligible = allUsers.filter(u=>u.email);
+  const eligible = allUsers.filter(u=>u.email&&u.password);
   const q = (typeof filterText==='string' ? filterText : (document.getElementById('credsSearch')?.value||'')).trim().toLowerCase();
   const filtered = q ? eligible.filter(u =>
     (u.email||'').toLowerCase().includes(q) ||
@@ -2256,7 +2215,7 @@ function renderCredsList(filterText){
   document.getElementById('credsCancel')?.addEventListener('click', ()=>modal.classList.remove('show'));
   document.getElementById('credsSearch')?.addEventListener('input', ()=>renderCredsList());
   document.getElementById('credsSelectAll')?.addEventListener('click', ()=>{
-    allUsers.filter(u=>u.email).forEach(u=>_credSelected.add(u.id));
+    allUsers.filter(u=>u.email&&u.password).forEach(u=>_credSelected.add(u.id));
     renderCredsList();
   });
   document.getElementById('credsClearAll')?.addEventListener('click', ()=>{
@@ -2264,20 +2223,33 @@ function renderCredsList(filterText){
     renderCredsList();
   });
   document.getElementById('credsSend')?.addEventListener('click', async ()=>{
-    const targets = allUsers.filter(u=>_credSelected.has(u.id) && u.email);
+    const targets = allUsers.filter(u=>_credSelected.has(u.id) && u.email && u.password);
     if(targets.length===0){ toast('Хэрэглэгч сонгоогүй','error'); return; }
-    if(!confirm(`${targets.length} ажилтанд НУУЦ ҮГ СЭРГЭЭХ холбоос илгээх үү?`)) return;
+    if(!confirm(`${targets.length} ажилтанд login email/password илгээх үү?`)) return;
+    const svcId=localStorage.getItem('emailjs_service')||'';
+    const tplId=localStorage.getItem('emailjs_template_creds')||localStorage.getItem('emailjs_template')||'';
+    const pubKey=localStorage.getItem('emailjs_key')||'';
     const sendBtn=document.getElementById('credsSend');
     sendBtn.disabled=true;
+    emailjs.init({ publicKey: pubKey });
     let sent=0,failed=0,lastErr='';
+    const siteUrl=window.location.origin;
     for(let i=0;i<targets.length;i++){
       const u=targets[i];
-      try{ await auth.sendPasswordResetEmail(u.email); sent++; }
-      catch(e){ failed++; lastErr=e.code||e.message||String(e); }
+      try{
+        await emailjs.send(svcId,tplId,{
+          to_email:u.email,
+          to_name:`${u.lastName||''} ${u.firstName||''}`.trim()||u.email,
+          login_email:u.email,
+          login_password:u.password,
+          site_url:siteUrl
+        });
+        sent++;
+      } catch(e){ failed++; lastErr=e.text||e.message||String(e); }
       sendBtn.innerHTML = `<span class="spinner-sm"></span>${i+1}/${targets.length}...`;
     }
-    toast(`✓ ${sent} сэргээх холбоос илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`,sent>0?'success':'error');
-    sendBtn.disabled=false; sendBtn.innerHTML='🔑 Сэргээх холбоос илгээх';
+    toast(`✓ ${sent} email илгээгдлээ${failed>0?` · ✗ ${failed} алдаа${lastErr?' ('+lastErr+')':''}`:''}`,sent>0?'success':'error');
+    sendBtn.disabled=false; sendBtn.innerHTML='📧 Илгээх';
     modal.classList.remove('show');
   });
 })();
