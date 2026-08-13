@@ -801,9 +801,16 @@ function colQueries(key) {
     if (isAdmin() || !SESSION) return [c];
     var uid = SESSION.uid, dept = SESSION.dept;
 
+    /* ⚠ ЭРСДЭЛ — сервер талд албаар БҮҮ шүү.
+       Эрсдэлийн файлд алба «ИТА» гэж бичигдсэн бол системд «Инженер техникийн
+       алба» байдаг. Firestore-т яг таг тэнцүүгээр шүүвэл 0 бичлэг ирж, бүдэг
+       тааруулалт (riskSameDept) ажиллах боломжгүй болно. Тиймээс бүгдийг татаад
+       тааруулалтыг хөтөч дээр хийнэ (эрсдэл нь хязгаарлагдмал тоотой). */
+    if (key === 'risks') return [c];
+
     if (isDeptHead()) {
       if (!dept) return [c];
-      if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks', 'risks'].indexOf(key) >= 0) {
+      if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks'].indexOf(key) >= 0) {
         return [c.where('dept', '==', dept)];
       }
       /* Албатай холбоогүй, ХУВИЙН бүртгэлүүд — зөвхөн өөрийнх
@@ -824,7 +831,6 @@ function colQueries(key) {
       case 'notifications': return [c.where('uid', '==', uid)];
       case 'incidents':     return [c.where('uid', '==', uid)];
       case 'violations':    return [c.where('empId', '==', uid)];
-      case 'risks':         return dept ? [c.where('dept', '==', dept)] : [c];
       case 'tasks':
         var qs = [c.where('empIds', 'array-contains', uid)];
         if (dept) qs.push(c.where('dept', '==', dept));
@@ -867,7 +873,13 @@ async function loadCols() {
       return { k: k, arr: ok ? arr : null };
     }).catch(function () { return { k: k, arr: null }; });
   }));
-  res.forEach(function (r) { if (r.arr) DB[r.k] = r.arr; });
+  res.forEach(function (r) {
+    if (!r.arr) return;                                        // уншилт нурсан — бүү хөндөх
+    /* Хоосон ирсэн ч санах ойд/үндсэн баримтад дата байвал БҮҮ ДАР
+       (шилжилтийн үед хуучин дата алдагдахаас хамгаална) */
+    if (!r.arr.length && Array.isArray(DB[r.k]) && DB[r.k].length) return;
+    DB[r.k] = r.arr;
+  });
   snapshotCols();
 
   /* Уншиж чадаагүй цуглуулга байвал ХЭЛНЭ — дата чимээгүй алга болохоос сэргийлнэ */
@@ -4887,7 +4899,8 @@ function risksForView() {
   if (isAdmin()) return all;
   if (isDeptHead()) {
     var d = SESSION && SESSION.dept;
-    return d ? all.filter(function (r) { return r.dept === d; }) : all;
+    /* Яг таг тэнцүү биш — «ИТА» ↔ «Инженер техникийн алба» зэргийг тааруулна */
+    return d ? all.filter(function (r) { return riskSameDept(r.dept, d); }) : all;
   }
   var me = myEmp();
   if (!me) return [];
