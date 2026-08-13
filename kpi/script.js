@@ -5513,23 +5513,131 @@ function riskOpenDetail(id) {
       '<div style="font-size:11.5px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.3px">' + t + '</div>' +
       '<div style="font-size:' + (big ? '14.5px' : '13.5px') + ';color:#1E293B;margin-top:3px;line-height:1.6">' + esc(v) + '</div></div>';
   };
-  var html =
-    '<div style="background:' + L.bg + ';border:1px solid ' + L.bd + ';border-radius:12px;padding:14px;margin-bottom:12px;display:flex;align-items:center;gap:14px">' +
-    '<div style="text-align:center"><div style="font-size:32px;font-weight:900;color:' + L.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + sc + '</div>' +
-    '<div style="font-size:12px;font-weight:800;color:' + L.color + ';margin-top:3px">' + L.name + '</div></div>' +
-    '<div style="flex:1;font-size:12.5px;color:#475569;line-height:1.6">' +
-    'Магадлал <b>' + clamp(Math.round(_f(r.prob, 0)), 0, 5) + '</b> × Хүндрэл <b>' + clamp(Math.round(_f(r.sev, 0)), 0, 5) + '</b><br>' +
-    'Алба: <b>' + esc(r.dept || '—') + '</b></div></div>' +
-    row('Ажлын байр / үйл ажиллагаа', r.process) +
-    row('Аюулын эх үүсвэр', r.hazard, true) +
-    row('Шалтгаан', r.cause) +
-    row('Үр дагавар', r.consequence) +
-    row('Хамаарах албан тушаал', (r.positions || []).join(', ') || 'Бүх ажилтан') +
-    row('Одоогийн хяналт', r.controls) +
-    row('Нэмэлт арга хэмжээ', r.actions) +
-    row('Хариуцагч', r.responsible) +
-    row('Хугацаа', r.due);
-  buildModal('Эрсдэлийн дэлгэрэнгүй', elc('div', 'modal-info', html), { width: '520px' });
+  var html = riskDetailHTML(r);
+  buildModal('Эрсдэлийн дэлгэрэнгүй', elc('div', 'modal-info', html), { width: '580px' });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН ДЭЛГЭРЭНГҮЙ — ажилтанд ойлгомжтой байдлаар
+   ⚠ Файлд байгаа агуулгыг ХАСАХГҮЙ, ШИНЭ АГУУЛГА ЗОХИОХГҮЙ.
+   Гарчиг, бүтэц, өнгө нь минийх; бичвэр бүр эх датагаас ирнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+function riskFactBox(icon, label, value, tone) {
+  if (value === undefined || value === null || value === '') return '';
+  return '<div style="display:flex;gap:11px;padding:11px 0;border-bottom:1px solid #F1F5F9">' +
+    '<span style="flex:0 0 22px;font-size:15px;line-height:1.4;text-align:center">' + icon + '</span>' +
+    '<span style="flex:1;min-width:0">' +
+    '<span style="display:block;font-size:11px;font-weight:800;color:#94A3B8;letter-spacing:.4px;text-transform:uppercase">' + label + '</span>' +
+    '<span style="display:block;font-size:14px;color:' + (tone || '#1E293B') + ';margin-top:3px;line-height:1.65;white-space:pre-wrap">' + esc(String(value)) + '</span>' +
+    '</span></div>';
+}
+function riskSectionHead(t, sub) {
+  return '<div style="margin:18px 0 2px">' +
+    '<div style="font-size:12.5px;font-weight:900;color:#334155;letter-spacing:.3px">' + t + '</div>' +
+    (sub ? '<div style="font-size:11.5px;color:#94A3B8;margin-top:1px">' + sub + '</div>' : '') + '</div>';
+}
+/* Гишүүдийн өгсөн оноог жижиг тэмдэглэгээгээр */
+function riskScoreChips(vals, avgVal, label) {
+  var v = (vals || []).filter(function (x) { return x > 0; });
+  var chips = v.map(function (x) {
+    return '<span style="display:inline-block;min-width:20px;text-align:center;background:#F1F5F9;color:#475569;' +
+      'border-radius:5px;padding:1px 5px;font-size:11px;font-weight:700;margin-right:3px">' + x + '</span>';
+  }).join('');
+  return '<div style="display:flex;align-items:center;gap:9px;padding:7px 0">' +
+    '<span style="flex:0 0 118px;font-size:12px;color:#64748B">' + label + '</span>' +
+    '<span style="flex:1;min-width:0">' + (chips || '<span style="color:#CBD5E1;font-size:12px">—</span>') + '</span>' +
+    '<span style="flex:0 0 46px;text-align:right;font-size:13.5px;font-weight:800;color:#1E293B">' +
+    (avgVal ? avgVal : '—') + '</span></div>';
+}
+
+function riskDetailHTML(r) {
+  var L = riskLevel(r), sc = riskScore(r);
+  var pos = (r.position || (r.positions || []).join(', ') || '').trim();
+  var H = '';
+
+  /* ── Тэргүүн хэсэг: юу вэ, хэр ноцтой вэ ── */
+  H += '<div style="background:' + L.bg + ';border:1.5px solid ' + L.bd + ';border-radius:14px;padding:15px;margin-bottom:4px">' +
+    '<div style="display:flex;align-items:flex-start;gap:14px">' +
+    '<div style="text-align:center;flex:0 0 62px">' +
+    '<div style="font-size:30px;font-weight:900;color:' + L.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + sc + '</div>' +
+    '<div style="display:inline-block;margin-top:5px;background:' + L.color + ';color:#fff;border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:800">' + L.code + '</div>' +
+    '</div>' +
+    '<div style="flex:1;min-width:0">' +
+    '<div style="font-size:15.5px;font-weight:800;color:#1E293B;line-height:1.45">' + esc(r.hazard || 'Нэргүй эрсдэл') + '</div>' +
+    '<div style="font-size:12.5px;font-weight:700;color:' + L.color + ';margin-top:5px">Эрсдэлийн зэрэг: ' + esc(L.name) + '</div>' +
+    (pos ? '<div style="font-size:12px;color:#64748B;margin-top:4px">👤 ' + esc(pos) + '</div>' : '') +
+    (r.dept ? '<div style="font-size:12px;color:#64748B;margin-top:2px">🏢 ' + esc(r.dept) + '</div>' : '') +
+    '</div></div></div>';
+
+  /* ── Энэ аюул хаана, хэзээ, яагаад ── */
+  var s1 = riskFactBox('⚙️', 'Ямар ажил хийж байхад', r.process) +
+    riskFactBox('📍', 'Аюулын байршил', r.location) +
+    riskFactBox('❓', 'Шалтгаан', r.cause) +
+    riskFactBox('🏷️', 'Ангилал', r.category);
+  if (s1) H += riskSectionHead('ЭНЭ АЮУЛ ЮУНААС ҮҮСДЭГ ВЭ') + s1;
+
+  /* ── Онооны задаргаа — ЗӨВХӨН тулгагдсан үед томьёог харуулна ── */
+  var hasBreak = (r.pv && r.pv.length) || (r.nv && r.nv.length) || (r.hv && r.hv.length);
+  if (hasBreak) {
+    H += riskSectionHead('ҮНЭЛГЭЭ ЯАЖ ГАРСАН БЭ',
+      r.rOk ? 'Гишүүд тус тусдаа оноо өгч, дунджаар нь тооцсон'
+            : 'Үнэлгээнд оролцсон гишүүдийн өгсөн оноо');
+    H += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;margin-top:6px">' +
+      '<div style="display:flex;font-size:10.5px;font-weight:800;color:#94A3B8;letter-spacing:.3px;padding-bottom:4px;border-bottom:1px solid #E2E8F0">' +
+      '<span style="flex:0 0 118px">ҮЗҮҮЛЭЛТ</span><span style="flex:1">ГИШҮҮДИЙН ОНОО</span><span style="flex:0 0 46px;text-align:right">ДУНДАЖ</span></div>' +
+      riskScoreChips(r.pv, r.p, 'Магадлал (P)') +
+      riskScoreChips(r.nv, r.n, 'Ослын үр дагавар (N)') +
+      riskScoreChips(r.hv, r.h, 'Гишүүдийн санал (H)') +
+      (r.rOk
+        ? '<div style="border-top:1px solid #E2E8F0;padding-top:8px;margin-top:4px;text-align:center;font-size:13px;color:#334155">' +
+          '<b>' + r.p + '</b> × <b>' + r.n + '</b> × <b>' + r.h + '</b> = ' +
+          '<b style="color:' + L.color + ';font-size:15px">' + sc + '</b></div>'
+        : '<div style="border-top:1px solid #E2E8F0;padding-top:8px;margin-top:4px;text-align:center;font-size:12.5px;color:#64748B">' +
+          'Эрсдэлийн зэрэг: <b style="color:' + L.color + ';font-size:15px">' + sc + '</b></div>') +
+      '</div>';
+  }
+
+  /* ── Юу хийх ёстой ── */
+  var s3 = riskFactBox('🛡️', 'Авах арга хэмжээ, төлөвлөлт', r.actions, '#0F172A') +
+    riskFactBox('👤', 'Хэн хяналт тавих', r.responsible) +
+    riskFactBox('📅', 'Хэзээ', r.due);
+  if (s3) H += riskSectionHead('ЮУ ХИЙЖ УРЬДЧИЛАН СЭРГИЙЛЭХ ВЭ') + s3;
+
+  /* ── Арга хэмжээний дараах үлдэгдэл эрсдэл ── */
+  var after = riskScoreAfter(r);
+  if (after > 0) {
+    var LA = riskLevel(after);
+    var drop = sc > 0 ? Math.round((1 - after / sc) * 100) : 0;
+    H += riskSectionHead('АРГА ХЭМЖЭЭ АВСНЫ ДАРААХ ҮЛДЭГДЭЛ ЭРСДЭЛ');
+    H += '<div style="display:flex;align-items:center;gap:12px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:11px;padding:12px 14px;margin-top:6px">' +
+      '<div style="text-align:center;flex:0 0 54px">' +
+      '<div style="font-size:12px;color:#94A3B8">Одоо</div>' +
+      '<div style="font-size:20px;font-weight:900;color:' + L.color + ';line-height:1.1">' + sc + '</div></div>' +
+      '<div style="flex:0 0 22px;text-align:center;font-size:18px;color:#16A34A">→</div>' +
+      '<div style="text-align:center;flex:0 0 54px">' +
+      '<div style="font-size:12px;color:#94A3B8">Дараа</div>' +
+      '<div style="font-size:20px;font-weight:900;color:' + LA.color + ';line-height:1.1">' + after + '</div></div>' +
+      '<div style="flex:1;font-size:12.5px;color:#15803D;line-height:1.5">' +
+      (drop > 0 ? '<b>' + drop + '%</b>-иар буурна<br>' : '') +
+      '<span style="color:#64748B">' + esc(LA.name) + ' түвшинд шилжинэ</span></div></div>';
+    var brk2 = (r.p2v && r.p2v.length) || (r.n2v && r.n2v.length) || (r.h2v && r.h2v.length);
+    if (brk2) {
+      H += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:10px 13px;margin-top:7px">' +
+        riskScoreChips(r.p2v, r.p2, 'Магадлал (P)') +
+        riskScoreChips(r.n2v, r.n2, 'Ослын үр дагавар (N)') +
+        riskScoreChips(r.h2v, r.h2, 'Гишүүдийн санал (H)') + '</div>';
+    }
+  }
+
+  /* ── Бүртгэлийн мэдээлэл ── */
+  var meta = [];
+  if (r.createdAt) meta.push('Оруулсан: ' + String(r.createdAt).slice(0, 10));
+  if (r.createdBy) meta.push(r.createdBy);
+  if (meta.length) {
+    H += '<div style="margin-top:14px;padding-top:9px;border-top:1px solid #F1F5F9;font-size:11px;color:#CBD5E1">' +
+      esc(meta.join(' · ')) + '</div>';
+  }
+  return H;
 }
 
 /* Дашбоардын товч/шүүлтүүрийг холбоно */
@@ -6016,11 +6124,41 @@ function riskMapColsReal(head) {
     if (x.indexOf('эрсдэлийн зэрэг') >= 0 || x.indexOf('эрсдлийн зэрэг') >= 0 ||
         x.indexOf('эрсдэлийн түвшин') >= 0 || x.indexOf('эрсдлийн түвшин') >= 0) rc.push(i);
   });
+  /* ⚠ N, H, P тус бүр ГУРВАН багана эзэлдэг — эрсдэлийн үнэлгээнд оролцсон
+     3 гишүүн тус тусдаа оноо өгдөг. Толгой нь нийлүүлсэн нүд тул зөвхөн
+     эхний баганад бичигдсэн байдаг. Эрсдэлийн зэрэг R нь тэдгээрийн
+     ДУНДЖИЙН үржвэр:  R = P̄ × N̄ × H̄
+     Эхний баганыг л уншвал нэг гишүүний оноо гарч, R-тэй таарахгүй. */
+  var labelled = [];
+  h.forEach(function (x, i) { if (x) labelled.push(i); });
+  labelled.sort(function (a, b) { return a - b; });
+  var spanEnd = function (start) {
+    for (var i = 0; i < labelled.length; i++) if (labelled[i] > start) return labelled[i] - 1;
+    return h.length - 1;
+  };
+  var all = function (k) { var out = []; h.forEach(function (x, i) { if (x.indexOf(k) >= 0) out.push(i); }); return out; };
+  var pI = all('магадлал'), nI = all('ослын үр дагавар'), hI = all('гишүүдийн санал');
+  if (!nI.length) nI = all('үр дагавар');
+  if (!hI.length) hI = all('санал');
+  var span = function (arr, which) {
+    if (!arr.length) return null;
+    var s = which === 'last' ? arr[arr.length - 1] : arr[0];
+    if (which === 'last' && arr.length < 2) return null;
+    return { s: s, e: spanEnd(s) };
+  };
   return {
+    pSpan: span(pI, 'first'), nSpan: span(nI, 'first'), hSpan: span(hI, 'first'),
+    p2Span: span(pI, 'last'), n2Span: span(nI, 'last'), h2Span: span(hI, 'last'),
     process:     find('үйл ажиллагаа', 'ажилбар'),
     hazard:      find('болзошгүй аюул', 'аюул'),
     location:    find('байршил'),
     cause:       find('шалтгаан'),
+    p:           pI.length ? pI[0] : -1,
+    n:           nI.length ? nI[0] : -1,
+    h:           hI.length ? hI[0] : -1,
+    p2:          pI.length > 1 ? pI[pI.length - 1] : -1,
+    n2:          nI.length > 1 ? nI[nI.length - 1] : -1,
+    h2:          hI.length > 1 ? hI[hI.length - 1] : -1,
     r:           rc.length ? rc[0] : -1,
     rAfter:      rc.length > 1 ? rc[rc.length - 1] : -1,
     actions:     find('авах арга хэмжээ', 'төлөвлөлт', 'арга хэмжээ'),
@@ -6071,6 +6209,24 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
       var cell = function (k) {
         return (M[k] >= 0 && row[M[k]] != null) ? String(row[M[k]]).replace(/\s+/g, ' ').trim() : '';
       };
+      /* Нийлүүлсэн толгойн доорх ГИШҮҮН БҮРИЙН оноог цуглуулна */
+      var sc = function (k) {
+        var sp = M[k]; if (!sp) return [];
+        var out = [];
+        for (var c = sp.s; c <= sp.e && c < row.length; c++) {
+          var v = parseFloat(row[c]);
+          if (!isNaN(v) && v > 0) out.push(v);
+        }
+        /* Багананы нийт өргөн = үнэлгээнд оролцсон гишүүдийн тоо.
+           Хоосон орхисон гишүүн ч тоонд ордог (хүснэгтийн дундаж тэгж бодогддог). */
+        out.width = Math.max(sp.e - sp.s + 1, out.length);
+        return out;
+      };
+      var avg = function (a) {
+        if (!a || !a.length) return 0;
+        var s = 0; a.forEach(function (x) { s += x; });
+        return Math.round(s / (a.width || a.length) * 100) / 100;
+      };
       var filled = 0;
       for (var c = 0; c < row.length; c++) if (String(row[c] == null ? '' : row[c]).trim()) filled++;
 
@@ -6105,6 +6261,17 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
         process: curProcess, hazard: hz,
         location: cell('location'), cause: cell('cause'),
         r: R, rAfter: R2,
+        /* Онооны задаргаа: гишүүн бүрийн оноо + дундаж (R = P̄ × N̄ × H̄).
+           rOk — задаргаа нь бичигдсэн R-тэй ТУЛГАГДСАН эсэх. Тулгагдаагүй бол
+           дэлгэцэнд томьёог харуулахгүй (буруу тайлбар өгөхгүйн тулд). */
+        pv: sc('pSpan').slice(), nv: sc('nSpan').slice(), hv: sc('hSpan').slice(),
+        p: avg(sc('pSpan')), n: avg(sc('nSpan')), h: avg(sc('hSpan')),
+        p2v: sc('p2Span').slice(), n2v: sc('n2Span').slice(), h2v: sc('h2Span').slice(),
+        p2: avg(sc('p2Span')), n2: avg(sc('n2Span')), h2: avg(sc('h2Span')),
+        rOk: (function () {
+          var pp = avg(sc('pSpan')), nn = avg(sc('nSpan')), hh = avg(sc('hSpan'));
+          return !!(pp && nn && hh && R && Math.abs(pp * nn * hh - R) < 0.6);
+        })(),
         positions: usePos ? usePos.split(/\s*,\s*/).filter(Boolean) : [],
         empIds: [],
         actions: cell('actions'), responsible: cell('responsible'), due: cell('due')
@@ -8938,6 +9105,54 @@ function importMiskillCSV() {
 }
 
 /* ============ Даалгавар ============ */
+/* ══════════════════════════════════════════════════════════════════════
+   ДААЛГАВРЫН БИЕ — эрсдэлээс үүссэн бол ТОДОРХОЙ товьёог харуулна:
+   «Та ямар аюулыг, юу хийж, хэзээ хүртэл бууруулах вэ».
+   ⚠ Эрсдэл ачаалагдаагүй бол анхны тайлбарыг ХЭВЭЭР харуулна (юу ч алдагдахгүй).
+   ══════════════════════════════════════════════════════════════════════ */
+function taskRiskOf(x) {
+  if (!x || !x.riskId) return null;
+  return (DB.risks || []).filter(function (r) { return String(r.id) === String(x.riskId); })[0] || null;
+}
+function taskBodyHTML(x) {
+  var r = taskRiskOf(x);
+  if (!r) {
+    return x.desc ? '<div style="font-size:13px;color:#64748B;margin-top:3px;white-space:pre-wrap">' + esc(x.desc) + '</div>' : '';
+  }
+  var L = riskLevel(r), sc = riskScore(r);
+  var after = riskScoreAfter(r);
+  var line = function (ic, t, v) {
+    if (!v) return '';
+    return '<div style="display:flex;gap:8px;margin-top:5px">' +
+      '<span style="flex:0 0 16px;font-size:12px;line-height:1.5">' + ic + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:12.5px;color:#475569;line-height:1.55">' +
+      '<b style="color:#334155">' + t + ':</b> ' + esc(String(v)) + '</span></div>';
+  };
+  return '<div style="margin-top:9px;border:1.5px solid ' + L.bd + ';border-radius:11px;overflow:hidden">' +
+    /* Аль аюулыг бууруулах вэ */
+    '<div style="background:' + L.bg + ';padding:10px 12px;display:flex;align-items:center;gap:10px">' +
+    '<span style="flex:0 0 auto;background:' + L.color + ';color:#fff;border-radius:7px;padding:3px 8px;font-size:11px;font-weight:800">' +
+    L.code + ' · ' + sc + '</span>' +
+    '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#1E293B;line-height:1.4">' +
+    esc(r.hazard || '') + '</span></div>' +
+    '<div style="padding:9px 12px 11px;background:#fff">' +
+    '<div style="font-size:11px;font-weight:800;color:#94A3B8;letter-spacing:.3px">ТА ЭНЭ АЮУЛЫГ БУУРУУЛНА</div>' +
+    line('⚙️', 'Ажиллагаа', r.process) +
+    line('📍', 'Байршил', r.location) +
+    line('❓', 'Шалтгаан', r.cause) +
+    line('🛡️', 'Авах арга хэмжээ', r.actions) +
+    line('👤', 'Хяналт тавих', r.responsible) +
+    line('📅', 'Хугацаа', x.dueDate || r.due) +
+    (after > 0 && sc > after
+      ? '<div style="margin-top:8px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:7px 10px;font-size:12px;color:#15803D">' +
+        '🎯 Зорилт: эрсдлийг <b>' + sc + '</b> → <b>' + after + '</b> болгож бууруулах' +
+        ' (<b>' + Math.round((1 - after / sc) * 100) + '%</b>)</div>'
+      : '') +
+    '<button class="btn btn-sm" data-risk-open="' + esc(r.id) + '" style="margin-top:9px;background:#F1F5F9;color:#475569;border-color:#E2E8F0">' +
+    '<i class="ti ti-info-circle"></i> Эрсдэлийн дэлгэрэнгүй</button>' +
+    '</div></div>';
+}
+
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;
   sec.style.padding = '';
@@ -9021,7 +9236,7 @@ function renderTasks() {
         (od ? '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">⏰ ' + od + ' хоног хэтэрсэн</span>' : '') +
         (!od && soon ? '<span style="background:#D9770618;color:#D97706;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хугацаа ойртсон</span>' : '') +
         statusPill(x) + '</div>' +
-        (x.desc ? '<div style="font-size:13px;color:#64748B;margin-top:3px">' + esc(x.desc) + '</div>' : '') +
+        taskBodyHTML(x) +
         '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
         (x.category && TASK_CAT[x.category] ? '<span><i class="ti ti-tag"></i> ' + esc(TASK_CAT[x.category]) + '</span>' : '') +
@@ -9061,6 +9276,10 @@ function renderTasks() {
     sec._taskWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#taskAdd')) { actionAddTask(); return; }
+
+      /* Даалгавар доторх «Эрсдэлийн дэлгэрэнгүй» */
+      var ro = ev.target.closest('[data-risk-open]');
+      if (ro) { riskOpenDetail(ro.getAttribute('data-risk-open')); return; }
 
       var sb = ev.target.closest('[data-task-submit]');
       if (sb) { actionSubmitTask(sb.getAttribute('data-task-submit')); return; }
