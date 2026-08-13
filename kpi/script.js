@@ -5698,6 +5698,15 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
     var M = riskMapColsReal(aoa[hr] || []);
     if (M.hazard < 0) { out.err = 'аюулын багана алга'; return out; }
 
+    /* Нэгдсэн файл (олон албыг агуулсан) бол АЛБА, АЖЛЫН БАЙР нь БАГАНА байна.
+       Тэр тохиолдолд фолдерын нэрээс биш, мөр тус бүрээс нь уншина. */
+    var head0 = (aoa[hr] || []).map(rNorm);
+    var iDept = -1, iPos = -1;
+    head0.forEach(function (h, i) {
+      if (iDept < 0 && (h === 'алба' || h.indexOf('алба') === 0) && h.indexOf('албан тушаал') < 0) iDept = i;
+      if (iPos < 0 && h.indexOf('албан тушаал') >= 0) iPos = i;
+    });
+
     var curProcess = '', category = '';
     for (var i = hr + 1; i < aoa.length; i++) {
       var row = aoa[i] || [];
@@ -5727,12 +5736,18 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
       if (!R) continue;
       var R2 = M.rAfter >= 0 ? _f(String(row[M.rAfter] == null ? '' : row[M.rAfter]).replace(',', '.'), 0) : 0;
 
+      /* Багана байвал мөрийн утга давамгайлна */
+      var rowDept = (iDept >= 0 && row[iDept] != null) ? String(row[iDept]).replace(/\s+/g, ' ').trim() : '';
+      var rowPos  = (iPos  >= 0 && row[iPos]  != null) ? String(row[iPos]).replace(/\s+/g, ' ').trim() : '';
+      var useDept = lockDept || rowDept || out.dept;
+      var usePos  = rowPos || out.position;
+      if (!useDept) continue;                       /* албагүй мөрийг оруулахгүй */
       out.rows.push({
-        dept: out.dept, position: out.position, category: category,
+        dept: useDept, position: usePos, category: category,
         process: curProcess, hazard: hz,
         location: cell('location'), cause: cell('cause'),
         r: R, rAfter: R2,
-        positions: out.position ? [out.position] : [],
+        positions: usePos ? usePos.split(/\s*,\s*/).filter(Boolean) : [],
         empIds: [],
         actions: cell('actions'), responsible: cell('responsible'), due: cell('due')
       });
