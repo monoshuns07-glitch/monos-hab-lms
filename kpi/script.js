@@ -646,6 +646,12 @@ async function loadDB() {
     }
     /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
     if (isSplit()) { try { await loadCols(); } catch (e) {} }
+    /* Эрсдэл нь Firestore-д БИШ, R2-д байна — Firestore уншилт зарцуулахгүй.
+       Уншигдахгүй бол санах ой дахь/хуучин датаг хөндөхгүй. */
+    try {
+      var _rr = await riskR2Load();
+      if (_rr) console.log('[risks] R2-оос ' + _rr.n + ' эрсдэл' + (_rr.cached ? ' (кэшээс)' : ''));
+    } catch (e) { console.error('[risks] R2 ачаалал', e); }
     // Хуучин прототипийн жишээ (демо) датаг нэг удаа цэвэрлэнэ — зөвхөн админ
     try { await cleanupDemoData(); } catch (e) {}
     // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
@@ -760,9 +766,12 @@ var _saveTimer = null;
    ══════════════════════════════════════════════════════════════════════ */
 /* ⚠ ЗӨВХӨН МАССИВ хэлбэрийн жагсаалтууд. extAttendance / davtanMonths зэрэг нь
    объект (зураглал) тул энд ОРОХГҮЙ — тэдгээр нь жижиг, үндсэн баримтад үлдэнэ. */
+/* ⚠ 'risks' ЭНД БАЙХГҮЙ — эрсдэл нь Firestore-оос гарч R2 руу шилжсэн.
+   Шалтгаан: Firestore баримт бүрээр уншилт тоолдог тул 1,289 эрсдлийг хүн
+   бүрд татахад өдрийн үнэгүй квот хэдхэн зочлолтод дуусдаг байв. */
 var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
-  'extTrainings', 'externalTrainings', 'miskillStats', 'risks'];
+  'extTrainings', 'externalTrainings', 'miskillStats'];
 var COL_PREFIX = 'kpi_';
 function colRef(key) { return fdb.collection(COL_PREFIX + key); }
 /* Хамгаалалт: түлхүүр ямар ч шалтгаанаар массив биш болсон бол хоосон гэж үзнэ */
@@ -950,11 +959,147 @@ async function loadCols() {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН БҮРТГЭЛ → CLOUDFLARE R2  (Firestore-оос ГАРГАСАН)
+   ----------------------------------------------------------------------
+   Яагаад: Firestore баримт БҮРЭЭР уншилт тоолдог. 1,289 эрсдлийг хүн бүр
+   хуудас нээх бүрд татахад өдрийн үнэгүй 50,000 уншилт ~24 удаад дуусдаг
+   байв. Эрсдэл нь нэг удаа оруулаад олон удаа уншдаг, бараг өөрчлөгддөггүй
+   дата тул объект хадгалалтад (R2) төгс тохирно.
+
+   Бүтэц:
+     risks/index.json     — { version, updatedAt, total, depts:[{name,slug,n}] }
+     risks/d/<slug>.json  — тухайн албаны эрсдэлүүд (массив)
+
+   Ашиг: ажилтан ЗӨВХӨН өөрийн албаны файлыг татна (1 хүсэлт, ~50-200 KB),
+   Firestore уншилт ТЭГ. Хувилбарын дугаараар кэшлэдэг тул давтан
+   зочлоход сүлжээ ч ашиглахгүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var RISK_R2_PREFIX = 'risks/';
+var RISK_R2_INDEX = RISK_R2_PREFIX + 'index.json';
+var RISK_CACHE_KEY = 'kpi_risks_cache_v1';
+
+/* Кирилл нэрийг URL-д аюулгүй богино түлхүүр болгоно (тогтвортой) */
+function riskSlug(name) {
+  var s = String(name || '').trim().toLowerCase();
+  var h = 5381;
+  for (var i = 0; i < s.length; i++) { h = ((h << 5) + h + s.charCodeAt(i)) >>> 0; }
+  var ascii = s.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+  return (ascii ? ascii + '-' : 'd-') + h.toString(36);
+}
+
+function riskR2Url(key) { return TASK_R2 + '/' + key; }
+
+/* R2-оос JSON уншина (эрх шаардахгүй — CORS нь зөвхөн манай домэйнд нээлттэй) */
+async function riskR2GetJson(key) {
+  var r = await fetch(riskR2Url(key) + '?t=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) { if (r.status === 404) return null; throw new Error('R2 ' + r.status); }
+  return await r.json();
+}
+
+/* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
+async function riskR2PutJson(key, obj) {
+  var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  blob.name = key.split('/').pop();
+  return await r2Put(blob, key);
+}
+
+/* Файлын албаны нэрийг СИСТЕМИЙН албаны нэр рүү хөрвүүлнэ.
+   Ингэснээр цаашид яг таг тэнцүүгээр шүүх боломжтой болно. */
+function riskCanonDept(d) {
+  if (!d) return '';
+  var sys = deptList ? deptList() : [];
+  for (var i = 0; i < sys.length; i++) {
+    if (sys[i] && riskSameDept(d, sys[i])) return sys[i];
+  }
+  return riskDeptFix(d);          // системд олдохгүй бол ядаж алиасаар цэвэрлэнэ
+}
+
+/* Бүх эрсдлийг албаар нь хувааж R2 руу нийтэлнэ (админ/туслах админ) */
+async function riskR2Publish(rows, onStep) {
+  var list = (rows || []).slice();
+  var byDept = {};
+  list.forEach(function (r) {
+    var d = riskCanonDept(r.dept) || 'Тодорхойгүй';
+    r.dept = d;                                   // хадгалахдаа канон нэрээр
+    (byDept[d] = byDept[d] || []).push(r);
+  });
+  var names = Object.keys(byDept);
+  var index = {
+    version: Date.now(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: (SESSION && SESSION.email) || 'admin',
+    total: list.length,
+    depts: names.map(function (n) { return { name: n, slug: riskSlug(n), n: byDept[n].length }; })
+  };
+  for (var i = 0; i < names.length; i++) {
+    var n = names[i];
+    if (onStep) onStep('Байршуулж байна: ' + n + ' (' + byDept[n].length + ')', i, names.length);
+    await riskR2PutJson(RISK_R2_PREFIX + 'd/' + riskSlug(n) + '.json', byDept[n]);
+  }
+  await riskR2PutJson(RISK_R2_INDEX, index);      // индексийг ХАМГИЙН СҮҮЛД
+  try { localStorage.removeItem(RISK_CACHE_KEY); } catch (e) {}
+  return index;
+}
+
+/* Эрхээс хамаарч ХЭРЭГТЭЙ албуудыг л татна */
+async function riskR2Load() {
+  var idx;
+  try { idx = await riskR2GetJson(RISK_R2_INDEX); }
+  catch (e) { console.error('[riskR2] индекс уншигдсангүй', e); return null; }
+  if (!idx || !idx.depts) return null;
+
+  /* Кэш — хувилбар өөрчлөгдөөгүй бол сүлжээ ашиглахгүй */
+  try {
+    var c = JSON.parse(localStorage.getItem(RISK_CACHE_KEY) || 'null');
+    if (c && c.version === idx.version && Array.isArray(c.rows)) {
+      DB.risks = c.rows; return { cached: true, n: c.rows.length };
+    }
+  } catch (e) {}
+
+  var want = idx.depts;
+  if (!isAdmin() && SESSION && SESSION.dept) {
+    var mine = idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
+    if (mine.length) want = mine;                 // олдохгүй бол бүгдийг (аюулгүй тал руу)
+  }
+  var out = [];
+  for (var i = 0; i < want.length; i++) {
+    try {
+      var part = await riskR2GetJson(RISK_R2_PREFIX + 'd/' + want[i].slug + '.json');
+      if (Array.isArray(part)) out = out.concat(part);
+    } catch (e) { console.error('[riskR2] ' + want[i].name + ' уншигдсангүй', e); }
+  }
+  DB.risks = out;
+  try { localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out })); }
+  catch (e) { /* хэтэрхий том бол кэшлэхгүй — асуудалгүй */ }
+  return { cached: false, n: out.length, depts: want.length };
+}
+
+/* Оруулалтын дараа дуудна: DB.risks-ийг R2 руу нийтэлж, үр дүнг хэлнэ.
+   Firestore-д огт хүрэхгүй тул квот зарцуулахгүй. */
+async function riskPersist(msg) {
+  var n = (DB.risks || []).length;
+  var t = toast((msg || 'Эрсдэл байршуулж байна') + '…', 'info');
+  try {
+    var idx = await riskR2Publish(DB.risks || [], function (s) {
+      try { console.log('[riskR2] ' + s); } catch (e) {}
+    });
+    toast('✓ ' + n + ' эрсдэл ' + idx.depts.length + ' албанд байршлаа', 'success');
+    return idx;
+  } catch (e) {
+    console.error('[riskPersist]', e);
+    toast('⚠️ Эрсдэл байршуулж чадсангүй: ' + ((e && e.message) || e) +
+      '. Дата хөтөч дээр хэвээр байна — дахин оролдоно уу.', 'error');
+    return null;
+  }
+}
+
 /* Үндсэн баримтад үлдэх ЖИЖИГ тохиргоо (ургадаггүй хэсгүүд) */
 function mainDocPayload() {
   var out = {};
   Object.keys(DB).forEach(function (k) {
     if (k === 'employees') return;            // users-ээс дахин үүснэ
+    if (k === 'risks') return;                // ⚠ R2-д байна — үндсэн баримтад БҮҮ бич
     if (isColKey(k)) return;                  // цуглуулгад очсон
     out[k] = DB[k];
   });
@@ -6119,9 +6264,8 @@ function actionRiskFolder() {
         r.createdBy = (SESSION && SESSION.email) || 'admin';
         (DB.risks = DB.risks || []).push(r);
       });
-      saveDB();
-      toast(staged.length + ' эрсдэл оруулагдлаа', 'success');
       closeModal(); renderHazards();
+      riskPersist('Фолдероос ' + staged.length + ' эрсдэл').then(function () { renderHazards(); });
     });
   };
 
@@ -6348,8 +6492,8 @@ function actionRiskTemplateImport() {
             x.createdBy = (SESSION && SESSION.email) || 'admin';
             (DB.risks = DB.risks || []).push(x);
           });
-          saveDB(); closeModal(); renderHazards();
-          toast(good.length + ' эрсдэл оруулагдлаа', 'success');
+          closeModal(); renderHazards();
+          riskPersist(good.length + ' эрсдэл').then(function () { renderHazards(); });
         });
       };
       rd.readAsArrayBuffer(f);
@@ -6452,11 +6596,11 @@ function actionRiskImport() {
             };
             (DB.risks = DB.risks || []).push(rec); added++;
           });
-          saveDB();
           if (st) st.innerHTML = '<span style="color:#16A34A;font-weight:700">✓ ' + added + ' эрсдэл нэмэгдлээ' +
             (skipped ? ' · ' + skipped + ' мөр алгасав (аюул эсвэл алба хоосон)' : '') + '</span>';
-          toast(added + ' эрсдэл оруулагдлаа', 'success');
-          setTimeout(function () { closeModal(); renderHazards(); }, 900);
+          riskPersist(added + ' эрсдэл').then(function () {
+            closeModal(); renderHazards();
+          });
         });
       };
       rd.readAsArrayBuffer(f);
