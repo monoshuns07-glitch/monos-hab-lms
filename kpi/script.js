@@ -874,6 +874,27 @@ function mainDocPayload() {
   return out;
 }
 
+/* Хадгалалтын алдааг ОЙЛГОМЖТОЙ хэлнэ — юу болсон, юу хийхийг зааж */
+function saveErrorToast(e, step) {
+  var code = (e && (e.code || e.name)) || '';
+  var msg = (e && e.message) || String(e || '');
+  var human;
+  if (/permission-denied|insufficient permissions/i.test(code + ' ' + msg)) {
+    human = '🔒 Firestore дүрэм зөвшөөрөхгүй байна (' + (step || '') + '). ' +
+      'Firebase → Firestore → Rules дээр kpi_risks зэрэг цуглуулгыг нэмээд Publish хийнэ үү.';
+  } else if (/invalid-argument|exceeds the maximum|too large/i.test(code + ' ' + msg)) {
+    human = '📦 Баримт хэтэрхий том байна. Хяналтын самбарын «Бүтцийг задлах» товчийг ажиллуулна уу.';
+  } else if (/unavailable|network|offline|deadline/i.test(code + ' ' + msg)) {
+    human = '📡 Сүлжээ тасарсан байна. Холболтоо шалгаад дахин оролдоно уу.';
+  } else if (/unauthenticated/i.test(code + ' ' + msg)) {
+    human = '👤 Нэвтрэлт дууссан байна. Гарч, дахин нэвтэрнэ үү.';
+  } else {
+    human = '⚠️ Хадгалахад алдаа (' + (step || '') + '): ' + (code || msg).slice(0, 90);
+  }
+  try { console.error('[saveDB]', step, code, msg, e); } catch (x) {}
+  toast(human, 'error');
+}
+
 function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   if (!fbReady) return;
@@ -881,13 +902,15 @@ function saveDB() {
     if (_saveTimer) clearTimeout(_saveTimer);
     _saveTimer = setTimeout(function () {
       if (isSplit()) {
-        /* v2 — тохиргоо үндсэн баримтад, бүртгэлүүд цуглуулгад */
+        /* v2 — тохиргоо үндсэн баримтад, бүртгэлүүд цуглуулгад.
+           ⚠ Алдааг ЕРӨНХИЙ мессежээр биш, ЯГ ЮУ болсныг хэлнэ. */
+        var step = 'тохиргоо';
         KPI_DOC().set(mainDocPayload())
-          .then(function () { return saveCols(); })
-          .catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+          .then(function () { step = 'бүртгэлүүд'; return saveCols(); })
+          .catch(function (e) { saveErrorToast(e, step); });
       } else {
         /* v1 — хуучнаараа (шилжүүлэг хийгээгүй байхад) */
-        KPI_DOC().set(DB).catch(function () { toast('Cloud-д хадгалахад алдаа гарлаа', 'error'); });
+        KPI_DOC().set(DB).catch(function (e) { saveErrorToast(e, 'бүх дата'); });
       }
     }, 700);
   } else if (isSplit()) {
@@ -901,7 +924,7 @@ function saveDB() {
           if (ids && ids[x.id]) return;
           colRef(key).doc(String(x.id)).set(x)
             .then(function () { if (ids) ids[x.id] = 1; })
-            .catch(function () { toast('Хадгалахад алдаа гарлаа', 'error'); });
+            .catch(function (e) { saveErrorToast(e, 'ажилтны бичлэг'); });
         });
       };
       addOne('hazards', _empHazIds);
@@ -923,7 +946,7 @@ function saveDB() {
         if (_empHazIds) newHaz.forEach(function (h) { _empHazIds[h.id] = 1; });
         if (_empSugIds) newSug.forEach(function (s) { _empSugIds[s.id] = 1; });
         if (_empRepIds) newRep.forEach(function (r) { _empRepIds[r.id] = 1; });
-      }).catch(function () { toast('Хадгалахад алдаа гарлаа', 'error'); });
+      }).catch(function (e) { saveErrorToast(e, 'ажилтны бичлэг'); });
     } catch (e) {}
   }
 }
