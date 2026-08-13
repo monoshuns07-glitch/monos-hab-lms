@@ -4904,7 +4904,7 @@ function riskDashHTML(list, subtitle) {
     if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
     if (RISK_FILTER.cell && riskScore(r) !== RISK_FILTER.cell) return false;
     if (RISK_FILTER.q) {
-      var hay = [r.hazard, r.process, r.consequence, r.controls, r.actions, r.responsible].join(' ').toLowerCase();
+      var hay = [r.hazard, r.process, r.consequence, r.controls, r.actions, r.responsible, r.position, (r.positions||[]).join(' ')].join(' ').toLowerCase();
       if (hay.indexOf(RISK_FILTER.q) < 0) return false;
     }
     return true;
@@ -4993,11 +4993,93 @@ function riskEmpDetail(empId) {
   buildModal(esc(st.e.name || 'Ажилтан') + ' — хамаарах эрсдэл', node, { width: '540px' });
 }
 
-function riskAdminSectionsHTML(list) {
-  var H = riskCoverageHTML(list);
+/* ══════════════════════════════════════════════════════════════════════
+   ШАТЛАЛТ ХАРАГДАЦ: АЛБА → (ажлын байраар · ажилтнаар)
+   Алба бүрийг задлахад дотор нь ажлын байрууд, тэдгээрт харьяалагдах
+   ажилтнууд эрсдэлийнхээ тоотойгоо харагдана.
+   ══════════════════════════════════════════════════════════════════════ */
+function riskGroupedHTML(list) {
+  var byDept = {};
+  list.forEach(function (r) { (byDept[r.dept || 'Тодорхойгүй'] = byDept[r.dept || 'Тодорхойгүй'] || []).push(r); });
+  var dnames = Object.keys(byDept).sort(function (a, b) { return byDept[b].length - byDept[a].length; });
+  if (!dnames.length) return '';
 
-  /* ── Албадаар ── */
-  if (isAdmin()) {
+  var emps = (DB.employees || []);
+  if (isDeptHead() && SESSION && SESSION.dept) {
+    emps = emps.filter(function (e) { return e.dept === SESSION.dept; });
+  }
+
+  var body = dnames.map(function (d, di) {
+    var dl = byDept[d];
+    var mx = 0; dl.forEach(function (r) { var s = riskScore(r); if (s > mx) mx = s; });
+    var DL = riskLevel(mx);
+
+    /* ── Ажлын байраар ── */
+    var byPos = {};
+    dl.forEach(function (r) {
+      var ps = riskPositions(r);
+      var key = ps.length ? (r.position || (r.positions || []).join(', ')) : '⌂ Албанд бүхэлд нь';
+      (byPos[key] = byPos[key] || []).push(r);
+    });
+    var pRows = Object.keys(byPos).sort(function (a, b) { return byPos[b].length - byPos[a].length; })
+      .map(function (p) {
+        var l = byPos[p], m2 = 0;
+        l.forEach(function (r) { var s = riskScore(r); if (s > m2) m2 = s; });
+        var L2 = riskLevel(m2);
+        return '<div class="dash-click" data-risk-posf="' + esc(p) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px">' +
+          '<i class="ti ti-briefcase" style="font-size:14px;color:#7C3AED;flex-shrink:0"></i>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p) + '</span>' +
+          '<span style="flex-shrink:0">' + riskLevelChips(l) + '</span>' +
+          '<span style="flex:0 0 34px;text-align:right;font-size:12.5px;font-weight:800;color:' + L2.color + '">' + l.length + '</span></div>';
+      }).join('');
+
+    /* ── Ажилтнаар ── */
+    var deptEmps = emps.filter(function (e) { return riskSameDept(d, e.dept); });
+    var eRows = deptEmps.map(function (e) {
+      var mine = dl.filter(function (r) { return riskAppliesTo(r, e); });
+      var top = 0; mine.forEach(function (r) { var s = riskScore(r); if (s > top) top = s; });
+      return { e: e, n: mine.length, top: top, list: mine };
+    }).filter(function (x) { return x.n > 0; })
+      .sort(function (a, b) { return (b.top - a.top) || (b.n - a.n); })
+      .map(function (x) {
+        var L3 = riskLevel(x.top);
+        return '<div class="dash-click" data-risk-emp="' + esc(x.e.id) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px">' +
+          '<span style="width:26px;height:26px;border-radius:50%;background:#EEF2FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0">' +
+          esc(String(x.e.name || '?').charAt(0)) + '</span>' +
+          '<span style="flex:1;min-width:0"><span style="display:block;font-size:12.5px;font-weight:600;color:#1E293B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.e.name || '—') + '</span>' +
+          '<span style="display:block;font-size:11px;color:#94A3B8">' + esc(x.e.role || x.e.pos || '—') + '</span></span>' +
+          '<span style="flex-shrink:0">' + riskLevelChips(x.list) + '</span>' +
+          '<span style="flex:0 0 52px;text-align:right;font-size:11.5px;font-weight:800;color:' + L3.color + '">' + x.top + '</span></div>';
+      }).join('');
+
+    return '<details' + (di === 0 ? ' open' : '') + ' style="border:1px solid #E2E8F0;border-radius:12px;margin-bottom:9px;background:#fff;overflow:hidden">' +
+      '<summary style="display:flex;align-items:center;gap:12px;padding:13px 15px;cursor:pointer;list-style:none">' +
+      '<span style="width:38px;height:38px;border-radius:11px;background:' + DL.bg + ';color:' + DL.color + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+      '<i class="ti ti-building" style="font-size:18px"></i></span>' +
+      '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:#1E293B">' + esc(d) + '</span>' +
+      '<span style="display:block;font-size:11.5px;color:#94A3B8;margin-top:1px">' +
+      Object.keys(byPos).length + ' ажлын байр · ' + deptEmps.length + ' ажилтан</span></span>' +
+      '<span style="flex-shrink:0">' + riskLevelChips(dl) + '</span>' +
+      '<span style="flex:0 0 44px;text-align:right;font-size:17px;font-weight:900;color:' + DL.color + ';font-family:\'Bricolage Grotesque\',sans-serif">' + dl.length + '</span>' +
+      '<i class="ti ti-chevron-down" style="font-size:16px;color:#CBD5E1;flex-shrink:0"></i></summary>' +
+      '<div style="padding:0 15px 14px;border-top:1px solid #F1F5F9">' +
+      '<div class="dash-2col" style="gap:18px;padding-top:10px">' +
+      '<div><div style="font-size:11px;font-weight:800;color:#94A3B8;letter-spacing:.3px;margin-bottom:4px">АЖЛЫН БАЙРААР</div>' + pRows + '</div>' +
+      '<div><div style="font-size:11px;font-weight:800;color:#94A3B8;letter-spacing:.3px;margin-bottom:4px">АЖИЛТНААР</div>' +
+      (eRows || '<div style="font-size:12px;color:#CBD5E1;padding:7px 10px">Энэ албанд ажилтан холбогдоогүй байна</div>') +
+      '</div></div></div></details>';
+  }).join('');
+
+  return dashCard(
+    dashH('🏢 Алба · ажлын байр · ажилтнаар', 'Албыг дарж задлана. Ажлын байр дээр дарвал шүүнэ, ажилтан дээр дарвал түүний бүх эрсдэл гарна.') +
+    body, '18px');
+}
+
+function riskAdminSectionsHTML(list) {
+  var H = riskCoverageHTML(list) + riskGroupedHTML(list);
+
+  /* ── Албадаар (хураангуй хүснэгт — шатлалт харагдац дээр нэмэлт) ── */
+  if (false) {
     var byDept = {};
     list.forEach(function (r) { (byDept[r.dept || 'Тодорхойгүй'] = byDept[r.dept || 'Тодорхойгүй'] || []).push(r); });
     var dnames = Object.keys(byDept).sort(function (a, b) { return byDept[b].length - byDept[a].length; });
@@ -5020,9 +5102,9 @@ function riskAdminSectionsHTML(list) {
       drows + '</tbody></table></div>', '18px');
   }
 
-  /* ── Ажилтнаар ── */
+  /* ── Ажилтнаар (шатлалт харагдацад орсон) ── */
   var es = riskEmpStats(list);
-  if (es.length) {
+  if (false) {
     var erows = es.slice(0, 40).map(function (x) {
       var L = riskLevel(x.top);
       return '<tr class="dash-click" data-risk-emp="' + esc(x.e.id) + '">' +
@@ -5185,6 +5267,13 @@ function renderHazards() {
     sec.addEventListener('click', function (ev) {
       var em = ev.target.closest('[data-risk-emp]');
       if (em) { riskEmpDetail(em.getAttribute('data-risk-emp')); return; }
+      var pf = ev.target.closest('[data-risk-posf]');
+      if (pf) {
+        var pv = pf.getAttribute('data-risk-posf') || '';
+        RISK_FILTER.q = (RISK_FILTER.q === pv.toLowerCase() ? '' : pv.toLowerCase());
+        RISK_FILTER.level = ''; RISK_FILTER.cell = 0;
+        renderHazards(); return;
+      }
       var df = ev.target.closest('[data-risk-dept-f]');
       if (df) {
         var dv = df.getAttribute('data-risk-dept-f') || '';
@@ -5532,12 +5621,28 @@ function riskDeptFromName(path, depts) {
    ══════════════════════════════════════════════════════════════════════ */
 function rNorm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase(); }
 
+/* ⚠ Толгой мөрийг ТУСДАА НҮДҮҮДЭЭР таних.
+   Өмнө нь мөрийг нэг мөр болгон нийлүүлж шалгадаг байсан тул
+   «"АВТОКРАНААР…" ҮЙЛ АЖИЛЛАГААНЫ … АЮУЛЫН ДҮН ШИНЖИЛГЭЭ» гэсэн
+   НЭГ нүдэн доторх урт гарчгийг толгой мөр гэж андуурдаг байв.
+   Одоо дор хаяж 3 ӨӨР нүд толгойн үг агуулж байж толгой гэж үзнэ. */
+var RISK_HDR_WORDS = ['үйл ажиллагаа', 'болзошгүй аюул', 'аюулын байршил', 'шалтгаан',
+  'ослын үр дагавар', 'гишүүдийн санал', 'магадлал', 'эрсдэлийн зэрэг', 'эрсдлийн зэрэг',
+  'авах арга хэмжээ', 'хэн хяналт', 'хэзээ'];
 function riskFindHeaderReal(aoa) {
+  var best = -1, bestHit = 0;
   for (var i = 0; i < Math.min(40, aoa.length); i++) {
-    var j = (aoa[i] || []).map(rNorm).join(' | ');
-    if (j.indexOf('аюул') >= 0 && (j.indexOf('шалтгаан') >= 0 || j.indexOf('үйл ажиллагаа') >= 0)) return i;
+    var row = aoa[i] || [], hit = 0;
+    for (var c = 0; c < row.length; c++) {
+      var v = rNorm(row[c]);
+      if (!v || v.length > 40) continue;              // урт өгүүлбэр = гарчиг, багана биш
+      for (var w = 0; w < RISK_HDR_WORDS.length; w++) {
+        if (v.indexOf(RISK_HDR_WORDS[w]) >= 0) { hit++; break; }
+      }
+    }
+    if (hit > bestHit) { bestHit = hit; best = i; }
   }
-  return -1;
+  return bestHit >= 3 ? best : -1;
 }
 function riskMapColsReal(head) {
   var h = (head || []).map(rNorm);
