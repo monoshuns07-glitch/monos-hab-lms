@@ -835,19 +835,27 @@ function colQueries(key) {
 }
 
 /* Цуглуулгуудыг зэрэг татна (аль нэг нь уншигдахгүй бол тэр нэгийг л алгасна) */
+var COL_LOAD_FAILED = [];
 async function loadCols() {
   if (!fbReady || !fdb) return;
+  COL_LOAD_FAILED = [];
   var res = await Promise.all(COL_KEYS.map(function (k) {
     var queries = colQueries(k);
     return Promise.all(queries.map(function (q) {
       return q.get().catch(function () {
         /* Шүүлттэй хүсэлт бүтэхгүй бол (индекс дутуу г.м.) бүтнээр нь татна */
-        return colRef(k).get().catch(function () { return null; });
+        return colRef(k).get().catch(function (e2) {
+          /* ⚠ ЭНД ЧИМЭЭГҮЙ ӨНГӨРӨХГҮЙ — дүрэм хориглосон бол дата
+             "алга болсон" мэт харагддаг байсан шалтгаан нь ЭНЭ. */
+          COL_LOAD_FAILED.push({ key: k, code: (e2 && (e2.code || e2.name)) || '' });
+          return null;
+        });
       });
     })).then(function (snaps) {
-      var seen = {}, arr = [];
+      var seen = {}, arr = [], ok = false;
       snaps.forEach(function (snap) {
         if (!snap) return;
+        ok = true;
         snap.forEach(function (d) {
           if (seen[d.id]) return;                 // 2 хүсэлтээс давхардвал нэгийг нь
           seen[d.id] = 1;
@@ -855,11 +863,26 @@ async function loadCols() {
           arr.push(x);
         });
       });
-      return { k: k, arr: arr };
+      /* Нэг ч хүсэлт бүтээгүй бол arr=null — санах ойд байгаа датаг хоосноор БҮҮ дар */
+      return { k: k, arr: ok ? arr : null };
     }).catch(function () { return { k: k, arr: null }; });
   }));
   res.forEach(function (r) { if (r.arr) DB[r.k] = r.arr; });
   snapshotCols();
+
+  /* Уншиж чадаагүй цуглуулга байвал ХЭЛНЭ — дата чимээгүй алга болохоос сэргийлнэ */
+  if (COL_LOAD_FAILED.length) {
+    var names = COL_LOAD_FAILED.map(function (x) { return 'kpi_' + x.key; });
+    var perm = COL_LOAD_FAILED.some(function (x) { return /permission/i.test(x.code); });
+    try { console.error('[loadCols] уншигдсангүй:', COL_LOAD_FAILED); } catch (e) {}
+    setTimeout(function () {
+      toast(perm
+        ? '🔒 ' + names.length + ' цуглуулга уншигдсангүй (' + names.slice(0, 3).join(', ') +
+          '). Firestore дүрэмд эдгээрийг нэмээгүй тул дата харагдахгүй байна.'
+        : '⚠️ ' + names.length + ' цуглуулга уншигдсангүй: ' + names.slice(0, 3).join(', '),
+        'error');
+    }, 1200);
+  }
 }
 
 /* Үндсэн баримтад үлдэх ЖИЖИГ тохиргоо (ургадаггүй хэсгүүд) */
