@@ -450,18 +450,37 @@ async function buildEmployeesFromRealData() {
        ирэх) тохиолдол бий. Ажилтанд ӨӨРИЙНХӨӨ бүртгэл л хэрэгтэй тул түүнийг
        нэрлэсэн баримтаар шууд татна. Ингэснээр «Ажилтан бүртгэгдээгүй байна»
        гэж худал зурвас гарахаа болино. */
-    var selfOnly = false;
-    if (!docs.length && SESSION && SESSION.uid) {
-      try {
-        var own = await fdb.collection('users').doc(SESSION.uid).get();
-        if (own && own.exists) {
-          var ox = own.data() || {};
-          docs.push({ id: own.id, data: function () { return ox; } });
-          selfOnly = true;
-        }
-      } catch (e) { console.error('[buildEmployees] өөрийн бүртгэл ч уншигдсангүй', e); }
+    var selfOnly = false, selfAdded = false;
+    if (SESSION && (SESSION.uid || SESSION.email)) {
+      var sUid = SESSION.uid, sEm = String(SESSION.email || '').toLowerCase().trim();
+      var found = docs.some(function (d) {
+        var u = d.data() || {};
+        return (sUid && ((u.uid || d.id) === sUid)) || (sEm && String(u.email || '').toLowerCase().trim() === sEm);
+      });
+      /* ⚠ Нэвтэрсэн хүн жагсаалтад ОРООГҮЙ бол (өөр id-тай бүртгэл, и-мэйл зөрүү,
+         эсвэл жагсаалт бүтнээр уншигдаагүй) өөрийнх нь баримтыг нэрлэсэн байдлаар
+         татаж НЭМНЭ. Ингэснээр ажилтан «олдсонгүй» болж, эрсдэл нь алга болохгүй. */
+      if (!found && sUid) {
+        try {
+          var own = await fdb.collection('users').doc(sUid).get();
+          if (own && own.exists) {
+            var ox = own.data() || {};
+            if (!ox.uid) ox.uid = sUid;
+            docs.push({ id: own.id, data: function () { return ox; } });
+            selfAdded = true;
+          }
+        } catch (e) { console.error('[buildEmployees] өөрийн бүртгэл уншигдсангүй', e); }
+      }
+      /* Firestore-т ч байхгүй бол сешнээс наад захын бүртгэл үүсгэнэ —
+         ингэснээр албаны эрсдэл, гүйцэтгэл нь ядаж харагдана. */
+      if (!found && !selfAdded && sUid) {
+        var syn = { uid: sUid, email: SESSION.email || '', department: SESSION.dept || '', position: SESSION.pos || '' };
+        docs.push({ id: sUid, data: function () { return syn; } });
+        selfAdded = true;
+      }
+      selfOnly = selfAdded && docs.length === 1;
     }
-    EMP_LOAD = { state: 'ok', users: docs.length, error: '', selfOnly: selfOnly };
+    EMP_LOAD = { state: 'ok', users: docs.length, error: '', selfOnly: selfOnly, selfAdded: selfAdded };
     var examByUser = {}, progByUser = {};
     try {
       var examSnap = await fdb.collection('exam_results').get();
@@ -4881,6 +4900,8 @@ var RISK_DEPT_ALIAS = {
 /* Эдгээр файлд «албан тушаал» багананд АЖЛЫН НЭР бичигдсэн (албан тушаал биш)
    тул албан тушаалаар шүүвэл хэнд ч харагдахгүй — албаны бүх ажилтанд хамаарна */
 var RISK_POS_ANY = ['ажилбарын эрсдэлийн үнэлгээ'];
+/* Ажлын байр бүртгэгдээгүй үед тавигддаг орлуулагч утгууд */
+var RISK_POS_PLACEHOLDER = ['ажилтан', 'тодорхойгүй', 'ажилчин', '—', '-', 'n/a'];
 function riskDeptKey(d) { return String(d || '').trim().toLowerCase(); }
 function riskPosIsAny(d) { return RISK_POS_ANY.indexOf(riskDeptKey(d)) >= 0; }
 function riskDeptFix(d) { return RISK_DEPT_ALIAS[riskDeptKey(d)] || d; }
@@ -4999,6 +5020,11 @@ function riskAppliesTo(r, emp) {
   var pos = riskPositions(r);
   if (!pos.length) return true;                    // ажлын байр заагаагүй = албаны бүх ажилтанд
   var mine = String(emp.role || emp.pos || '').trim();
+  /* ⚠ «Ажилтан», «Тодорхойгүй» гэх нь ЖИНХЭНЭ албан тушаал биш — ажлын байр
+     нь бүртгэгдээгүй үеийн орлуулагч. Үүнийг албан тушаал гэж үзвэл ямар ч
+     эрсдэлтэй таарахгүй тул тухайн хүнд юу ч харагдахгүй болно.
+     Тиймээс ажлын байр заагаагүйтэй адилаар албаны БҮХ эрсдэлийг харуулна. */
+  if (RISK_POS_PLACEHOLDER.indexOf(mine.toLowerCase()) >= 0) return true;
   if (!mine) return true;
   return pos.some(function (p) { return riskNameMatch(p, mine); });
 }
