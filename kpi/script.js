@@ -6952,7 +6952,20 @@ function riskSheetIsData(name) {
   if (!n) return false;
   return RISK_SKIP_SHEETS.indexOf(n) < 0;
 }
+/* ⚠ Зарим файл нь ЭРСДЭЛИЙН ҮНЭЛГЭЭ биш, АЮУЛГҮЙ АЖИЛЛАГААНЫ ЗААВАРЧИЛГАА
+   байдаг (жишээ: «Өндрийн цэвэрлэгээ хийх үеийн аюулгүй ажиллагааны
+   зааварчилгаа»). Багана нь төстэй тул эрсдэл мэт уншигдаж, бүртгэлд
+   утгагүй мөр нэмдэг. Нэрэндээ «зааварчилгаа» гэж байгаад «эрсдэлийн
+   үнэлгээ» гэж БАЙХГҮЙ файлыг оруулахгүй. */
+function riskFileIsInstruction(fileName) {
+  var n = String(fileName || '').split(/[\\/]/).pop().toLowerCase();
+  if (!/зааварчилгаа/.test(n)) return false;
+  return !/эрсдэлийн үнэлгээ|эрсдлийн үнэлгээ|эрсдэлийн үнэлгээнүүд/.test(n);
+}
 function riskParseSheet(wb, fileName, depts, lockDept) {
+  if (riskFileIsInstruction(fileName)) {
+    return { rows: [], dept: '', position: '', err: 'зааварчилгааны файл — эрсдэлийн үнэлгээ биш' };
+  }
   var names = (wb && wb.SheetNames) || [];
   var data = names.filter(riskSheetIsData);
   if (data.length <= 1) return riskParseOneSheet(wb, data[0] || names[0], fileName, depts, lockDept);
