@@ -5527,11 +5527,25 @@ function risksForView() {
            dept: SESSION.dept || '', role: SESSION.pos || '', email: SESSION.email || '' };
   }
   if (!me || (!me.dept && !me.uid)) return [];
-  return all.filter(function (r) { return riskAppliesTo(r, me); });
+  var mine = all.filter(function (r) { return riskAppliesTo(r, me); });
+  if (mine.length) { RISK_VIEW_SCOPE = 'pos'; return mine; }
+
+  /* ⚠ Ажлын байрных нь үнэлгээ ХИЙГДЭЭГҮЙ хүн (жишээ нь албаны дарга, жолооч)
+     өмнө нь ХООСОН дэлгэц хардаг байв. Тэдэнд албаныхаа эрсдлийг харуулна —
+     «таны ажлын байрны үнэлгээ хараахан хийгдээгүй, албанд ийм эрсдэл бий»
+     гэсэн утгаар. Хоосон дэлгэцээс хамаагүй хэрэгтэй. */
+  if (me.dept) {
+    var deptAll = all.filter(function (r) { return !r.dept || riskSameDept(r.dept, me.dept); });
+    if (deptAll.length) { RISK_VIEW_SCOPE = 'dept'; return deptAll; }
+  }
+  RISK_VIEW_SCOPE = 'none';
+  return [];
 }
 
 /* Эрсдэл хаанаас, хэд ирснийг дэлгэц дээр хэлэхэд ашиглана (DevTools хэрэггүй) */
 var RISK_LOAD_INFO = { src: '—', n: 0, depts: 0 };
+/* Ажилтанд юуг харуулж байна: 'pos' = ажлын байрных, 'dept' = албаных */
+var RISK_VIEW_SCOPE = 'pos';
 var RISK_FILTER = { level: '', q: '', cell: 0, dept: '' };
 /* Нэг дор зурах мөрийн тоо — шүүлтүүр солигдоход эхнээс нь эхэлнэ */
 var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
@@ -6083,6 +6097,13 @@ function renderHazards() {
       'нийт ачаалсан: <b>' + ((DB.risks || []).length) + '</b>' +
       '</div></div></div>';
   } else {
+    /* Ажлын байрных нь үнэлгээ хийгдээгүй үед ТОДОРХОЙ хэлнэ */
+    if (!isAdmin() && !isDeptHead() && RISK_VIEW_SCOPE === 'dept') {
+      H += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.65">' +
+        '<b>ℹ️ Таны ажлын байрны («' + esc(myPos || '—') + '») эрсдэлийн үнэлгээ хараахан хийгдээгүй байна.</b><br>' +
+        'Доор <b>' + esc(myDept) + '</b>-ны эрсдэлүүдийг харуулж байна — өөрт хамаарахыг уншиж, ' +
+        'урьдчилан сэргийлэх арга хэмжээг дагаж мөрдөнө үү.</div>';
+    }
     H += riskDashHTML(list, sub);
     if (isAdmin() || isDeptHead()) H += riskAdminSectionsHTML(list);
   }
