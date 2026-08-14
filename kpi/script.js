@@ -6038,7 +6038,25 @@ function riskScoreChips(vals, avgVal, label) {
    Агуулга бүхэлдээ файлаас — шинэ зүйл зохиохгүй.
    ══════════════════════════════════════════════════════════════════════ */
 function riskEmpBriefHTML(list, myPos, myDept) {
-  var all = (list || []).slice().sort(function (a, b) { return riskScore(b) - riskScore(a); });
+  /* ⚠ Ижил аюул ОЛОН АЖЛЫН БАЙРАНД бүртгэгдсэн байдаг. Албаны эрсдлийг
+     харж байгаа хүнд тэдгээр нь яг адилхан мөр болж давхардан харагдана.
+     Тиймээс ХАРУУЛАХ үед аюул+арга хэмжээгээр нэгтгэнэ (дата хөндөгдөхгүй).
+     Хэдэн ажлын байранд хамаарахыг мөрөнд нь тэмдэглэнэ. */
+  var nzz = function (v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); };
+  var seenH = {}, merged = [];
+  (list || []).forEach(function (r) {
+    var k = nzz(r.hazard) + '|' + nzz(r.actions);
+    if (seenH[k]) {
+      var p = String(r.position || '').trim();
+      if (p && seenH[k]._posList.indexOf(p) < 0) seenH[k]._posList.push(p);
+      if (riskScore(r) > riskScore(seenH[k])) { seenH[k].r = r.r; seenH[k].p = r.p; seenH[k].n = r.n; seenH[k].h = r.h; }
+      return;
+    }
+    var copy = {}; for (var f in r) copy[f] = r[f];
+    copy._posList = String(r.position || '').trim() ? [String(r.position).trim()] : [];
+    seenH[k] = copy; merged.push(copy);
+  });
+  var all = merged.sort(function (a, b) { return riskScore(b) - riskScore(a); });
   if (!all.length) return '';
 
   /* ── Шүүлтүүр (дарж болдог) ── */
@@ -6119,9 +6137,13 @@ function riskEmpRowsHTML(rows) {
       (act ? '<div style="margin-top:6px;padding-left:34px;font-size:12.5px;color:#475569;line-height:1.55;' +
         'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
         '<b style="color:' + L.color + '">🛡️ </b>' + esc(act) + '</div>' : '') +
-      ((r.location || r.due) ? '<div style="margin-top:5px;padding-left:34px;font-size:11px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
-        (r.location ? '<span>📍 ' + esc(r.location) + '</span>' : '') +
-        (r.due ? '<span>📅 ' + esc(r.due) + '</span>' : '') + '</div>' : '') +
+      ((r.location || r.due || (r._posList && r._posList.length > 1))
+        ? '<div style="margin-top:5px;padding-left:34px;font-size:11px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
+          (r.location ? '<span>📍 ' + esc(r.location) + '</span>' : '') +
+          (r.due ? '<span>📅 ' + esc(r.due) + '</span>' : '') +
+          (r._posList && r._posList.length > 1
+            ? '<span style="color:#7C3AED">👥 ' + r._posList.length + ' ажлын байранд хамаарна</span>' : '') +
+          '</div>' : '') +
       '</div>';
   });
   return H;
