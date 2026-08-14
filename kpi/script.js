@@ -1071,8 +1071,26 @@ function riskCanonDept(d) {
 }
 
 /* Бүх эрсдлийг албаар нь хувааж R2 руу нийтэлнэ (админ/туслах админ) */
+/* Нэг ажлын байрны үнэлгээ ОЛОН файлд давтагдаж болно (жишээ нь ЗХНА-гийн
+   3 файл бүгд «Оффис менежер», «захирлын туслах» хуудастай). Ижил
+   алба+ажлын байр+аюул+үйл ажиллагаа бүхий мөрийг НЭГ л удаа авна. */
+function riskDedupe(rows) {
+  var by = {}, order = [];
+  /* «зассан хувилбар» гэсэн замтай файл ДАВАМГАЙЛНА (хамгийн сүүлийн засвар) */
+  var rank = function (r) { return /зассан/i.test(String(r.src || '')) ? 2 : 1; };
+  (rows || []).forEach(function (r) {
+    var k = [String(r.dept || '').trim().toLowerCase(),
+             String(r.position || '').trim().toLowerCase(),
+             String(r.hazard || '').replace(/\s+/g, ' ').trim().toLowerCase(),
+             String(r.process || '').replace(/\s+/g, ' ').trim().toLowerCase()].join('|');
+    if (!by[k]) { by[k] = r; order.push(k); return; }
+    if (rank(r) > rank(by[k])) by[k] = r;      // зассан хувилбараар солино
+  });
+  return order.map(function (k) { return by[k]; });
+}
+
 async function riskR2Publish(rows, onStep) {
-  var list = (rows || []).slice();
+  var list = riskDedupe(rows || []);
   var byDept = {};
   list.forEach(function (r) {
     var d = riskCanonDept(r.dept) || 'Тодорхойгүй';
@@ -6252,15 +6270,53 @@ function riskCleanPos(s) {
 }
 
 /* Нэг хуудсыг эрсдэлийн мөр болгож задлана */
+/* ══════════════════════════════════════════════════════════════════════
+   НЭГ ФАЙЛД ОЛОН АЖЛЫН БАЙР БАЙЖ БОЛНО.
+   Excel-ийн ХУУДАС (sheet) бүр нь тусдаа албан тушаал:
+     Lab.xlsx → Химич | Микробиологич | ЛАБОРАНТ | ЛАБ-ЭРХЛЭГЧ | дээж авагч
+   Өмнө нь зөвхөн ЭХНИЙ хуудсыг уншдаг байсан тул үлдсэн нь бүрмөсөн
+   алдагддаг байв. Одоо хуудас бүрийг уншиж, хуудасны нэрийг албан
+   тушаал болгоно (туслах хуудсуудыг алгасна).
+   ══════════════════════════════════════════════════════════════════════ */
+var RISK_SKIP_SHEETS = ['үнэлгээний арга', 'нүүр хуудас', 'танилцсан', 'заавар',
+  'тайлбар', 'арга зүй', 'хавсралт', 'sheet1', 'sheet2', 'sheet3'];
+function riskSheetIsData(name) {
+  var n = String(name || '').trim().toLowerCase();
+  if (!n) return false;
+  return RISK_SKIP_SHEETS.indexOf(n) < 0;
+}
 function riskParseSheet(wb, fileName, depts, lockDept) {
+  var names = (wb && wb.SheetNames) || [];
+  var data = names.filter(riskSheetIsData);
+  if (data.length <= 1) return riskParseOneSheet(wb, data[0] || names[0], fileName, depts, lockDept);
+
+  /* Олон ажлын байртай файл — хуудас бүрийг тусад нь */
+  var all = { rows: [], dept: '', position: '', err: '', sheets: [] };
+  data.forEach(function (sn) {
+    var r = riskParseOneSheet(wb, sn, fileName, depts, lockDept);
+    if (r.rows.length) {
+      all.rows = all.rows.concat(r.rows);
+      all.dept = all.dept || r.dept;
+      all.sheets.push({ name: sn, n: r.rows.length, position: r.rows[0].position });
+    }
+  });
+  if (!all.rows.length) all.err = 'мөр олдсонгүй';
+  all.position = all.sheets.map(function (s) { return s.position; }).join(', ');
+  return all;
+}
+
+function riskParseOneSheet(wb, sheetName, fileName, depts, lockDept) {
   var out = { rows: [], dept: '', position: '', err: '' };
   try {
     var parts = String(fileName || '').split(/[\\/]/).filter(Boolean);
     out.dept = lockDept || (parts.length > 2 ? riskCleanDept(parts[1]) : '');
     if (!out.dept && depts && depts.length) out.dept = riskDeptFromName(fileName, depts);
-    out.position = riskCleanPos(parts[parts.length - 1] || '');
+    /* Албан тушаал: ХУУДАСНЫ нэр давамгайлна (файлд олон ажлын байр байж
+       болох тул), байхгүй бол файлын нэрээс. */
+    var shPos = riskSheetIsData(sheetName) ? riskCleanPos(String(sheetName)) : '';
+    out.position = shPos || riskCleanPos(parts[parts.length - 1] || '');
 
-    var aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+    var aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName || wb.SheetNames[0]], { header: 1, defval: '' });
     var hr = riskFindHeaderReal(aoa);
     if (hr < 0) { out.err = 'толгой мөр олдсонгүй'; return out; }
     /* Толгойн дараах мөр нь үнэлгээчдийн нэр + «дундаж» байж болно.
@@ -6364,7 +6420,7 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
         dept: useDept, position: usePos, category: category,
         process: curProcess, hazard: hz,
         location: cell('location'), cause: cell('cause'),
-        r: R, rAfter: R2, unscored: unscored,
+        r: R, rAfter: R2, unscored: unscored, src: String(fileName || ''),
         /* Онооны задаргаа: гишүүн бүрийн оноо + дундаж (R = P̄ × N̄ × H̄).
            rOk — задаргаа нь бичигдсэн R-тэй ТУЛГАГДСАН эсэх. Тулгагдаагүй бол
            дэлгэцэнд томьёог харуулахгүй (буруу тайлбар өгөхгүйн тулд). */
