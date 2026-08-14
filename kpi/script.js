@@ -705,10 +705,13 @@ async function loadDB() {
       var _idx = await riskR2GetJson(RISK_R2_INDEX);
       if (_idx && _idx.depts) {
         var _want = _idx.depts;
-        if (!isAdmin() && SESSION && SESSION.dept) {
-          var _mine = _idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
-          if (_mine.length) _want = _mine;
-        }
+        /* Шүүлт нурсан ч БҮГДИЙГ татна — эрсдэл алга болохоос сэргийлнэ */
+        try {
+          if (!isAdmin() && SESSION && SESSION.dept) {
+            var _mine = _idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
+            if (_mine.length) _want = _mine;
+          }
+        } catch (e) { console.error('[risks] албаар шүүх алдаа — бүгдийг татна', e); }
         var _out = [];
         for (var _i = 0; _i < _want.length; _i++) {
           try {
@@ -5335,7 +5338,12 @@ function _riskNameMatchRaw(a, b) {
   return false;
 }
 /* Админы гараар тохируулсан зураглал: эрсдэлийн файлын алба → системийн алба */
-function riskDeptMap() { return (DB.settings && DB.settings.riskDeptMap) || {}; }
+/* ⚠ DB хараахан үүсээгүй байхад ч дуудагдана (R2 ачаалалт loadDB-ийн эхэнд
+   явдаг) — тиймээс DB байхгүйд тэсвэртэй байх ёстой. */
+function riskDeptMap() {
+  try { return (typeof DB !== 'undefined' && DB && DB.settings && DB.settings.riskDeptMap) || {}; }
+  catch (e) { return {}; }
+}
 
 /* ── Файлын «алба» багана дахь АЛБА БИШ утгууд ──────────────────────────
    Эрсдэлийн файлууд фолдероор ирдэг тул фолдерын нэр шууд «алба» болж
