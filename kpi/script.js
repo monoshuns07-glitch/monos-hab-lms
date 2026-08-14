@@ -699,8 +699,16 @@ async function loadDB() {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
+    /* ДААЛГАВАР — эхлээд R2-оос (584 баримтын Firestore уншилтыг хэмнэнэ).
+       Бүтвэл loadCols нь tasks-ыг дахин татахгүй. */
+    var _tOk = false;
+    try {
+      var _tr = await taskR2Load() || taskCacheLoad();
+      if (_tr && _tr.length) { DB.tasks = _tr; _tOk = true; console.log('[tasks] R2-оос ' + _tr.length); }
+    } catch (e) { console.error('[tasks] R2', e); }
+
     /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
-    if (isSplit()) { try { await loadCols(); } catch (e) {} }
+    if (isSplit()) { try { await loadCols(_tOk ? { skip: ['tasks'] } : null); } catch (e) {} }
     /* Эрсдэл нь Firestore-д БИШ, R2-д байна — Firestore уншилт зарцуулахгүй.
        Уншигдахгүй бол санах ой дахь/хуучин датаг хөндөхгүй. */
     try {
@@ -975,10 +983,11 @@ function colQueries(key) {
 
 /* Цуглуулгуудыг зэрэг татна (аль нэг нь уншигдахгүй бол тэр нэгийг л алгасна) */
 var COL_LOAD_FAILED = [];
-async function loadCols() {
+async function loadCols(opt) {
   if (!fbReady || !fdb) return;
   COL_LOAD_FAILED = [];
-  var res = await Promise.all(COL_KEYS.map(function (k) {
+  var skip = (opt && opt.skip) || [];          // R2-оос аль хэдийн авсныг давтахгүй
+  var res = await Promise.all(COL_KEYS.filter(function (k) { return skip.indexOf(k) < 0; }).map(function (k) {
     var queries = colQueries(k);
     return Promise.all(queries.map(function (q) {
       return q.get().catch(function () {
@@ -1132,6 +1141,63 @@ async function riskR2Publish(rows, onStep) {
 }
 
 
+/* ══ Эрсдлийн нөөц хуулбар — R2 хүрэхгүй үед хоосон болохоос сэргийлнэ ══ */
+var RISK_LEGACY_CACHE = 'kpi_risks_legacy_v1';
+function riskCacheSave(rows) {
+  try {
+    if (!rows || !rows.length) return;
+    localStorage.setItem(RISK_LEGACY_CACHE, JSON.stringify({ at: Date.now(), rows: rows }));
+  } catch (e) { /* хэмжээ хэтэрвэл алгасна */ }
+}
+function riskCacheLoad() {
+  try {
+    var c = JSON.parse(localStorage.getItem(RISK_LEGACY_CACHE) || 'null');
+    if (c && Array.isArray(c.rows) && c.rows.length) return c;
+  } catch (e) {}
+  return null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ДААЛГАВАР → R2 (ЗӨВХӨН УНШИХ ТАЛ)
+   Даалгавар өдөр бүр өөрчлөгддөг (ажилтан илгээх, админ хянах). R2 нь
+   хэсэгчлэн шинэчлэлт дэмждэггүй тул зэрэг бичвэл бие биенээ дарна.
+     • БИЧИХ — Firestore-д хэвээр (эх сурвалж, өдөрт хэдхэн удаа)
+     • УНШИХ — R2-оос (584 баримтын уншилт → 1 хүсэлт)
+   ══════════════════════════════════════════════════════════════════════ */
+var TASK_R2_FILE = 'tasks/all.json';
+var TASK_CACHE_KEY = 'kpi_tasks_cache_v1';
+async function taskR2Publish(rows) {
+  var p = { version: Date.now(), updatedAt: new Date().toISOString(),
+    total: (rows || []).length, rows: rows || [] };
+  await riskR2PutJson(TASK_R2_FILE, p);
+  try { localStorage.setItem(TASK_CACHE_KEY, JSON.stringify(p)); } catch (e) {}
+  return p;
+}
+async function taskR2Load() {
+  try {
+    var p = await riskR2GetJson(TASK_R2_FILE);
+    if (!p || !Array.isArray(p.rows)) return null;
+    try { localStorage.setItem(TASK_CACHE_KEY, JSON.stringify(p)); } catch (e) {}
+    return p.rows;
+  } catch (e) { return null; }
+}
+function taskCacheLoad() {
+  try {
+    var c = JSON.parse(localStorage.getItem(TASK_CACHE_KEY) || 'null');
+    if (c && Array.isArray(c.rows) && c.rows.length) return c.rows;
+  } catch (e) {}
+  return null;
+}
+/* Хадгалсны дараа R2 хувилбарыг чимээгүй шинэчилнэ (алдвал урсгал зогсохгүй) */
+function taskR2Sync() {
+  try {
+    if (!isAdmin() && !isDeptHead()) return;
+    var rows = colArr('tasks');
+    if (!rows.length) return;
+    taskR2Publish(rows).catch(function (e) { console.error('[tasks] R2 sync', e); });
+  } catch (e) {}
+}
+
 /* Эрхээс хамаарч ХЭРЭГТЭЙ албуудыг л татна */
 async function riskR2Load() {
   var idx;
@@ -1274,6 +1340,7 @@ function saveDB() {
         var step = 'тохиргоо';
         KPI_DOC().set(mainDocPayload())
           .then(function () { step = 'бүртгэлүүд'; return saveCols(); })
+          .then(function () { taskR2Sync(); })   // R2 дахь даалгаврын хувилбарыг шинэчилнэ
           .catch(function (e) { saveErrorToast(e, step); });
       } else {
         /* v1 — хуучнаараа (шилжүүлэг хийгээгүй байхад) */
