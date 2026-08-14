@@ -6391,7 +6391,7 @@ function renderHazards() {
   var head, sub;
   if (isAdmin()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
   else if (isDeptHead()) { head = 'Эрсдэлийн үнэлгээ'; sub = myDept || 'Таны алба'; }
-  else { head = 'Миний ажлын байрны эрсдэл'; sub = (myDept ? myDept + ' · ' : '') + (myPos || 'Бүх ажилтан'); }
+  else { head = 'Таны хариуцах ажлын байрны эрсдлийн үнэлгээ'; sub = (myDept ? myDept + ' · ' : '') + (myPos || 'Бүх ажилтан'); }
 
   var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
     '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
@@ -7902,7 +7902,7 @@ function renderRiskDept(sec, dept) {
   var _kp = riskKeyParts(dept);
   sec.innerHTML = '<div style="padding:18px 24px 10px;border-bottom:1px solid #F1F5F9">' +
     '<h1 style="font-size:20px;font-weight:700;margin:0;color:#1E293B">' +
-    (_kp.pos ? 'Миний ажлын байрны эрсдэл' : 'Эрсдэлийн үнэлгээ') + '</h1>' +
+    (_kp.pos ? 'Таны хариуцах ажлын байрны эрсдлийн үнэлгээ' : 'Эрсдэлийн үнэлгээ') + '</h1>' +
     '<p style="font-size:12px;color:#64748B;margin:2px 0 0">' + esc(_kp.dept) +
     (_kp.pos ? ' · ' + esc(_kp.pos) : '') + '</p></div>' +
     '<div id="riskEmpArea" style="padding:16px">' +
