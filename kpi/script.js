@@ -1157,12 +1157,24 @@ function riskCanonDept(d) {
 function riskDedupe(rows) {
   var by = {}, order = [];
   /* «зассан хувилбар» гэсэн замтай файл ДАВАМГАЙЛНА (хамгийн сүүлийн засвар) */
-  var rank = function (r) { return /зассан/i.test(String(r.src || '')) ? 2 : 1; };
+  /* Аль хувилбарыг үлдээх вэ: «зассан хувилбар» хамгийн эрхэмтэй, дараа нь
+     арга хэмжээ нь бичигдсэн, дараа нь эрсдэл нь өндөр үнэлэгдсэн мөр. */
+  var rank = function (r) {
+    var s = 0;
+    if (/зассан/i.test(String(r.src || ''))) s += 100;
+    if (String(r.actions || '').trim()) s += 10;
+    if (r.r > 0) s += Math.min(r.r / 100, 9);
+    return s;
+  };
   (rows || []).forEach(function (r) {
-    var k = [String(r.dept || '').trim().toLowerCase(),
-             String(r.position || '').trim().toLowerCase(),
-             String(r.hazard || '').replace(/\s+/g, ' ').trim().toLowerCase(),
-             String(r.process || '').replace(/\s+/g, ' ').trim().toLowerCase()].join('|');
+    /* Түлхүүрт arга хэмжээг ч оруулна — ижил аюул, ижил ажлын байр, ижил
+       арга хэмжээтэй мөр нь үйл ажиллагааны бичилт зөрсөн ч ДАВХАРДАЛ мөн. */
+    /* Нэг албанд, нэг ажлын байранд, ИЖИЛ АЮУЛ хоёр удаа бичигдсэн бол
+       давхардал. (Загварын хуудас олон файлд хуулагдсанаас ийм зүйл олон
+       гарсан.) Үйл ажиллагааны бичилт зөрсөн ч ажилтанд давхардал мэт
+       харагдах тул нэгтгэнэ — хамгийн өндөр R-тэй нь үлдэнэ. */
+    var nz = function (v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); };
+    var k = [nz(r.dept), nz(r.position), nz(r.hazard)].join('|');
     if (!by[k]) { by[k] = r; order.push(k); return; }
     if (rank(r) > rank(by[k])) by[k] = r;      // зассан хувилбараар солино
   });
@@ -7018,6 +7030,12 @@ function riskParseOneSheet(wb, sheetName, fileName, depts, lockDept) {
         continue;
       }
       if (!hz || hz.length < 3) continue;
+      /* ⚠ Хүснэгтийн ХУРААНГУЙ мөрүүд аюул биш — «Дээрх бүх эрсдэл»,
+         «Дээрхтэй адил» гэх мэт. Эдгээр орвол ажилтанд утгагүй давхардал
+         мэт харагдана. */
+      var hzl = rNorm(hz);
+      if (/^дээрх/.test(hzl) || /^дээрхтэй адил/.test(hzl) || /^мөн адил/.test(hzl) ||
+          /^адилхан$/.test(hzl) || /^нийт$/.test(hzl)) continue;
 
       var R = _f(String(cell('r')).replace(',', '.'), 0);
       /* ⚠ Оноогүй мөрийг ХАЯХГҮЙ — зарим үнэлгээ бөглөгдөж дуусаагүй байдаг.
