@@ -6641,8 +6641,15 @@ function actionRiskFolder() {
     '<input type="file" id="riskFolder" webkitdirectory directory multiple style="display:none">' +
     '<i class="ti ti-folder"></i> Фолдер сонгох</label>' +
     '<label class="btn btn-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:7px">' +
-    '<input type="file" id="riskFiles" accept=".xlsx,.xls,.csv,.zip" multiple style="display:none">' +
+    /* ⚠ accept шүүлтүүр тавихгүй — Windows-ийн цонхонд ZIP харагдахгүй байх
+       тохиолдол гарсан. Бүх файлыг харуулаад, төрлийг доор өөрсдөө шүүнэ. */
+    '<input type="file" id="riskFiles" multiple style="display:none">' +
     '<i class="ti ti-files"></i> Файл / ZIP сонгох</label></div>' +
+    '<div style="margin-top:10px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#3730A3;line-height:1.6">' +
+    '<b>ZIP оруулах бол</b> баруун талын <b>«Файл / ZIP сонгох»</b> товчийг дарж, ' +
+    'Downloads доторх <b>ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД-…zip</b> файлыг сонгоно.<br>' +
+    '<b>Фолдер оруулах бол</b> зүүн товчийг дарж, <b>ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД</b> фолдерыг ' +
+    '(дотор нь ОРОЛГҮЙ) сонгоно — алба нь фолдерын нэрээс уншигдана.</div>' +
     '<div id="riskFolderSt" style="margin-top:16px"></div>');
   buildModal('Эрсдэлийн үнэлгээ — фолдероор оруулах', node, { width: '640px' });
 
