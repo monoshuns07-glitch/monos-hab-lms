@@ -713,6 +713,9 @@ async function loadDB() {
        Уншигдахгүй бол санах ой дахь/хуучин датаг хөндөхгүй. */
     try {
       var _rr = await riskR2Load();
+      RISK_LOAD_INFO = _rr
+        ? { src: _rr.cached ? 'кэш' : 'R2', n: _rr.n, depts: _rr.depts || 0 }
+        : { src: 'алга', n: 0, depts: 0 };
       if (_rr) console.log('[risks] R2-оос ' + _rr.n + ' эрсдэл' + (_rr.cached ? ' (кэшээс)' : ''));
       /* ⚠ ЭРСДЭЛ ДЭЭР FIRESTORE ОГТ АШИГЛАХГҮЙ.
          Эх сурвалж нь зөвхөн R2. R2 хүрэхгүй бол хадгалсан хуулбар.
@@ -5427,6 +5430,8 @@ function risksForView() {
   return all.filter(function (r) { return riskAppliesTo(r, me); });
 }
 
+/* Эрсдэл хаанаас, хэд ирснийг дэлгэц дээр хэлэхэд ашиглана (DevTools хэрэггүй) */
+var RISK_LOAD_INFO = { src: '—', n: 0, depts: 0 };
 var RISK_FILTER = { level: '', q: '', cell: 0, dept: '' };
 /* Нэг дор зурах мөрийн тоо — шүүлтүүр солигдоход эхнээс нь эхэлнэ */
 var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
@@ -5966,6 +5971,16 @@ function renderHazards() {
       (isAdmin() || isDeptHead()
         ? '<b>Загвар татах</b> → бөглөх → <b>Загвараар оруулах</b>. Ингэвэл нэр таарахгүй байх асуудал гарахгүй.<br>Эсвэл одоо байгаа файлуудаа <b>Фолдер / ZIP</b>-ээр шууд оруулна.'
         : 'ХАБЭА ажилтан таны ажлын байрны эрсдэлийн үнэлгээг оруулсны дараа энд харагдана.') +
+      '</div>' +
+      /* ── Оношийн мөр: DevTools нээхгүйгээр шалтгааныг харуулна ── */
+      '<div style="margin-top:14px;padding-top:11px;border-top:1px solid #F1F5F9;font-size:11.5px;color:#94A3B8;line-height:1.8">' +
+      'Эх сурвалж: <b>' + esc(RISK_LOAD_INFO.src) + '</b> · ' +
+      'татсан: <b>' + RISK_LOAD_INFO.n + '</b> эрсдэл' +
+      (RISK_LOAD_INFO.depts ? ' (' + RISK_LOAD_INFO.depts + ' алба)' : '') + '<br>' +
+      'Таны алба: <b>' + esc((SESSION && SESSION.dept) || '—') + '</b> · ' +
+      'ажлын байр: <b>' + esc(myPos || '—') + '</b><br>' +
+      'Бүртгэл: <b>' + (myEmp() ? 'олдсон' : 'олдоогүй (сешнээр тааруулж байна)') + '</b> · ' +
+      'нийт ачаалсан: <b>' + ((DB.risks || []).length) + '</b>' +
       '</div></div></div>';
   } else {
     H += riskDashHTML(list, sub);
