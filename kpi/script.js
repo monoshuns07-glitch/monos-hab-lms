@@ -435,16 +435,41 @@ async function refreshMyExams() {
 /* Ажилтан ачаалалтын оношлогоо — дашбоард дээр шалтгааныг харуулна */
 var EMP_LOAD = { state: 'idle', users: 0, error: '' };
 
+/* ══ АЖИЛТНЫ ЖАГСААЛТЫН НӨӨЦ ХУУЛБАР ══════════════════════════════════
+   Firestore-ийн өдрийн уншилтын квот дуусах, сүлжээ тасрах, дүрэм өөрчлөгдөх
+   зэрэг үед users уншилт уначихдаг. Өмнө нь тэр үед ажилтны мэдээлэл
+   БҮХЭЛДЭЭ алга болж, «бүртгэлгүй» мэт харагддаг байв.
+   Одоо сүүлийн БҮТСЭН жагсаалтыг хадгалж, унасан үед түүнийг сэргээнэ. */
+var EMP_CACHE_KEY = 'kpi_emp_cache_v1';
+function empCacheSave(list) {
+  try {
+    if (!list || !list.length) return;
+    localStorage.setItem(EMP_CACHE_KEY, JSON.stringify({ at: Date.now(), rows: list }));
+  } catch (e) { /* хэмжээ хэтэрвэл алгасна */ }
+}
+function empCacheLoad() {
+  try {
+    var c = JSON.parse(localStorage.getItem(EMP_CACHE_KEY) || 'null');
+    if (c && Array.isArray(c.rows) && c.rows.length) return c;
+  } catch (e) {}
+  return null;
+}
+
 async function buildEmployeesFromRealData() {
   if (!fbReady) { EMP_LOAD = { state: 'nofb', users: 0, error: 'Сервертэй холбогдоогүй' }; return null; }
   try {
-    var usersSnap = await fdb.collection('users').get();
-    /* Бүх хэрэглэгчийг нэг мөр болгож авна */
-    var docs = [];
-    usersSnap.forEach(function (d) {
-      var x = d.data() || {};
-      docs.push({ id: d.id, data: function () { return x; } });
-    });
+    /* ⚠ Уншилт унасан ч ЭНД ЗОГСОХГҮЙ — доор өөрийн бүртгэл ба нөөц хуулбар бий */
+    var docs = [], readErr = null;
+    try {
+      var usersSnap = await fdb.collection('users').get();
+      usersSnap.forEach(function (d) {
+        var x = d.data() || {};
+        docs.push({ id: d.id, data: function () { return x; } });
+      });
+    } catch (e0) {
+      readErr = e0;
+      try { console.error('[buildEmployees] users уншигдсангүй', e0 && (e0.code || e0.message)); } catch (x) {}
+    }
 
     /* ⚠ Ажилтны эрхээр «users» цуглуулга бүтнээр нь уншигдахгүй (эсвэл хоосон
        ирэх) тохиолдол бий. Ажилтанд ӨӨРИЙНХӨӨ бүртгэл л хэрэгтэй тул түүнийг
@@ -472,15 +497,39 @@ async function buildEmployeesFromRealData() {
         } catch (e) { console.error('[buildEmployees] өөрийн бүртгэл уншигдсангүй', e); }
       }
       /* Firestore-т ч байхгүй бол сешнээс наад захын бүртгэл үүсгэнэ —
-         ингэснээр албаны эрсдэл, гүйцэтгэл нь ядаж харагдана. */
-      if (!found && !selfAdded && sUid) {
+         ингэснээр албаны эрсдэл, гүйцэтгэл нь ядаж харагдана.
+         ⚠ ГЭХДЭЭ уншилт унасан бөгөөд НӨӨЦ ХУУЛБАР байгаа бол түүнийг
+         илүүд үзнэ — 1 мөртэй хоосон бүртгэлээр 268 ажилтныг орлуулж болохгүй. */
+      if (!found && !selfAdded && sUid && !(readErr && empCacheLoad())) {
         var syn = { uid: sUid, email: SESSION.email || '', department: SESSION.dept || '', position: SESSION.pos || '' };
         docs.push({ id: sUid, data: function () { return syn; } });
         selfAdded = true;
       }
       selfOnly = selfAdded && docs.length === 1;
     }
-    EMP_LOAD = { state: 'ok', users: docs.length, error: '', selfOnly: selfOnly, selfAdded: selfAdded };
+
+    /* ⚠ Уншилт унасан бөгөөд юу ч цуглаагүй бол — НӨӨЦ ХУУЛБАРААС сэргээнэ.
+       Ингэснээр квот дуусах/сүлжээ тасрах үед дата «алга болохоо» болино. */
+    if (!docs.length) {
+      var cache = empCacheLoad();
+      if (cache) {
+        EMP_LOAD = { state: 'cache', users: cache.rows.length, at: cache.at,
+          error: (readErr && (readErr.code || readErr.message)) || '' };
+        var ageMin = Math.round((Date.now() - cache.at) / 60000);
+        setTimeout(function () {
+          toast('📴 Серверээс уншиж чадсангүй — ' + cache.rows.length +
+            ' ажилтны хадгалсан хуулбарыг харуулж байна (' +
+            (ageMin < 60 ? ageMin + ' мин' : Math.round(ageMin / 60) + ' цаг') + ' өмнөх).', 'warn');
+        }, 1000);
+        return cache.rows;
+      }
+      if (readErr) {
+        EMP_LOAD = { state: 'error', users: 0, error: (readErr.code || readErr.message || 'уншиж чадсангүй') };
+        return null;
+      }
+    }
+    EMP_LOAD = { state: 'ok', users: docs.length, error: '', selfOnly: selfOnly, selfAdded: selfAdded,
+      partial: !!readErr };
     var examByUser = {}, progByUser = {};
     try {
       var examSnap = await fdb.collection('exam_results').get();
@@ -549,6 +598,8 @@ async function buildEmployeesFromRealData() {
       });
     });
     EMP_LOAD.built = out.length;
+    /* Зөвхөн БҮТЭН уншсан үед нөөцлөнө — доголдсон үр дүнгээр сайныг дарахгүй */
+    if (!readErr && !selfOnly && out.length > 1) empCacheSave(out);
     return out;
   } catch (e) {
     EMP_LOAD = { state: 'error', users: 0, error: (e && (e.code || e.message)) || 'уншиж чадсангүй' };
@@ -4931,7 +4982,15 @@ function riskScore(r) {
 }
 /* Арга хэмжээ авсны ДАРААХ үлдэгдэл эрсдэл */
 function riskScoreAfter(r) { var v = _f(r && r.rAfter, 0); return v ? Math.round(v * 100) / 100 : 0; }
+/* Үнэлгээ хийгдээгүй эрсдэлд зориулсан ТӨВИЙГ САХИСАН түвшин.
+   0 оноог «Бага» гэж үзвэл бөглөгдөөгүй үнэлгээ аюулгүй мэт харагдана. */
+var RISK_LEVEL_NONE = { code: '—', max: 0, name: 'Үнэлгээ хийгдээгүй',
+  color: '#64748B', bg: '#F8FAFC', bd: '#E2E8F0' };
+function riskIsUnscored(r) {
+  return !!(r && typeof r === 'object' && (r.unscored || !riskScore(r)));
+}
 function riskLevel(r) {
+  if (riskIsUnscored(r)) return RISK_LEVEL_NONE;
   var sc = typeof r === 'number' ? r : riskScore(r);
   for (var i = 0; i < RISK_LEVELS.length; i++) if (sc <= RISK_LEVELS[i].max) return RISK_LEVELS[i];
   return RISK_LEVELS[RISK_LEVELS.length - 1];
@@ -6114,8 +6173,9 @@ function riskFindHeaderReal(aoa) {
   }
   return bestHit >= 3 ? best : -1;
 }
-function riskMapColsReal(head) {
+function riskMapColsReal(head, sub) {
   var h = (head || []).map(rNorm);
+  var s = (sub || []).map(rNorm);
   var find = function () {
     for (var a = 0; a < arguments.length; a++) {
       var k = arguments[a];
@@ -6144,11 +6204,19 @@ function riskMapColsReal(head) {
   var pI = all('магадлал'), nI = all('ослын үр дагавар'), hI = all('гишүүдийн санал');
   if (!nI.length) nI = all('үр дагавар');
   if (!hI.length) hI = all('санал');
+  /* ⚠ Толгойн ДООРХ мөрөнд үнэлгээ өгсөн хүмүүсийн нэр, төгсгөлд нь «дундаж»
+     багана байдаг. Файл бүр өөр тооны үнэлгээчинтэй (2, 3, 4 …).
+     «дундаж» баганыг гишүүний оноо гэж тоолвол дундаж буруу гарна —
+     тиймээс түүнийг ТУСДАА, эрх мэдэлтэй утга болгож авна. */
   var span = function (arr, which) {
     if (!arr.length) return null;
-    var s = which === 'last' ? arr[arr.length - 1] : arr[0];
+    var st = which === 'last' ? arr[arr.length - 1] : arr[0];
     if (which === 'last' && arr.length < 2) return null;
-    return { s: s, e: spanEnd(s) };
+    var en = spanEnd(st), avgCol = -1;
+    for (var c = st; c <= en && c < s.length; c++) {
+      if (s[c] && s[c].indexOf('дундаж') >= 0) { avgCol = c; break; }
+    }
+    return { s: st, e: en, avg: avgCol };
   };
   return {
     pSpan: span(pI, 'first'), nSpan: span(nI, 'first'), hSpan: span(hI, 'first'),
@@ -6195,8 +6263,13 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
     var aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
     var hr = riskFindHeaderReal(aoa);
     if (hr < 0) { out.err = 'толгой мөр олдсонгүй'; return out; }
-    var M = riskMapColsReal(aoa[hr] || []);
+    /* Толгойн дараах мөр нь үнэлгээчдийн нэр + «дундаж» байж болно.
+       Байвал түүнийг зураглалд ашиглаад, дата мөрөөс АЛГАСНА. */
+    var subRow = aoa[hr + 1] || [];
+    var hasSub = subRow.some(function (c) { return /дундаж/i.test(String(c == null ? '' : c)); });
+    var M = riskMapColsReal(aoa[hr] || [], hasSub ? subRow : []);
     if (M.hazard < 0) { out.err = 'аюулын багана алга'; return out; }
+    var firstData = hr + (hasSub ? 2 : 1);
 
     /* Нэгдсэн файл (олон албыг агуулсан) бол АЛБА, АЖЛЫН БАЙР нь БАГАНА байна.
        Тэр тохиолдолд фолдерын нэрээс биш, мөр тус бүрээс нь уншина. */
@@ -6208,25 +6281,32 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
     });
 
     var curProcess = '', category = '';
-    for (var i = hr + 1; i < aoa.length; i++) {
+    for (var i = firstData; i < aoa.length; i++) {
       var row = aoa[i] || [];
       var cell = function (k) {
         return (M[k] >= 0 && row[M[k]] != null) ? String(row[M[k]]).replace(/\s+/g, ' ').trim() : '';
       };
       /* Нийлүүлсэн толгойн доорх ГИШҮҮН БҮРИЙН оноог цуглуулна */
+      /* Гишүүдийн оноо — «дундаж» баганыг ОРУУЛАХГҮЙ */
       var sc = function (k) {
         var sp = M[k]; if (!sp) return [];
         var out = [];
         for (var c = sp.s; c <= sp.e && c < row.length; c++) {
+          if (c === sp.avg) continue;                 // дундажийн багана — гишүүн биш
           var v = parseFloat(row[c]);
           if (!isNaN(v) && v > 0) out.push(v);
         }
-        /* Багананы нийт өргөн = үнэлгээнд оролцсон гишүүдийн тоо.
-           Хоосон орхисон гишүүн ч тоонд ордог (хүснэгтийн дундаж тэгж бодогддог). */
-        out.width = Math.max(sp.e - sp.s + 1, out.length);
+        out.width = sp.avg >= 0 ? Math.max(sp.e - sp.s, out.length)
+                                : Math.max(sp.e - sp.s + 1, out.length);
         return out;
       };
-      var avg = function (a) {
+      /* Дундаж: хүснэгтэд бичигдсэн байвал ТҮҮНИЙГ (эрх мэдэлтэй), эс бөгөөс тооцно */
+      var avg = function (a, k) {
+        var sp = k ? M[k] : null;
+        if (sp && sp.avg >= 0) {
+          var w = parseFloat(row[sp.avg]);
+          if (!isNaN(w) && w > 0) return Math.round(w * 100) / 100;
+        }
         if (!a || !a.length) return 0;
         var s = 0; a.forEach(function (x) { s += x; });
         return Math.round(s / (a.width || a.length) * 100) / 100;
@@ -6251,7 +6331,20 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
       if (!hz || hz.length < 3) continue;
 
       var R = _f(String(cell('r')).replace(',', '.'), 0);
-      if (!R) continue;
+      /* ⚠ Оноогүй мөрийг ХАЯХГҮЙ — зарим үнэлгээ бөглөгдөж дуусаагүй байдаг.
+         ГЭХДЭЭ хоёр төрлийг оруулж болохгүй:
+           • Хэвлэлийн хуудас бүрт ДАВТАГДСАН толгойн мөр («Болзошгүй аюул» г.м.)
+           • «Аюул байхгүй» гэж ТОДОРХОЙ бичсэн мөр — эрсдэл биш, эсрэгээрээ
+         Үлдсэнийг «үнэлгээ хийгдээгүй» гэж тэмдэглэн оруулна. Түвшин
+         ОНООХГҮЙ (0 нь «Бага» гэсэн худал утга өгнө). */
+      var unscored = !R;
+      if (unscored) {
+        var hzn = rNorm(hz);
+        var isHeaderEcho = RISK_HDR_WORDS.some(function (w) { return hzn === w; }) ||
+          hzn === 'болзошгүй аюул' || hzn === 'авах арга хэмжээ';
+        var saysNone = /^(аюул|эрсдэл|аюул\/эрсдэл)\s*(нь)?\s*байхгүй/.test(hzn);
+        if (isHeaderEcho || saysNone) continue;
+      }
       var R2 = M.rAfter >= 0 ? _f(String(row[M.rAfter] == null ? '' : row[M.rAfter]).replace(',', '.'), 0) : 0;
 
       /* Багана байвал мөрийн утга давамгайлна */
@@ -6259,21 +6352,28 @@ function riskParseSheet(wb, fileName, depts, lockDept) {
       var rowPos  = (iPos  >= 0 && row[iPos]  != null) ? String(row[iPos]).replace(/\s+/g, ' ').trim() : '';
       var useDept = lockDept || rowDept || out.dept;
       var usePos  = rowPos || out.position;
-      if (!useDept) continue;                       /* албагүй мөрийг оруулахгүй */
+      /* ⚠ Фолдергүй, үндсэн хавтсанд шууд байгаа файл — алба тодорхойлогдохгүй.
+         Өмнө нь БҮХ мөрийг чимээгүй хаядаг байсан. Файлын нэрэнд «ажилбар»
+         гэж байвал «Ажилбарын эрсдэлийн үнэлгээ» ангилалд оруулна (фолдерын
+         нэртэй ижил). Эс бөгөөс мөрийг алгасахын оронд алдааг тэмдэглэнэ. */
+      if (!useDept) {
+        if (/ажилбар/i.test(fileName || '')) useDept = 'Ажилбарын эрсдэлийн үнэлгээ';
+        else { out.skippedNoDept = (out.skippedNoDept || 0) + 1; continue; }
+      }
       out.rows.push({
         dept: useDept, position: usePos, category: category,
         process: curProcess, hazard: hz,
         location: cell('location'), cause: cell('cause'),
-        r: R, rAfter: R2,
+        r: R, rAfter: R2, unscored: unscored,
         /* Онооны задаргаа: гишүүн бүрийн оноо + дундаж (R = P̄ × N̄ × H̄).
            rOk — задаргаа нь бичигдсэн R-тэй ТУЛГАГДСАН эсэх. Тулгагдаагүй бол
            дэлгэцэнд томьёог харуулахгүй (буруу тайлбар өгөхгүйн тулд). */
         pv: sc('pSpan').slice(), nv: sc('nSpan').slice(), hv: sc('hSpan').slice(),
-        p: avg(sc('pSpan')), n: avg(sc('nSpan')), h: avg(sc('hSpan')),
+        p: avg(sc('pSpan'), 'pSpan'), n: avg(sc('nSpan'), 'nSpan'), h: avg(sc('hSpan'), 'hSpan'),
         p2v: sc('p2Span').slice(), n2v: sc('n2Span').slice(), h2v: sc('h2Span').slice(),
-        p2: avg(sc('p2Span')), n2: avg(sc('n2Span')), h2: avg(sc('h2Span')),
+        p2: avg(sc('p2Span'), 'p2Span'), n2: avg(sc('n2Span'), 'n2Span'), h2: avg(sc('h2Span'), 'h2Span'),
         rOk: (function () {
-          var pp = avg(sc('pSpan')), nn = avg(sc('nSpan')), hh = avg(sc('hSpan'));
+          var pp = avg(sc('pSpan'), 'pSpan'), nn = avg(sc('nSpan'), 'nSpan'), hh = avg(sc('hSpan'), 'hSpan');
           return !!(pp && nn && hh && R && Math.abs(pp * nn * hh - R) < 0.6);
         })(),
         positions: usePos ? usePos.split(/\s*,\s*/).filter(Boolean) : [],
@@ -11193,7 +11293,16 @@ function ensureDashboardNotEmpty() {
   } else if (el.state === 'error') {
     icon = 'ti-alert-triangle';
     msg = 'Ажилтны мэдээлэл уншигдсангүй';
-    hint = 'Алдаа: ' + esc(el.error || '') + '. Дахин нэвтэрч үзнэ үү.';
+    hint = /quota|resource-exhausted/i.test(el.error || '')
+      ? 'Firebase-ийн өдрийн үнэгүй уншилтын хязгаар дууссан байна. ' +
+        'Шөнө дунд (Номхон далайн цагаар) шинэчлэгдэнэ. Алдаа: ' + esc(el.error || '')
+      : 'Алдаа: ' + esc(el.error || '') + '. Дахин нэвтэрч үзнэ үү.';
+  } else if (el.state === 'cache') {
+    icon = 'ti-cloud-off';
+    msg = 'Хадгалсан хуулбараар ажиллаж байна';
+    hint = el.users + ' ажилтны мэдээлэл харагдаж байна. Серверээс шинэчлэх боломжгүй байсан тул ' +
+      'сүүлд амжилттай уншсан хуулбарыг ашиглаж байна.' +
+      (el.error ? ' (' + esc(el.error) + ')' : '');
   } else if (el.state === 'ok' && !el.users) {
     if (isAdmin()) {
       msg = 'Ажилтан бүртгэгдээгүй байна';
