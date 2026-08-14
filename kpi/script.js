@@ -5498,6 +5498,10 @@ var RISK_DEPT_ALIAS = {
 var RISK_POS_ANY = ['ажилбарын эрсдэлийн үнэлгээ'];
 /* Ажлын байр бүртгэгдээгүй үед тавигддаг орлуулагч утгууд */
 var RISK_POS_PLACEHOLDER = ['ажилтан', 'тодорхойгүй', 'ажилчин', '—', '-', 'n/a'];
+/* Фолдергүй / ажилбарын файлыг тоног төхөөрөмжийнх нь албанд оноох дүрэм */
+var RISK_FILE_DEPT = [
+  { re: /сав\s*үлээх/i, dept: 'ШХҮ' }     // Пет шугамын машин → Шингэн хүнсний үйлдвэр
+];
 function riskDeptKey(d) { return String(d || '').trim().toLowerCase(); }
 function riskPosIsAny(d) { return RISK_POS_ANY.indexOf(riskDeptKey(d)) >= 0; }
 function riskDeptFix(d) { return RISK_DEPT_ALIAS[riskDeptKey(d)] || d; }
@@ -7101,6 +7105,14 @@ function riskParseOneSheet(wb, sheetName, fileName, depts, lockDept) {
       if (!useDept) {
         if (/ажилбар/i.test(fileName || '')) useDept = 'Ажилбарын эрсдэлийн үнэлгээ';
         else { out.skippedNoDept = (out.skippedNoDept || 0) + 1; continue; }
+      }
+      /* ⚠ Фолдергүй / «ажилбарын» файлууд нь ямар албаны ТОНОГ ТӨХӨӨРӨМЖИЙН
+         тухай болохоор нь зөв албанд оруулна. Жишээ: «Сав үлээх машин» бол
+         ШХҮ-ийн Пет шугамын машин — ИТА-д биш, ШХҮ-д харьяалагдана. */
+      if (riskDeptKey(useDept) === 'ажилбарын эрсдэлийн үнэлгээ') {
+        for (var _fd = 0; _fd < RISK_FILE_DEPT.length; _fd++) {
+          if (RISK_FILE_DEPT[_fd].re.test(String(fileName || ''))) { useDept = RISK_FILE_DEPT[_fd].dept; break; }
+        }
       }
       out.rows.push({
         dept: useDept, position: usePos, category: category,
