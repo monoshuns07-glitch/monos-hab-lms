@@ -5729,7 +5729,8 @@ function riskDetailHTML(r) {
       '<div style="flex:1;font-size:12.5px;color:#15803D;line-height:1.5">' +
       (drop > 0 ? '<b>' + drop + '%</b>-иар буурна<br>' : '') +
       '<span style="color:#64748B">' + esc(LA.name) + ' түвшинд шилжинэ</span></div></div>';
-    var brk2 = (r.p2v && r.p2v.length) || (r.n2v && r.n2v.length) || (r.h2v && r.h2v.length);
+    /* Задаргааг ЗӨВХӨН тулгарсан үед харуулна */
+    var brk2 = r.rAfterOk && ((r.p2v && r.p2v.length) || (r.n2v && r.n2v.length) || (r.h2v && r.h2v.length));
     if (brk2) {
       H += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:10px 13px;margin-top:7px">' +
         riskScoreChips(r.p2v, r.p2, 'Магадлал (P)') +
@@ -6264,9 +6265,46 @@ function riskMapColsReal(head, sub) {
     }
     return { s: st, e: en, avg: avgCol };
   };
+  /* ⚠ Арга хэмжээний ДАРААХ блокийн толгойд алдаа их байдаг — зарим файлд
+     гурвуулаа «Ослын үр дагавар» гэж бичигдсэн (H, P нэр нь алга). Тиймээс
+     нэрээр нь биш, БАЙРЛАЛААР нь тодорхойлно: эхний R ба хоёр дахь R-ийн
+     хооронд байгаа онооны багануудыг эхний блоктой ижил дарааллаар 3 хуваана. */
+  var afterSpans = function () {
+    if (rc.length < 2) return {};
+    var first = rc[0], last = rc[rc.length - 1];
+    var startAt = last;                       // хоёр дахь R-ээс ухарч эхлэлийг олно
+    var cand = [];
+    for (var c = first + 1; c < last; c++) {
+      if (s[c] && s[c].indexOf('дундаж') >= 0) { cand.push(c); continue; }
+      if (h[c] && (h[c].indexOf('үр дагавар') >= 0 || h[c].indexOf('санал') >= 0 ||
+                   h[c].indexOf('магадлал') >= 0)) cand.push(c);
+    }
+    if (!cand.length) return {};
+    startAt = Math.min.apply(null, cand);
+    var width = last - startAt;
+    if (width < 3) return {};
+    var per = Math.floor(width / 3);
+    if (per < 1) return {};
+    /* Эхний блокийн дараалал (N, H, P эсвэл өөр) — багануудын индексээр */
+    var order = [['nSpan', nI[0]], ['hSpan', hI[0]], ['pSpan', pI[0]]]
+      .filter(function (x) { return x[1] !== undefined; })
+      .sort(function (a, b) { return a[1] - b[1]; })
+      .map(function (x) { return x[0].replace('Span', '2Span'); });
+    var res = {};
+    order.forEach(function (key, i) {
+      var st = startAt + i * per, en = (i === order.length - 1) ? last - 1 : st + per - 1;
+      var av = -1;
+      for (var c = st; c <= en && c < s.length; c++) if (s[c] && s[c].indexOf('дундаж') >= 0) { av = c; break; }
+      res[key] = { s: st, e: en, avg: av };
+    });
+    return res;
+  };
+  var af = afterSpans();
   return {
     pSpan: span(pI, 'first'), nSpan: span(nI, 'first'), hSpan: span(hI, 'first'),
-    p2Span: span(pI, 'last'), n2Span: span(nI, 'last'), h2Span: span(hI, 'last'),
+    p2Span: af.p2Span || span(pI, 'last'),
+    n2Span: af.n2Span || span(nI, 'last'),
+    h2Span: af.h2Span || span(hI, 'last'),
     process:     find('үйл ажиллагаа', 'ажилбар'),
     hazard:      find('болзошгүй аюул', 'аюул'),
     location:    find('байршил'),
@@ -6459,6 +6497,12 @@ function riskParseOneSheet(wb, sheetName, fileName, depts, lockDept) {
         rOk: (function () {
           var pp = avg(sc('pSpan'), 'pSpan'), nn = avg(sc('nSpan'), 'nSpan'), hh = avg(sc('hSpan'), 'hSpan');
           return !!(pp && nn && hh && R && Math.abs(pp * nn * hh - R) < 0.6);
+        })(),
+        /* Дараах блокийн задаргаа тулгарсан эсэх — тулгараагүй бол дэлгэцэнд
+           гишүүдийн оноог харуулахгүй (буруу тайлбар өгөхгүйн тулд) */
+        rAfterOk: (function () {
+          var pp = avg(sc('p2Span'), 'p2Span'), nn = avg(sc('n2Span'), 'n2Span'), hh = avg(sc('h2Span'), 'h2Span');
+          return !!(pp && nn && hh && R2 && Math.abs(pp * nn * hh - R2) < 0.6);
         })(),
         positions: usePos ? usePos.split(/\s*,\s*/).filter(Boolean) : [],
         empIds: [],
