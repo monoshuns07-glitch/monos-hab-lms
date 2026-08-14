@@ -710,13 +710,29 @@ async function loadDB() {
          kpi_risks) уншина. Эс бөгөөс шилжилтийн хооронд эрсдэл хаанаас ч
          ирэхгүй болж, ажилтанд юу ч харагдахгүй болно. */
       if (!_rr || !_rr.n) {
-        try {
-          var legacy = await riskLoadLegacy();
-          if (legacy && legacy.length) {
-            DB.risks = legacy;
-            console.log('[risks] Firestore kpi_risks-ээс ' + legacy.length + ' эрсдэл (нөөц зам)');
+        /* ① Хадгалсан хуулбар байвал ЭХЛЭЭД түүнийг — Firestore уншилт зарцуулахгүй */
+        var rc = riskCacheLoad();
+        if (rc && rc.rows.length) {
+          DB.risks = rc.rows;
+          console.log('[risks] хадгалсан хуулбараас ' + rc.rows.length + ' эрсдэл');
+        } else {
+          try {
+            var legacy = await riskLoadLegacy();
+            if (legacy && legacy.length) {
+              DB.risks = legacy;
+              riskCacheSave(legacy);          // дараагийн удаад квот зарцуулахгүй
+              console.log('[risks] Firestore kpi_risks-ээс ' + legacy.length + ' эрсдэл (нөөц зам)');
+            }
+          } catch (e2) {
+            console.error('[risks] хуучин байрлал ч уншигдсангүй', e2);
+            var q = /quota|resource-exhausted/i.test((e2 && (e2.code || e2.message)) || '');
+            setTimeout(function () {
+              toast(q ? '📊 Firebase-ийн өдрийн үнэгүй уншилт дууссан тул эрсдэл ачаалагдсангүй. ' +
+                        'Админ «Фолдер / ZIP»-ээр эрсдлээ оруулбал цаашид энэ хязгаараас бүрэн ангижирна.'
+                      : '⚠️ Эрсдэл ачаалж чадсангүй: ' + ((e2 && e2.message) || ''), 'error');
+            }, 1400);
           }
-        } catch (e2) { console.error('[risks] хуучин байрлал ч уншигдсангүй', e2); }
+        }
       }
     } catch (e) { console.error('[risks] R2 ачаалал', e); }
     // Хуучин прототипийн жишээ (демо) датаг нэг удаа цэвэрлэнэ — зөвхөн админ
@@ -1131,6 +1147,22 @@ async function riskR2Publish(rows, onStep) {
    Эрсдэл R2 руу шилжсэн ч, шинээр нийтлэх хүртэл хуучин дата тэнд байсаар.
    Ажилтанд эрсдэл харагдахгүй болохоос сэргийлж энэ замыг үлдээв.
    Эрхээс хамаарч шүүнэ — админ бүгдийг, бусад нь өөрийн албаныхыг. */
+/* Эрсдлийн нөөц хуулбар — квот дуусах/сүлжээ тасрахад хоосон болохоос сэргийлнэ */
+var RISK_LEGACY_CACHE = 'kpi_risks_legacy_v1';
+function riskCacheSave(rows) {
+  try {
+    if (!rows || !rows.length) return;
+    localStorage.setItem(RISK_LEGACY_CACHE, JSON.stringify({ at: Date.now(), rows: rows }));
+  } catch (e) { /* хэтэрхий том бол алгасна */ }
+}
+function riskCacheLoad() {
+  try {
+    var c = JSON.parse(localStorage.getItem(RISK_LEGACY_CACHE) || 'null');
+    if (c && Array.isArray(c.rows) && c.rows.length) return c;
+  } catch (e) {}
+  return null;
+}
+
 async function riskLoadLegacy() {
   if (!fbReady || !fdb) return null;
   var c = fdb.collection('kpi_risks');
