@@ -1137,7 +1137,13 @@ async function riskR2PutJson(key, obj) {
    Ингэснээр цаашид яг таг тэнцүүгээр шүүх боломжтой болно. */
 function riskCanonDept(d) {
   if (!d) return '';
-  var sys = deptList ? deptList() : [];
+  var sys = [];
+  try { sys = deptList ? deptList() : []; } catch (e) {}
+  /* ⚠ Ажилтны жагсаалт хоосон бол албаны нэрийг ХӨРВҮҮЛЭХГҮЙ.
+     Өмнө нь тэр үед бүх алба нэг дор нурж (11 → 2), R2 дээрх дата эвдэрч,
+     ажилтанд эрсдэл харагдахгүй болсон. Хөрвүүлэх боломжгүй бол
+     ЖИНХЭНЭ нэрийг хэвээр хадгална. */
+  if (!sys || sys.length < 3) return riskDeptFix(d);
   for (var i = 0; i < sys.length; i++) {
     if (sys[i] && riskSameDept(d, sys[i])) return sys[i];
   }
@@ -1172,6 +1178,12 @@ async function riskR2Publish(rows, onStep) {
     (byDept[d] = byDept[d] || []).push(r);
   });
   var names = Object.keys(byDept);
+  /* ⚠ Хамгаалалт: 100-аас дээш эрсдэл ердөө 1-2 албанд нурсан бол албаны нэр
+     хөрвүүлэлт бүтээгүй гэсэн үг — тэр байдлаар нийтэлбэл дата эвдэрнэ. */
+  if (list.length > 100 && names.length < 3) {
+    throw new Error('Албаны нэр тодорхойлогдсонгүй (' + names.length + ' алба). ' +
+      'Ажилтны жагсаалт ачаалагдсаны дараа дахин оролдоно уу.');
+  }
   var index = {
     version: Date.now(),
     updatedAt: new Date().toISOString(),
