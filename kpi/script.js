@@ -1248,9 +1248,14 @@ async function riskPersist(msg) {
     toast('✓ ' + n + ' эрсдэл ' + idx.depts.length + ' албанд байршлаа', 'success');
     return idx;
   } catch (e) {
-    console.error('[riskPersist]', e);
-    toast('⚠️ Эрсдэл байршуулж чадсангүй: ' + ((e && e.message) || e) +
-      '. Дата хөтөч дээр хэвээр байна — дахин оролдоно уу.', 'error');
+    console.error('[riskPersist]', e, 'grant:', R2_GRANT_WHY);
+    var why = /401/.test(String((e && e.message) || e))
+      ? (R2_GRANT_WHY
+          ? 'Байршуулах эрх олгогдсонгүй: ' + R2_GRANT_WHY
+          : 'Байршуулах эрх олгогдсонгүй (401)')
+      : ((e && e.message) || String(e));
+    toast('⚠️ Эрсдэл байршуулж чадсангүй — ' + why +
+      '. Дата хөтөч дээр хэвээр байна.', 'error');
     return null;
   }
 }
@@ -4287,19 +4292,37 @@ function r2Catalog(meta) {
    Vercel-ийн /api/file-token нь нэвтэрсэн эсэхийг шалгаад гарын үсэг олгоно.
    Ингэснээр байнгын түлхүүр хөтөч дээр байх шаардлагагүй болно.
    Хэрэв функц бэлэн биш бол null буцааж, хуучин аргаар ажиллуулна (тасралтгүй). */
+/* Сүүлийн эрх олголтын шалтгаан — алдааг ТОДОРХОЙ хэлэхэд ашиглана */
+var R2_GRANT_WHY = '';
 async function r2Grant(key) {
+  R2_GRANT_WHY = '';
   try {
-    if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) return null;
+    if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) {
+      R2_GRANT_WHY = 'нэвтрээгүй (Firebase сешн алга)'; return null;
+    }
     var idToken = await fauth.currentUser.getIdToken();
     var r = await fetch('/api/file-token/', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'up', key: key, idToken: idToken })
     });
-    if (!r.ok) return null;
-    var j = await r.json();
-    if (!j || !j.ok || !j.token || !j.exp) return null;
+    var j = null;
+    try { j = await r.json(); } catch (e) {}
+    if (!r.ok) {
+      R2_GRANT_WHY = 'API ' + r.status + ((j && (j.error || j.code)) ? ' — ' + (j.error || j.code) : '');
+      if (r.status === 503 || (j && j.code === 'notConfigured')) {
+        R2_GRANT_WHY = 'SIGN_SECRET тохируулаагүй (Vercel орчны хувьсагч)';
+      }
+      return null;
+    }
+    if (!j || !j.ok || !j.token || !j.exp) {
+      R2_GRANT_WHY = 'API хариу дутуу' + (j && j.error ? ' — ' + j.error : '');
+      return null;
+    }
     return { token: j.token, exp: j.exp };
-  } catch (e) { return null; }
+  } catch (e) {
+    R2_GRANT_WHY = 'сүлжээ/алдаа — ' + ((e && e.message) || e);
+    return null;
+  }
 }
 
 /* Хүсэлт бүрт эрхээ хавсаргана: шинэ гарын үсэг эсвэл хуучин түлхүүр */
