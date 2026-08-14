@@ -5415,7 +5415,15 @@ function risksForView() {
     return d ? all.filter(function (r) { return riskSameDept(r.dept, d); }) : all;
   }
   var me = myEmp();
-  if (!me) return [];
+  /* ⚠ Ажилтны жагсаалт үүсээгүй (Firestore квот дуусах, сүлжээ тасрах г.м.)
+     байсан ч эрсдлийг ХААХГҮЙ. Нэвтэрсэн хүний алба, албан тушаал нь сешнд
+     байгаа тул түүгээр тааруулна. Өмнө нь энд [] буцаадаг байсан тул нэг
+     газрын доголдол эрсдлийг бүхэлд нь алга болгодог байв. */
+  if (!me && SESSION) {
+    me = { id: SESSION.uid || '', uid: SESSION.uid || '',
+           dept: SESSION.dept || '', role: SESSION.pos || '', email: SESSION.email || '' };
+  }
+  if (!me || (!me.dept && !me.uid)) return [];
   return all.filter(function (r) { return riskAppliesTo(r, me); });
 }
 
