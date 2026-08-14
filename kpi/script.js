@@ -1208,6 +1208,34 @@ async function riskR2Load() {
   return { cached: false, n: out.length, depts: want.length };
 }
 
+/* ══ АДМИН: одоо байгаа эрсдлийг R2 руу нэг товчоор шилжүүлнэ ══════════
+   Дахин оруулах шаардлагагүй — санах ойд ачаалагдсан эрсдлийг шууд нийтэлнэ.
+   Үүний дараа хүн бүр R2-оос уншина, Firestore-ийн уншилт огт зарцуулагдахгүй. */
+async function actionRiskToR2(btn) {
+  if (!isAdmin()) { toast('Зөвхөн админ', 'error'); return; }
+  var rows = (DB.risks || []);
+  if (!rows.length) { toast('Шилжүүлэх эрсдэл алга. Эхлээд «Фолдер / ZIP»-ээр оруулна уу.', 'error'); return; }
+  if (!confirm(rows.length + ' эрсдлийг R2 руу нийтлэх үү?\n\n' +
+    '• Албаар нь хуваан байршуулна\n' +
+    '• Ажилтан зөвхөн өөрийн албаныхыг татна\n' +
+    '• Firestore-ийн өдрийн уншилтын хязгаараас ангижирна')) return;
+  var old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Шилжүүлж байна…'; }
+  try {
+    var idx = await riskR2Publish(rows, function (s, i, n) {
+      if (btn) btn.innerHTML = '<i class="ti ti-loader"></i> ' + (i + 1) + '/' + n;
+    });
+    toast('✓ ' + idx.total + ' эрсдэл ' + idx.depts.length + ' албанд R2-т байршлаа', 'success');
+    renderHazards();
+  } catch (e) {
+    console.error('[riskToR2]', e);
+    toast('⚠️ Шилжүүлж чадсангүй: ' + ((e && e.message) || e) +
+      '. Дахин нэвтэрч үзнэ үү (байршуулах эрх нэвтрэлтээс хамаарна).', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+  }
+}
+
 /* Оруулалтын дараа дуудна: DB.risks-ийг R2 руу нийтэлж, үр дүнг хэлнэ.
    Firestore-д огт хүрэхгүй тул квот зарцуулахгүй. */
 async function riskPersist(msg) {
@@ -5796,6 +5824,9 @@ function riskWire(sec, redraw) {
     /* «Дараагийн …-ыг үзэх» — зурах мөрийн тоог нэмээд дахин зурна */
     var mo = ev.target.closest('[data-risk-more]');
     if (mo) { _riskShown += RISK_PAGE; redraw(); return; }
+    /* «R2 руу шилжүүлэх» — санах ойд байгаа эрсдлийг R2 руу нийтэлнэ */
+    var mg = ev.target.closest('[data-risk-tor2]');
+    if (mg) { actionRiskToR2(mg); return; }
     var op = ev.target.closest('[data-risk-open]');
     if (op) { riskOpenDetail(op.getAttribute('data-risk-open')); return; }
   });
@@ -5851,7 +5882,9 @@ function renderHazards() {
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
         '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
-        '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> HTML дашбоард</button></div>'
+        '<button class="btn btn-secondary" data-risk-files="1"><i class="ti ti-file-upload"></i> HTML дашбоард</button>' +
+        (isAdmin() ? '<button class="btn btn-secondary" data-risk-tor2="1" title="Одоо байгаа эрсдлийг R2 руу нийтэлнэ — цаашид Firestore уншилт зарцуулахгүй">' +
+          '<i class="ti ti-cloud-upload"></i> R2 руу шилжүүлэх</button>' : '') + '</div>'
       : '') + '</div>';
 
   if (!list.length) {
