@@ -6026,6 +6026,96 @@ function riskScoreChips(vals, avgVal, label) {
    Агуулга бүхэлдээ файлаас — шинэ зүйл зохиохгүй.
    ══════════════════════════════════════════════════════════════════════ */
 function riskEmpBriefHTML(list, myPos, myDept) {
+  var all = (list || []).slice().sort(function (a, b) { return riskScore(b) - riskScore(a); });
+  if (!all.length) return '';
+
+  /* ── Шүүлтүүр (дарж болдог) ── */
+  var rows = all.filter(function (r) {
+    if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
+    if (RISK_FILTER.q) {
+      var hay = [r.hazard, r.process, r.location, r.cause, r.actions, r.responsible]
+        .join(' ').toLowerCase();
+      if (hay.indexOf(RISK_FILTER.q) < 0) return false;
+    }
+    return true;
+  });
+
+  var cnt = function (fn) { return all.filter(fn).length; };
+  var high = cnt(function (r) { var c = riskLevel(r).code; return c === 'A' || c === 'B'; });
+
+  /* ── Дээд самбар ── */
+  var H = '<div class="card" style="padding:16px 18px;margin-bottom:12px;background:linear-gradient(135deg,#EEF2FF,#F5F3FF);border:1.5px solid #C7D2FE">' +
+    '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">' +
+    '<div><div style="font-size:28px;font-weight:900;color:#312E81;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + all.length + '</div>' +
+    '<div style="font-size:11.5px;color:#4338CA;font-weight:700">эрсдэл</div></div>' +
+    (high ? '<div><div style="font-size:28px;font-weight:900;color:#DC2626;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + high + '</div>' +
+      '<div style="font-size:11.5px;color:#DC2626;font-weight:700">яаралтай</div></div>' : '') +
+    '<div style="flex:1;min-width:180px;font-size:12.5px;color:#4338CA;line-height:1.6">' +
+    (high ? '<b>' + high + '</b> өндөр эрсдэлээс эхлээд сэргийлнэ үү.' : 'Өндөр эрсдэл алга. Дүрмээ мөрдөнө үү.') +
+    (myPos ? '<br><span style="color:#6366F1;font-size:11.5px">👤 ' + esc(myPos) + '</span>' : '') + '</div>' +
+    '</div></div>';
+
+  /* ── Түвшний шүүлтүүр (дарж болно) ── */
+  var chips = RISK_LEVELS.slice().reverse().map(function (L) {
+    var n = cnt(function (r) { return !riskIsUnscored(r) && riskLevel(r).name === L.name; });
+    if (!n) return '';
+    var on = RISK_FILTER.level === L.name;
+    return '<button class="risk-lv" data-risk-lv="' + esc(L.name) + '" style="flex:1;min-width:88px;text-align:left;' +
+      'background:' + (on ? L.color : L.bg) + ';border:1.5px solid ' + (on ? L.color : L.bd) + ';border-radius:12px;' +
+      'padding:9px 11px;cursor:pointer;font-family:inherit;transition:all .15s">' +
+      '<div style="font-size:19px;font-weight:900;color:' + (on ? '#fff' : L.color) + ';line-height:1">' + n + '</div>' +
+      '<div style="font-size:10.5px;font-weight:800;color:' + (on ? '#fff' : L.color) + ';margin-top:2px">' + esc(L.name) + '</div></button>';
+  }).join('');
+  var unN = cnt(riskIsUnscored);
+  if (unN) chips += '<button class="risk-lv" data-risk-lv="Үнэлгээ хийгдээгүй" style="flex:1;min-width:88px;text-align:left;' +
+    'background:' + (RISK_FILTER.level === 'Үнэлгээ хийгдээгүй' ? '#64748B' : '#F8FAFC') + ';border:1.5px solid #E2E8F0;border-radius:12px;padding:9px 11px;cursor:pointer;font-family:inherit">' +
+    '<div style="font-size:19px;font-weight:900;color:' + (RISK_FILTER.level === 'Үнэлгээ хийгдээгүй' ? '#fff' : '#64748B') + ';line-height:1">' + unN + '</div>' +
+    '<div style="font-size:10.5px;font-weight:800;color:' + (RISK_FILTER.level === 'Үнэлгээ хийгдээгүй' ? '#fff' : '#64748B') + ';margin-top:2px">Үнэлгээгүй</div></button>';
+
+  H += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px">' + chips + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+    '<input type="text" id="riskSearch" placeholder="Аюул, байршил, арга хэмжээгээр хайх…" value="' + esc(RISK_FILTER.q || '') + '" ' +
+    'style="flex:1;min-width:190px;padding:10px 13px;border:1.5px solid #E2E8F0;border-radius:10px;font-size:13px;font-family:inherit">' +
+    ((RISK_FILTER.level || RISK_FILTER.q)
+      ? '<button class="btn btn-sm" data-risk-clear="1" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0"><i class="ti ti-x"></i> Цэвэрлэх</button>' : '') +
+    '</div>';
+
+  if (!rows.length) {
+    return H + '<div class="empty-state" style="padding:28px"><i class="ti ti-filter-off"></i><div>Тохирох эрсдэл олдсонгүй</div></div>';
+  }
+  H += '<div style="font-size:12px;font-weight:800;color:#94A3B8;margin-bottom:8px">' +
+    (rows.length === all.length ? 'ЭРСДЭЛ БҮГД' : 'ШҮҮСЭН') + ' · ' + rows.length +
+    ' <span style="font-weight:600;color:#CBD5E1">— мөр дээр дарвал дэлгэрэнгүй</span></div>';
+  return H + riskEmpRowsHTML(rows);
+}
+
+/* Авсаархан мөрүүд — ноцтойгоор нь эрэмбэлж, «юу хийх»-ийг нэг мөрөөр */
+function riskEmpRowsHTML(rows) {
+  var H = '', num = 0;
+  rows.forEach(function (r) {
+    num++;
+    var L = riskLevel(r), sc = riskScore(r), un = riskIsUnscored(r);
+    var act = String(r.actions || '').replace(/\s+/g, ' ').trim();
+    H += '<div class="risk-row" data-risk-open="' + esc(r.id) + '" style="background:#fff;border:1px solid #E2E8F0;' +
+      'border-left:4px solid ' + L.color + ';border-radius:11px;padding:11px 13px;margin-bottom:8px;cursor:pointer">' +
+      '<div style="display:flex;align-items:center;gap:10px">' +
+      '<span style="flex:0 0 24px;height:24px;border-radius:7px;background:' + L.bg + ';color:' + L.color +
+      ';display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:900">' + num + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:13.5px;font-weight:700;color:#1E293B;line-height:1.4">' + esc(r.hazard || '—') + '</span>' +
+      '<span style="flex:0 0 auto;background:' + L.bg + ';color:' + L.color + ';border-radius:6px;padding:2px 8px;font-size:10.5px;font-weight:800">' +
+      (un ? '—' : L.code + ' · ' + sc) + '</span></div>' +
+      (act ? '<div style="margin-top:6px;padding-left:34px;font-size:12.5px;color:#475569;line-height:1.55;' +
+        'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
+        '<b style="color:' + L.color + '">🛡️ </b>' + esc(act) + '</div>' : '') +
+      ((r.location || r.due) ? '<div style="margin-top:5px;padding-left:34px;font-size:11px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
+        (r.location ? '<span>📍 ' + esc(r.location) + '</span>' : '') +
+        (r.due ? '<span>📅 ' + esc(r.due) + '</span>' : '') + '</div>' : '') +
+      '</div>';
+  });
+  return H;
+}
+
+function _riskEmpBriefUnused(list, myPos, myDept) {
   var rows = (list || []).slice().sort(function (a, b) { return riskScore(b) - riskScore(a); });
   if (!rows.length) return '';
 
