@@ -4314,11 +4314,16 @@ async function r2Grant(key) {
       }
       return null;
     }
-    if (!j || !j.ok || !j.token || !j.exp) {
-      R2_GRANT_WHY = 'API хариу дутуу' + (j && j.error ? ' — ' + j.error : '');
+    /* ⚠ API нь НЭГ token биш, зам тус бүрээр tokens{} зураглал буцаадаг.
+       Зөвхөн j.token-ыг хайж байсан тул эрх ҮРГЭЛЖ «олдоогүй» гэж тооцогдож,
+       хуучин (хаагдсан) түлхүүр рүү унаж 401 өгдөг байв. */
+    var tk = j && (j.token || (j.tokens && (j.tokens[key] || j.tokens[String(key).replace(/^\/+/, '')])));
+    if (!j || !j.ok || !tk || !j.exp) {
+      R2_GRANT_WHY = 'API хариу дутуу' + (j && j.error ? ' — ' + j.error : '') +
+        (j && j.tokens ? ' (энэ замд гарын үсэг олгоогүй)' : '');
       return null;
     }
-    return { token: j.token, exp: j.exp };
+    return { token: tk, exp: j.exp };
   } catch (e) {
     R2_GRANT_WHY = 'сүлжээ/алдаа — ' + ((e && e.message) || e);
     return null;
