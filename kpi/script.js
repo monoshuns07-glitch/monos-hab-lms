@@ -695,6 +695,53 @@ async function clearAllDemoData() {
 
 async function loadDB() {
   var fresh = false;
+  /* ⚠ R2-Г ХАМГИЙН ТҮРҮҮНД. Firestore удаан/квот дууссан үед loadDB нь 12
+     секундын хугацаанд таслагддаг. Өмнө нь R2 ачаалалт Firestore-ийн ДАРАА
+     байсан тул тэр таслалтад өртөж, эрсдэл огт ачаалагддаггүй байв.
+     Одоо эрсдэл, даалгавар нь Firestore-оос үл хамааран эхэлж ирнэ. */
+  var _tOk = false, _R2_RISKS = null, _R2_TASKS = null;
+  if (!DEMO) {
+    try {
+      var _idx = await riskR2GetJson(RISK_R2_INDEX);
+      if (_idx && _idx.depts) {
+        var _want = _idx.depts;
+        if (!isAdmin() && SESSION && SESSION.dept) {
+          var _mine = _idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
+          if (_mine.length) _want = _mine;
+        }
+        var _out = [];
+        for (var _i = 0; _i < _want.length; _i++) {
+          try {
+            var _p = await riskR2GetJson(RISK_R2_PREFIX + 'd/' + _want[_i].slug + '.json');
+            if (Array.isArray(_p)) _out = _out.concat(_p);
+          } catch (e) {}
+        }
+        if (_out.length) {
+          _R2_RISKS = _out;
+          RISK_LOAD_INFO = { src: 'R2', n: _out.length, depts: _want.length };
+          riskCacheSave(_out);
+        }
+      }
+      if (!_R2_RISKS) {
+        var _rc = riskCacheLoad();
+        if (_rc && _rc.rows.length) { _R2_RISKS = _rc.rows; RISK_LOAD_INFO = { src: 'кэш', n: _rc.rows.length, depts: 0 }; }
+        else RISK_LOAD_INFO = { src: 'алга', n: 0, depts: 0 };
+      }
+      console.log('[risks] ' + RISK_LOAD_INFO.src + ' ' + RISK_LOAD_INFO.n);
+    } catch (e) { console.error('[risks] R2', e); RISK_LOAD_INFO = { src: 'алдаа', n: 0, depts: 0 }; }
+    try {
+      _R2_TASKS = await taskR2Load() || taskCacheLoad();
+      if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
+    } catch (e) { console.error('[tasks] R2', e); }
+  }
+  /* DB бэлэн болмогц суулгах туслах */
+  var _applyR2 = function () {
+    try {
+      if (!DB) return;
+      if (_R2_RISKS && _R2_RISKS.length) DB.risks = _R2_RISKS;
+      if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
+    } catch (e) {}
+  };
   if (DEMO) { // Локал жишээ горим — Firebase-гүй, localStorage-д хадгална
     try { var rawD = localStorage.getItem(LSKEY); DB = rawD ? JSON.parse(rawD) : null; } catch (e) { DB = null; }
     if (!DB || !DB.settings) { DB = seedDB(); fresh = true; }
@@ -719,41 +766,16 @@ async function loadDB() {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
-    /* ДААЛГАВАР — эхлээд R2-оос (584 баримтын Firestore уншилтыг хэмнэнэ).
-       Бүтвэл loadCols нь tasks-ыг дахин татахгүй. */
-    var _tOk = false;
-    try {
-      var _tr = await taskR2Load() || taskCacheLoad();
-      if (_tr && _tr.length) { DB.tasks = _tr; _tOk = true; console.log('[tasks] R2-оос ' + _tr.length); }
-    } catch (e) { console.error('[tasks] R2', e); }
-
     /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
     if (isSplit()) { try { await loadCols(_tOk ? { skip: ['tasks'] } : null); } catch (e) {} }
-    /* Эрсдэл нь Firestore-д БИШ, R2-д байна — Firestore уншилт зарцуулахгүй.
-       Уншигдахгүй бол санах ой дахь/хуучин датаг хөндөхгүй. */
-    try {
-      var _rr = await riskR2Load();
-      RISK_LOAD_INFO = _rr
-        ? { src: _rr.cached ? 'кэш' : 'R2', n: _rr.n, depts: _rr.depts || 0 }
-        : { src: 'алга', n: 0, depts: 0 };
-      if (_rr) console.log('[risks] R2-оос ' + _rr.n + ' эрсдэл' + (_rr.cached ? ' (кэшээс)' : ''));
-      /* ⚠ ЭРСДЭЛ ДЭЭР FIRESTORE ОГТ АШИГЛАХГҮЙ.
-         Эх сурвалж нь зөвхөн R2. R2 хүрэхгүй бол хадгалсан хуулбар.
-         Firestore рүү буцах зам БАЙХГҮЙ — өдрийн квот эрсдэлд нөлөөлөхгүй. */
-      if (!_rr || !_rr.n) {
-        var rc = riskCacheLoad();
-        if (rc && rc.rows.length) {
-          DB.risks = rc.rows;
-          console.log('[risks] хадгалсан хуулбараас ' + rc.rows.length + ' эрсдэл');
-        } else {
-          setTimeout(function () {
-            toast('⚠️ Эрсдэл ачаалж чадсангүй (R2 хүрэхгүй байна). Сүлжээгээ шалгаад дахин оролдоно уу.', 'error');
-          }, 1400);
-        }
-      } else {
-        riskCacheSave(DB.risks || []);      // дараагийн зочлолд шууд бэлэн
-      }
-    } catch (e) { console.error('[risks] R2 ачаалал', e); }
+    /* Эрсдэл, даалгавар нь ЭНД БИШ — loadDB-ийн эхэнд R2-оос аль хэдийн
+       ачаалагдсан (Firestore-ийн удаашрал/таслалтад өртөхгүйн тулд). */
+    _applyR2();
+    if (!(DB.risks || []).length) {
+      setTimeout(function () {
+        toast('⚠️ Эрсдэл ачаалагдсангүй (эх сурвалж: ' + RISK_LOAD_INFO.src + ').', 'error');
+      }, 1400);
+    }
     // Хуучин прототипийн жишээ (демо) датаг нэг удаа цэвэрлэнэ — зөвхөн админ
     try { await cleanupDemoData(); } catch (e) {}
     // employees-г жинхэнэ ажилчид + сургалт/шалгалтаас автоматаар барина
@@ -767,6 +789,7 @@ async function loadDB() {
     catch (e) { DB = seedDB(); fresh = true; }
   }
   try { migrateDB(); } catch (e) {}
+  _applyR2();                       // R2-оос ирсэн эрсдэл/даалгаврыг эцэст нь суулгана
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   return fresh;
 }
