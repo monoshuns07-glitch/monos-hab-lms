@@ -5483,6 +5483,13 @@ function riskAppliesTo(r, emp) {
 }
 /* Эрхээс хамаарсан жагсаалт */
 function risksForView() {
+  /* ⚠ loadDB нь хэд хэдэн удаа ажиллаж DB-г бүтнээр солидог тул R2-оос ирсэн
+     эрсдэл завсарт дарагдаж, зурах үед хоосон болдог байв. Хоосон бол
+     хадгалсан хуулбараас шууд сэргээнэ — ачаалалтын дараалалд хамаарахгүй. */
+  if (!(DB.risks || []).length) {
+    var c = riskCacheLoad();
+    if (c && c.rows.length) DB.risks = c.rows;
+  }
   var all = (DB.risks || []).slice();
   if (isAdmin()) return all;
   if (isDeptHead()) {
