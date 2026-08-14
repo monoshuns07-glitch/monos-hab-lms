@@ -1213,7 +1213,8 @@ async function riskR2Load() {
    Үүний дараа хүн бүр R2-оос уншина, Firestore-ийн уншилт огт зарцуулагдахгүй. */
 async function actionRiskToR2(btn) {
   if (!isAdmin()) { toast('Зөвхөн админ', 'error'); return; }
-  var rows = (DB.risks || []);
+  DB.risks = riskDedupe(DB.risks || []);      // давхардлыг эхлээд арилгана
+  var rows = DB.risks;
   if (!rows.length) { toast('Шилжүүлэх эрсдэл алга. Эхлээд «Фолдер / ZIP»-ээр оруулна уу.', 'error'); return; }
   if (!confirm(rows.length + ' эрсдлийг R2 руу нийтлэх үү?\n\n' +
     '• Албаар нь хуваан байршуулна\n' +
@@ -1239,6 +1240,16 @@ async function actionRiskToR2(btn) {
 /* Оруулалтын дараа дуудна: DB.risks-ийг R2 руу нийтэлж, үр дүнг хэлнэ.
    Firestore-д огт хүрэхгүй тул квот зарцуулахгүй. */
 async function riskPersist(msg) {
+  /* ⚠ Оруулалт нь DB.risks руу НЭМДЭГ тул дахин оруулахад давхарладаг байв
+     (байршуулалт унасан ч мөрүүд санах ойд үлдэнэ). Хадгалахын өмнө үргэлж
+     давхардлыг арилгана — ижил алба+ажлын байр+аюул+үйл ажиллагаа нэг л удаа. */
+  var before = (DB.risks || []).length;
+  DB.risks = riskDedupe(DB.risks || []);
+  var removed = before - DB.risks.length;
+  if (removed > 0) {
+    try { console.log('[risks] давхардсан ' + removed + ' мөр хасав'); } catch (e) {}
+    toast('Давхардсан ' + removed + ' мөр хасагдлаа', 'info');
+  }
   var n = (DB.risks || []).length;
   var t = toast((msg || 'Эрсдэл байршуулж байна') + '…', 'info');
   try {
