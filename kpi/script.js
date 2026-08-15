@@ -1821,6 +1821,53 @@ function empKpiFactors(e) {
   ];
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ⭐ ОНОО ХЭР НАЙДВАРТАЙ ВЭ
+   KPI нь ДАТАТАЙ үзүүлэлтүүдийн дунджаар бодогддог. Хэрэв ганцхан
+   «Босго оноо» (осол/зөрчилгүй бол автоматаар 100) л дататай бол бүх
+   ажилтан 100 болж, «бүгд Алтан түвшин» гэсэн ХУУРАМЧ дүр зураг гарна.
+   Тиймээс 2-оос цөөн үзүүлэлт дататай бол оноог ТОДОРХОЙГҮЙ гэж үзнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+function empDataFactors(e) {
+  return empKpiFactors(e).filter(function (p) { return p.v != null && p.w > 0; });
+}
+var EMP_FACTOR_WHY = {
+  bosgo:  'осол, зөрчлийн бүртгэлээс',
+  davtan: 'энэ сард таны албанд давтан зааварчилгаа товлогдоогүй',
+  video:  'танд видео сургалт оногдуулаагүй байна',
+  task:   'танд нэрлэсэн даалгавар өгөөгүй байна'
+};
+function empScoreOk(e) { return empDataFactors(e).length >= 2; }
+/* Ямар үзүүлэлт дутуу байна вэ (шалтгаантай нь) */
+function empMissingFactors(e) {
+  return empKpiFactors(e).filter(function (p) { return p.v == null || p.w <= 0; })
+    .map(function (p) { return { label: p.label, why: EMP_FACTOR_WHY[p.key] || '' }; });
+}
+
+/* ⭐ ТЭНЦҮҮ ОНОО = ИЖИЛ БАЙР (спортын эрэмбэ: 1,1,1,4…).
+   Өмнө нь зүгээр жагсаалтын дугаарыг байр гэж үздэг байсан тул бүгд 100
+   оноотой үед ч «55-р байр» гэх мэт утгагүй тоо гардаг байв. */
+function rankTie(list, me, scoreFn) {
+  var sc = function (x) { return Math.round(scoreFn(x) || 0); };
+  var my = sc(me), above = 0, same = 0;
+  (list || []).forEach(function (x) {
+    var v = sc(x);
+    if (v > my) above++; else if (v === my) same++;
+  });
+  return { rank: above + 1, same: same, total: (list || []).length, score: my };
+}
+/* Надаас ДЭЭГҮҮР байгаа хамгийн ойрын оноо ба тэр хүн */
+function rankAhead(list, me, scoreFn) {
+  var sc = function (x) { return Math.round(scoreFn(x) || 0); };
+  var my = sc(me), best = null;
+  (list || []).forEach(function (x) {
+    var v = sc(x);
+    if (v <= my) return;
+    if (!best || v < sc(best)) best = x;
+  });
+  return best ? { name: best.name || 'урдах ажилтан', diff: sc(best) - my } : { name: '', diff: 0 };
+}
+
 /* Суурь оноо (бонусгүй, 0–100). Албаны coverage үүн дээр тооцогдоно */
 function empBase(e) {
   var parts = empKpiFactors(e).filter(function (p) { return p.v != null && p.w > 0; });
@@ -3085,42 +3132,41 @@ function renderEmployeeDashboard() {
     refreshMyExams().then(function (ch) { if (ch) renderEmployeeDashboard(); });
   }
   var total = empTotal(e), bonus = empBonusPoints(e), lvl = kpiLevel(total);
+  /* Оноо хэр найдвартай вэ — 2-оос цөөн үзүүлэлт дататай бол ТОДОРХОЙГҮЙ */
+  var dataN = empDataFactors(e).length, scoreOk = empScoreOk(e), missList = empMissingFactors(e);
   var toNext = lvl.next != null ? Math.max(0, lvl.next - total) : 0;
   var progPct = lvl.next != null ? clamp(Math.round((total - lvl.min) / (lvl.next - lvl.min) * 100), 0, 100) : 100;
   var improved = (e.examPrev != null && e.examScore != null) ? (num(e.examScore) - num(e.examPrev)) : null;
   var myReports = (DB.reports || []).filter(function (r) { return reportBelongsTo(r, e); });
   var verifiedCnt = myReports.filter(function (r) { return r.status === 'verified'; }).length;
 
-  /* ---- Байр эзлэлт тооцох ---- */
+  /* ---- Байр эзлэлт тооцох (ТЭНЦҮҮ оноо = ИЖИЛ байр) ---- */
   var allEmps = DB.employees.slice().sort(function (a, b) { return empTotal(b) - empTotal(a); });
-  var overallRank = allEmps.findIndex(function (x) { return x.id === e.id; }) + 1;
-  var overallTotal = allEmps.length;
+  var rkAll = rankTie(allEmps, e, empTotal);
+  var overallRank = rkAll.rank, overallTotal = rkAll.total, overallSame = rkAll.same;
 
   var deptEmps = allEmps.filter(function (x) { return x.dept === e.dept; });
-  var deptRank = deptEmps.findIndex(function (x) { return x.id === e.id; }) + 1;
-  var deptTotal = deptEmps.length;
+  var rkDept = rankTie(deptEmps, e, empTotal);
+  var deptRank = rkDept.rank, deptTotal = rkDept.total, deptSame = rkDept.same;
 
-  /* Урд байгаа хүнээс хэдэн оноогоор хоцорч байгаа */
-  function aheadInfo(list, myIdx) {
-    if (myIdx <= 0 || !list[myIdx - 1]) return { name: '', diff: 0 };
-    var ah = list[myIdx - 1];
-    var d = empTotal(ah) - empTotal(e);
-    return { name: ah.name || 'урдах ажилтан', diff: Math.max(0, d) };
-  }
-  var aheadOverall = aheadInfo(allEmps, overallRank - 1);
-  var aheadDept = aheadInfo(deptEmps, deptRank - 1);
+  var aheadOverall = rankAhead(allEmps, e, empTotal);
+  var aheadDept = rankAhead(deptEmps, e, empTotal);
 
   var depts = deptList();
   var deptScores = depts.map(function (d) { return { dept: d, score: deptScore(d) }; }).filter(function (r) { return r.score > 0 || r.dept === e.dept; }).sort(function (a, b) { return b.score - a.score; });
-  var deptRankAmongAll = deptScores.findIndex(function (r) { return r.dept === e.dept; }) + 1;
-  var deptCountAll = deptScores.length;
+  var myDeptRow = { dept: e.dept, score: deptScore(e.dept) };
+  var rkDeptAll = rankTie(deptScores, myDeptRow, function (x) { return x.score; });
+  var deptRankAmongAll = rkDeptAll.rank, deptCountAll = rkDeptAll.total, deptSameAll = rkDeptAll.same;
 
   /* ══ БАЙР ЭЗЛЭЛТ — ямар ч хүн харангуут ойлгохоор ══
      Юуг юутай харьцуулж байгааг үг болгоноор нь тайлбарлана. */
-  function rankBox(rank, total, groupLabel, explainTxt) {
+  function rankBox(rank, total, groupLabel, explainTxt, same, unit) {
     var pct = total > 1 ? (rank - 1) / (total - 1) : 0;   // 0 = хамгийн дээр
     var tone, state, ic;
-    if (rank === 1)        { tone = '#D97706'; state = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
+    /* ⭐ Бүгд (эсвэл ихэнх нь) ижил оноотой бол «түрүүлж байна» гэж магтахгүй */
+    var allTied = (same >= total && total > 1);
+    if (allTied)           { tone = '#64748B'; state = 'Бүгд ижил оноотой байна';   ic = '🟰'; }
+    else if (rank === 1)   { tone = '#D97706'; state = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
     else if (rank === 2)   { tone = '#0891B2'; state = 'Хоёрдугаарт явж байна';     ic = '🥈'; }
     else if (rank === 3)   { tone = '#B45309'; state = 'Гуравдугаарт явж байна';    ic = '🥉'; }
     else if (pct <= 0.34)  { tone = '#16A34A'; state = 'Урд хэсэгт явж байна';      ic = '👍'; }
@@ -3133,6 +3179,8 @@ function renderEmployeeDashboard() {
       '<span style="font-size:34px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1;color:' + tone + '">' + rank + '</span>' +
       '<span style="font-size:15px;font-weight:800;color:' + tone + '">-р байр</span>' +
       '<span style="font-size:13px;color:#94A3B8">/ ' + total + '-аас</span></div>' +
+      (same > 1 ? '<div style="font-size:12px;color:' + tone + ';font-weight:700;margin-top:4px">' +
+        same + ' ' + (unit || 'хүн') + ' ижил оноотой — бүгд ' + rank + '-р байрт</div>' : '') +
       '<div style="margin-top:9px;display:inline-block;background:' + tone + '1A;color:' + tone + ';border-radius:20px;padding:4px 11px;font-size:12px;font-weight:800">' + ic + ' ' + state + '</div>' +
       '<div style="font-size:12px;color:#8A94A6;margin-top:9px;line-height:1.45">' + explainTxt + '</div>' +
       '</div>';
@@ -3146,24 +3194,31 @@ function renderEmployeeDashboard() {
       var dn = esc(e.dept || 'Алба');
       if (overallRank >= 1 && overallTotal >= 1)
         boxes += rankBox(overallRank, overallTotal, 'Компани даяар',
-          'Компанийн нийт <b>' + overallTotal + '</b> ажилтныг оноогоор эрэмбэлэхэд таны эзэлж буй байр.');
+          'Компанийн нийт <b>' + overallTotal + '</b> ажилтныг оноогоор эрэмбэлэхэд таны эзэлж буй байр.',
+          overallSame, 'хүн');
       if (deptRank >= 1 && deptTotal >= 1)
         boxes += rankBox(deptRank, deptTotal, 'Албандаа',
-          '<b>' + dn + '</b>-ны <b>' + deptTotal + '</b> ажилтны дотор таны эзэлж буй байр.');
+          '<b>' + dn + '</b>-ны <b>' + deptTotal + '</b> ажилтны дотор таны эзэлж буй байр.',
+          deptSame, 'хүн');
       if (deptRankAmongAll >= 1 && deptCountAll >= 1)
         boxes += rankBox(deptRankAmongAll, deptCountAll, 'Албуудын дунд',
-          'Энэ нь таны биш, <b>албаныхаа</b> байр. ' + deptCountAll + ' албыг дундаж оноогоор нь эрэмбэлсэн.');
+          'Энэ нь таны биш, <b>албаныхаа</b> байр. ' + deptCountAll + ' албыг дундаж оноогоор нь эрэмбэлсэн.',
+          deptSameAll, 'алба');
     } catch (err) { boxes = ''; }
 
     return '<div class="card" id="rankCard" style="padding:20px;margin-bottom:14px">' +
       '<h3 style="margin:0 0 3px">🏆 Байр эзлэлт — та хаана явж байна вэ?</h3>' +
       '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 14px;line-height:1.5">' +
       'Бүх хүнийг <b>оноогоор нь</b> дээрээс доош эрэмбэлсэн жагсаалт. <b>1-р байр = хамгийн өндөр оноотой</b> хүн. ' +
-      'Та оноогоо нэмэх бүрд байр нь дээшилнэ.</p>' +
+      '<b>Ижил оноотой хүмүүс ижил байрт</b> ордог.</p>' +
       (boxes
         ? '<div class="rank-grid">' + boxes + '</div>' +
-          (overallRank > 1 ? '<div style="margin-top:12px;padding:11px 14px;background:#F8FAFC;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
-            '<b>Байраа дээшлүүлэх арга:</b> доорх «Хийх ёстой зүйлс» хэсгийг гүйцээх — сургалтаа үзэж шалгалтаа өгөх, даалгавраа биелүүлэх, аюул мэдээлэх.</div>' : '')
+          (overallSame >= overallTotal && overallTotal > 1
+            ? '<div style="margin-top:12px;padding:11px 14px;background:#F1F5F9;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
+              '🟰 <b>Одоогоор бүх ' + overallTotal + ' ажилтан ижил оноотой байна</b> — тиймээс байр эзлэлт ялгарахгүй байна. ' +
+              'Сургалт, даалгавар, аюулын мэдээлэл бүртгэгдэж эхэлмэгц ялгарал гарна.</div>'
+            : (overallRank > 1 ? '<div style="margin-top:12px;padding:11px 14px;background:#F8FAFC;border-radius:12px;font-size:12.5px;color:#475569;line-height:1.5">' +
+              '<b>Байраа дээшлүүлэх арга:</b> доорх «Хийх ёстой зүйлс» хэсгийг гүйцээх — сургалтаа үзэж шалгалтаа өгөх, даалгавраа биелүүлэх, аюул мэдээлэх.</div>' : ''))
         : '<div style="padding:16px;background:#F8FAFC;border-radius:12px;font-size:13px;color:#64748B;line-height:1.5">' +
           'Байр эзлэлт тооцоолохын тулд ажилтнуудын жагсаалт ачаалагдах шаардлагатай. ' +
           'Хуудсыг дахин ачаална уу (Ctrl + Shift + R).</div>') +
@@ -3283,15 +3338,41 @@ function renderEmployeeDashboard() {
     '<p class="page-subtitle" style="margin-top:4px">' + esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : '') +
     ' &nbsp;·&nbsp; <span style="color:#94A3B8">' + salLbl + '</span></p></div>' +
 
-    /* ① Түвшин + нийт оноо */
-    '<div class="card" style="padding:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:14px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
-    '<div style="width:78px;height:78px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';display:flex;align-items:center;justify-content:center;font-size:38px"><i class="ti ' + lvl.icon + '"></i></div>' +
-    '<div style="flex:1;min-width:200px"><div style="font-size:13px;color:#64748B">Таны энэ сарын оноо</div>' +
-    '<div style="font-size:40px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1;color:' + lvl.color + '">' + total +
-    '<span style="font-size:18px;font-weight:600;color:#94A3B8"> / 100</span></div>' +
-    '<div style="display:inline-block;margin-top:7px;padding:3px 12px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';font-size:12.5px;font-weight:800">' + lvl.name + ' түвшин</div>' +
-    (lvl.next != null ? '<div style="margin-top:9px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12.5px;color:#64748B;margin-top:5px">Дараагийн түвшинд хүрэхэд <strong>' + toNext + '</strong> оноо дутуу байна</div>' : '<div style="color:#16A34A;font-weight:700;margin-top:7px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
-    '</div></div>' +
+    /* ① Түвшин + нийт оноо.
+       ⚠ Дата дутуу үед «Алтан түвшин» гэж магтвал ХУДАЛ. Ганцхан «Босго
+       оноо» дататай бол бүх ажилтан автоматаар 100 болдог тул тэр оноо
+       ажилтны хийсэн зүйлийг огт хэмжихгүй. Тиймээс ил хэлнэ. */
+    (scoreOk
+      ? '<div class="card" style="padding:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-bottom:14px;background:linear-gradient(135deg,#F0FDF4,#fff)">' +
+        '<div style="width:78px;height:78px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';display:flex;align-items:center;justify-content:center;font-size:38px"><i class="ti ' + lvl.icon + '"></i></div>' +
+        '<div style="flex:1;min-width:200px"><div style="font-size:13px;color:#64748B">Таны энэ сарын оноо</div>' +
+        '<div style="font-size:40px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1;color:' + lvl.color + '">' + total +
+        '<span style="font-size:18px;font-weight:600;color:#94A3B8"> / 100</span></div>' +
+        '<div style="display:inline-block;margin-top:7px;padding:3px 12px;border-radius:20px;background:' + lvl.color + '1A;color:' + lvl.color + ';font-size:12.5px;font-weight:800">' + lvl.name + ' түвшин</div>' +
+        (lvl.next != null ? '<div style="margin-top:9px">' + miniBar(progPct, lvl.color) + '</div><div style="font-size:12.5px;color:#64748B;margin-top:5px">Дараагийн түвшинд хүрэхэд <strong>' + toNext + '</strong> оноо дутуу байна</div>' : '<div style="color:#16A34A;font-weight:700;margin-top:7px">Хамгийн дээд түвшинд хүрсэн! 🎉</div>') +
+        '</div></div>'
+      : '<div class="card" style="padding:22px;margin-bottom:14px;background:linear-gradient(135deg,#F8FAFC,#fff);border:1.5px solid #E2E8F0">' +
+        '<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">' +
+        '<div style="width:78px;height:78px;border-radius:20px;background:#F1F5F9;color:#94A3B8;display:flex;align-items:center;justify-content:center;font-size:38px">' +
+        '<i class="ti ti-help-circle"></i></div>' +
+        '<div style="flex:1;min-width:220px">' +
+        '<div style="font-size:13px;color:#64748B">Таны энэ сарын оноо</div>' +
+        '<div style="font-size:30px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.15;color:#64748B">Тодорхойгүй</div>' +
+        '<div style="font-size:12.5px;color:#64748B;margin-top:6px;line-height:1.55">' +
+        'Үнэлгээ хийхэд хангалттай мэдээлэл алга. Одоогоор <b>' + dataN + '</b> үзүүлэлт л дататай байгаа тул ' +
+        'оноо ажилтны хийсэн зүйлийг хэмжихгүй байна.</div></div></div>' +
+        (missList.length
+          ? '<div style="margin-top:14px;padding-top:13px;border-top:1px solid #E2E8F0">' +
+            '<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:7px">ЮУ ДУТУУ БАЙНА</div>' +
+            missList.map(function (m) {
+              return '<div style="display:flex;gap:9px;padding:6px 0;font-size:12.5px;color:#475569;line-height:1.5">' +
+                '<span style="color:#CBD5E1">•</span><span><b>' + esc(m.label) + '</b>' +
+                (m.why ? ' — <span style="color:#94A3B8">' + esc(m.why) + '</span>' : '') + '</span></div>';
+            }).join('') +
+            '<div style="font-size:12px;color:#94A3B8;margin-top:8px;line-height:1.5">' +
+            'Эдгээрийг ХАБЭА-н алба бүртгэж эхэлмэгц таны оноо жинхэнэ утгатай болно.</div></div>'
+          : '') +
+        '</div>') +
 
     /* ② Байр эзлэлт — оноон дор, бүтэн өргөнөөр (ҮРГЭЛЖ харагдана) */
     rankSectionHTML() +
