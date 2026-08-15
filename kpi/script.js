@@ -6228,12 +6228,12 @@ function ackDateMn(iso) {
 var ACK_READ_KEY = 'kpi_ack_read_v1';
 var ACK_READ = null;             // { ver, ids:{}, sec, startedAt, updatedAt }
 
-/* Нэг эрсдлийг хамгийн багадаа хэдэн секунд үзэх ёстой вэ */
-function ackDwellFor(r) {
-  var c = riskLevel(r).code;
-  if (c === 'A' || c === 'B') return 6;
-  if (c === 'C') return 4;
-  return 3;
+/* ⭐ Хугацааны хязгаар БАЙХГҮЙ. Оронд нь эрсдэл бүрд САНАЛАА бичсэн байх
+   ёстой — уншсаны бодит нотолгоо нь тэр. Хоосон бол урагшилахгүй. */
+function ackIdeaValid(t) {
+  var s = String(t || '').replace(/\s+/g, ' ').trim();
+  if (s.length < 5) return false;
+  return /[А-Яа-яӨөҮүЁёA-Za-z]{3}/.test(s);        // ганц цэг, тоо гэх мэт болохгүй
 }
 function ackReadLoad(ver) {
   if (ACK_READ && ACK_READ.ver === String(ver)) return ACK_READ;
@@ -6278,18 +6278,22 @@ function ackReadMark(ver, id, sec) {
   ackReadSave();
   return st;
 }
+/* Эрсдэл БҮРЭН болсон эсэх: үзсэн + саналаа бичсэн байх ёстой */
+function ackReadDone(st, id) {
+  return !!(st.ids[id] && ackIdeaValid((st.ideas || {})[id]));
+}
 /* Хэдийг уншсан бэ */
 function ackReadStat(rows, ver) {
   var st = ackReadLoad(ver);
   var done = 0;
-  (rows || []).forEach(function (r) { if (st.ids[r.id]) done++; });
+  (rows || []).forEach(function (r) { if (ackReadDone(st, r.id)) done++; });
   return { done: done, total: (rows || []).length, sec: st.sec || 0,
     ok: (rows || []).length > 0 && done >= (rows || []).length };
 }
-/* Дараагийн уншаагүй эрсдлийн байрлал */
+/* Дараагийн дуусаагүй эрсдлийн байрлал */
 function ackReadNextIdx(rows, ver) {
   var st = ackReadLoad(ver);
-  for (var i = 0; i < rows.length; i++) { if (!st.ids[rows[i].id]) return i; }
+  for (var i = 0; i < rows.length; i++) { if (!ackReadDone(st, rows[i].id)) return i; }
   return 0;
 }
 
@@ -6300,16 +6304,12 @@ function ackReadOpen(rows, ver, after) {
   node.innerHTML = '<div id="ackRdBody"></div>';
   buildModal('Эрсдэлтэй танилцах', node, { width: '620px' });
 
-  var timer = null, tick = null;
-  var stop = function () { if (timer) clearTimeout(timer); if (tick) clearInterval(tick); timer = tick = null; };
+  var t0 = Date.now();                 // хугацааг ЗӨВХӨН бүртгэнэ, хаалт биш
   var draw = function () {
-    stop();
     var r = rows[i], L = riskLevel(r);
     var st = ackReadStat(rows, ver);
-    var seen = ackReadLoad(ver).ids[r.id];
-    var need = seen ? 0 : ackDwellFor(r);
-    var left = need;
     var pct = Math.round(st.done * 100 / st.total);
+    t0 = Date.now();
     var host = node.querySelector('#ackRdBody');
     host.innerHTML =
       '<div style="display:flex;align-items:center;gap:11px;margin-bottom:11px">' +
@@ -6323,7 +6323,8 @@ function ackReadOpen(rows, ver, after) {
       '<div style="font-size:12.5px;font-weight:800;color:#166534;letter-spacing:.2px">' +
       '💡 ЭНЭ ЭРСДЛЭЭС ЯАЖ СЭРГИЙЛЭХ ВЭ — ТАНЫ САНАЛ</div>' +
       '<div style="font-size:11.5px;color:#15803D;margin-top:2px;line-height:1.55">' +
-      'Ажлын байрандаа юу сайжруулбал энэ аюул буурах вэ? Товчхон бичнэ үү (заавал биш).</div>' +
+      'Ажлын байрандаа юу сайжруулбал энэ аюул буурах вэ? <b>Заавал бөглөнө</b> — ' +
+      'саналаа бичсэний дараа дараагийн эрсдэл рүү шилжинэ.</div>' +
       '<textarea id="ackRdIdea" rows="2" placeholder="Жишээ: гэрэлтүүлэг нэмэх, тэмдэг тавих, багаж солих…" ' +
       'style="width:100%;margin-top:8px;padding:10px 12px;border:1.5px solid #BBF7D0;border-radius:10px;' +
       'font-size:13px;font-family:inherit;line-height:1.55;resize:vertical;background:#fff">' +
@@ -6337,50 +6338,53 @@ function ackReadOpen(rows, ver, after) {
       '<div style="margin-top:8px;font-size:11.5px;color:#94A3B8;text-align:center" id="ackRdHint"></div>';
 
     var btn = host.querySelector('#ackRdNext');
-    var last = (i >= rows.length - 1);
-    var label = function () {
-      return last ? '<i class="ti ti-circle-check"></i> Бүгдтэй танилцаж дууслаа'
-                  : 'Дараагийнх ›';
-    };
-    var lock = function () {
-      btn.disabled = true;
-      btn.innerHTML = '<i class="ti ti-hourglass-low"></i> ' + left + ' сек уншина уу';
-      host.querySelector('#ackRdHint').textContent =
-        'Энэ бол ' + L.name.toLowerCase() + ' эрсдэл — уншиж дуустал товч идэвхжихгүй.';
-    };
-    var open = function () {
-      btn.disabled = false; btn.innerHTML = label();
-      host.querySelector('#ackRdHint').textContent = seen ? 'Энэ эрсдэлтэй та танилцсан байна.' : '';
-    };
-    if (need > 0) {
-      lock();
-      tick = setInterval(function () { left--; if (left > 0) lock(); }, 1000);
-      timer = setTimeout(function () {
-        stop(); ackReadMark(ver, r.id, need); seen = 1; open();
-      }, need * 1000);
-    } else { open(); }
-
-    /* Саналыг бичих зуур нь хадгална (гарахад ч алдагдахгүй) */
     var ta = host.querySelector('#ackRdIdea');
     var stEl = host.querySelector('#ackRdIdeaSt');
+    var hint = host.querySelector('#ackRdHint');
+    var last = (i >= rows.length - 1);
+
+    /* ⭐ САНАЛ бичигдтэл товч идэвхгүй. Хугацааны хязгаар БАЙХГҮЙ. */
+    var refresh = function () {
+      var ok = ackIdeaValid(ta.value);
+      btn.disabled = !ok;
+      btn.innerHTML = ok
+        ? (last ? '<i class="ti ti-circle-check"></i> Бүгдтэй танилцаж дууслаа' : 'Дараагийнх ›')
+        : '<i class="ti ti-edit"></i> Саналаа бичнэ үү';
+      hint.textContent = ok ? '' : 'Энэ эрсдлээс сэргийлэх саналаа бичсэний дараа урагшилна.';
+      hint.style.color = ok ? '#94A3B8' : '#B45309';
+    };
     var saveIdea = function (quiet) {
       ackIdeaSet(ver, r.id, ta.value);
-      if (!quiet) stEl.textContent = ta.value.trim() ? '✓ Санал хадгалагдлаа' : '';
+      if (!quiet) stEl.textContent = ackIdeaValid(ta.value) ? '✓ Санал хадгалагдлаа' : '';
+      refresh();
     };
     var idleT = null;
     ta.addEventListener('input', function () {
+      refresh();
       if (idleT) clearTimeout(idleT);
       stEl.textContent = 'бичиж байна…';
       idleT = setTimeout(function () { saveIdea(); }, 600);
     });
     ta.addEventListener('blur', function () { saveIdea(); });
+    refresh();
 
-    host.querySelector('#ackRdPrev').addEventListener('click', function () { saveIdea(true); if (i > 0) { i--; draw(); } });
-    btn.addEventListener('click', function () {
+    /* Энэ эрсдэл дээр зарцуулсан хугацааг бүртгээд ЦААШ шилжинэ */
+    var advance = function (nextIdx) {
       saveIdea(true);
-      if (!last) { i++; draw(); return; }
+      var spent = Math.min(600, Math.round((Date.now() - t0) / 1000));
+      ackReadMark(ver, r.id, spent);
+      i = nextIdx; draw();
+    };
+    host.querySelector('#ackRdPrev').addEventListener('click', function () {
+      saveIdea(true);
+      if (i > 0) { i--; draw(); }
+    });
+    btn.addEventListener('click', function () {
+      if (!ackIdeaValid(ta.value)) { ta.focus(); return; }
+      if (!last) { advance(i + 1); return; }
       /* Сүүлийнх — бүгдийг уншсан эсэхийг шалгана */
-      stop();
+      saveIdea(true);
+      ackReadMark(ver, r.id, Math.min(600, Math.round((Date.now() - t0) / 1000)));
       var s2 = ackReadStat(rows, ver);
       if (!s2.ok) {
         i = ackReadNextIdx(rows, ver);
@@ -6393,9 +6397,6 @@ function ackReadOpen(rows, ver, after) {
     });
   };
   draw();
-  /* Цонх хаагдахад тоолуурыг зогсооно */
-  var ov = document.querySelector('.modal-overlay');
-  if (ov) ov.addEventListener('mousedown', function (e) { if (e.target === ov) stop(); });
 }
 
 /* ── Эрсдлийн хуудсан дээрх туг ── */
@@ -6461,8 +6462,8 @@ function ackBannerHTML() {
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
       '<i class="ti ti-book-2" style="font-size:21px"></i>' +
       '<div style="flex:1;min-width:200px"><b>Эрсдэл бүртэй нэг бүрчлэн танилцана уу.</b><br>' +
-      '<span style="font-size:12px">Эрсдэл бүрийг уншиж, <b>яаж сэргийлэх талаар саналаа</b> бичнэ. ' +
-      'Бүгдийг уншиж дуусмагц гарын үсэг зурах товч гарч ирнэ.' +
+      '<span style="font-size:12px">Эрсдэл бүрийг уншаад <b>яаж сэргийлэх талаар саналаа заавал бичнэ</b> — ' +
+      'бичсэний дараа дараагийнх руу шилжинэ. Бүгдийг дуусмагц гарын үсэг зурах товч гарч ирнэ.' +
       (A.prev ? ' Эрсдэл шинэчлэгдсэн тул дахин уншина.' : '') + '</span>' +
       '<div style="margin-top:7px;height:8px;background:#FDE68A;border-radius:99px;overflow:hidden">' +
       '<div style="height:100%;width:' + rp + '%;background:#D97706"></div></div>' +
