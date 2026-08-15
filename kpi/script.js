@@ -3164,7 +3164,7 @@ function renderEmployeeDashboard() {
     var pct = total > 1 ? (rank - 1) / (total - 1) : 0;   // 0 = хамгийн дээр
     var tone, state, ic;
     /* ⭐ Бүгд (эсвэл ихэнх нь) ижил оноотой бол «түрүүлж байна» гэж магтахгүй */
-    var allTied = (same >= total && total > 1);
+    var allTied = (total > 1 && same > 1 && same >= total * 0.5);
     if (allTied)           { tone = '#64748B'; state = 'Бүгд ижил оноотой байна';   ic = '🟰'; }
     else if (rank === 1)   { tone = '#D97706'; state = 'Хамгийн түрүүнд явж байна'; ic = '🥇'; }
     else if (rank === 2)   { tone = '#0891B2'; state = 'Хоёрдугаарт явж байна';     ic = '🥈'; }
@@ -3189,6 +3189,20 @@ function renderEmployeeDashboard() {
   /* Байр эзлэлтийн бүтэн хэсэг — тайлбартай.
      ⚠ Ямар ч тохиолдолд ХООСОН БУЦААХГҮЙ — алдаа гарвал ч гарчиг нь үлдэнэ. */
   function rankSectionHTML() {
+    /* ⚠ Оноо нь ганц үзүүлэлтээс бүрдэж байгаа бол бүгд ижил оноотой болно.
+       Тэр үед «1-р байр», «хамгийн түрүүнд явж байна» гэж харуулах нь ХУДАЛ
+       магтаал болно. Тиймээс байр эзлэлтийг ОГТ харуулахгүй, шалтгааныг хэлнэ. */
+    if (!scoreOk) {
+      return '<div class="card" id="rankCard" style="padding:20px;margin-bottom:14px">' +
+        '<h3 style="margin:0 0 3px">🏆 Байр эзлэлт — та хаана явж байна вэ?</h3>' +
+        '<div style="margin-top:12px;padding:15px 16px;background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:13px;' +
+        'font-size:13px;color:#475569;line-height:1.65">' +
+        '<b>Байр эзлэлт одоогоор тооцогдохгүй байна.</b><br>' +
+        'Ажилтныг зөвхөн <b>оноогоор</b> эрэмбэлдэг. Гэтэл одоогоор хэмжих мэдээлэл дутуу тул ' +
+        '<b>бүх ' + overallTotal + ' ажилтан ижил оноотой</b> байна — эрэмбэлэх зүйл алга.<br>' +
+        '<span style="color:#94A3B8;font-size:12.5px">Сургалт, шалгалт, даалгавар, аюулын мэдээлэл бүртгэгдэж ' +
+        'эхэлмэгц байр эзлэлт өөрөө гарч ирнэ.</span></div></div>';
+    }
     var boxes = '';
     try {
       var dn = esc(e.dept || 'Алба');
