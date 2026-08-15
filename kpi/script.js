@@ -6287,7 +6287,7 @@ async function ackExportMine() {
 }
 /* Албаны БҮХ ажилтны танилцсан бүртгэл (админд) */
 async function ackExportDept(dept) {
-  var t = toast('Бүрдүүлж байна…', 'info');
+  toast('Бүрдүүлж байна…', 'info');
   try {
     var ver = ackVersionOf(dept);
     var store = await ackLoad(dept, true), top = await ackTop(true);
@@ -6310,9 +6310,7 @@ async function ackExportDept(dept) {
       'Алба: ' + dept, head.concat(rest), ackDeptRows(dept).length);
     ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
       'Танилцсан-' + String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
-    if (t && t.remove) t.remove();
   } catch (e) {
-    if (t && t.remove) t.remove();
     toast('Татаж чадсангүй: ' + ((e && e.message) || e), 'error');
   }
 }
