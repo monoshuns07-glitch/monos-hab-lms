@@ -5847,6 +5847,12 @@ function ackLeadsAll() {
 function ackCanSign(emp, signed) {
   var role = ackRoleOf(emp);
   var has = function (uid) { return !!(uid && signed && signed[uid]); };
+  /* ⚠ Хариуцагч/захирлын шалгалт нь БҮХ ажилтны жагсаалтаас хамаарна.
+     Жагсаалт бүрэн ачаалагдаагүй байхад «нээлттэй» гэж хэлбэл дараалал
+     алдагдана — тиймээс тодорхойгүй үед ХААНА. */
+  if (role !== 'emp' && (!ackDirector('ceo') || !ackDirector('prod'))) {
+    return { ok: false, why: 'Ажилтны жагсаалт бүрэн ачаалагдаагүй байна. Хуудсаа дахин ачаална уу' };
+  }
   var names = function (list) {
     return list.slice(0, 3).map(function (e) { return e.name || ''; }).join(', ') +
       (list.length > 3 ? ' +' + (list.length - 3) : '');
@@ -6140,6 +6146,21 @@ var ACK_ME = null;             // { ready, me, ver, row, gate, … }
 var ACK_BUSY = false;
 
 async function ackRefreshMine(force) {
+  /* ⚠ Танилцалтын дараалал нь БҮХ ажилтныг мэдэхийг шаарддаг (хариуцагч
+     хэнийг хүлээж байгаа, захирлууд хэдэн хариуцагчтай гэх мэт). Хуудас
+     эрсдлээ түрүүлж зурдаг тул энэ мөчид жагсаалт дутуу байж болно —
+     тиймээс шаардлагатай бол R2-оос шууд бүрэн жагсаалтыг татна. */
+  try {
+    if ((DB.employees || []).length < 10 || !ackDirector('ceo') || !ackDirector('prod')) {
+      var full = await empR2Load();
+      if (full && full.length > (DB.employees || []).length) {
+        var prev = {};
+        (DB.employees || []).forEach(function (e) { if (e.uid) prev[e.uid] = e; });
+        DB.employees = full.map(function (r) { return prev[r.uid] ? Object.assign({}, prev[r.uid], r) : r; });
+        console.log('[ack] ажилтны жагсаалтыг R2-оос нөхлөө: ' + DB.employees.length);
+      }
+    }
+  } catch (e) { console.error('[ack] ажилтан', e); }
   var me = null; try { me = myEmp(); } catch (e) {}
   if (!me || !me.uid) { ACK_ME = { ready: true, none: true }; return ACK_ME; }
   var dept = riskCanonDept(me.dept) || me.dept || '';
