@@ -5554,6 +5554,13 @@ function _riskNameMatchRaw(a, b) {
   if (x.length >= 3 && y.indexOf(x) >= 0) return true;
   if (y.length >= 3 && x.indexOf(y) >= 0) return true;
   if (riskAcronymMatch(a, b)) return true;
+  /* «Үрэл савлах оператор» ↔ «Үрэл савлах МАШИНЫ оператор» — дунд нь нэмэлт
+     үг орсон тохиолдол. Богино нэрний БҮХ үг урт нэрэнд байвал ижил ажлын
+     байр гэж үзнэ. Ганц үгтэй нэрэнд хэрэглэхгүй (хэт өргөн тааралт өгнө). */
+  var ta = x.split(' ').filter(Boolean), tb = y.split(' ').filter(Boolean);
+  var shortT = ta.length <= tb.length ? ta : tb;
+  var longT = ta.length <= tb.length ? tb : ta;
+  if (shortT.length >= 2 && shortT.every(function (t) { return longT.indexOf(t) >= 0; })) return true;
   return false;
 }
 /* Админы гараар тохируулсан зураглал: эрсдэлийн файлын алба → системийн алба */
@@ -7045,14 +7052,33 @@ function riskMapColsReal(head, sub) {
 function riskCleanDept(s) {
   return String(s || '').replace(/^\s*\d+[.)]\s*/, '').replace(/\s+\d+\s*$/, '').trim();
 }
+/* Ажлын байрны нэрийг ЦЭВЭРЛЭНЭ — файл/хуудасны нэрнээс шууд ирдэг тул
+   «1 Үрэл савлах оператор эрсдэлийн үнэлгээ», «ЧАНАРЫН МЕНЕЖЕРИЙН АЖЛЫН
+   БАЙРНЫ ЭРСДЭЛ», «… НЭГТГЭСЭН» гэх мэт хог үг наалддаг. Эдгээрийг
+   аваагүй тохиолдолд системийн албан тушаалтай таарахгүй болно. */
 function riskCleanPos(s) {
-  return String(s || '')
+  var t = String(s || '')
     .replace(/\.(xlsx|xls|csv)$/i, '')
-    .replace(/^\s*\d+[.)]\s*/, '')
+    .replace(/_+/g, ' ')
+    .replace(/^\s*\d+\s*[.)-]?\s*/, '')          // «1 », «2. », «3) » эхний дугаар
     .replace(/\s*ажлын\s*байрны\s*эрсд[эл]+ийн\s*үнэлгээ.*$/i, '')
     .replace(/\s*ажилбарын\s*эрсд[эл]+ийн\s*үнэлгээ.*$/i, '')
     .replace(/\s*эрсд[эл]+ийн\s*үнэлгээ.*$/i, '')
-    .replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+    .replace(/\s*ажлын\s*байрны\s*эрсд[эл]+.*$/i, '')   // «…АЖЛЫН БАЙРНЫ ЭРСДЭЛ»
+    .replace(/\s*ажлын\s*байр(ны)?\s*$/i, '')
+    .replace(/\s*нэгтгэсэн\s*$/i, '')                    // «… НЭГТГЭСЭН»
+    .replace(/\s*үнэлгээ\s*$/i, '')
+    .replace(/[\s,;.–—-]+$/, '')
+    .replace(/\s+/g, ' ').trim();
+
+  /* БҮГД ТОМООР бичигдсэн бол эхний үсгийг л том болгоно (ЧАНАРЫН МЕНЕЖЕР →
+     Чанарын менежер). Кирилл том/жижиг үсгээр шалгана. */
+  var letters = t.replace(/[^А-ЯӨҮЁа-яөүё]/g, '');
+  if (letters && letters === letters.toUpperCase() && letters.length > 3) {
+    t = t.toLowerCase();
+    if (t.length) t = t.charAt(0).toUpperCase() + t.slice(1);   // ү, ө -г ч зөв томсгоно
+  }
+  return t;
 }
 
 /* Нэг хуудсыг эрсдэлийн мөр болгож задлана */
