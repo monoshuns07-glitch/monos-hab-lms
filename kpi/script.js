@@ -610,27 +610,40 @@ async function buildEmployeesFromRealData() {
 
 // Жинхэнэ датаг DB.employees руу нэгтгэнэ: training/participation автомат, гар засвар (health/sahilga)-ыг хадгална
 async function syncEmployeesWithRealData() {
-  /* ① Эхлээд R2-оос — Firestore-ийн 268 уншилт огт зарцуулахгүй.
-     Админ биш хүнд энэ хангалттай; жагсаалтыг админ шинэчилдэг. */
-  if (!isAdmin()) {
-    try {
-      var fromR2 = await empR2Load();
-      if (fromR2 && fromR2.length) {
-        var prevR = {};
-        (DB.employees || []).forEach(function (e) { if (e.uid) prevR[e.uid] = e; });
-        DB.employees = fromR2.map(function (r) {
-          var pv = prevR[r.uid];
-          return pv ? Object.assign({}, pv, r) : r;
-        });
-        empCacheSave(DB.employees);
-        console.log('[emp] R2-оос ' + DB.employees.length + ' ажилтан');
-        return true;
-      }
-    } catch (e) { console.error('[emp] R2', e); }
-  }
+  /* ① ХЭН БАЙСАН Ч эхлээд R2-оос — Firestore-ийн 268 уншилт зарцуулахгүй,
+     квот дуусах үед ч жагсаалт хоосон болохгүй. */
+  var shown = false;
+  try {
+    var fromR2 = await empR2Load();
+    if (fromR2 && fromR2.length) {
+      var prevR = {};
+      (DB.employees || []).forEach(function (e) { if (e.uid) prevR[e.uid] = e; });
+      DB.employees = fromR2.map(function (r) {
+        var pv = prevR[r.uid];
+        return pv ? Object.assign({}, pv, r) : r;
+      });
+      empCacheSave(DB.employees);
+      console.log('[emp] R2-оос ' + DB.employees.length + ' ажилтан');
+      shown = true;
+      /* Ажилтанд энэ хангалттай — Firestore рүү огт хандахгүй */
+      if (!isAdmin()) return true;
+    }
+  } catch (e) { console.error('[emp] R2', e); }
 
+  /* ② АДМИН нь эх сурвалжаас (users) шинэчилнэ. Энэ нь ЗААВАЛ биш —
+     унавал R2-гийн хуулбар аль хэдийн харагдаж байгаа тул хоосон болохгүй.
+     Амжилттай бол R2 дахь хувилбарыг шинэчилж, бусад хүнд хүргэнэ. */
   var real = await buildEmployeesFromRealData();
-  if (!real || !real.length) return false;
+  if (!real || !real.length) {
+    if (shown) {
+      console.warn('[emp] Firestore шинэчлэл бүтсэнгүй — R2-гийн хуулбар хэвээр');
+      setTimeout(function () {
+        toast('📋 Ажилтны жагсаалтыг шинэчилж чадсангүй — хадгалсан хуулбарыг харуулж байна.', 'warn');
+      }, 1200);
+      return true;
+    }
+    return false;
+  }
   empR2Sync(real);                     // админ бол R2 дахь хувилбарыг шинэчилнэ
   var prevByUid = {};
   (DB.employees || []).forEach(function (e) { if (e.uid) prevByUid[e.uid] = e; });
