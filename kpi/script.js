@@ -5810,34 +5810,86 @@ function ackDirector(key) {
   }
   return null;
 }
-/* Тухайн хүн ОДОО гарын үсэг зурж болох уу — дээд шатууд зурсан эсэх */
+/* Тухайн хариуцагчийн ХАРИУЦАХ ажилтнууд (эрсдэл харагддаг, энгийн ажилтан) */
+function ackSubordinates(lead) {
+  if (!lead) return [];
+  var unit = ackUnitOf(lead);
+  return ackDueEmps(lead.dept).filter(function (e) {
+    if (e.uid === lead.uid) return false;
+    if (ackRoleOf(e) !== 'emp') return false;
+    /* ИТА нь хоёр хэсэгт хуваагддаг — өөрийн хэсгийнхээ ажилтнууд */
+    if (unit && ackUnitOf(e) !== unit) return false;
+    return true;
+  });
+}
+/* Эрсдэл харагддаг ажилтантай БҮХ алба */
+function ackDeptsWithDue() {
+  var m = {};
+  ackDueEmps('').forEach(function (e) { m[riskCanonDept(e.dept) || e.dept] = 1; });
+  return Object.keys(m).filter(Boolean);
+}
+/* Компанийн БҮХ хариуцагч (алба · дэд хэсэг тус бүрээр) */
+function ackLeadsAll() {
+  var out = [], seen = {};
+  ackDeptsWithDue().forEach(function (d) {
+    var units = {};
+    ackDueEmps(d).forEach(function (e) { units[ackUnitOf(e) || ''] = 1; });
+    Object.keys(units).forEach(function (u) {
+      var L = ackLeadFor(d, u);
+      if (L && !seen[L.uid]) { seen[L.uid] = 1; out.push(L); }
+    });
+  });
+  return out;
+}
+/* ⭐ ДАРААЛАЛ: ажилтан → хариуцагч → Үйлдвэрлэлийн захирал → Гүйцэтгэх захирал
+   Ажилтан хүлээхгүй. Хариуцагч нь ажилтнуудаа бүрэн танилцсаны дараа зурна.
+   Захирлууд нь бүх хариуцагч зурсны дараа. */
 function ackCanSign(emp, signed) {
   var role = ackRoleOf(emp);
   var has = function (uid) { return !!(uid && signed && signed[uid]); };
-  var ceo = ackDirector('ceo'), prod = ackDirector('prod');
-  if (role === 'ceo') return { ok: true };
-  if (!ceo || !has(ceo.uid)) {
-    return { ok: false, why: 'Гүйцэтгэх захирал хараахан баталгаажуулаагүй байна' + (ceo ? ' (' + (ceo.name || '') + ')' : '') };
+  var names = function (list) {
+    return list.slice(0, 3).map(function (e) { return e.name || ''; }).join(', ') +
+      (list.length > 3 ? ' +' + (list.length - 3) : '');
+  };
+  if (role === 'emp') return { ok: true };            // ажилтан ЭХЛЭЭД зурна
+
+  if (role === 'lead') {
+    var subs = ackSubordinates(emp);
+    var miss = subs.filter(function (e) { return !has(e.uid); });
+    if (miss.length) {
+      return { ok: false, n: subs.length - miss.length, of: subs.length, miss: miss,
+        why: 'Танай хариуцах ' + miss.length + ' ажилтан хараахан танилцаагүй байна (' + names(miss) + ')' };
+    }
+    return { ok: true, n: subs.length, of: subs.length };
   }
-  if (role === 'prod') return { ok: true };
-  if (!prod || !has(prod.uid)) {
-    return { ok: false, why: 'Үйлдвэрлэл хариуцсан захирал хараахан баталгаажуулаагүй байна' + (prod ? ' (' + (prod.name || '') + ')' : '') };
+
+  /* Захирлууд — бүх албаны хариуцагч зурсан байх ёстой */
+  var leads = ackLeadsAll();
+  var missL = leads.filter(function (e) { return !has(e.uid); });
+  if (missL.length) {
+    return { ok: false, n: leads.length - missL.length, of: leads.length, miss: missL,
+      why: missL.length + ' албаны хариуцагч хараахан баталгаажуулаагүй байна (' + names(missL) + ')' };
   }
-  if (role === 'lead') return { ok: true };
-  var lead = ackLeadFor(emp.dept, ackUnitOf(emp));
-  if (lead && !has(lead.uid)) {
-    return { ok: false, why: 'Таны хариуцагч (' + (lead.name || '') + ') хараахан баталгаажуулаагүй байна' };
+  if (role === 'prod') return { ok: true, n: leads.length, of: leads.length };
+  /* Гүйцэтгэх захирал — хамгийн сүүлд */
+  var prod = ackDirector('prod');
+  if (prod && !has(prod.uid)) {
+    return { ok: false, n: leads.length, of: leads.length + 1,
+      why: 'Үйлдвэрлэл хариуцсан захирал (' + (prod.name || '') + ') хараахан баталгаажуулаагүй байна' };
   }
-  return { ok: true };
+  return { ok: true, n: leads.length + 1, of: leads.length + 1 };
 }
-/* Нэг ажилтны баримтад ЯМАР гарын үсгүүд байх ёстой вэ (дарааллаараа) */
+/* Нэг ажилтны баримтад ЯМАР гарын үсгүүд байх ёстой вэ (ЗУРАХ дарааллаараа:
+   ажилтан → хариуцагч → Үйлдвэрлэлийн захирал → Гүйцэтгэх захирал) */
 function ackChainFor(emp) {
   var out = [];
-  var ceo = ackDirector('ceo'); if (ceo) out.push({ role: 'ceo', emp: ceo });
-  var prod = ackDirector('prod'); if (prod) out.push({ role: 'prod', emp: prod });
+  if (emp) out.push({ role: ackRoleOf(emp) === 'emp' ? 'emp' : ackRoleOf(emp), emp: emp });
   var lead = ackLeadFor(emp && emp.dept, ackUnitOf(emp));
-  if (lead && (!ceo || lead.uid !== ceo.uid) && (!prod || lead.uid !== prod.uid)) out.push({ role: 'lead', emp: lead });
-  if (emp && !out.some(function (x) { return x.emp.uid === emp.uid; })) out.push({ role: 'emp', emp: emp });
+  if (lead && (!emp || lead.uid !== emp.uid)) out.push({ role: 'lead', emp: lead });
+  var prod = ackDirector('prod');
+  if (prod && !out.some(function (x) { return x.emp.uid === prod.uid; })) out.push({ role: 'prod', emp: prod });
+  var ceo = ackDirector('ceo');
+  if (ceo && !out.some(function (x) { return x.emp.uid === ceo.uid; })) out.push({ role: 'ceo', emp: ceo });
   return out;
 }
 
@@ -5943,6 +5995,28 @@ function ackSignedRow(store, uid, version) {
   }
   return null;
 }
+/* ⭐ Дарааллын шалгалтад хэрэгтэй БҮХ гарын үсгийг цуглуулна.
+   · ажилтан/хариуцагч → зөвхөн өөрийн албаны файл (1 хүсэлт)
+   · захирлууд        → БҮХ албаны файл (хариуцагч нар өөр өөр файлд байдаг) */
+async function ackGateFor(emp, force) {
+  var role = ackRoleOf(emp);
+  var isDir = (role === 'ceo' || role === 'prod');
+  var top = await ackTop(force);
+  var m = {};
+  ((top && top.rows) || []).forEach(function (r) { if (r.uid) m[r.uid] = 1; });
+  var add = function (st, ver) {
+    ((st && st.rows) || []).forEach(function (r) {
+      if (r.uid && String(r.version) === String(ver)) m[r.uid] = 1;
+    });
+  };
+  if (isDir) {
+    var ds = ackDeptsWithDue();
+    for (var i = 0; i < ds.length; i++) add(await ackLoad(ds[i], force), ackVersionOf(ds[i]));
+  } else if (emp && emp.dept) {
+    add(await ackLoad(emp.dept, force), ackVersionOf(emp.dept));
+  }
+  return { map: m, top: top };
+}
 /* Дараалал шалгахад хэрэглэх: { uid: 1 } */
 function ackSignedMap(store, version) {
   var m = {};
@@ -6034,9 +6108,9 @@ async function ackSign(emp, code, rows, version) {
   if (!emp || !emp.uid) return { ok: false, error: 'Ажилтны бүртгэл олдсонгүй' };
   var role = ackRoleOf(emp);
   var isDir = (role === 'ceo' || role === 'prod');
-  var top = await ackTop(true);
-  var store = isDir ? top : await ackLoad(emp.dept, true);
-  var chk = ackCanSign(emp, ackGateMap(isDir ? null : store, top, version));
+  var g = await ackGateFor(emp, true);
+  var store = isDir ? g.top : await ackLoad(emp.dept, true);
+  var chk = ackCanSign(emp, g.map);
   if (!chk.ok) return { ok: false, error: chk.why };
   /* ⭐ Нэг хүнд НЭГ гарын үсэг: анх ирсэн кодыг цаашид хэвээр хэрэглэнэ.
      Ингэснээр захирлын гарын үсэг бүх ажилтны баримт дээр ИЖИЛ явна. */
@@ -6072,13 +6146,14 @@ async function ackRefreshMine(force) {
   var role = ackRoleOf(me);
   var isDir = (role === 'ceo' || role === 'prod');
   var ver = isDir ? ackCompanyVersion() : ackVersionOf(dept);
-  var top = await ackTop(force);
+  var g = await ackGateFor(me, force);
+  var top = g.top;
   var store = isDir ? top : await ackLoad(dept, force);
   ACK_ME = {
     ready: true, me: me, dept: dept, role: role, isDir: isDir, ver: ver,
     row: ackSignedRow(store, me.uid, ver),
     prev: ackLatestRow(store, me.uid),
-    gate: ackCanSign(me, ackGateMap(isDir ? null : store, top, ver)),
+    gate: ackCanSign(me, g.map),
     chain: ackChainFor(me), store: store, top: top
   };
   return ACK_ME;
@@ -6137,12 +6212,25 @@ function ackBannerHTML() {
       '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #A7F3D0">' + chain + '</div>');
   }
   if (!A.gate.ok) {
+    var pc = A.gate.of ? Math.round((A.gate.n || 0) * 100 / A.gate.of) : 0;
     return box('#F8FAFC', '#E2E8F0', '#475569',
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
       '<i class="ti ti-clock-hour-4" style="font-size:21px;color:#94A3B8"></i>' +
-      '<div style="flex:1;min-width:200px"><b>Танилцах баталгаажуулалт хараахан нээгдээгүй байна.</b><br>' +
-      '<span style="font-size:12px">' + esc(A.gate.why || '') + '. Дээд шат нь гарын үсэг зурсны дараа танд нээгдэнэ.</span></div>' +
-      '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #E2E8F0">' + chain + '</div>');
+      '<div style="flex:1;min-width:200px"><b>Таны ээлж хараахан болоогүй байна.</b><br>' +
+      '<span style="font-size:12px">' + esc(A.gate.why || '') + '. ' +
+      (A.role === 'lead' ? 'Ажилтнууд тань бүгд танилцсаны дараа танд нээгдэнэ.'
+                         : 'Албадын хариуцагч нар баталгаажуулсны дараа танд нээгдэнэ.') + '</span>' +
+      (A.gate.of ? '<div style="margin-top:7px;height:7px;background:#E2E8F0;border-radius:99px;overflow:hidden">' +
+        '<div style="height:100%;width:' + pc + '%;background:#6366F1"></div></div>' +
+        '<div style="font-size:11px;color:#94A3B8;margin-top:3px">' + (A.gate.n || 0) + ' / ' + A.gate.of + ' танилцсан</div>' : '') +
+      '</div></div>' +
+      (A.gate.miss && A.gate.miss.length
+        ? '<div style="margin-top:9px;padding-top:9px;border-top:1px solid #E2E8F0;font-size:12px">' +
+          '<b>Хүлээгдэж байгаа:</b> ' + A.gate.miss.slice(0, 12).map(function (e) {
+            return esc(e.name || '') + ' <span style="color:#94A3B8">(' + esc(e.pos || e.role || '') + ')</span>';
+          }).join(' · ') + (A.gate.miss.length > 12 ? ' <span style="color:#94A3B8">+' + (A.gate.miss.length - 12) + '</span>' : '') + '</div>'
+        : '') +
+      '<div style="margin-top:9px;padding-top:9px;border-top:1px solid #E2E8F0">' + chain + '</div>');
   }
   return box('#FFFBEB', '#FDE68A', '#92400E',
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -6292,22 +6380,24 @@ async function ackExportDept(dept) {
     var ver = ackVersionOf(dept);
     var store = await ackLoad(dept, true), top = await ackTop(true);
     var lead = ackLeadFor(dept, '');
-    var head = [];
-    ['ceo', 'prod'].forEach(function (k) {
-      var d = ackDirector(k); if (d) head.push({ emp: d, row: ackLatestRow(top, d.uid) });
-    });
+    /* ⭐ Дараалал: ажилтнууд ЭХЭНД, дараа нь хариуцагч, эцэст нь захирлууд */
+    var tail = [];
     var units = {};
     ackDueEmps(dept).forEach(function (e) { units[ackUnitOf(e) || ''] = 1; });
     Object.keys(units).forEach(function (u) {
       var L = ackLeadFor(dept, u) || lead;
-      if (L && !head.some(function (x) { return x.emp.uid === L.uid; })) head.push({ emp: L, row: ackLatestRow(store, L.uid) });
+      if (L && !tail.some(function (x) { return x.emp.uid === L.uid; })) tail.push({ emp: L, row: ackLatestRow(store, L.uid) });
     });
-    var rest = ackDueEmps(dept)
-      .filter(function (e) { return !head.some(function (x) { return x.emp.uid === e.uid; }); })
+    ['prod', 'ceo'].forEach(function (k) {
+      var d = ackDirector(k);
+      if (d && !tail.some(function (x) { return x.emp.uid === d.uid; })) tail.push({ emp: d, row: ackLatestRow(top, d.uid) });
+    });
+    var body = ackDueEmps(dept)
+      .filter(function (e) { return !tail.some(function (x) { return x.emp.uid === e.uid; }); })
       .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); })
       .map(function (e) { return { emp: e, row: ackSignedRow(store, e.uid, ver) }; });
     var aoa = ackSheetAoa('ЭРСДЭЛИЙН ҮНЭЛГЭЭТЭЙ ТАНИЛЦСАН БҮРТГЭЛ',
-      'Алба: ' + dept, head.concat(rest), ackDeptRows(dept).length);
+      'Алба: ' + dept, body.concat(tail), ackDeptRows(dept).length);
     ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
       'Танилцсан-' + String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
   } catch (e) {
