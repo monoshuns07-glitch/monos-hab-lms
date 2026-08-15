@@ -736,6 +736,8 @@ async function loadDB() {
       _R2_TASKS = await taskR2Load() || taskCacheLoad();
       if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
     } catch (e) { console.error('[tasks] R2', e); }
+    /* Нэг удаагийн ажлын нээлтүүд (жижиг файл) */
+    try { await riskReleasesLoad(); } catch (e) {}
   }
   /* DB бэлэн болмогц суулгах туслах */
   var _applyR2 = function () {
@@ -1332,6 +1334,82 @@ async function riskR2Load() {
   try { localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out })); }
   catch (e) { /* хэтэрхий том бол кэшлэхгүй — асуудалгүй */ }
   return { cached: false, n: out.length, depts: want.length };
+}
+
+/* ══ НЭГ УДААГИЙН АЖЛЫН ЭРСДЛИЙГ АЖИЛТАНД НЭЭХ (админ, туслах админ) ══ */
+function actionRiskRelease() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ / туслах админ', 'error'); return; }
+  var jobs = {};
+  (DB.risks || []).forEach(function (r) {
+    if (!r.onDemand) return;
+    var k = riskJobKey(r);
+    if (!jobs[k]) jobs[k] = { key: k, n: 0, dept: r.dept, top: 0 };
+    jobs[k].n++;
+    var s = riskScore(r); if (s > jobs[k].top) jobs[k].top = s;
+  });
+  var keys = Object.keys(jobs);
+  if (!keys.length) { toast('Нэг удаагийн ажлын эрсдэл олдсонгүй', 'error'); return; }
+
+  var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '') : '';
+  var emps = (DB.employees || []).filter(function (e) { return !lockDept || riskSameDept(lockDept, e.dept); });
+
+  var node = elc('div', 'modal-info',
+    '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:#92400E;line-height:1.6">' +
+    'Эдгээр нь <b>жилд нэг удаа</b> хийгддэг ажлууд. Байнга харагдахгүй — ажил хийгдэх өдөр нь ' +
+    'ажиллах ажилтнуудаа сонгож <b>нээнэ</b>. Ажил дууссаны дараа хааж болно.</div>' +
+    '<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Ажил сонгох</label>' +
+    '<select id="rlJob" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">' +
+    keys.map(function (k) {
+      var open = (RISK_RELEASES[k] && RISK_RELEASES[k].empIds || []).length;
+      return '<option value="' + esc(k) + '">' + esc(k.slice(0, 58)) + '  —  ' + jobs[k].n + ' эрсдэл' +
+        (open ? '  · ОДОО ' + open + ' хүнд нээлттэй' : '') + '</option>';
+    }).join('') + '</select></div>' +
+    '<div style="margin-bottom:6px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Энэ ажилд оролцох ажилтнууд</label>' +
+    '<input id="rlSearch" placeholder="Нэрээр хайх…" style="width:100%;padding:8px 11px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:7px"></div>' +
+    '<div id="rlList" style="max-height:230px;overflow:auto;border:1px solid #E2E8F0;border-radius:9px;padding:8px">' +
+    emps.map(function (e) {
+      return '<label class="rlRow" data-name="' + esc((e.name || '').toLowerCase()) + '" style="display:block;font-size:12.5px;padding:4px 0">' +
+        '<input type="checkbox" class="rlEmp" value="' + esc(e.id) + '"> ' + esc(e.name || '—') +
+        ' <span style="color:#94A3B8">· ' + esc(e.pos || e.role || '') + ' · ' + esc(e.dept || '') + '</span></label>';
+    }).join('') + (emps.length ? '' : '<div style="font-size:12px;color:#94A3B8">Ажилтан олдсонгүй</div>') + '</div>' +
+    '<div id="rlSt" style="margin-top:9px;font-size:12.5px;color:#64748B"></div>');
+
+  var syncChecks = function () {
+    var k = node.querySelector('#rlJob').value;
+    var cur = (RISK_RELEASES[k] && RISK_RELEASES[k].empIds) || [];
+    Array.prototype.forEach.call(node.querySelectorAll('.rlEmp'), function (c) { c.checked = cur.indexOf(c.value) >= 0; });
+    node.querySelector('#rlSt').textContent = cur.length
+      ? 'Одоо ' + cur.length + ' ажилтанд нээлттэй байна.'
+      : 'Одоогоор хэнд ч нээгээгүй — энэ ажлын эрсдэл хэнд ч харагдахгүй.';
+  };
+  node.addEventListener('change', function (ev) { if (ev.target.id === 'rlJob') syncChecks(); });
+  node.addEventListener('input', function (ev) {
+    if (ev.target.id !== 'rlSearch') return;
+    var q = String(ev.target.value || '').toLowerCase().trim();
+    Array.prototype.forEach.call(node.querySelectorAll('.rlRow'), function (row) {
+      row.style.display = (!q || row.getAttribute('data-name').indexOf(q) >= 0) ? 'block' : 'none';
+    });
+  });
+  setTimeout(syncChecks, 30);
+
+  var save = elc('button', 'btn btn-primary', '<i class="ti ti-lock-open"></i> Нээх / шинэчлэх');
+  save.style.width = '100%';
+  save.addEventListener('click', async function () {
+    var k = node.querySelector('#rlJob').value;
+    var ids = [];
+    Array.prototype.forEach.call(node.querySelectorAll('.rlEmp:checked'), function (c) { ids.push(c.value); });
+    save.disabled = true; save.innerHTML = '<i class="ti ti-loader"></i> Хадгалж байна…';
+    RISK_RELEASES[k] = { empIds: ids, at: new Date().toISOString(), by: (SESSION && SESSION.email) || 'admin' };
+    try {
+      await riskReleasesSave();
+      toast(ids.length ? '✓ ' + ids.length + ' ажилтанд нээгдлээ' : '✓ Хаагдлаа — хэнд ч харагдахгүй', 'success');
+      closeModal(); renderHazards();
+    } catch (e) {
+      node.querySelector('#rlSt').innerHTML = '<span style="color:#DC2626">Хадгалж чадсангүй: ' + esc((e && e.message) || '') + '</span>';
+    }
+    save.disabled = false; save.innerHTML = '<i class="ti ti-lock-open"></i> Нээх / шинэчлэх';
+  });
+  buildModal('Нэг удаагийн ажлын эрсдэл нээх', node, { width: '560px', footer: save });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -5615,8 +5693,36 @@ function actionRiskDeptMap() {
 }
 
 /* Тухайн эрсдэл энэ ажилтанд хамаарах уу? */
+/* ══ НЭГ УДААГИЙН АЖЛЫН НЭЭЛТ ══════════════════════════════════════════
+   Автокран, өндөрт гагнуур зэрэг ажил жилд нэг удаа хийгддэг. Тэдгээрийг
+   бүх хүнд байнга харуулах нь утгагүй. Админ ажил хийгдэх өдөр нь тухайн
+   ажилтнуудыг сонгож НЭЭНЭ. Нээлт нь R2-д жижиг файлаар хадгалагдана. */
+var RISK_RELEASES = {};          // { ажлын түлхүүр: { empIds:[], at, by, note } }
+var RISK_REL_FILE = 'risks/releases.json';
+function riskJobKey(r) {
+  /* Нэг файл = нэг ажил. Эх файлын нэрээр бүлэглэнэ. */
+  return String((r && r.src) || '').split(/[\\/]/).pop().replace(/\.xlsx?$/i, '').trim();
+}
+function riskIsReleasedTo(r, emp) {
+  var rel = RISK_RELEASES[riskJobKey(r)];
+  if (!rel || !rel.empIds || !rel.empIds.length) return false;
+  return rel.empIds.indexOf(emp.id) >= 0 || rel.empIds.indexOf(emp.uid) >= 0;
+}
+async function riskReleasesLoad() {
+  try {
+    var j = await riskR2GetJson(RISK_REL_FILE);
+    if (j && j.map) { RISK_RELEASES = j.map; return j.map; }
+  } catch (e) {}
+  return null;
+}
+async function riskReleasesSave() {
+  return await riskR2PutJson(RISK_REL_FILE, { updatedAt: new Date().toISOString(), map: RISK_RELEASES });
+}
+
 function riskAppliesTo(r, emp) {
   if (!r || !emp) return false;
+  /* Нэг удаагийн ажил — зөвхөн НЭЭГДСЭН ажилтанд */
+  if (r.onDemand) return riskIsReleasedTo(r, emp);
   if (r.dept && emp.dept && !riskSameDept(r.dept, emp.dept)) return false;
   var ids = (r.empIds || []);
   if (ids.length) return ids.indexOf(emp.id) >= 0 || ids.indexOf(emp.uid) >= 0;
@@ -6352,6 +6458,8 @@ function riskWire(sec, redraw) {
     /* «Эрсдэл нэмэх» — гараар шинэ эрсдэл/зааварчилгаа */
     var ra = ev.target.closest('[data-risk-add]');
     if (ra) { actionRiskAdd(); return; }
+    var rl = ev.target.closest('[data-risk-rel]');
+    if (rl) { actionRiskRelease(); return; }
     var op = ev.target.closest('[data-risk-open]');
     if (op) { riskOpenDetail(op.getAttribute('data-risk-open')); return; }
   });
@@ -6404,6 +6512,7 @@ function renderHazards() {
     ((isAdmin() || isDeptHead())
       ? '<div class="page-actions">' +
         '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button>' +
+        '<button class="btn btn-secondary" data-risk-rel="1" title="Автокран, өндөрт гагнуур зэрэг нэг удаагийн ажлын эрсдлийг ажилтанд нээнэ"><i class="ti ti-lock-open"></i> Ажилбар нээх</button>' +
         '<button class="btn btn-secondary" data-risk-assign="1"><i class="ti ti-user-check"></i> Арга хэмжээ хувиарлах</button>' +
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
@@ -7125,6 +7234,9 @@ function riskParseOneSheet(wb, sheetName, fileName, depts, lockDept) {
         process: curProcess, hazard: hz,
         location: cell('location'), cause: cell('cause'),
         r: R, rAfter: R2, unscored: unscored, src: String(fileName || ''),
+        /* ⚠ Ажилбарын үнэлгээ = НЭГ УДААГИЙН ажил (автокран, өндөрт гагнуур).
+           Байнга харагдахгүй — админ ажил хийгдэх үед сонгосон ажилтанд нээнэ. */
+        onDemand: /ажилбарын эрсдэлийн үнэлгээ/i.test(String(fileName || '')),
         /* Онооны задаргаа: гишүүн бүрийн оноо + дундаж (R = P̄ × N̄ × H̄).
            rOk — задаргаа нь бичигдсэн R-тэй ТУЛГАГДСАН эсэх. Тулгагдаагүй бол
            дэлгэцэнд томьёог харуулахгүй (буруу тайлбар өгөхгүйн тулд). */
