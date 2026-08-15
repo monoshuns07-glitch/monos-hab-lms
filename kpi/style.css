@@ -2056,6 +2056,18 @@ code {
 @media (max-width: 1000px) {
   .emp-cols { grid-template-columns: 1fr; gap: 0; }
 }
+/* ── «Хийх ёстой зүйлс» — олон мөр болоход ХАЖУУ ТИЙШ цуврана ──
+   Өмнө нь мөр бүр доошоо нэмэгдэж, жагсаалт хэт урт болдог байв. */
+.emp-todo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 9px;
+  align-items: stretch;
+}
+.emp-todo-grid > div { min-width: 0; }
+@media (max-width: 560px) {
+  .emp-todo-grid { grid-template-columns: 1fr; }
+}
 /* Хийх ёстой мөрийн hover */
 .emp-step:hover { border-color: #C7D2FE !important; background: #FAFBFF !important; }
 

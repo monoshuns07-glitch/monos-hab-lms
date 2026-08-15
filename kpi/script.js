@@ -3376,15 +3376,9 @@ function renderEmployeeDashboard() {
         'Үнэлгээ хийхэд хангалттай мэдээлэл алга. Одоогоор <b>' + dataN + '</b> үзүүлэлт л дататай байгаа тул ' +
         'оноо ажилтны хийсэн зүйлийг хэмжихгүй байна.</div></div></div>' +
         (missList.length
-          ? '<div style="margin-top:14px;padding-top:13px;border-top:1px solid #E2E8F0">' +
-            '<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:7px">ЮУ ДУТУУ БАЙНА</div>' +
-            missList.map(function (m) {
-              return '<div style="display:flex;gap:9px;padding:6px 0;font-size:12.5px;color:#475569;line-height:1.5">' +
-                '<span style="color:#CBD5E1">•</span><span><b>' + esc(m.label) + '</b>' +
-                (m.why ? ' — <span style="color:#94A3B8">' + esc(m.why) + '</span>' : '') + '</span></div>';
-            }).join('') +
-            '<div style="font-size:12px;color:#94A3B8;margin-top:8px;line-height:1.5">' +
-            'Эдгээрийг ХАБЭА-н алба бүртгэж эхэлмэгц таны оноо жинхэнэ утгатай болно.</div></div>'
+          ? '<div style="margin-top:12px;padding:10px 13px;background:#F1F5F9;border-radius:11px;' +
+            'font-size:12.5px;color:#475569;line-height:1.5">' +
+            'Дутуу <b>' + missList.length + '</b> үзүүлэлтийг доорх <b>«Хийх ёстой зүйлс»</b> хэсэгт жагсаалаа.</div>'
           : '') +
         '</div>') +
 
@@ -3395,13 +3389,16 @@ function renderEmployeeDashboard() {
     '<div class="emp-cols">' +
     '<div>' +    /* ── ЗҮҮН БАГАНА ── */
 
-    /* ② ЮУ ДУТУУ БАЙНА — хийвэл хэдэн оноо нэмэгдэхийг шууд хэлнэ */
-    (todoList.length ?
-      '<div class="card" style="padding:18px;margin-bottom:14px;border:1.5px solid #FEE2E2">' +
-      '<h3 style="margin:0 0 3px;color:#B91C1C">⚠ Хийх ёстой зүйлс</h3>' +
-      '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 13px">Доорхыг хийвэл таны оноо нэмэгдэнэ. Дарж шууд орно уу.</p>' +
+    /* ② ЮУ ДУТУУ БАЙНА — хийвэл хэдэн оноо нэмэгдэхийг шууд хэлнэ.
+       ⚠ Олон мөр болоход доошоо сунжирдаг тул ХАЖУУ ТИЙШ хоёр багана болгов
+       (emp-todo-grid — өргөн дэлгэцэд 2 багана, утсан дээр 1). */
+    ((todoList.length || missList.length) ?
+      '<div class="card" style="padding:18px;margin-bottom:14px;border:1.5px solid ' + (todoList.length ? '#FEE2E2' : '#E2E8F0') + '">' +
+      (todoList.length ? '<h3 style="margin:0 0 3px;color:#B91C1C">⚠ Хийх ёстой зүйлс</h3>' +
+        '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 13px">Доорхыг хийвэл таны оноо нэмэгдэнэ. Дарж шууд орно уу.</p>' : '') +
+      '<div class="emp-todo-grid">' +
       todoList.map(function (s) {
-        return '<div class="emp-step" data-gopage="' + s.page + '" style="display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #F1F5F9;border-radius:13px;margin-bottom:9px;cursor:pointer;background:#fff">' +
+        return '<div class="emp-step" data-gopage="' + s.page + '" style="display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #F1F5F9;border-radius:13px;cursor:pointer;background:#fff">' +
           '<div style="width:38px;height:38px;border-radius:11px;flex-shrink:0;background:' + s.color + '18;color:' + s.color + ';display:flex;align-items:center;justify-content:center"><i class="ti ' + s.icon + '" style="font-size:19px"></i></div>' +
           '<div style="flex:1;min-width:0">' +
           '<div style="font-size:14px;font-weight:700;color:#1E293B;line-height:1.35">' + s.txt + '</div>' +
@@ -3412,10 +3409,25 @@ function renderEmployeeDashboard() {
               '<div style="font-size:9.5px;color:#059669;font-weight:600">оноо</div></div>'
             : (s.isBonus ? '<div style="flex-shrink:0;background:#FEF3C7;border:1px solid #FDE68A;border-radius:11px;padding:7px 11px;font-size:11px;font-weight:800;color:#92400E">БОНУС</div>' : '')) +
           '<i class="ti ti-chevron-right" style="color:#CBD5E1;flex-shrink:0;margin-left:2px"></i></div>';
-      }).join('') +
-      (totalGain > 0 ? '<div style="margin-top:4px;padding:12px 14px;background:linear-gradient(135deg,#ECFDF5,#F0FDF4);border-radius:12px;font-size:13.5px;color:#065F46;text-align:center">' +
+      }).join('') + '</div>' +
+      (totalGain > 0 ? '<div style="margin-top:11px;padding:12px 14px;background:linear-gradient(135deg,#ECFDF5,#F0FDF4);border-radius:12px;font-size:13.5px;color:#065F46;text-align:center">' +
         'Бүгдийг хийвэл таны оноо <b style="font-size:16px">' + total + '</b> → <b style="font-size:18px;color:#059669">' + couldBe + '</b> болно' +
         '</div>' : '') +
+      /* ── ХАБЭА-н албанаас хүлээгдэж байгаа зүйлс (ажилтан өөрөө хийж чадахгүй) ── */
+      (missList.length
+        ? (todoList.length ? '<div style="margin-top:15px;padding-top:14px;border-top:1px solid #F1F5F9"></div>' : '') +
+          '<h3 style="margin:0 0 3px;color:#475569;font-size:15px">🏢 ХАБЭА-н албанаас хүлээгдэж байна</h3>' +
+          '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 11px">Эдгээрийг та өөрөө хийхгүй — бүртгэгдмэгц таны оноо жинхэнэ утгатай болно.</p>' +
+          '<div class="emp-todo-grid">' +
+          missList.map(function (m) {
+            return '<div style="display:flex;align-items:center;gap:12px;padding:13px;border:1px dashed #E2E8F0;border-radius:13px;background:#F8FAFC">' +
+              '<div style="width:38px;height:38px;border-radius:11px;flex-shrink:0;background:#E2E8F0;color:#64748B;display:flex;align-items:center;justify-content:center">' +
+              '<i class="ti ti-clock-pause" style="font-size:19px"></i></div>' +
+              '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:14px;font-weight:700;color:#475569;line-height:1.35">' + esc(m.label) + '</div>' +
+              '<div style="font-size:12px;color:#94A3B8;margin-top:2px;line-height:1.4">' + esc(m.why || '') + '</div></div></div>';
+          }).join('') + '</div>'
+        : '') +
       '</div>' : '') +
 
     /* ③ Оноо хаанаас бүрдсэн — нягт */
