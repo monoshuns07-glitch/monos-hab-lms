@@ -5719,6 +5719,121 @@ function actionRiskDeptMap() {
 }
 
 /* Тухайн эрсдэл энэ ажилтанд хамаарах уу? */
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛТЭЙ ТАНИЛЦСАН БАТАЛГААЖУУЛАЛТ — ШАТЛАЛ
+   ----------------------------------------------------------------------
+   Гарын үсэг = и-мэйлээр ирсэн OTP код. Хүн бүр НЭГ код авч, харьяалагдах
+   бүх баримтад тэр код нь яг тэр хэвээр буудна (гарын үсэг хүнийг
+   тодорхойлдог, баримтыг биш). Эрсдэл шинэчлэгдвэл шинэ агуулгад
+   шинэ код авна.
+
+   Дараалал (дээд шат зураагүй бол доод шат зурж чадахгүй):
+     ① Гүйцэтгэх захирал            → бүх эрсдэл
+     ② Үйлдвэрлэл хариуцсан захирал → бүх эрсдэл
+     ③ Албаны хариуцагч             → өөрийн алба/дэд хэсэг
+     ④ Ажилтан                      → өөрт харагдаж буй
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_DIRECTORS = [
+  { key: 'ceo',  match: /гүйцэтгэх\s*захирал/i,               label: 'Гүйцэтгэх захирал' },
+  { key: 'prod', match: /үйлдвэрлэл\s*хариуцсан\s*захирал/i,  label: 'Үйлдвэрлэл хариуцсан захирал' }
+];
+/* Алба → хариуцагчийн албан тушаал (нэрээр биш — хүн солигдоход ажиллах ёстой) */
+var ACK_LEADS = [
+  { dept: 'Борлуулалтын алба',                            pos: /борлуулалтын\s*албаны\s*дарга/i },
+  { dept: 'Ложистикийн алба',                             pos: /ложистикийн\s*албаны\s*дарга/i },
+  { dept: 'Маркетингийн алба',                            pos: /маркетингийн\s*албаны\s*дарга/i },
+  { dept: 'Хангамж, аж ахуйн алба',                       pos: /хангамж.*албаны\s*дарга/i },
+  { dept: 'Чанарын баталгаажилтын алба',                  pos: /чанарын\s*баталгаажилтын\s*албаны\s*дарга/i },
+  { dept: 'Экспорт, бизнес хөгжлийн алба',                pos: /экспорт.*албаны\s*дарга/i },
+  { dept: 'Хуурай хүнсний үйлдвэр',                       pos: /хуурай\s*хүнсний\s*үйлдвэрийн\s*дарга/i },
+  { dept: 'Шингэн хүнсний үйлдвэр',                       pos: /шингэн\s*хүнсний\s*үйлдвэрийн\s*дарга/i },
+  { dept: 'Хөдөлмөрийн аюулгүй байдал эрүүл ахуйн алба',  pos: /хабэа.*ахлах\s*менежер/i },
+  { dept: 'Чанарын хяналтын лаборатори',                  pos: /ахлах\s*химич/i },
+  { dept: 'Санхүүгийн алба',                              pos: /санхүү\s*хариуцсан\s*захирал/i },
+  { dept: 'ТУЗ-н дэргэдэх аудит эрсдэлийн хороо',         pos: /туз.*нарийн\s*бичгийн\s*дарга/i },
+  { dept: 'Захиргаа, Хүний нөөцийн алба',                 pos: /хүний\s*нөөцийн\s*ахлах\s*менежер/i },
+  /* Инженер техникийн алба ХОЁР дэд хэсэгт хуваагдана */
+  { dept: 'Инженер техникийн алба', unit: 'Дэд бүтэц',
+    pos: /дэд\s*бүтэц.*ахлах\s*инженер/i },
+  { dept: 'Инженер техникийн алба', unit: 'Тоног төхөөрөмж',
+    pos: /тоног\s*төхөөрөмж\s*хариуцсан\s*ахлах\s*инженер/i }
+];
+/* ИТА-гийн ажилтан аль дэд хэсэгт харьяалагдахыг албан тушаалаас нь тогтооно */
+function ackUnitOf(emp) {
+  if (!emp || !riskSameDept('Инженер техникийн алба', emp.dept)) return '';
+  var p = String(emp.pos || emp.role || '').toLowerCase();
+  if (/сантехник|цахилгаан/.test(p)) return 'Дэд бүтэц';
+  if (/механик|автоматик|ээлжийн|машинист|оператор/.test(p)) return 'Тоног төхөөрөмж';
+  return 'Тоног төхөөрөмж';        // тодорхойгүй бол том хэсэгт
+}
+/* Хүний ШАТЫГ тогтооно: ceo / prod / lead / emp */
+function ackRoleOf(emp) {
+  if (!emp) return 'emp';
+  var p = String(emp.pos || emp.role || '');
+  for (var i = 0; i < ACK_DIRECTORS.length; i++) {
+    if (ACK_DIRECTORS[i].match.test(p)) return ACK_DIRECTORS[i].key;
+  }
+  for (var j = 0; j < ACK_LEADS.length; j++) {
+    var L = ACK_LEADS[j];
+    if (L.pos.test(p) && riskSameDept(L.dept, emp.dept)) return 'lead';
+  }
+  return 'emp';
+}
+/* Тухайн албанд (болон дэд хэсэгт) хариуцагч хэн бэ */
+function ackLeadFor(dept, unit) {
+  var emps = DB.employees || [];
+  for (var j = 0; j < ACK_LEADS.length; j++) {
+    var L = ACK_LEADS[j];
+    if (!riskSameDept(L.dept, dept)) continue;
+    if (L.unit && unit && L.unit !== unit) continue;
+    if (L.unit && !unit) continue;
+    for (var i = 0; i < emps.length; i++) {
+      if (L.pos.test(String(emps[i].pos || emps[i].role || '')) && riskSameDept(dept, emps[i].dept)) return emps[i];
+    }
+  }
+  return null;
+}
+function ackDirector(key) {
+  var d = null;
+  ACK_DIRECTORS.forEach(function (x) { if (x.key === key) d = x; });
+  if (!d) return null;
+  var emps = DB.employees || [];
+  for (var i = 0; i < emps.length; i++) {
+    if (d.match.test(String(emps[i].pos || emps[i].role || ''))) return emps[i];
+  }
+  return null;
+}
+/* Тухайн хүн ОДОО гарын үсэг зурж болох уу — дээд шатууд зурсан эсэх */
+function ackCanSign(emp, signed) {
+  var role = ackRoleOf(emp);
+  var has = function (uid) { return !!(uid && signed && signed[uid]); };
+  var ceo = ackDirector('ceo'), prod = ackDirector('prod');
+  if (role === 'ceo') return { ok: true };
+  if (!ceo || !has(ceo.uid)) {
+    return { ok: false, why: 'Гүйцэтгэх захирал хараахан баталгаажуулаагүй байна' + (ceo ? ' (' + (ceo.name || '') + ')' : '') };
+  }
+  if (role === 'prod') return { ok: true };
+  if (!prod || !has(prod.uid)) {
+    return { ok: false, why: 'Үйлдвэрлэл хариуцсан захирал хараахан баталгаажуулаагүй байна' + (prod ? ' (' + (prod.name || '') + ')' : '') };
+  }
+  if (role === 'lead') return { ok: true };
+  var lead = ackLeadFor(emp.dept, ackUnitOf(emp));
+  if (lead && !has(lead.uid)) {
+    return { ok: false, why: 'Таны хариуцагч (' + (lead.name || '') + ') хараахан баталгаажуулаагүй байна' };
+  }
+  return { ok: true };
+}
+/* Нэг ажилтны баримтад ЯМАР гарын үсгүүд байх ёстой вэ (дарааллаараа) */
+function ackChainFor(emp) {
+  var out = [];
+  var ceo = ackDirector('ceo'); if (ceo) out.push({ role: 'ceo', emp: ceo });
+  var prod = ackDirector('prod'); if (prod) out.push({ role: 'prod', emp: prod });
+  var lead = ackLeadFor(emp && emp.dept, ackUnitOf(emp));
+  if (lead && (!ceo || lead.uid !== ceo.uid) && (!prod || lead.uid !== prod.uid)) out.push({ role: 'lead', emp: lead });
+  if (emp && !out.some(function (x) { return x.emp.uid === emp.uid; })) out.push({ role: 'emp', emp: emp });
+  return out;
+}
+
 /* ══ НЭГ УДААГИЙН АЖЛЫН НЭЭЛТ ══════════════════════════════════════════
    Автокран, өндөрт гагнуур зэрэг ажил жилд нэг удаа хийгддэг. Тэдгээрийг
    бүх хүнд байнга харуулах нь утгагүй. Админ ажил хийгдэх өдөр нь тухайн
