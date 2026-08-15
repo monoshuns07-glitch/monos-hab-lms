@@ -6135,6 +6135,8 @@ async function ackSign(emp, code, rows, version) {
   /* ⭐ Нэг хүнд НЭГ гарын үсэг: анх ирсэн кодыг цаашид хэвээр хэрэглэнэ.
      Ингэснээр захирлын гарын үсэг бүх ажилтны баримт дээр ИЖИЛ явна. */
   var sig = ackSigCodeIn(store, emp.uid) || String(code);
+  var rd = ackReadStat(rows, version);            // ← уншсаны НОТОЛГОО
+  var ideas = ackIdeaList(rows, version);         // ← ажилтны САНАЛУУД
   var rec = {
     uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
     dept: riskCanonDept(emp.dept) || emp.dept || '',
@@ -6146,6 +6148,9 @@ async function ackSign(emp, code, rows, version) {
     n: (rows || []).length,
     riskIds: (rows || []).map(function (r) { return r.id; }),
     hash: ackHashOf(rows),
+    read: rd.done,                         // хэдэн эрсдлийг нэг бүрчлэн уншсан
+    readSec: Math.round(rd.sec || 0),      // нийт хэдэн секунд уншсан
+    ideas: ideas,                          // санал бүр: {id, hazard, text}
     at: new Date().toISOString()
   };
   var w = await ackWrite(isDir ? ACK_TOP_FILE : ackFileFor(emp.dept), rec);
@@ -6213,6 +6218,186 @@ function ackDateMn(iso) {
   return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ЭРСДЭЛ БҮРТЭЙ НЭГ БҮРЧЛЭН ТАНИЛЦАХ
+   Ажилтан жагсаалтыг хараад шууд код авчихдаг байсныг зогсооно: эрсдэл
+   бүрийг тусад нь дэлгэцэнд гаргаж уншуулна. «Дараагийнх» товч эрсдлийн
+   ТҮВШНЭЭС хамаарсан хугацааны дараа идэвхжинэ (өндөр эрсдэлд удаан).
+   Явц нь хөтөч дээр хадгалагдана — дундаас нь гарсан ч алдагдахгүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_READ_KEY = 'kpi_ack_read_v1';
+var ACK_READ = null;             // { ver, ids:{}, sec, startedAt, updatedAt }
+
+/* Нэг эрсдлийг хамгийн багадаа хэдэн секунд үзэх ёстой вэ */
+function ackDwellFor(r) {
+  var c = riskLevel(r).code;
+  if (c === 'A' || c === 'B') return 6;
+  if (c === 'C') return 4;
+  return 3;
+}
+function ackReadLoad(ver) {
+  if (ACK_READ && ACK_READ.ver === String(ver)) return ACK_READ;
+  var got = null;
+  try { got = JSON.parse(localStorage.getItem(ACK_READ_KEY) || 'null'); } catch (e) {}
+  if (!got || got.ver !== String(ver) || !got.ids) {
+    got = { ver: String(ver), ids: {}, ideas: {}, sec: 0, startedAt: '', updatedAt: '' };
+  }
+  if (!got.ideas) got.ideas = {};
+  ACK_READ = got;
+  return ACK_READ;
+}
+/* Ажилтны САНАЛ — эрсдэл тус бүрд «яаж сэргийлэх вэ» */
+function ackIdeaSet(ver, id, text) {
+  var st = ackReadLoad(ver);
+  var t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  if (t) st.ideas[id] = t; else delete st.ideas[id];
+  st.updatedAt = new Date().toISOString();
+  ackReadSave();
+}
+function ackIdeaGet(ver, id) {
+  return (ackReadLoad(ver).ideas || {})[id] || '';
+}
+/* Гарын үсэгт хадгалах хэлбэр: [{id, hazard, text}] */
+function ackIdeaList(rows, ver) {
+  var st = ackReadLoad(ver), out = [];
+  (rows || []).forEach(function (r) {
+    var t = (st.ideas || {})[r.id];
+    if (t) out.push({ id: r.id, hazard: String(r.hazard || '').slice(0, 120), text: t });
+  });
+  return out;
+}
+function ackReadSave() {
+  try { localStorage.setItem(ACK_READ_KEY, JSON.stringify(ACK_READ)); } catch (e) {}
+}
+function ackReadMark(ver, id, sec) {
+  var st = ackReadLoad(ver);
+  if (!st.startedAt) st.startedAt = new Date().toISOString();
+  if (!st.ids[id]) st.ids[id] = 1;
+  st.sec = (st.sec || 0) + (sec || 0);
+  st.updatedAt = new Date().toISOString();
+  ackReadSave();
+  return st;
+}
+/* Хэдийг уншсан бэ */
+function ackReadStat(rows, ver) {
+  var st = ackReadLoad(ver);
+  var done = 0;
+  (rows || []).forEach(function (r) { if (st.ids[r.id]) done++; });
+  return { done: done, total: (rows || []).length, sec: st.sec || 0,
+    ok: (rows || []).length > 0 && done >= (rows || []).length };
+}
+/* Дараагийн уншаагүй эрсдлийн байрлал */
+function ackReadNextIdx(rows, ver) {
+  var st = ackReadLoad(ver);
+  for (var i = 0; i < rows.length; i++) { if (!st.ids[rows[i].id]) return i; }
+  return 0;
+}
+
+function ackReadOpen(rows, ver, after) {
+  if (!rows || !rows.length) return;
+  var i = ackReadNextIdx(rows, ver);
+  var node = elc('div');
+  node.innerHTML = '<div id="ackRdBody"></div>';
+  buildModal('Эрсдэлтэй танилцах', node, { width: '620px' });
+
+  var timer = null, tick = null;
+  var stop = function () { if (timer) clearTimeout(timer); if (tick) clearInterval(tick); timer = tick = null; };
+  var draw = function () {
+    stop();
+    var r = rows[i], L = riskLevel(r);
+    var st = ackReadStat(rows, ver);
+    var seen = ackReadLoad(ver).ids[r.id];
+    var need = seen ? 0 : ackDwellFor(r);
+    var left = need;
+    var pct = Math.round(st.done * 100 / st.total);
+    var host = node.querySelector('#ackRdBody');
+    host.innerHTML =
+      '<div style="display:flex;align-items:center;gap:11px;margin-bottom:11px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:#334155;white-space:nowrap">Эрсдэл ' + (i + 1) + ' / ' + rows.length + '</div>' +
+      '<div style="flex:1;height:8px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669);transition:width .3s"></div></div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;white-space:nowrap">' + st.done + ' уншсан</div></div>' +
+      '<div style="max-height:52vh;overflow:auto;padding-right:4px">' + riskDetailHTML(r) +
+      /* ── Ажилтны санал ── */
+      '<div style="margin-top:14px;background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:13px;padding:13px 15px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:#166534;letter-spacing:.2px">' +
+      '💡 ЭНЭ ЭРСДЛЭЭС ЯАЖ СЭРГИЙЛЭХ ВЭ — ТАНЫ САНАЛ</div>' +
+      '<div style="font-size:11.5px;color:#15803D;margin-top:2px;line-height:1.55">' +
+      'Ажлын байрандаа юу сайжруулбал энэ аюул буурах вэ? Товчхон бичнэ үү (заавал биш).</div>' +
+      '<textarea id="ackRdIdea" rows="2" placeholder="Жишээ: гэрэлтүүлэг нэмэх, тэмдэг тавих, багаж солих…" ' +
+      'style="width:100%;margin-top:8px;padding:10px 12px;border:1.5px solid #BBF7D0;border-radius:10px;' +
+      'font-size:13px;font-family:inherit;line-height:1.55;resize:vertical;background:#fff">' +
+      esc(ackIdeaGet(ver, r.id)) + '</textarea>' +
+      '<div id="ackRdIdeaSt" style="font-size:11px;color:#16A34A;margin-top:4px;min-height:14px"></div>' +
+      '</div></div>' +
+      '<div style="display:flex;gap:9px;margin-top:14px;padding-top:12px;border-top:1px solid #F1F5F9">' +
+      '<button class="btn btn-secondary" id="ackRdPrev"' + (i === 0 ? ' disabled' : '') + '>‹ Өмнөх</button>' +
+      '<div style="flex:1"></div>' +
+      '<button class="btn btn-primary" id="ackRdNext" style="min-width:190px"></button></div>' +
+      '<div style="margin-top:8px;font-size:11.5px;color:#94A3B8;text-align:center" id="ackRdHint"></div>';
+
+    var btn = host.querySelector('#ackRdNext');
+    var last = (i >= rows.length - 1);
+    var label = function () {
+      return last ? '<i class="ti ti-circle-check"></i> Бүгдтэй танилцаж дууслаа'
+                  : 'Дараагийнх ›';
+    };
+    var lock = function () {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-hourglass-low"></i> ' + left + ' сек уншина уу';
+      host.querySelector('#ackRdHint').textContent =
+        'Энэ бол ' + L.name.toLowerCase() + ' эрсдэл — уншиж дуустал товч идэвхжихгүй.';
+    };
+    var open = function () {
+      btn.disabled = false; btn.innerHTML = label();
+      host.querySelector('#ackRdHint').textContent = seen ? 'Энэ эрсдэлтэй та танилцсан байна.' : '';
+    };
+    if (need > 0) {
+      lock();
+      tick = setInterval(function () { left--; if (left > 0) lock(); }, 1000);
+      timer = setTimeout(function () {
+        stop(); ackReadMark(ver, r.id, need); seen = 1; open();
+      }, need * 1000);
+    } else { open(); }
+
+    /* Саналыг бичих зуур нь хадгална (гарахад ч алдагдахгүй) */
+    var ta = host.querySelector('#ackRdIdea');
+    var stEl = host.querySelector('#ackRdIdeaSt');
+    var saveIdea = function (quiet) {
+      ackIdeaSet(ver, r.id, ta.value);
+      if (!quiet) stEl.textContent = ta.value.trim() ? '✓ Санал хадгалагдлаа' : '';
+    };
+    var idleT = null;
+    ta.addEventListener('input', function () {
+      if (idleT) clearTimeout(idleT);
+      stEl.textContent = 'бичиж байна…';
+      idleT = setTimeout(function () { saveIdea(); }, 600);
+    });
+    ta.addEventListener('blur', function () { saveIdea(); });
+
+    host.querySelector('#ackRdPrev').addEventListener('click', function () { saveIdea(true); if (i > 0) { i--; draw(); } });
+    btn.addEventListener('click', function () {
+      saveIdea(true);
+      if (!last) { i++; draw(); return; }
+      /* Сүүлийнх — бүгдийг уншсан эсэхийг шалгана */
+      stop();
+      var s2 = ackReadStat(rows, ver);
+      if (!s2.ok) {
+        i = ackReadNextIdx(rows, ver);
+        toast('Уншаагүй ' + (s2.total - s2.done) + ' эрсдэл байна — үргэлжлүүлнэ үү', 'warn');
+        draw(); return;
+      }
+      closeModal();
+      toast('✓ ' + s2.total + ' эрсдэлтэй бүрэн танилцлаа', 'success');
+      if (after) after();
+    });
+  };
+  draw();
+  /* Цонх хаагдахад тоолуурыг зогсооно */
+  var ov = document.querySelector('.modal-overlay');
+  if (ov) ov.addEventListener('mousedown', function (e) { if (e.target === ov) stop(); });
+}
+
 /* ── Эрсдлийн хуудсан дээрх туг ── */
 function ackBannerHTML() {
   var A = ACK_ME;
@@ -6267,19 +6452,47 @@ function ackBannerHTML() {
         : '') +
       '<div style="margin-top:9px;padding-top:9px;border-top:1px solid #E2E8F0">' + chain + '</div>');
   }
-  return box('#FFFBEB', '#FDE68A', '#92400E',
+  /* ⭐ Эхлээд эрсдэл БҮРИЙГ нэг бүрчлэн уншина — тэгэхгүйгээр код авахгүй */
+  var rows = riskEmpMerged(risksForView());
+  var rd = ackReadStat(rows, A.ver);
+  if (!rd.ok) {
+    var rp = rd.total ? Math.round(rd.done * 100 / rd.total) : 0;
+    return box('#FFFBEB', '#FDE68A', '#92400E',
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<i class="ti ti-book-2" style="font-size:21px"></i>' +
+      '<div style="flex:1;min-width:200px"><b>Эрсдэл бүртэй нэг бүрчлэн танилцана уу.</b><br>' +
+      '<span style="font-size:12px">Эрсдэл бүрийг уншиж, <b>яаж сэргийлэх талаар саналаа</b> бичнэ. ' +
+      'Бүгдийг уншиж дуусмагц гарын үсэг зурах товч гарч ирнэ.' +
+      (A.prev ? ' Эрсдэл шинэчлэгдсэн тул дахин уншина.' : '') + '</span>' +
+      '<div style="margin-top:7px;height:8px;background:#FDE68A;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + rp + '%;background:#D97706"></div></div>' +
+      '<div style="font-size:11.5px;margin-top:3px">' + rd.done + ' / ' + rd.total + ' эрсдэл уншсан</div></div>' +
+      '<button class="btn btn-primary btn-sm" data-ack-read="1"><i class="ti ti-book-2"></i> ' +
+      (rd.done ? 'Үргэлжлүүлэх' : 'Танилцаж эхлэх') + '</button>' +
+      '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #FDE68A">' + chain + '</div>');
+  }
+  var ideaN = ackIdeaList(rows, A.ver).length;
+  return box('#EEF2FF', '#C7D2FE', '#3730A3',
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
     '<i class="ti ti-writing-sign" style="font-size:21px"></i>' +
-    '<div style="flex:1;min-width:200px"><b>Доорх эрсдэлүүдтэй танилцсанаа баталгаажуулна уу.</b><br>' +
+    '<div style="flex:1;min-width:200px"><b>' + rd.total + ' эрсдэлтэй бүрэн танилцлаа. Одоо гарын үсгээ зурна уу.</b><br>' +
     '<span style="font-size:12px">И-мэйл рүү тань ирэх код нь таны <b>гарын үсэг</b> болно.' +
-    (A.prev ? ' Эрсдэл шинэчлэгдсэн тул дахин баталгаажуулах шаардлагатай.' : '') + '</span></div>' +
+    (ideaN ? ' Таны бичсэн <b>' + ideaN + ' санал</b> хамт бүртгэгдэнэ.' : '') + '</span></div>' +
+    '<button class="btn btn-secondary btn-sm" data-ack-read="1"><i class="ti ti-eye"></i> Дахин үзэх</button>' +
     '<button class="btn btn-primary btn-sm" data-ack-sign="1"><i class="ti ti-writing-sign"></i> Танилцсан — гарын үсэг зурах</button>' +
-    '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #FDE68A">' + chain + '</div>');
+    '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #C7D2FE">' + chain + '</div>');
 }
 
 /* ── Гарын үсэг зурах цонх (OTP) ── */
 function ackOpenModal(rows, after) {
   var A = ACK_ME; if (!A || A.none) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  /* ⚠ Уншаагүй байж код авахыг зөвшөөрөхгүй */
+  var rd = ackReadStat(rows, A.ver);
+  if (!rd.ok) {
+    toast('Эхлээд ' + (rd.total - rd.done) + ' эрсдэлтэй танилцана уу', 'warn');
+    ackReadOpen(rows, A.ver, after);
+    return;
+  }
   var em = String((A.me.email || '')).trim();
   var node = elc('div');
   node.innerHTML =
@@ -6346,7 +6559,15 @@ function ackOpenModal(rows, after) {
    «ТАНИЛЦСАН» EXCEL — эрсдлийн үнэлгээний фолдер дахь загварын хэлбэрээр
    д/д │ Харьяалагдах алба │ Албан тушаал │ Овог нэр │ Гарын үсэг │ Огноо
    ══════════════════════════════════════════════════════════════════════ */
-var ACK_XL_COLS = ['д/д', 'Харьяалагдах алба', 'Албан тушаал', 'Овог нэр', 'Гарын үсэг', 'Огноо'];
+/* Эхний 6 багана нь эх загварынхтай ЯГ ижил. Сүүлийн 2 нь нотолгоо. */
+var ACK_XL_COLS = ['д/д', 'Харьяалагдах алба', 'Албан тушаал', 'Овог нэр', 'Гарын үсэг', 'Огноо',
+  'Уншсан эрсдэл', 'Уншсан хугацаа'];
+function ackMinSec(sec) {
+  var s = Math.round(sec || 0);
+  if (!s) return '';
+  var m = Math.floor(s / 60);
+  return m ? (m + ' мин ' + (s % 60) + ' сек') : (s + ' сек');
+}
 
 /* Тухайн албанд эрсдэл ХАРАГДДАГ (тиймээс танилцах ёстой) ажилтнууд.
    ⚠ Дэлгэц дээр харагддагтай ЯГ ижил дүрмээр (riskSeenBy) тодорхойлно. */
@@ -6374,9 +6595,30 @@ function ackSheetAoa(title, sub, people, nRisks) {
       e.pos || e.role || '',
       e.name || '',
       r ? String(r.code) : '',
-      r ? ackDateMn(r.at) : ''
+      r ? ackDateMn(r.at) : '',
+      r && r.read ? r.read : '',
+      r ? ackMinSec(r.readSec) : ''
     ]);
   });
+  return A;
+}
+/* Ажилтнуудын САНАЛ — тусдаа хуудсаар */
+function ackIdeaAoa(people, dept) {
+  var A = [
+    ['МОНОС ХҮНС ХХК'],
+    ['ЭРСДЭЛЭЭС УРЬДЧИЛАН СЭРГИЙЛЭХ — АЖИЛТНУУДЫН САНАЛ'],
+    ['Алба: ' + (dept || '')],
+    [],
+    ['д/д', 'Овог нэр', 'Албан тушаал', 'Эрсдэл (аюул)', 'Ажилтны санал', 'Огноо']
+  ];
+  var k = 0;
+  (people || []).forEach(function (p) {
+    var e = p.emp || {}, r = p.row;
+    ((r && r.ideas) || []).forEach(function (d) {
+      A.push([++k, e.name || '', e.pos || e.role || '', d.hazard || '', d.text || '', ackDateMn(r.at)]);
+    });
+  });
+  if (k === 0) A.push(['', '', '', '', 'Санал бүртгэгдээгүй байна', '']);
   return A;
 }
 function ackWriteBook(sheets, fileName) {
@@ -6385,11 +6627,13 @@ function ackWriteBook(sheets, fileName) {
     var wb = XLSX.utils.book_new();
     sheets.forEach(function (s) {
       var ws = XLSX.utils.aoa_to_sheet(s.aoa);
-      ws['!cols'] = [{ wch: 6 }, { wch: 34 }, { wch: 30 }, { wch: 26 }, { wch: 14 }, { wch: 13 }];
+      ws['!cols'] = s.cols ||
+        [{ wch: 6 }, { wch: 34 }, { wch: 30 }, { wch: 26 }, { wch: 14 }, { wch: 13 }, { wch: 14 }, { wch: 16 }];
+      var last = (ws['!cols'].length - 1);
       ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } }
+        { s: { r: 0, c: 0 }, e: { r: 0, c: last } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: last } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: last } }
       ];
       XLSX.utils.book_append_sheet(wb, ws, String(s.name || 'Танилцсан').slice(0, 28).replace(/[\\\/\?\*\[\]:]/g, ' '));
     });
@@ -6401,12 +6645,15 @@ async function ackExportMine() {
   var A = ACK_ME || await ackRefreshMine(true);
   if (!A || A.none) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
   var chain = ackChainRows(A.me, A.store, A.top);
-  var n = (A.row && A.row.n) || risksForView().length;
+  var n = (A.row && A.row.n) || riskEmpMerged(risksForView()).length;
+  var people = chain.map(function (c) { return { emp: c.emp, row: c.row }; });
   var aoa = ackSheetAoa('ЭРСДЭЛИЙН ҮНЭЛГЭЭТЭЙ ТАНИЛЦСАН БАТАЛГАА',
-    'Алба: ' + (A.dept || '—') + '   ·   Ажилтан: ' + (A.me.name || ''),
-    chain.map(function (c) { return { emp: c.emp, row: c.row }; }), n);
-  ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
-    'Танилцсан-' + String(A.me.name || 'ажилтан').replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
+    'Алба: ' + (A.dept || '—') + '   ·   Ажилтан: ' + (A.me.name || ''), people, n);
+  ackWriteBook([
+    { name: 'Танилцсан', aoa: aoa },
+    { name: 'Санал', aoa: ackIdeaAoa(people, A.dept),
+      cols: [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 40 }, { wch: 60 }, { wch: 13 }] }
+  ], 'Танилцсан-' + String(A.me.name || 'ажилтан').replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
 }
 /* Албаны БҮХ ажилтны танилцсан бүртгэл (админд) */
 async function ackExportDept(dept) {
@@ -6431,10 +6678,14 @@ async function ackExportDept(dept) {
       .filter(function (e) { return !tail.some(function (x) { return x.emp.uid === e.uid; }); })
       .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); })
       .map(function (e) { return { emp: e, row: ackSignedRow(store, e.uid, ver) }; });
+    var all = body.concat(tail);
     var aoa = ackSheetAoa('ЭРСДЭЛИЙН ҮНЭЛГЭЭТЭЙ ТАНИЛЦСАН БҮРТГЭЛ',
-      'Алба: ' + dept, body.concat(tail), ackDeptRows(dept).length);
-    ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
-      'Танилцсан-' + String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
+      'Алба: ' + dept, all, ackDeptRows(dept).length);
+    ackWriteBook([
+      { name: 'Танилцсан', aoa: aoa },
+      { name: 'Санал', aoa: ackIdeaAoa(all, dept),
+        cols: [{ wch: 6 }, { wch: 26 }, { wch: 28 }, { wch: 40 }, { wch: 60 }, { wch: 13 }] }
+    ], 'Танилцсан-' + String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
   } catch (e) {
     toast('Татаж чадсангүй: ' + ((e && e.message) || e), 'error');
   }
@@ -7005,11 +7256,12 @@ function riskScoreChips(vals, avgVal, label) {
    Эрсдлийг ноцтой байдлаар нь эрэмбэлж, ЮУ ХИЙХИЙГ нь тодоор хэлнэ.
    Агуулга бүхэлдээ файлаас — шинэ зүйл зохиохгүй.
    ══════════════════════════════════════════════════════════════════════ */
-function riskEmpBriefHTML(list, myPos, myDept) {
-  /* ⚠ Ижил аюул ОЛОН АЖЛЫН БАЙРАНД бүртгэгдсэн байдаг. Албаны эрсдлийг
-     харж байгаа хүнд тэдгээр нь яг адилхан мөр болж давхардан харагдана.
-     Тиймээс ХАРУУЛАХ үед аюул+арга хэмжээгээр нэгтгэнэ (дата хөндөгдөхгүй).
-     Хэдэн ажлын байранд хамаарахыг мөрөнд нь тэмдэглэнэ. */
+/* ⚠ Ижил аюул ОЛОН АЖЛЫН БАЙРАНД бүртгэгдсэн байдаг. Албаны эрсдлийг
+   харж байгаа хүнд тэдгээр нь яг адилхан мөр болж давхардан харагдана.
+   Тиймээс ХАРУУЛАХ үед аюул+арга хэмжээгээр нэгтгэнэ (дата хөндөгдөхгүй).
+   ⭐ Дэлгэц, уншилтын горим, танилцалтын бүртгэл ГУРВУУЛАА үүнийг дуудна —
+   ингэснээр «38 эрсдэл» гэсэн тоо гурван газарт ижил гарна. */
+function riskEmpMerged(list) {
   var nzz = function (v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); };
   var seenH = {}, merged = [];
   (list || []).forEach(function (r) {
@@ -7024,7 +7276,11 @@ function riskEmpBriefHTML(list, myPos, myDept) {
     copy._posList = String(r.position || '').trim() ? [String(r.position).trim()] : [];
     seenH[k] = copy; merged.push(copy);
   });
-  var all = merged.sort(function (a, b) { return riskScore(b) - riskScore(a); });
+  return merged.sort(function (a, b) { return riskScore(b) - riskScore(a); });
+}
+
+function riskEmpBriefHTML(list, myPos, myDept) {
+  var all = riskEmpMerged(list);
   if (!all.length) return '';
 
   /* ── Шүүлтүүр (дарж болдог) ── */
@@ -7424,7 +7680,12 @@ function renderHazards() {
   if (!sec._ackWired) {
     sec._ackWired = true;
     sec.addEventListener('click', function (ev) {
-      if (ev.target.closest('[data-ack-sign]')) { ackOpenModal(risksForView(), renderHazards); return; }
+      if (ev.target.closest('[data-ack-read]')) {
+        if (!ACK_ME || !ACK_ME.ready) return;
+        ackReadOpen(riskEmpMerged(risksForView()), ACK_ME.ver, renderHazards);
+        return;
+      }
+      if (ev.target.closest('[data-ack-sign]')) { ackOpenModal(riskEmpMerged(risksForView()), renderHazards); return; }
       if (ev.target.closest('[data-ack-dl]')) { ackExportMine(); return; }
       var xl = ev.target.closest('[data-ack-xl]');
       if (xl) { ackExportDept(xl.getAttribute('data-ack-xl')); return; }
