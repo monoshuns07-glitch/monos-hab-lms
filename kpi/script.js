@@ -3452,7 +3452,16 @@ function renderEmployeeDashboard() {
     '<span style="font-size:17px;font-weight:800">+' + bonusBoost + '</span></div>' +
     '<div style="border-top:2px solid #EEF1F9;padding-top:11px;display:flex;justify-content:space-between;align-items:center">' +
     '<span style="font-weight:800;font-size:14.5px">Нийт</span>' +
-    '<span style="font-size:24px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span></div></div>' +
+    (scoreOk
+      ? '<span style="font-size:24px;font-weight:900;font-family:\'Bricolage Grotesque\',sans-serif;color:' + lvl.color + '">' + total + ' / 100</span>'
+      /* ⚠ Дээр «Тодорхойгүй» гэж бичээд энд 100/100 гэвэл зөрчилдөнө */
+      : '<span style="font-size:15px;font-weight:800;color:#64748B">Тодорхойгүй</span>') +
+    '</div>' +
+    (scoreOk ? '' :
+      '<div style="margin-top:8px;font-size:12px;color:#94A3B8;line-height:1.5">' +
+      'Дээрх ' + baseFactors.length + ' үзүүлэлт дээр л тооцвол ' + total + ' гарах ч, ' +
+      'үлдсэн ' + missList.length + ' үзүүлэлт бүртгэгдээгүй тул нийт оноог тогтоох боломжгүй.</div>') +
+    '</div>' +
 
     '</div>' +   /* ← зүүн багана дуусав */
 

@@ -2060,7 +2060,7 @@ code {
    Өмнө нь мөр бүр доошоо нэмэгдэж, жагсаалт хэт урт болдог байв. */
 .emp-todo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
   gap: 9px;
   align-items: stretch;
 }
