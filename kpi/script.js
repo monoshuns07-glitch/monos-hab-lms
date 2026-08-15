@@ -5822,18 +5822,32 @@ function ackSubordinates(lead) {
     return true;
   });
 }
-/* Эрсдэл харагддаг ажилтантай БҮХ алба */
+/* Эрсдэлтэй БҮХ алба.
+   ⚠ Ажилтан (захирал ч гэсэн) зөвхөн ӨӨРИЙН албаны эрсдлийг татдаг тул
+   DB.risks-ээс тоолвол нэг л алба гарна. Тиймээс R2 индексээс авна —
+   тэнд компанийн БҮХ алба бүртгэлтэй бөгөөд хүн бүрт нээлттэй. */
 function ackDeptsWithDue() {
+  var ds = (RISK_INDEX && RISK_INDEX.depts) || [];
+  var out = [], seen = {};
+  ds.forEach(function (d) {
+    var n = riskCanonDept(d.name) || d.name;
+    if (n && !seen[n]) { seen[n] = 1; out.push(n); }
+  });
+  if (out.length) return out;
+  /* Индекс байхгүй бол ачаалагдсан эрсдлээс */
   var m = {};
   ackDueEmps('').forEach(function (e) { m[riskCanonDept(e.dept) || e.dept] = 1; });
   return Object.keys(m).filter(Boolean);
 }
-/* Компанийн БҮХ хариуцагч (алба · дэд хэсэг тус бүрээр) */
+/* Компанийн БҮХ хариуцагч (алба · дэд хэсэг тус бүрээр).
+   Эрсдлийн датагүйгээр ажилтны жагсаалтаас тодорхойлно — захирлын хуудсан
+   дээр ч бүх алба зөв тоологдоно. */
 function ackLeadsAll() {
-  var out = [], seen = {};
+  var out = [], seen = {}, emps = DB.employees || [];
   ackDeptsWithDue().forEach(function (d) {
     var units = {};
-    ackDueEmps(d).forEach(function (e) { units[ackUnitOf(e) || ''] = 1; });
+    emps.forEach(function (e) { if (riskSameDept(e.dept, d)) units[ackUnitOf(e) || ''] = 1; });
+    if (!Object.keys(units).length) units[''] = 1;
     Object.keys(units).forEach(function (u) {
       var L = ackLeadFor(d, u);
       if (L && !seen[L.uid]) { seen[L.uid] = 1; out.push(L); }
