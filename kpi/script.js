@@ -717,6 +717,7 @@ async function loadDB() {
     try {
       var _idx = await riskR2GetJson(RISK_R2_INDEX);
       if (_idx && _idx.depts) {
+        RISK_INDEX = _idx;                          // танилцалтын хувилбар үүнээс
         var _want = _idx.depts;
         /* Шүүлт нурсан ч БҮГДИЙГ татна — эрсдэл алга болохоос сэргийлнэ */
         try {
@@ -1122,6 +1123,7 @@ async function loadCols(opt) {
 var RISK_R2_PREFIX = 'risks/';
 var RISK_R2_INDEX = RISK_R2_PREFIX + 'index.json';
 var RISK_CACHE_KEY = 'kpi_risks_cache_v1';
+var RISK_INDEX = null;             // R2 дээрх index.json (алба тус бүрийн агуулгын hash)
 
 /* Кирилл нэрийг URL-д аюулгүй богино түлхүүр болгоно (тогтвортой) */
 function riskSlug(name) {
@@ -1216,7 +1218,11 @@ async function riskR2Publish(rows, onStep) {
     updatedAt: new Date().toISOString(),
     updatedBy: (SESSION && SESSION.email) || 'admin',
     total: list.length,
-    depts: names.map(function (n) { return { name: n, slug: riskSlug(n), n: byDept[n].length }; })
+    /* hash = тухайн албаны эрсдлийн АГУУЛГЫН хураангуй. Танилцалтын гарын
+       үсэг үүнд холбогдоно: агуулга нь өөрчлөгдсөн алба л дахин зурна. */
+    depts: names.map(function (n) {
+      return { name: n, slug: riskSlug(n), n: byDept[n].length, hash: ackHashOf(byDept[n]) };
+    })
   };
   for (var i = 0; i < names.length; i++) {
     var n = names[i];
@@ -1322,6 +1328,7 @@ async function riskR2Load() {
   try { idx = await riskR2GetJson(RISK_R2_INDEX); }
   catch (e) { console.error('[riskR2] индекс уншигдсангүй', e); return null; }
   if (!idx || !idx.depts) return null;
+  RISK_INDEX = idx;
 
   /* Кэш — хувилбар өөрчлөгдөөгүй бол сүлжээ ашиглахгүй */
   try {
@@ -5834,6 +5841,571 @@ function ackChainFor(emp) {
   return out;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ТАНИЛЦАЛТЫН ХАДГАЛАЛТ — R2 (Firestore квот хөндөхгүй)
+   ack/<алба>.json = { version, rows: [ гарын үсэг … ] }
+   Гарын үсэг бүр: хэн, ямар шатанд, ямар код, ЮУГ танилцсан (эрсдлийн
+   ID, агуулгын hash, хувилбар), хэзээ.
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_PREFIX = 'ack/';
+var ACK_TOP_FILE = ACK_PREFIX + '_top.json';   // ЗӨВХӨН захирлуудын гарын үсэг (компани даяар нэг)
+var ACK_CACHE = 'kpi_ack_cache_v1';
+var ACK_STORE = {};            // { файлын нэр: { version, rows: [] } }
+
+function ackFileFor(dept) { return ACK_PREFIX + riskSlug(riskCanonDept(dept) || dept) + '.json'; }
+/* Агуулгын хураангуй — ижил эрсдэл бол ижил утга (тогтвортой) */
+function ackHashOf(rows) {
+  var s = (rows || []).map(function (r) {
+    return [r.id, r.hazard, r.actions, riskScore(r)].join('~');
+  }).sort().join('|');
+  var h1 = 5381, h2 = 52711;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    h1 = ((h1 << 5) + h1 + c) >>> 0;
+    h2 = ((h2 << 5) + h2 + (c ^ 0x5a)) >>> 0;
+  }
+  return h1.toString(36) + h2.toString(36);
+}
+/* Тухайн албанд хамаарах БҮХ эрсдэл — хувилбар тооцоход хэрэглэнэ.
+   Албаны эрсдэл өөрчлөгдвөл хувилбар өөрчлөгдөж, ЗӨВХӨН тэр албаныхан
+   дахин гарын үсэг зурна. Бусад алба хөндөгдөхгүй. */
+function ackDeptRows(dept) {
+  return (DB.risks || []).filter(function (r) { return riskSameDept(r.dept, dept); });
+}
+/* Хувилбарыг R2 индексээс авна — админ, ажилтан хоёрт ИЖИЛ утга гарна.
+   (Ажилтан зөвхөн өөрийн албаны файлыг татдаг тул өөрөө бодвол зөрөх эрсдэлтэй.) */
+function ackVersionOf(dept) {
+  var ds = (RISK_INDEX && RISK_INDEX.depts) || [];
+  for (var i = 0; i < ds.length; i++) {
+    if (ds[i].hash && riskSameDept(ds[i].name, dept)) return String(ds[i].hash);
+  }
+  return ackHashOf(ackDeptRows(dept));            // индекст hash байхгүй бол (хуучин)
+}
+/* Захирлууд компаний БҮХ эрсдэлтэй танилцана — бүх албаны hash-ийн нийлбэр */
+function ackCompanyVersion() {
+  var ds = (RISK_INDEX && RISK_INDEX.depts) || [];
+  var hs = ds.filter(function (d) { return d.hash; })
+             .map(function (d) { return d.slug + ':' + d.hash; }).sort();
+  if (hs.length) return ackHashOf(hs.map(function (s) { return { id: s }; }));
+  return ackHashOf(DB.risks || []);
+}
+
+async function ackLoadKey(key, force) {
+  if (!force && ACK_STORE[key]) return ACK_STORE[key];
+  try {
+    var j = await riskR2GetJson(key);
+    if (j && Array.isArray(j.rows)) { ACK_STORE[key] = j; return j; }
+    if (j === null) { ACK_STORE[key] = { version: 0, rows: [] }; return ACK_STORE[key]; }
+  } catch (e) { if (ACK_STORE[key]) return ACK_STORE[key]; }
+  ACK_STORE[key] = ACK_STORE[key] || { version: 0, rows: [] };
+  return ACK_STORE[key];
+}
+async function ackSaveKey(key, store) {
+  ACK_STORE[key] = store;
+  return await riskR2PutJson(key, store);
+}
+async function ackLoad(dept, force) { return await ackLoadKey(ackFileFor(dept), force); }
+/* Захирлуудын гарын үсэг бүх албанд хэрэгтэй тул ТУСДАА нэг файлд */
+async function ackTop(force) { return await ackLoadKey(ACK_TOP_FILE, force); }
+
+/* Хүний БАЙНГЫН гарын үсэг — анх өөрт нь ирсэн код. Дахин баталгаажуулсан
+   ч гарын үсэг нь өөрчлөгдөхгүй (гар бичмэл гарын үсэгтэй адил). */
+function ackSigCodeIn(store, uid) {
+  var rows = ((store && store.rows) || []).filter(function (r) { return r.uid === uid && r.code; });
+  if (!rows.length) return '';
+  rows.sort(function (a, b) { return String(a.at || '') < String(b.at || '') ? -1 : 1; });
+  return String(rows[0].code);
+}
+/* Хүний хамгийн сүүлд зурсан гарын үсэг (аль ч хувилбарт) */
+function ackLatestRow(store, uid) {
+  var rows = ((store && store.rows) || []).filter(function (r) { return r.uid === uid; });
+  if (!rows.length) return null;
+  rows.sort(function (a, b) { return String(a.at || '') < String(b.at || '') ? 1 : -1; });
+  return rows[0];
+}
+/* Дараалал шалгах ЖАГСААЛТ:
+   · захирлууд — нэг ч удаа зурсан бол доод шат нээгдэнэ (тэд компаний бүх
+     эрсдэлтэй танилцдаг тул нэг албаны өөрчлөлт бүхнийг зогсоохгүй)
+   · алба доторх хариуцагч — ЗӨВХӨН одоогийн хувилбарт зурсан бол нээгдэнэ */
+function ackGateMap(deptStore, topStore, version) {
+  var m = {};
+  ((topStore && topStore.rows) || []).forEach(function (r) { if (r.uid) m[r.uid] = 1; });
+  ((deptStore && deptStore.rows) || []).forEach(function (r) {
+    if (r.uid && String(r.version) === String(version)) m[r.uid] = 1;
+  });
+  return m;
+}
+/* Тухайн хүн энэ хувилбарт гарын үсэг зурсан эсэх */
+function ackSignedRow(store, uid, version) {
+  var rows = (store && store.rows) || [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].uid === uid && String(rows[i].version) === String(version)) return rows[i];
+  }
+  return null;
+}
+/* Дараалал шалгахад хэрэглэх: { uid: 1 } */
+function ackSignedMap(store, version) {
+  var m = {};
+  ((store && store.rows) || []).forEach(function (r) {
+    if (String(r.version) === String(version)) m[r.uid] = 1;
+  });
+  return m;
+}
+
+/* ── OTP: код илгээх ── */
+async function ackSendOtp(emp) {
+  var email = String((emp && emp.email) || '').trim().toLowerCase();
+  if (!email) return { ok: false, error: 'И-мэйл хаяг бүртгэгдээгүй байна' };
+  try {
+    var r = await fetch('/api/send-otp/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email, name: emp.name || '',
+        examTitle: 'Эрсдэлийн үнэлгээтэй танилцах баталгаажуулалт',
+        origin: location.origin
+      })
+    });
+    var j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok || !j || !j.id) {
+      return { ok: false, error: (j && j.error) || ('Илгээж чадсангүй (' + r.status + ')') };
+    }
+    return { ok: true, id: j.id, ttl: j.ttl || 10 };
+  } catch (e) {
+    return { ok: false, error: 'Сүлжээ: ' + ((e && e.message) || e) };
+  }
+}
+/* ── OTP: код шалгах (сервер талын hash-тай тулгана) ── */
+async function _sha256Hex(str) {
+  var buf = new TextEncoder().encode(str);
+  var d = await crypto.subtle.digest('SHA-256', buf);
+  return Array.prototype.map.call(new Uint8Array(d), function (b) {
+    return ('0' + b.toString(16)).slice(-2);
+  }).join('');
+}
+async function ackVerifyOtp(id, code, email) {
+  var em = String(email || '').trim().toLowerCase();
+  var cd = String(code || '').trim();
+  if (!/^\d{4,8}$/.test(cd)) return { ok: false, error: 'Код буруу форматтай байна' };
+  /* ⚠ OTP нь ШАЛГАЛТЫН төсөлд (habea-shalgalt) хадгалагддаг — KPI-ийн
+     Firestore биш. Тиймээс тусдаа холболтоор уншина. */
+  var hdb = null; try { hdb = getHabeaDb(); } catch (e) {}
+  if (!hdb) return { ok: false, error: 'Баталгаажуулах сервертэй холбогдож чадсангүй' };
+  try {
+    var snap = await hdb.collection('habea_otp').doc(id).get();
+    if (!snap || !snap.exists) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
+    var d = snap.data() || {};
+    if (d.used) return { ok: false, error: 'Энэ код аль хэдийн ашиглагдсан' };
+    if (d.expiresAt && new Date(d.expiresAt) < new Date()) return { ok: false, error: 'Кодын хугацаа дууссан' };
+    var stored = String(d.email || '').toLowerCase();
+    if (stored && em && stored !== em) return { ok: false, error: 'И-мэйл таарахгүй байна' };
+    var mine = await _sha256Hex(cd + '|' + id + '|' + (stored || em));
+    if (mine !== d.hash) return { ok: false, error: 'Код буруу байна' };
+    try { await hdb.collection('habea_otp').doc(id).set({ used: true, verified: true, usedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'Шалгаж чадсангүй: ' + ((e && e.message) || e) };
+  }
+}
+
+/* ── Гарын үсэг бичих ──
+   Хоёр хүн зэрэг зурвал бие биенийхээ бичлэгийг устгах эрсдэлтэй тул
+   бичихийн ӨМНӨ шинээр уншиж нэгтгэж, бичсэний ДАРАА эргэж шалгана. */
+async function ackWrite(key, rec) {
+  var last = null;
+  for (var i = 0; i < 3; i++) {
+    var st = await ackLoadKey(key, true);
+    st.rows = (st.rows || []).filter(function (r) {
+      return !(r.uid === rec.uid && String(r.version) === String(rec.version));
+    });
+    st.rows.push(rec);
+    st.version = String(rec.version);
+    st.updatedAt = rec.at;
+    try { await ackSaveKey(key, st); } catch (e) { last = e; continue; }
+    var back = await ackLoadKey(key, true);
+    var ok = ((back && back.rows) || []).some(function (r) {
+      return r.uid === rec.uid && String(r.version) === String(rec.version) && String(r.code) === String(rec.code);
+    });
+    if (ok) return { ok: true, store: back };
+  }
+  return { ok: false, error: 'Гарын үсэг хадгалагдсанг баталгаажуулж чадсангүй' + (last ? ' (' + last.message + ')' : '') };
+}
+
+async function ackSign(emp, code, rows, version) {
+  if (!emp || !emp.uid) return { ok: false, error: 'Ажилтны бүртгэл олдсонгүй' };
+  var role = ackRoleOf(emp);
+  var isDir = (role === 'ceo' || role === 'prod');
+  var top = await ackTop(true);
+  var store = isDir ? top : await ackLoad(emp.dept, true);
+  var chk = ackCanSign(emp, ackGateMap(isDir ? null : store, top, version));
+  if (!chk.ok) return { ok: false, error: chk.why };
+  /* ⭐ Нэг хүнд НЭГ гарын үсэг: анх ирсэн кодыг цаашид хэвээр хэрэглэнэ.
+     Ингэснээр захирлын гарын үсэг бүх ажилтны баримт дээр ИЖИЛ явна. */
+  var sig = ackSigCodeIn(store, emp.uid) || String(code);
+  var rec = {
+    uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
+    dept: riskCanonDept(emp.dept) || emp.dept || '',
+    unit: ackUnitOf(emp) || '',
+    role: role,
+    code: sig,                             // ← ГАРЫН ҮСЭГ (байнгын)
+    otp: String(code),                     // энэ удаад баталгаажуулсан код
+    version: String(version),
+    n: (rows || []).length,
+    riskIds: (rows || []).map(function (r) { return r.id; }),
+    hash: ackHashOf(rows),
+    at: new Date().toISOString()
+  };
+  var w = await ackWrite(isDir ? ACK_TOP_FILE : ackFileFor(emp.dept), rec);
+  if (!w.ok) return { ok: false, error: w.error };
+  return { ok: true, rec: rec };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ТАНИЛЦАЛТЫН ДЭЛГЭЦ — ажилтны талд
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_ME = null;             // { ready, me, ver, row, gate, … }
+var ACK_BUSY = false;
+
+async function ackRefreshMine(force) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me || !me.uid) { ACK_ME = { ready: true, none: true }; return ACK_ME; }
+  var dept = riskCanonDept(me.dept) || me.dept || '';
+  var role = ackRoleOf(me);
+  var isDir = (role === 'ceo' || role === 'prod');
+  var ver = isDir ? ackCompanyVersion() : ackVersionOf(dept);
+  var top = await ackTop(force);
+  var store = isDir ? top : await ackLoad(dept, force);
+  ACK_ME = {
+    ready: true, me: me, dept: dept, role: role, isDir: isDir, ver: ver,
+    row: ackSignedRow(store, me.uid, ver),
+    prev: ackLatestRow(store, me.uid),
+    gate: ackCanSign(me, ackGateMap(isDir ? null : store, top, ver)),
+    chain: ackChainFor(me), store: store, top: top
+  };
+  return ACK_ME;
+}
+/* Гинжин дэх хүн бүрийн гарын үсгийг олно (Excel болон дэлгэцэд) */
+function ackChainRows(emp, deptStore, topStore) {
+  return ackChainFor(emp).map(function (c) {
+    var st = (c.role === 'ceo' || c.role === 'prod') ? topStore : deptStore;
+    var row = ackLatestRow(st, c.emp.uid);
+    return { role: c.role, emp: c.emp, row: row, code: (row && row.code) || '', at: (row && row.at) || '' };
+  });
+}
+function ackRoleLabel(role) {
+  return role === 'ceo' ? 'Гүйцэтгэх захирал'
+    : role === 'prod' ? 'Үйлдвэрлэл хариуцсан захирал'
+    : role === 'lead' ? 'Хариуцагч удирдлага' : 'Ажилтан';
+}
+function ackDateMn(iso) {
+  if (!iso) return '';
+  var d = new Date(iso); if (isNaN(d)) return '';
+  var p = function (x) { return (x < 10 ? '0' : '') + x; };
+  return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
+}
+
+/* ── Эрсдлийн хуудсан дээрх туг ── */
+function ackBannerHTML() {
+  var A = ACK_ME;
+  if (!A) return '<div id="ackBanner" style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;' +
+    'padding:12px 15px;margin-bottom:12px;font-size:12.5px;color:#94A3B8">Танилцалтын байдлыг шалгаж байна…</div>';
+  if (A.none) return '';
+
+  var box = function (bg, bd, col, html) {
+    return '<div id="ackBanner" style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:14px;' +
+      'padding:14px 16px;margin-bottom:13px;color:' + col + ';font-size:13px;line-height:1.65">' + html + '</div>';
+  };
+  var chain = ackChainRows(A.me, A.store, A.top).map(function (c) {
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0">' +
+      '<span style="width:17px;height:17px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;' +
+      'font-size:11px;font-weight:900;color:#fff;background:' + (c.code ? '#059669' : '#CBD5E1') + '">' +
+      (c.code ? '✓' : '·') + '</span>' +
+      '<span style="font-weight:700">' + esc(c.emp.name || '') + '</span>' +
+      '<span style="color:#64748B;font-size:11.5px">' + esc(c.emp.pos || '') + '</span>' +
+      (c.code ? '<span style="margin-left:auto;font-family:Consolas,monospace;font-weight:900;letter-spacing:.14em;color:#065F46">'
+        + esc(c.code) + '</span><span style="color:#94A3B8;font-size:11px">' + ackDateMn(c.at) + '</span>' : '') +
+      '</div>';
+  }).join('');
+
+  if (A.row) {
+    return box('#ECFDF5', '#A7F3D0', '#065F46',
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<i class="ti ti-circle-check" style="font-size:21px"></i>' +
+      '<div style="flex:1;min-width:200px"><b>Та эдгээр эрсдэлтэй танилцсанаа баталгаажуулсан.</b><br>' +
+      '<span style="font-size:12px">' + ackDateMn(A.row.at) + ' · ' + A.row.n + ' эрсдэл · ' +
+      'Таны гарын үсэг: <b style="font-family:Consolas,monospace;letter-spacing:.14em">' + esc(A.row.code) + '</b></span></div>' +
+      '<button class="btn btn-sm btn-secondary" data-ack-dl="1"><i class="ti ti-download"></i> Танилцсан хуудас</button>' +
+      '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #A7F3D0">' + chain + '</div>');
+  }
+  if (!A.gate.ok) {
+    return box('#F8FAFC', '#E2E8F0', '#475569',
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<i class="ti ti-clock-hour-4" style="font-size:21px;color:#94A3B8"></i>' +
+      '<div style="flex:1;min-width:200px"><b>Танилцах баталгаажуулалт хараахан нээгдээгүй байна.</b><br>' +
+      '<span style="font-size:12px">' + esc(A.gate.why || '') + '. Дээд шат нь гарын үсэг зурсны дараа танд нээгдэнэ.</span></div>' +
+      '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #E2E8F0">' + chain + '</div>');
+  }
+  return box('#FFFBEB', '#FDE68A', '#92400E',
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+    '<i class="ti ti-writing-sign" style="font-size:21px"></i>' +
+    '<div style="flex:1;min-width:200px"><b>Доорх эрсдэлүүдтэй танилцсанаа баталгаажуулна уу.</b><br>' +
+    '<span style="font-size:12px">И-мэйл рүү тань ирэх код нь таны <b>гарын үсэг</b> болно.' +
+    (A.prev ? ' Эрсдэл шинэчлэгдсэн тул дахин баталгаажуулах шаардлагатай.' : '') + '</span></div>' +
+    '<button class="btn btn-primary btn-sm" data-ack-sign="1"><i class="ti ti-writing-sign"></i> Танилцсан — гарын үсэг зурах</button>' +
+    '</div><div style="margin-top:9px;padding-top:9px;border-top:1px solid #FDE68A">' + chain + '</div>');
+}
+
+/* ── Гарын үсэг зурах цонх (OTP) ── */
+function ackOpenModal(rows, after) {
+  var A = ACK_ME; if (!A || A.none) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  var em = String((A.me.email || '')).trim();
+  var node = elc('div');
+  node.innerHTML =
+    '<div style="font-size:13px;color:#475569;line-height:1.7">' +
+    'Та <b>' + rows.length + '</b> эрсдэлтэй танилцаж, урьдчилан сэргийлэх арга хэмжээг ' +
+    'мөрдөхөө баталгаажуулж байна.<br>' +
+    '<span style="color:#64748B;font-size:12px">' + esc(A.me.pos || A.me.role || '') +
+    (A.dept ? ' · ' + esc(A.dept) : '') + '</span></div>' +
+    '<div style="background:#F8FAFC;border-radius:12px;padding:13px 15px;margin:13px 0;font-size:12.5px;color:#475569;line-height:1.7">' +
+    (em ? 'Баталгаажуулах код <b>' + esc(em) + '</b> хаяг руу илгээгдэнэ.'
+        : '<span style="color:#B91C1C">Таны и-мэйл хаяг бүртгэгдээгүй байна. ХАБЭА-н албанд хандана уу.</span>') +
+    '</div>' +
+    '<div id="ackStep1"><button class="btn btn-primary" id="ackSend"' + (em ? '' : ' disabled') + '>' +
+    '<i class="ti ti-mail-fast"></i> Код илгээх</button></div>' +
+    '<div id="ackStep2" style="display:none">' +
+    '<label style="font-size:12.5px;font-weight:700;color:#334155;display:block;margin-bottom:6px">И-мэйлд ирсэн 6 оронтой код</label>' +
+    '<input id="ackCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" ' +
+    'style="width:100%;padding:13px;border:1.5px solid #E2E8F0;border-radius:11px;font-size:24px;font-weight:900;' +
+    'text-align:center;letter-spacing:.4em;font-family:Consolas,monospace">' +
+    '<button class="btn btn-primary" id="ackOk" style="width:100%;margin-top:11px">' +
+    '<i class="ti ti-circle-check"></i> Баталгаажуулах</button>' +
+    '<button class="btn btn-secondary btn-sm" id="ackResend" style="width:100%;margin-top:7px">Код дахин илгээх</button></div>' +
+    '<div id="ackSt" style="margin-top:11px;font-size:12.5px;line-height:1.6"></div>';
+
+  buildModal('Танилцсаныг баталгаажуулах', node, { width: '470px' });
+  var st = node.querySelector('#ackSt');
+  var say = function (html, col) { st.innerHTML = '<span style="color:' + (col || '#64748B') + '">' + html + '</span>'; };
+  var OTP = { id: '' };
+
+  var send = async function (btn) {
+    var old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Илгээж байна…';
+    say('И-мэйл илгээж байна…');
+    var r = await ackSendOtp(A.me);
+    btn.disabled = false; btn.innerHTML = old;
+    if (!r.ok) { say('⚠️ ' + esc(r.error || 'Илгээж чадсангүй'), '#B91C1C'); return; }
+    OTP.id = r.id;
+    node.querySelector('#ackStep1').style.display = 'none';
+    node.querySelector('#ackStep2').style.display = '';
+    node.querySelector('#ackCode').focus();
+    say('✉️ Код илгээгдлээ. ' + (r.ttl || 10) + ' минут хүчинтэй. Spam/Junk хавтсаа ч шалгана уу.', '#047857');
+  };
+  node.querySelector('#ackSend').addEventListener('click', function () { send(this); });
+  node.querySelector('#ackResend').addEventListener('click', function () { send(this); });
+
+  node.querySelector('#ackOk').addEventListener('click', async function () {
+    var code = String(node.querySelector('#ackCode').value || '').replace(/\D/g, '');
+    if (code.length < 4) { say('⚠️ Кодоо бүтнээр оруулна уу.', '#B91C1C'); return; }
+    var btn = this, old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Шалгаж байна…';
+    var v = await ackVerifyOtp(OTP.id, code, A.me.email);
+    if (!v.ok) { btn.disabled = false; btn.innerHTML = old; say('⚠️ ' + esc(v.error), '#B91C1C'); return; }
+    btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+    var s = await ackSign(A.me, code, rows, A.ver);
+    btn.disabled = false; btn.innerHTML = old;
+    if (!s.ok) { say('⚠️ ' + esc(s.error), '#B91C1C'); return; }
+    closeModal();
+    toast('✓ Танилцсан гарын үсэг бүртгэгдлээ', 'success');
+    await ackRefreshMine(true);
+    if (after) after();
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   «ТАНИЛЦСАН» EXCEL — эрсдлийн үнэлгээний фолдер дахь загварын хэлбэрээр
+   д/д │ Харьяалагдах алба │ Албан тушаал │ Овог нэр │ Гарын үсэг │ Огноо
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_XL_COLS = ['д/д', 'Харьяалагдах алба', 'Албан тушаал', 'Овог нэр', 'Гарын үсэг', 'Огноо'];
+
+/* Тухайн албанд эрсдэл ХАРАГДДАГ (тиймээс танилцах ёстой) ажилтнууд.
+   ⚠ Дэлгэц дээр харагддагтай ЯГ ижил дүрмээр (riskSeenBy) тодорхойлно. */
+function ackDueEmps(dept) {
+  return (DB.employees || []).filter(function (e) {
+    if (dept && !riskSameDept(e.dept, dept)) return false;
+    return riskSeenBy(e).rows.length > 0;
+  });
+}
+/* Нэг хуудасны бүтэц. people = [{emp, row}] дарааллаараа */
+function ackSheetAoa(title, sub, people, nRisks) {
+  var A = [
+    ['МОНОС ХҮНС ХХК'],
+    [title],
+    [sub || ''],
+    ['Эрсдлийн тоо: ' + (nRisks || 0), '', '', 'Хэвлэсэн: ' + ackDateMn(new Date().toISOString())],
+    [],
+    ACK_XL_COLS.slice()
+  ];
+  people.forEach(function (p, i) {
+    var e = p.emp || {}, r = p.row;
+    A.push([
+      i + 1,
+      riskCanonDept(e.dept) || e.dept || '',
+      e.pos || e.role || '',
+      e.name || '',
+      r ? String(r.code) : '',
+      r ? ackDateMn(r.at) : ''
+    ]);
+  });
+  return A;
+}
+function ackWriteBook(sheets, fileName) {
+  riskLoadXlsx(function (ok) {
+    if (!ok) { toast('Excel үүсгэгч ачаалагдсангүй', 'error'); return; }
+    var wb = XLSX.utils.book_new();
+    sheets.forEach(function (s) {
+      var ws = XLSX.utils.aoa_to_sheet(s.aoa);
+      ws['!cols'] = [{ wch: 6 }, { wch: 34 }, { wch: 30 }, { wch: 26 }, { wch: 14 }, { wch: 13 }];
+      ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, String(s.name || 'Танилцсан').slice(0, 28).replace(/[\\\/\?\*\[\]:]/g, ' '));
+    });
+    XLSX.writeFile(wb, fileName);
+  });
+}
+/* Ажилтны ӨӨРИЙН танилцсан хуудас — дээр нь 3 удирдлагын гарын үсэг */
+async function ackExportMine() {
+  var A = ACK_ME || await ackRefreshMine(true);
+  if (!A || A.none) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  var chain = ackChainRows(A.me, A.store, A.top);
+  var n = (A.row && A.row.n) || risksForView().length;
+  var aoa = ackSheetAoa('ЭРСДЭЛИЙН ҮНЭЛГЭЭТЭЙ ТАНИЛЦСАН БАТАЛГАА',
+    'Алба: ' + (A.dept || '—') + '   ·   Ажилтан: ' + (A.me.name || ''),
+    chain.map(function (c) { return { emp: c.emp, row: c.row }; }), n);
+  ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
+    'Танилцсан-' + String(A.me.name || 'ажилтан').replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
+}
+/* Албаны БҮХ ажилтны танилцсан бүртгэл (админд) */
+async function ackExportDept(dept) {
+  var t = toast('Бүрдүүлж байна…', 'info');
+  try {
+    var ver = ackVersionOf(dept);
+    var store = await ackLoad(dept, true), top = await ackTop(true);
+    var lead = ackLeadFor(dept, '');
+    var head = [];
+    ['ceo', 'prod'].forEach(function (k) {
+      var d = ackDirector(k); if (d) head.push({ emp: d, row: ackLatestRow(top, d.uid) });
+    });
+    var units = {};
+    ackDueEmps(dept).forEach(function (e) { units[ackUnitOf(e) || ''] = 1; });
+    Object.keys(units).forEach(function (u) {
+      var L = ackLeadFor(dept, u) || lead;
+      if (L && !head.some(function (x) { return x.emp.uid === L.uid; })) head.push({ emp: L, row: ackLatestRow(store, L.uid) });
+    });
+    var rest = ackDueEmps(dept)
+      .filter(function (e) { return !head.some(function (x) { return x.emp.uid === e.uid; }); })
+      .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); })
+      .map(function (e) { return { emp: e, row: ackSignedRow(store, e.uid, ver) }; });
+    var aoa = ackSheetAoa('ЭРСДЭЛИЙН ҮНЭЛГЭЭТЭЙ ТАНИЛЦСАН БҮРТГЭЛ',
+      'Алба: ' + dept, head.concat(rest), ackDeptRows(dept).length);
+    ackWriteBook([{ name: 'Танилцсан', aoa: aoa }],
+      'Танилцсан-' + String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '') + '-' + _ymd(new Date()) + '.xlsx');
+    if (t && t.remove) t.remove();
+  } catch (e) {
+    if (t && t.remove) t.remove();
+    toast('Татаж чадсангүй: ' + ((e && e.message) || e), 'error');
+  }
+}
+
+/* ══ АДМИНД: ХЭН ТАНИЛЦААГҮЙ БАЙНА ══════════════════════════════════ */
+var ACK_ADMIN = null;          // { rows: [{dept, due, done, miss:[]}], at }
+
+async function ackAdminScan(onStep) {
+  var depts = {};
+  ackDueEmps('').forEach(function (e) { depts[riskCanonDept(e.dept) || e.dept] = 1; });
+  var names = Object.keys(depts).filter(Boolean).sort();
+  var top = await ackTop(true);
+  var out = [];
+  for (var i = 0; i < names.length; i++) {
+    if (onStep) onStep(i + 1, names.length, names[i]);
+    var d = names[i];
+    var ver = ackVersionOf(d);
+    var store = await ackLoad(d, true);
+    var due = ackDueEmps(d);
+    var done = [], miss = [];
+    due.forEach(function (e) {
+      var role = ackRoleOf(e);
+      var row = (role === 'ceo' || role === 'prod')
+        ? ackSignedRow(top, e.uid, ackCompanyVersion())
+        : ackSignedRow(store, e.uid, ver);
+      (row ? done : miss).push({ e: e, row: row });
+    });
+    out.push({ dept: d, ver: ver, n: due.length, done: done.length, miss: miss });
+  }
+  ACK_ADMIN = { rows: out, at: new Date().toISOString() };
+  return ACK_ADMIN;
+}
+function ackAdminHTML() {
+  if (!ACK_ADMIN) {
+    return '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+      '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">' +
+      '<i class="ti ti-writing-sign" style="font-size:20px;color:#4F46E5"></i>' +
+      '<div style="flex:1;min-width:200px"><b style="font-size:14px">Танилцсан байдал</b>' +
+      '<div style="font-size:12px;color:#94A3B8">Хэн эрсдэлтэйгээ танилцаж гарын үсэг зурсныг албаар харна</div></div>' +
+      '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Шалгах</button>' +
+      '</div></div>';
+  }
+  var R = ACK_ADMIN.rows;
+  var tot = R.reduce(function (a, x) { return a + x.n; }, 0);
+  var dn = R.reduce(function (a, x) { return a + x.done; }, 0);
+  var pct = tot ? Math.round(dn * 100 / tot) : 0;
+  var H = '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+    '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px">' +
+    '<div><div style="font-size:26px;font-weight:900;color:' + (pct >= 90 ? '#059669' : pct >= 50 ? '#D97706' : '#DC2626') +
+    ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + pct + '%</div>' +
+    '<div style="font-size:11.5px;color:#64748B;font-weight:700">' + dn + ' / ' + tot + ' танилцсан</div></div>' +
+    '<div style="flex:1;min-width:160px;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+    '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669);border-radius:99px"></div></div>' +
+    '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Дахин шалгах</button></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="min-width:640px"><thead><tr>' +
+    '<th>Алба</th><th style="text-align:center">Ёстой</th><th style="text-align:center">Танилцсан</th>' +
+    '<th style="width:150px">Явц</th><th>Танилцаагүй</th><th></th></tr></thead><tbody>';
+  R.forEach(function (x) {
+    var p = x.n ? Math.round(x.done * 100 / x.n) : 0;
+    var names = x.miss.slice(0, 4).map(function (m) { return esc(m.e.name || ''); }).join(', ');
+    if (x.miss.length > 4) names += ' <span style="color:#94A3B8">+' + (x.miss.length - 4) + '</span>';
+    H += '<tr><td style="font-weight:600">' + esc(x.dept) + '</td>' +
+      '<td style="text-align:center">' + x.n + '</td>' +
+      '<td style="text-align:center;font-weight:800;color:' + (p === 100 ? '#059669' : '#334155') + '">' + x.done + '</td>' +
+      '<td><div style="height:7px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + p + '%;background:' + (p === 100 ? '#059669' : p >= 50 ? '#F59E0B' : '#DC2626') + '"></div></div></td>' +
+      '<td style="font-size:12px;color:#B91C1C">' + (x.miss.length ? names : '<span style="color:#059669">— бүгд танилцсан</span>') + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+      (x.miss.length ? '<button class="btn btn-sm btn-secondary" data-ack-remind="' + esc(x.dept) + '" title="Сануулга харуулах"><i class="ti ti-bell"></i></button> ' : '') +
+      '<button class="btn btn-sm btn-secondary" data-ack-xl="' + esc(x.dept) + '"><i class="ti ti-file-spreadsheet"></i> Excel</button></td></tr>';
+  });
+  H += '</tbody></table></div></div>';
+  return H;
+}
+function ackRemindModal(dept) {
+  var x = (ACK_ADMIN && ACK_ADMIN.rows.filter(function (r) { return r.dept === dept; })[0]);
+  if (!x) return;
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13px;color:#475569;margin-bottom:11px">' +
+    '<b>' + esc(dept) + '</b> — ' + x.miss.length + ' хүн эрсдэлтэйгээ танилцаагүй байна.</div>' +
+    '<div style="max-height:340px;overflow:auto;border:1px solid #F1F5F9;border-radius:11px">' +
+    x.miss.map(function (m, i) {
+      return '<div style="display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid #F8FAFC;font-size:12.5px">' +
+        '<span style="color:#CBD5E1;width:22px">' + (i + 1) + '</span>' +
+        '<span style="flex:1;font-weight:600">' + esc(m.e.name || '') + '</span>' +
+        '<span style="color:#64748B">' + esc(m.e.pos || m.e.role || '') + '</span></div>';
+    }).join('') + '</div>' +
+    '<div style="margin-top:11px;font-size:12px;color:#94A3B8;line-height:1.6">' +
+    'Ажилтан <b>Эрсдэлийн үнэлгээ</b> цэсэндээ орж, и-мэйлээр ирсэн кодоор гарын үсгээ зурна. ' +
+    'Дээд шат (захирал → хариуцагч) зураагүй бол ажилтанд нээгдэхгүйг анхаарна уу.</div>');
+  buildModal('Танилцаагүй ажилтнууд', node, { width: '520px' });
+}
+
 /* ══ НЭГ УДААГИЙН АЖЛЫН НЭЭЛТ ══════════════════════════════════════════
    Автокран, өндөрт гагнуур зэрэг ажил жилд нэг удаа хийгддэг. Тэдгээрийг
    бүх хүнд байнга харуулах нь утгагүй. Админ ажил хийгдэх өдөр нь тухайн
@@ -5907,19 +6479,35 @@ function risksForView() {
            dept: SESSION.dept || '', role: SESSION.pos || '', email: SESSION.email || '' };
   }
   if (!me || (!me.dept && !me.uid)) return [];
-  var mine = all.filter(function (r) { return riskAppliesTo(r, me); });
-  if (mine.length) { RISK_VIEW_SCOPE = 'pos'; return mine; }
+  var seen = riskSeenBy(me);
+  RISK_VIEW_SCOPE = seen.scope;
+  return seen.rows;
+}
+
+/* ⭐ ТУХАЙН АЖИЛТАН ЮУГ ХАРАХ ВЭ — нэг эх сурвалж.
+   Дэлгэц ба танилцалтын бүртгэл хоёр ЯГ ижил жагсаалттай байхын тулд
+   аль аль нь үүнийг дуудна. */
+function riskSeenBy(emp) {
+  var all = DB.risks || [];
+  if (!emp) return { rows: [], scope: 'none' };
+  var mine = all.filter(function (r) { return riskAppliesTo(r, emp); });
+  if (mine.length) return { rows: mine, scope: 'pos' };
 
   /* ⚠ Ажлын байрных нь үнэлгээ ХИЙГДЭЭГҮЙ хүн (жишээ нь албаны дарга, жолооч)
      өмнө нь ХООСОН дэлгэц хардаг байв. Тэдэнд албаныхаа эрсдлийг харуулна —
      «таны ажлын байрны үнэлгээ хараахан хийгдээгүй, албанд ийм эрсдэл бий»
      гэсэн утгаар. Хоосон дэлгэцээс хамаагүй хэрэгтэй. */
-  if (me.dept) {
-    var deptAll = all.filter(function (r) { return !r.dept || riskSameDept(r.dept, me.dept); });
-    if (deptAll.length) { RISK_VIEW_SCOPE = 'dept'; return deptAll; }
+  if (emp.dept) {
+    var deptAll = all.filter(function (r) {
+      if (r.dept && !riskSameDept(r.dept, emp.dept)) return false;
+      /* Нэг удаагийн ажил (автокран, өндөрт гагнуур) нээгдээгүй бол
+         албаны жагсаалтад ч харагдахгүй — зөвхөн нээлгэсэн хүнд. */
+      if (r.onDemand && !riskIsReleasedTo(r, emp)) return false;
+      return true;
+    });
+    if (deptAll.length) return { rows: deptAll, scope: 'dept' };
   }
-  RISK_VIEW_SCOPE = 'none';
-  return [];
+  return { rows: [], scope: 'none' };
 }
 
 /* Эрсдэл хаанаас, хэд ирснийг дэлгэц дээр хэлэхэд ашиглана (DevTools хэрэггүй) */
@@ -6690,14 +7278,48 @@ function renderHazards() {
         'Доор <b>' + esc(myDept) + '</b>-ны эрсдэлүүдийг харуулж байна — өөрт хамаарахыг уншиж, ' +
         'урьдчилан сэргийлэх арга хэмжээг дагаж мөрдөнө үү.</div>';
     }
+    /* ⭐ ТАНИЛЦАЛТ — хүн бүр (захирал, хариуцагч, ажилтан) гарын үсэг зурна */
+    H += ackBannerHTML();
     /* Ажилтанд — эрэмбэлсэн, энгийн хэлээр. Админ/туслах админд — дашбоард. */
     H += (!isAdmin() && !isDeptHead())
       ? riskEmpBriefHTML(list, myPos, myDept)
       : riskDashHTML(list, sub);
-    if (isAdmin() || isDeptHead()) H += riskAdminSectionsHTML(list);
+    if (isAdmin() || isDeptHead()) H += ackAdminHTML() + riskAdminSectionsHTML(list);
   }
   sec.innerHTML = H;
   riskWire(sec, renderHazards);
+
+  /* Танилцалтын байдал ачаалагдаагүй бол нэг удаа татаад тугийг шинэчилнэ */
+  if (list.length && !ACK_BUSY && (!ACK_ME || !ACK_ME.ready)) {
+    ACK_BUSY = true;
+    ackRefreshMine().then(function () {
+      ACK_BUSY = false;
+      var b = sec.querySelector('#ackBanner');
+      if (b) b.outerHTML = ackBannerHTML();
+    }).catch(function (e) { ACK_BUSY = false; console.error('[ack]', e); });
+  }
+  if (!sec._ackWired) {
+    sec._ackWired = true;
+    sec.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-ack-sign]')) { ackOpenModal(risksForView(), renderHazards); return; }
+      if (ev.target.closest('[data-ack-dl]')) { ackExportMine(); return; }
+      var xl = ev.target.closest('[data-ack-xl]');
+      if (xl) { ackExportDept(xl.getAttribute('data-ack-xl')); return; }
+      var rm = ev.target.closest('[data-ack-remind]');
+      if (rm) { ackRemindModal(rm.getAttribute('data-ack-remind')); return; }
+      var sc = ev.target.closest('[data-ack-scan]');
+      if (sc) {
+        var old = sc.innerHTML; sc.disabled = true;
+        ackAdminScan(function (i, n, d) { sc.innerHTML = '<i class="ti ti-loader-2"></i> ' + i + '/' + n; })
+          .then(function () { renderHazards(); })
+          .catch(function (e) {
+            sc.disabled = false; sc.innerHTML = old;
+            toast('Шалгаж чадсангүй: ' + ((e && e.message) || e), 'error');
+          });
+        return;
+      }
+    });
+  }
 
   if (!sec._riskTblWired) {
     sec._riskTblWired = true;
