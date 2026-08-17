@@ -8924,8 +8924,11 @@ function riskBigHead(num, title, sub, color) {
   return '<div style="display:flex;align-items:flex-start;gap:10px;margin:0 0 8px">' +
     '<span style="flex:0 0 4px;align-self:stretch;min-height:34px;background:' + color + ';border-radius:3px"></span>' +
     '<span style="flex:1;min-width:0">' +
-    '<span style="display:block;font-size:14.5px;font-weight:900;color:#0F172A;line-height:1.3">' +
-    (num ? '<span style="color:' + color + '">' + num + '</span> ' : '') + title + '</span>' +
+    '<span style="display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:900;color:#0F172A;line-height:1.3">' +
+    (num ? '<span style="flex:0 0 21px;height:21px;border-radius:50%;background:' + color + ';color:#fff;' +
+      'display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;' +
+      'font-family:\'Bricolage Grotesque\',sans-serif">' + num + '</span>' : '') +
+    '<span>' + title + '</span></span>' +
     (sub ? '<span style="display:block;font-size:11.5px;color:#94A3B8;margin-top:2px;line-height:1.45">' + sub + '</span>' : '') +
     '</span></div>';
 }
@@ -8991,7 +8994,7 @@ function riskDetailHTML(r) {
   H += '<div>';
   if (s1) {
     H += '<div class="card" style="padding:15px 17px;margin-bottom:12px">' +
-      riskBigHead('①', 'Энэ аюул юунаас үүсдэг вэ', 'Хаана, хэзээ, ямар шалтгаанаар', '#DC2626') +
+      riskBigHead('1', 'Энэ аюул юунаас үүсдэг вэ', 'Хаана, хэзээ, ямар шалтгаанаар', '#DC2626') +
       s1 + '</div>';
   }
 
@@ -9047,14 +9050,14 @@ function riskDetailHTML(r) {
     riskFactBox('📅', 'Хэзээ', r.due);
   if (s3) {
     H += '<div class="card" style="padding:15px 17px;margin-bottom:12px;border:1.5px solid #DBEAFE">' +
-      riskBigHead('②', 'Юу хийж урьдчилан сэргийлэх вэ', 'Эрсдэлийн үнэлгээний файлд бичсэн байдлаар', '#2563EB') +
+      riskBigHead('2', 'Юу хийж урьдчилан сэргийлэх вэ', 'Эрсдэлийн үнэлгээний файлд бичсэн байдлаар', '#2563EB') +
       s3 + '</div>';
   }
   /* ⭐ Дээрх арга хэмжээг НЭГ БҮРЧЛЭН — хугацаа, гүйцэтгэл, баримттай нь */
   var mb = riskMeasureBlockHTML(r);
   if (mb) {
     H += '<div class="card" style="padding:15px 17px;margin-bottom:12px">' +
-      riskBigHead('③', 'Нэг бүрчлэн гүйцэтгэх', 'Дүрмийг өөрөө мөрдөнө · ажлыг баримтжуулна', '#059669') +
+      riskBigHead('3', 'Нэг бүрчлэн гүйцэтгэх', 'Дүрмийг өөрөө мөрдөнө · ажлыг зураг/файлаар баримтжуулна', '#059669') +
       mb + '</div>';
   }
   H += '</div></div>';   /* ← баруун багана + 2 багана дуусав */
