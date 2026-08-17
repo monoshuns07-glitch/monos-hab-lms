@@ -8517,7 +8517,7 @@ function riskMxCellOf(r) {
 }
 function riskMxKey(r) { var c = riskMxCellOf(r); return c ? (c.p + ',' + c.n) : ''; }
 
-function riskMatrixHTML(rows) {
+function riskMatrixHTML(rows, sideHTML) {
   var cnt = {}, un = 0, any = 0;
   (rows || []).forEach(function (r) {
     var c = riskMxCellOf(r);
@@ -8528,13 +8528,15 @@ function riskMatrixHTML(rows) {
 
   var PL = ['', 'Бараг үгүй', 'Магадгүй', 'Боломжтой', 'Их', 'Бүрэн'];
   var NL = ['', 'Мэдэгдэхүйц\nбиш', 'Бага\nхэмжээний', 'Хүнд\nбиш', 'Хүнд', 'Онц\nхүнд'];
-  var H = '<div class="card" style="padding:15px 17px;margin-bottom:12px">' +
-    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:3px">' +
-    '<div style="font-size:14.5px;font-weight:800;color:#1E293B">Эрсдэлийн матриц</div>' +
-    '<div style="font-size:12px;color:#94A3B8">нүд дарвал зөвхөн тэр эрсдэлүүд харагдана</div>' +
-    (RISK_FILTER.mx ? '<button class="btn btn-sm" data-risk-mx="" style="margin-left:auto;background:#F1F5F9;color:#475569;border-color:#E2E8F0">' +
-      '<i class="ti ti-x"></i> Шүүлтийг цуцлах</button>' : '') + '</div>' +
-    '<div style="overflow-x:auto;padding-top:8px">' +
+  var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
+    '<div class="risk-mx-wrap">' +
+    '<div style="min-width:0">' +
+    '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:1px">' +
+    '<div style="font-size:14px;font-weight:800;color:#1E293B">Эрсдэлийн матриц</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8">нүд дарвал шүүнэ</div>' +
+    (RISK_FILTER.mx ? '<button class="btn btn-sm" data-risk-mx="" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0;padding:3px 9px">' +
+      '<i class="ti ti-x"></i> Цуцлах</button>' : '') + '</div>' +
+    '<div style="overflow-x:auto;padding-top:4px">' +
     '<table style="border-collapse:separate;border-spacing:4px;font-family:inherit">' +
     '<tr><td></td><td colspan="5" style="text-align:center;font-size:10.5px;font-weight:800;color:#94A3B8;' +
     'letter-spacing:.4px;padding-bottom:2px">ОСЛЫН ҮР ДАГАВАР →</td></tr>';
@@ -8549,11 +8551,10 @@ function riskMatrixHTML(rows) {
       var on = RISK_FILTER.mx === k;
       H += '<td>' + (c
         ? '<button data-risk-mx="' + k + '" title="Магадлал ' + p + ' × Үр дагавар ' + n + ' — ' + c + ' эрсдэл" ' +
-          'style="width:56px;height:44px;cursor:pointer;font-family:inherit;border-radius:9px;' +
+          'style="width:50px;height:34px;cursor:pointer;font-family:inherit;border-radius:8px;' +
           'background:' + (on ? B.on : B.bg) + ';border:1.5px solid ' + (on ? B.on : B.bd) + ';' +
-          'color:' + (on ? '#fff' : B.fg) + ';font-size:16px;font-weight:900;line-height:1">' + c +
-          '<span style="display:block;font-size:9px;font-weight:700;opacity:.75;margin-top:1px">' + (p * n) + '</span></button>'
-        : '<div style="width:56px;height:44px;border-radius:9px;background:#FBFCFE;border:1.5px dashed #EEF1F7"></div>') +
+          'color:' + (on ? '#fff' : B.fg) + ';font-size:15px;font-weight:900;line-height:1">' + c + '</button>'
+        : '<div style="width:50px;height:34px;border-radius:8px;background:#FBFCFE;border:1.5px dashed #EEF1F7"></div>') +
         '</td>';
     }
     H += '</tr>';
@@ -8564,17 +8565,18 @@ function riskMatrixHTML(rows) {
       'white-space:pre-line">' + n2 + '\n' + NL[n2] + '</td>';
   }
   H += '</tr></table></div>' +
-    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:9px;font-size:11px;color:#94A3B8">' +
-    '<span style="font-weight:700;color:#64748B">Босоо тэнхлэг: магадлал ↑</span>' +
+    '<div style="display:flex;gap:11px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:10.5px;color:#94A3B8">' +
     ['#DCFCE7|Бага', '#FEF9C3|Дунд', '#FFEDD5|Их', '#FEE2E2|Онцгой'].map(function (s) {
       var q = s.split('|');
-      return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;' +
+      return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;' +
         'border-radius:3px;background:' + q[0] + ';border:1px solid rgba(0,0,0,.08)"></span>' + q[1] + '</span>';
     }).join('') +
-    (un ? '<span style="margin-left:auto"><button data-risk-mx="none" style="border:1.5px solid #E2E8F0;' +
+    (un ? '<button data-risk-mx="none" style="border:1.5px solid #E2E8F0;' +
       'background:' + (RISK_FILTER.mx === 'none' ? '#64748B' : '#F8FAFC') + ';color:' +
-      (RISK_FILTER.mx === 'none' ? '#fff' : '#64748B') + ';border-radius:8px;padding:4px 10px;cursor:pointer;' +
-      'font-family:inherit;font-size:11px;font-weight:800">Үнэлгээгүй ' + un + '</button></span>' : '') +
+      (RISK_FILTER.mx === 'none' ? '#fff' : '#64748B') + ';border-radius:7px;padding:3px 9px;cursor:pointer;' +
+      'font-family:inherit;font-size:10.5px;font-weight:800">Үнэлгээгүй ' + un + '</button>' : '') +
+    '</div></div>' +
+    (sideHTML ? '<div style="min-width:0">' + sideHTML + '</div>' : '') +
     '</div></div>';
   return H;
 }
@@ -8691,17 +8693,17 @@ function riskEmpBriefHTML(list, myPos, myDept) {
   var cnt = function (fn) { return all.filter(fn).length; };
   var high = cnt(function (r) { var c = riskLevel(r).code; return c === 'A' || c === 'B'; });
 
-  /* ── Дээд самбар ── */
-  var H = '<div class="card" style="padding:16px 18px;margin-bottom:12px;background:linear-gradient(135deg,#EEF2FF,#F5F3FF);border:1.5px solid #C7D2FE">' +
-    '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">' +
-    '<div><div style="font-size:28px;font-weight:900;color:#312E81;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + all.length + '</div>' +
-    '<div style="font-size:11.5px;color:#4338CA;font-weight:700">эрсдэл</div></div>' +
-    (high ? '<div><div style="font-size:28px;font-weight:900;color:#DC2626;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + high + '</div>' +
-      '<div style="font-size:11.5px;color:#DC2626;font-weight:700">яаралтай</div></div>' : '') +
-    '<div style="flex:1;min-width:180px;font-size:12.5px;color:#4338CA;line-height:1.6">' +
+  /* ── Хураангуй — матрицын ХАЖУУД орно (хоосон зайг зөв ашиглана) ── */
+  var side = '<div style="display:flex;align-items:baseline;gap:15px;flex-wrap:wrap">' +
+    '<div><span style="font-size:30px;font-weight:900;color:#312E81;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + all.length + '</span>' +
+    '<span style="font-size:12px;color:#4338CA;font-weight:700;margin-left:5px">эрсдэл</span></div>' +
+    (high ? '<div><span style="font-size:30px;font-weight:900;color:#DC2626;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + high + '</span>' +
+      '<span style="font-size:12px;color:#DC2626;font-weight:700;margin-left:5px">яаралтай</span></div>' : '') +
+    '</div>' +
+    '<div style="font-size:12.5px;color:#4338CA;line-height:1.6;margin-top:5px">' +
     (high ? '<b>' + high + '</b> өндөр эрсдэлээс эхлээд сэргийлнэ үү.' : 'Өндөр эрсдэл алга. Дүрмээ мөрдөнө үү.') +
-    (myPos ? '<br><span style="color:#6366F1;font-size:11.5px">👤 ' + esc(myPos) + '</span>' : '') + '</div>' +
-    '</div></div>';
+    (myPos ? '<br><span style="color:#8A94A6;font-size:11.5px">' + esc(myPos) + '</span>' : '') + '</div>';
+  var H = '';
 
   /* ── Түвшний шүүлтүүр (дарж болно) ── */
   var chips = RISK_LEVELS.slice().reverse().map(function (L) {
@@ -8720,16 +8722,16 @@ function riskEmpBriefHTML(list, myPos, myDept) {
     '<div style="font-size:19px;font-weight:900;color:' + (RISK_FILTER.level === 'Үнэлгээ хийгдээгүй' ? '#fff' : '#64748B') + ';line-height:1">' + unN + '</div>' +
     '<div style="font-size:10.5px;font-weight:800;color:' + (RISK_FILTER.level === 'Үнэлгээ хийгдээгүй' ? '#fff' : '#64748B') + ';margin-top:2px">Үнэлгээгүй</div></button>';
 
-  /* ⭐ 5×5 МАТРИЦ — эрсдэл хаана хуримтлагдсаныг нэг харцаар */
-  H += riskMatrixHTML(all);
-
-  H += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px">' + chips + '</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+  side += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:12px">' + chips + '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
     '<input type="text" id="riskSearch" placeholder="Аюул, байршил, арга хэмжээгээр хайх…" value="' + esc(RISK_FILTER.q || '') + '" ' +
-    'style="flex:1;min-width:190px;padding:10px 13px;border:1.5px solid #E2E8F0;border-radius:10px;font-size:13px;font-family:inherit">' +
-    ((RISK_FILTER.level || RISK_FILTER.q)
+    'style="flex:1;min-width:170px;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:10px;font-size:13px;font-family:inherit">' +
+    ((RISK_FILTER.level || RISK_FILTER.q || RISK_FILTER.mx)
       ? '<button class="btn btn-sm" data-risk-clear="1" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0"><i class="ti ti-x"></i> Цэвэрлэх</button>' : '') +
     '</div>';
+
+  /* ⭐ 5×5 МАТРИЦ + хураангуй — НЭГ картад, хажуу хажууд */
+  H += riskMatrixHTML(all, side);
 
   if (!rows.length) {
     return H + '<div class="empty-state" style="padding:28px"><i class="ti ti-filter-off"></i><div>Тохирох эрсдэл олдсонгүй</div></div>';

@@ -2494,3 +2494,16 @@ details > summary .ti-chevron-right { transition: transform .15s; }
 @media (max-width: 760px) {
   .rk-hide-sm { display: none !important; }
 }
+
+/* ══ ЭРСДЭЛИЙН МАТРИЦ — зүүн талд матриц, баруун талд хураангуй/шүүлт ══
+   Өмнө нь матрицын баруун тал бүхэлдээ хоосон, доор нь хураангуй ба чипс
+   тусдаа мөр болж 592px эзэлдэг байв. */
+.risk-mx-wrap {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 22px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .risk-mx-wrap { grid-template-columns: 1fr; gap: 14px; }
+}
