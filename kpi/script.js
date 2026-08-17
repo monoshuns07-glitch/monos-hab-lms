@@ -6495,7 +6495,8 @@ function _riskMeasuresRaw(r) {
   return (fin.length ? fin : [raw]).map(function (t, i) {
     var x = t.replace(/\s+/g, ' ').slice(0, 400);
     /* Дунднаас нь тасалсан тул эхний үсгийг ТОМООР — уншихад цэвэрхэн */
-    return { i: i, text: x.charAt(0).toUpperCase() + x.slice(1) };
+    x = x.charAt(0).toUpperCase() + x.slice(1);
+    return { i: i, text: x, role: meaExecRole(x) };
   });
 }
 /* Хугацаа: эрсдлийн түвшнээс хамаарна. Эхлэх цэг = эрсдэл бүртгэгдсэн өдөр */
@@ -6526,6 +6527,70 @@ function riskMeasureIsMine(r, emp) {
   /* Хариуцагч нь тодорхойгүй/ерөнхий бол эрсдэл харагдаж байгаа хүнд хамаарна */
   if (!own.emps.length) return true;
   return false;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ⭐ АРГА ХЭМЖЭЭНИЙ ХОЁР ЗАМ
+   ----------------------------------------------------------------------
+   1. ЗАН ҮЙЛИЙН ДҮРЭМ (ажилтан өөрөө мөрдөнө) — «ХХХ хэрэглэх», «гарцаар
+      гарах», «утсаа оролдохгүй байх». Үүнийг өдөр бүр зурагладаг ажилтан
+      байхгүй тул БАРИМТ ШААРДАХГҮЙ. Ажилтан уншиж, санал бичиж, OTP
+      гарын үсгээрээ баталгаажуулснаар хүлээн зөвшөөрсөнд тооцно.
+   2. ХЭРЭГЖҮҮЛЭХ АРГА ХЭМЖЭЭ (нэг удаа хийгддэг) — «хашлага суурилуулах»,
+      «сургалт зохион байгуулах», «лампаа солих». Эдгээрт ХУГАЦАА + ЗУРАГ.
+      Нэг хариуцагчтай, албан дотор давхардвал НЭГ л удаа хийгдэнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+var MEA_RE_SELF = /ххх|хамгаалах хэрэгсэл|хамгаалалтын хэрэгсэл|бээлий|маск|дуулга|хамгаалалтын шил|нүдний шил|чихэвч|хамгаалах бүс|ажлын хувцас|гутал|өмс|зүү|хэрэглэ|мөрд|баримтла|дага|болгоомж|анхаар|цэвэр байлга|эмх цэгц|ариун цэвэр|гараа угаа|зөв аргаар|зөв байрлал|зөв суу|гарцаар|хурдаа|тайлбал|унтраа|хориглоно|хориотой|байхгүй байх|хүрэхгүй байх|давахгүй байх|оролдохгүй|ярихгүй|танилцаж|мэдээлэх|мэдэгд/i;
+var MEA_RE_HAB = /сургалт|зааварчилга|заавар ?өг|танилцуул|дадлагажуул|сурталчил|хяналт тавь|хяналт хийх|шалгалт хийх|үзлэг хийх|эрсдэлийн үнэлгээ|журам боловсруул|заавар боловсруул|дүрэм боловсруул|тест авах|шалгалт авах|сануулга/i;
+var MEA_RE_ITA = /тоног төхөөрөмж|засвар|газардуулга|цахилгаан|агааржуул|сэнс|шат хийх|шаттай болох|хашлага|суурилуул|техник үйлчилгээ|сэлбэг|мотор|хөдөлгүүр|гагнуур|дулаалга|гэрэлтүүлэг|шугам сүлжээ|насос|компрессор|конвейер|тэргэнцэр|өргөгч|кран/i;
+var MEA_RE_HR = /эрүүл мэндийн үзлэг|эмнэлгийн үзлэг|даатгал|орон тоо|ажилтан нэм|ээлжийн хуваарь|амралт|цалин|ажилд авах|гэрээ байгуул|үнэмлэх/i;
+
+/* Арга хэмжээг ХЭН гүйцэтгэх ёстой вэ — агуулгаас нь */
+function meaExecRole(text) {
+  var t = String(text || '').toLowerCase();
+  if (MEA_RE_SELF.test(t)) return 'self';   // ажилтан өөрөө — зан үйл
+  if (MEA_RE_HAB.test(t)) return 'hab';
+  if (MEA_RE_ITA.test(t)) return 'ita';
+  if (MEA_RE_HR.test(t)) return 'hr';
+  return 'lead';                            // албаны хариуцагч/менежер
+}
+/* Албан дотор ижил арга хэмжээг НЭГ гэж үзэх тогтвортой түлхүүр */
+function meaKeyOf(dept, text) {
+  var d = riskCanonDept(dept) || dept || '';
+  var t = String(text || '').toLowerCase()
+    .replace(/[^а-яөүёa-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 90);
+  return riskSlug(d) + '|' + riskSlug(t);
+}
+/* Хэрэгжүүлэх арга хэмжээг ХЭН хариуцах вэ */
+function meaOwnersOf(r, role) {
+  var d = riskCanonDept(r && r.dept) || (r && r.dept) || '';
+  var out = [];
+  if (role === 'hab') {
+    out = (DB.employees || []).filter(function (e) {
+      return /Хөдөлмөрийн аюулгүй/i.test(e.dept || '') && ackRoleOf(e) === 'lead';
+    });
+  } else if (role === 'ita') {
+    var unit = '';
+    try { unit = riskSectionOf(r) || ''; } catch (e) {}
+    var L = ackLeadFor('Инженер техникийн алба', /дэд бүтэц/i.test(unit) ? 'Дэд бүтэц' : '');
+    out = L ? [L] : (DB.employees || []).filter(function (e) {
+      return /Инженер техник/i.test(e.dept || '') && ackRoleOf(e) === 'lead';
+    });
+  } else if (role === 'hr') {
+    var H = ackLeadFor('Захиргаа, Хүний нөөцийн алба', '');
+    out = H ? [H] : [];
+  } else {
+    /* Албаны хариуцагч. Эрсдэл нь тодорхой хэсгийнх бол ТЭР хэсгийн менежер */
+    var sec = '';
+    try { sec = riskSectionOf(r) || ''; } catch (e) {}
+    if (sec) {
+      var mg = ackMgrsOf(d, '').filter(function (m) { return ackSecOf(m) === sec; });
+      if (mg.length) out = mg;
+    }
+    if (!out.length) { var Ld = ackLeadFor(d, ''); if (Ld) out = [Ld]; }
+  }
+  if (!out.length) { var any = ackLeadFor(d, ''); if (any) out = [any]; }
+  return out;
 }
 
 /* ⚡ Утсаар авсан зураг 5–10 MB байдаг. R2 руу шууд илгээвэл удаан бөгөөд
@@ -6595,13 +6660,21 @@ function empMeasureStats(e) {
   if (_meaEmpSig !== sig) { _meaEmpCache = {}; _meaEmpSig = sig; }
   if (_meaEmpCache[e.uid]) return _meaEmpCache[e.uid];
   var store = MEA_STORE[meaFileFor(e.dept)] || null;
-  var total = 0, done = 0, late = 0;
+  var total = 0, done = 0, late = 0, seenKey = {};
+  /* ⭐ ЗӨВХӨН «хэрэгжүүлэх» ажлууд, зөвхөн ӨӨРТ нь оногдсон нь.
+     Зан үйлийн дүрэм KPI-д ордоггүй — тэр нь гарын үсгээр баталгаажна. */
   (riskSeenBy(e).rows || []).forEach(function (r) {
-    if (!riskMeasureIsMine(r, e)) return;
+    var dept = riskCanonDept(r.dept) || r.dept || '';
     var left = meaDaysLeft(riskMeasureDue(r));
     riskMeasures(r).forEach(function (m) {
+      if (m.role === 'self') return;
+      var owners = meaOwnersOf(r, m.role);
+      if (!owners.some(function (o) { return o.uid === e.uid; })) return;
+      var key = meaKeyOf(dept, m.text);
+      if (seenKey[key]) return;
+      seenKey[key] = 1;
       total++;
-      if (store && meaDone(store, r.id, m.i, e.uid)) done++;
+      if (store && meaDone(store, key)) done++;
       else if (left != null && left < 0) late++;
     });
   });
@@ -6616,11 +6689,14 @@ function kpiMeasure(e) {
   return clamp(Math.round(s.done * 100 / s.total), 0, 100);
 }
 
-/* Тухайн хүн тухайн арга хэмжээг авсан бичлэг */
-function meaDone(store, riskId, mi, uid) {
+/* Тухайн арга хэмжээ гүйцэтгэгдсэн эсэх.
+   ⭐ ТҮЛХҮҮРЭЭР хайна — албан дотор ижил арга хэмжээ олон эрсдэлд давтагдвал
+   НЭГ л удаа хийгдэнэ (30 эрсдэлд «сургалт зохион байгуулах» = 1 ажил). */
+function meaDone(store, key, uid) {
   var rows = (store && store.rows) || [];
   for (var i = 0; i < rows.length; i++) {
-    if (rows[i].riskId === riskId && rows[i].mi === mi && rows[i].uid === uid) return rows[i];
+    if (rows[i].key !== key) continue;
+    if (!uid || rows[i].uid === uid) return rows[i];   // uid өгөөгүй бол ХЭН Ч хийсэн болно
   }
   return null;
 }
@@ -6628,25 +6704,26 @@ function meaDone(store, riskId, mi, uid) {
 async function meaAdd(emp, r, mi, text, files) {
   if (!emp || !emp.uid) return { ok: false, error: 'Ажилтны бүртгэл олдсонгүй' };
   if (!files || !files.length) return { ok: false, error: 'Баримт (зураг/файл) заавал хавсаргана' };
-  var dept = riskCanonDept(emp.dept) || emp.dept || '';
+  var m = riskMeasures(r)[mi] || { text: '' };
+  var dept = riskCanonDept(r.dept) || riskCanonDept(emp.dept) || emp.dept || '';
   var rec = {
-    riskId: r.id, mi: mi,
-    measure: (riskMeasures(r)[mi] || {}).text || '',
+    key: meaKeyOf(dept, m.text),
+    riskId: r.id, mi: mi, role: m.role || 'lead',
+    measure: m.text || '',
     hazard: String(r.hazard || '').slice(0, 160),
     uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '', dept: dept,
     text: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 600),
-    files: files, due: riskMeasureDue(r), at: new Date().toISOString()
+    files: files, due: riskMeasureDue(r), at: new Date().toISOString(),
+    status: 'done'                       // хянагч буцаавал 'returned' болно
   };
   for (var attempt = 0; attempt < 3; attempt++) {
     var st = await meaLoad(dept, true);
-    st.rows = (st.rows || []).filter(function (x) {
-      return !(x.riskId === rec.riskId && x.mi === rec.mi && x.uid === rec.uid);
-    });
+    st.rows = (st.rows || []).filter(function (x) { return x.key !== rec.key; });
     st.rows.push(rec);
     st.updatedAt = rec.at;
     try { await meaSave(dept, st); } catch (e) { continue; }
     var back = await meaLoad(dept, true);
-    if (meaDone(back, rec.riskId, rec.mi, rec.uid)) return { ok: true, rec: rec };
+    if (meaDone(back, rec.key)) return { ok: true, rec: rec };
   }
   return { ok: false, error: 'Хадгалагдсанг баталгаажуулж чадсангүй' };
 }
@@ -7373,32 +7450,41 @@ async function meaExport(dept) {
     ['ЭРСДЭЛИЙН АРГА ХЭМЖЭЭНИЙ БИЕЛЭЛТ'],
     [(dept === '*' ? 'Бүх алба' : 'Алба: ' + dept) + '   ·   Хэвлэсэн: ' + ackDateMn(new Date().toISOString())],
     [],
-    ['д/д', 'Алба', 'Овог нэр', 'Албан тушаал', 'Эрсдэл', 'Түвшин', 'Авах арга хэмжээ',
-     'Хугацаа', 'Төлөв', 'Хийсэн огноо', 'Тайлбар', 'Баримт']
+    ['д/д', 'Алба', 'Хариуцагч', 'Албан тушаал', 'Эрсдэл', 'Түвшин', 'Хэрэгжүүлэх арга хэмжээ',
+     'Хугацаа', 'Төлөв', 'Хийсэн огноо', 'Тайлбар', 'Баримт', 'Хянагч']
   ];
   var k = 0;
   for (var di = 0; di < depts.length; di++) {
     var d = depts[di];
     var store = await meaLoad(d, true);
-    ackDueEmps(d).forEach(function (e) {
-      (riskSeenBy(e).rows || []).forEach(function (r) {
-        if (!riskMeasureIsMine(r, e)) return;
-        var due = riskMeasureDue(r), left = meaDaysLeft(due), L = riskLevel(r);
-        riskMeasures(r).forEach(function (m) {
-          var rec = meaDone(store, r.id, m.i, e.uid);
-          aoa.push([++k, d, e.name || '', e.pos || e.role || '',
-            String(r.hazard || '').slice(0, 120), L.code, m.text,
-            due, rec ? 'Хийсэн' : ((left != null && left < 0) ? 'ХУГАЦАА ХЭТЭРСЭН' : 'Хүлээгдэж буй'),
-            rec ? ackDateMn(rec.at) : '', rec ? (rec.text || '') : '',
-            rec ? ((rec.files || []).map(function (f) { return f.url; }).join('  ')) : '']);
-        });
+    var seen = {};
+    /* Албан дотор ДАВХАРДАЛГҮЙ — нэг арга хэмжээ = нэг мөр */
+    (DB.risks || []).forEach(function (r) {
+      if (!riskSameDept(r.dept, d)) return;
+      var due = riskMeasureDue(r), left = meaDaysLeft(due), L = riskLevel(r);
+      var sup = riskMeasureOwners(r);
+      riskMeasures(r).forEach(function (m) {
+        if (m.role === 'self') return;               // зан үйл — даалгавар биш
+        var key = meaKeyOf(d, m.text);
+        if (seen[key]) return;
+        seen[key] = 1;
+        var owners = meaOwnersOf(r, m.role);
+        var rec = meaDone(store, key);
+        aoa.push([++k, d,
+          owners.map(function (o) { return o.name; }).join(', ') || '—',
+          owners.map(function (o) { return o.pos || o.role; }).join(', ') || '',
+          String(r.hazard || '').slice(0, 120), L.code, m.text,
+          due, rec ? 'Хийсэн' : ((left != null && left < 0) ? 'ХУГАЦАА ХЭТЭРСЭН' : 'Хүлээгдэж буй'),
+          rec ? ackDateMn(rec.at) : '', rec ? (rec.text || '') : '',
+          rec ? ((rec.files || []).map(function (f) { return f.url; }).join('  ')) : '',
+          sup.emps.map(function (o) { return o.name; }).join(', ')]);
       });
     });
   }
   if (!k) aoa.push(['', '', '', '', 'Арга хэмжээ олдсонгүй', '', '', '', '', '', '', '']);
   ackWriteBook([{ name: 'Арга хэмжээ', aoa: aoa,
     cols: [{ wch: 6 }, { wch: 26 }, { wch: 22 }, { wch: 24 }, { wch: 40 }, { wch: 8 }, { wch: 52 },
-           { wch: 12 }, { wch: 18 }, { wch: 13 }, { wch: 40 }, { wch: 46 }] }],
+           { wch: 12 }, { wch: 18 }, { wch: 13 }, { wch: 40 }, { wch: 46 }, { wch: 26 }] }],
     'Арга-хэмжээний-биелэлт-' + (dept === '*' ? 'бүх-алба' : String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '')) +
     '-' + _ymd(new Date()) + '.xlsx');
 }
@@ -7979,57 +8065,84 @@ function riskMeasureBlockHTML(r) {
   var list = riskMeasures(r);
   if (!list.length) return '';
   var me = null; try { me = myEmp(); } catch (e) {}
-  var mine = me ? riskMeasureIsMine(r, me) : false;
-  var due = riskMeasureDue(r);
-  var left = meaDaysLeft(due);
+  var dept = riskCanonDept(r.dept) || r.dept || '';
+  var due = riskMeasureDue(r), left = meaDaysLeft(due);
   var store = MEA_VIEW.store;
-  var own = riskMeasureOwners(r);
+  var sup = riskMeasureOwners(r);          // «Хэн хяналт тавих» = ХЯНАГЧ
 
-  var doneN = 0;
-  var items = list.map(function (m) {
-    var rec = (me && store) ? meaDone(store, r.id, m.i, me.uid) : null;
-    if (rec) doneN++;
-    var late = (!rec && left != null && left < 0);
-    var tone = rec ? '#059669' : (late ? '#DC2626' : '#64748B');
-    var bg = rec ? '#F0FDF4' : (late ? '#FEF2F2' : '#F8FAFC');
-    var bd = rec ? '#BBF7D0' : (late ? '#FECACA' : '#E2E8F0');
-    return '<div style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:12px;padding:11px 13px;margin-bottom:8px">' +
-      '<div style="display:flex;gap:11px;align-items:flex-start">' +
-      '<span style="flex:0 0 22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;' +
-      'font-size:12px;font-weight:900;color:#fff;background:' + (rec ? '#059669' : (late ? '#DC2626' : '#CBD5E1')) + '">' +
-      (rec ? '✓' : (m.i + 1)) + '</span>' +
-      '<span style="flex:1;min-width:0">' +
-      '<span style="display:block;font-size:13.5px;color:#1E293B;line-height:1.55;white-space:pre-wrap">' + esc(m.text) + '</span>' +
-      (rec
-        ? '<span style="display:block;font-size:11.5px;color:#059669;margin-top:5px">' +
-          '✓ ' + ackDateMn(rec.at) + '-нд гүйцэтгэсэн' + (rec.text ? ' · ' + esc(rec.text.slice(0, 90)) : '') +
-          ((rec.files || []).length ? ' · ' + rec.files.length + ' баримт' : '') + '</span>'
-        : '<span style="display:block;font-size:11.5px;color:' + tone + ';margin-top:5px">' +
-          (left == null ? '' : (late ? '⚠ Хугацаа ' + Math.abs(left) + ' хоногоор хэтэрсэн (' + due + ')'
-                                     : '⏳ ' + due + ' хүртэл · ' + left + ' хоног үлдсэн')) + '</span>') +
-      '</span>' +
-      (mine && !rec
-        ? '<button class="btn btn-sm btn-primary" data-mea-do="' + esc(r.id) + '|' + m.i + '" style="flex-shrink:0">' +
-          '<i class="ti ti-camera-plus"></i> Бүртгэх</button>'
-        : '') +
-      '</div></div>';
-  }).join('');
+  var self = list.filter(function (m) { return m.role === 'self'; });
+  var work = list.filter(function (m) { return m.role !== 'self'; });
+  var H = '';
 
-  var pct = Math.round(doneN * 100 / list.length);
-  return '<div style="margin:18px 0 2px">' +
-    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
-    '<div style="font-size:12.5px;font-weight:900;color:#334155;letter-spacing:.3px">✅ ТАНЫ АВАХ ЁСТОЙ АРГА ХЭМЖЭЭ</div>' +
-    '<div style="flex:1;min-width:80px;height:7px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
-    '<div style="height:100%;width:' + pct + '%;background:' + (pct === 100 ? '#059669' : '#6366F1') + '"></div></div>' +
-    '<div style="font-size:12px;font-weight:800;color:' + (pct === 100 ? '#059669' : '#64748B') + '">' + doneN + ' / ' + list.length + '</div>' +
-    '</div>' +
-    (mine ? '' : '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:8px;line-height:1.5">' +
-      'Эдгээрийг <b>' + esc(own.label || 'хариуцагч') + '</b> гүйцэтгэнэ' +
-      (own.emps.length ? ' (' + own.emps.slice(0, 3).map(function (e) { return esc(e.name); }).join(', ') +
-        (own.emps.length > 3 ? ' +' + (own.emps.length - 3) : '') + ')' : '') + '. Та танилцаж мөрдөнө.</div>') +
-    items +
-    (me && store ? riskMeasureLogHTML(r, me, store) : '') +
-    '</div>';
+  /* ── 1. ЗАН ҮЙЛИЙН ДҮРЭМ — баримт шаардахгүй ── */
+  if (self.length) {
+    H += '<div style="margin:18px 0 2px">' +
+      '<div style="font-size:12.5px;font-weight:900;color:#334155;letter-spacing:.3px;margin-bottom:3px">' +
+      '📌 ТАНЫ МӨРДӨХ ДҮРЭМ</div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:9px;line-height:1.55">' +
+      'Эдгээрийг ажлын явцад <b>өөрөө байнга мөрдөнө</b>. Баримт хавсаргах шаардлагагүй — ' +
+      'уншиж, саналаа бичиж, <b>гарын үсгээ зурснаар</b> хүлээн зөвшөөрсөнд тооцно.</div>' +
+      self.map(function (m, k) {
+        return '<div style="display:flex;gap:11px;align-items:flex-start;background:#F8FAFC;border:1.5px solid #E2E8F0;' +
+          'border-radius:12px;padding:11px 13px;margin-bottom:7px">' +
+          '<span style="flex:0 0 22px;height:22px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;' +
+          'font-size:12px;font-weight:900;color:#475569;background:#E2E8F0">' + (k + 1) + '</span>' +
+          '<span style="flex:1;min-width:0;font-size:13.5px;color:#1E293B;line-height:1.55">' + esc(m.text) + '</span>' +
+          '</div>';
+      }).join('') + '</div>';
+  }
+
+  /* ── 2. ХЭРЭГЖҮҮЛЭХ АРГА ХЭМЖЭЭ — хугацаа + баримт ── */
+  if (work.length) {
+    var doneN = 0;
+    var rows = work.map(function (m) {
+      var key = meaKeyOf(dept, m.text);
+      var rec = store ? meaDone(store, key) : null;
+      if (rec) doneN++;
+      var owners = meaOwnersOf(r, m.role);
+      var isMine = !!(me && owners.some(function (o) { return o.uid === me.uid; }));
+      var late = (!rec && left != null && left < 0);
+      var bg = rec ? '#F0FDF4' : (late ? '#FEF2F2' : '#fff');
+      var bd = rec ? '#BBF7D0' : (late ? '#FECACA' : '#E2E8F0');
+      return '<div style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:12px;padding:11px 13px;margin-bottom:8px">' +
+        '<div style="display:flex;gap:11px;align-items:flex-start">' +
+        '<span style="flex:0 0 22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;' +
+        'font-size:12px;font-weight:900;color:#fff;background:' + (rec ? '#059669' : (late ? '#DC2626' : '#CBD5E1')) + '">' +
+        (rec ? '✓' : '!') + '</span>' +
+        '<span style="flex:1;min-width:0">' +
+        '<span style="display:block;font-size:13.5px;color:#1E293B;line-height:1.55">' + esc(m.text) + '</span>' +
+        '<span style="display:block;font-size:11.5px;color:#94A3B8;margin-top:4px">' +
+        '👷 ' + (owners.length ? owners.map(function (o) { return esc(o.name); }).join(', ') : 'хариуцагч тодорхойгүй') +
+        (sup.emps.length ? '   ·   👁 хянагч: ' + sup.emps.slice(0, 2).map(function (o) { return esc(o.name); }).join(', ') : '') +
+        '</span>' +
+        (rec
+          ? '<span style="display:block;font-size:11.5px;color:#059669;margin-top:4px">✓ ' + ackDateMn(rec.at) +
+            ' · ' + esc(rec.name || '') + (rec.text ? ' — ' + esc(rec.text.slice(0, 70)) : '') +
+            ((rec.files || []).length ? ' · ' + rec.files.length + ' баримт' : '') + '</span>'
+          : '<span style="display:block;font-size:11.5px;color:' + (late ? '#DC2626' : '#64748B') + ';margin-top:4px">' +
+            (late ? '⚠ Хугацаа ' + Math.abs(left) + ' хоногоор хэтэрсэн (' + due + ')'
+                  : '⏳ ' + due + ' хүртэл · ' + left + ' хоног үлдсэн') + '</span>') +
+        '</span>' +
+        (isMine && !rec
+          ? '<button class="btn btn-sm btn-primary" data-mea-do="' + esc(r.id) + '|' + m.i + '" style="flex-shrink:0">' +
+            '<i class="ti ti-camera-plus"></i> Бүртгэх</button>'
+          : '') +
+        '</div></div>';
+    }).join('');
+    var pct = Math.round(doneN * 100 / work.length);
+    H += '<div style="margin:18px 0 2px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+      '<div style="font-size:12.5px;font-weight:900;color:#334155;letter-spacing:.3px">🛠 ХЭРЭГЖҮҮЛЭХ АРГА ХЭМЖЭЭ</div>' +
+      '<div style="flex:1;min-width:80px;height:7px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:' + (pct === 100 ? '#059669' : '#6366F1') + '"></div></div>' +
+      '<div style="font-size:12px;font-weight:800;color:' + (pct === 100 ? '#059669' : '#64748B') + '">' + doneN + ' / ' + work.length + '</div>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:9px;line-height:1.5">' +
+      'Нэг удаа хийгдэж, <b>зураг/файлаар баримтждаг</b> ажлууд. Албан дотор ижил ажил давтагдвал нэг л удаа гүйцэтгэнэ.</div>' +
+      rows + '</div>';
+  }
+  if (me && store) H += riskMeasureLogHTML(r, me, store);
+  return H;
 }
 /* Дэлгэрэнгүй дэх «Бүртгэх» товчнуудыг холбоно */
 function riskMeasureWire(host, r) {
@@ -12270,13 +12383,20 @@ function meaMineList(emp) {
   if (!emp) return [];
   var seen = riskSeenBy(emp).rows || [];
   var store = MEA_VIEW.store;
-  var out = [];
+  var out = [], seenKey = {};
+  /* ⭐ ЗӨВХӨН надад оногдсон ХЭРЭГЖҮҮЛЭХ ажлууд (зан үйлийн дүрэм энд орохгүй) */
   seen.forEach(function (r) {
-    if (!riskMeasureIsMine(r, emp)) return;
+    var dept = riskCanonDept(r.dept) || r.dept || '';
     var due = riskMeasureDue(r), left = meaDaysLeft(due);
     riskMeasures(r).forEach(function (m) {
-      var rec = store ? meaDone(store, r.id, m.i, emp.uid) : null;
-      out.push({ risk: r, mi: m.i, text: m.text, due: due, left: left, rec: rec,
+      if (m.role === 'self') return;
+      var owners = meaOwnersOf(r, m.role);
+      if (!owners.some(function (o) { return o.uid === emp.uid; })) return;
+      var key = meaKeyOf(dept, m.text);
+      if (seenKey[key]) return;
+      seenKey[key] = 1;
+      var rec = store ? meaDone(store, key) : null;
+      out.push({ risk: r, mi: m.i, key: key, text: m.text, due: due, left: left, rec: rec,
         lvl: riskLevel(r), score: riskScore(r) });
     });
   });
