@@ -754,6 +754,8 @@ async function loadDB() {
     try { await riskReleasesLoad(); } catch (e) {}
     /* Менежерийн хариуцах хэсгийн зураглал (жижиг файл) */
     try { await ackSecLoad(true); } catch (e) {}
+    /* Арга хэмжээний биелэлт — KPI, самбарт хэрэгтэй (алба бүрд жижиг файл) */
+    try { await meaLoadAll(true); } catch (e) { console.error('[measures] R2', e); }
   }
   /* DB бэлэн болмогц суулгах туслах */
   var _applyR2 = function () {
@@ -1819,7 +1821,10 @@ function empKpiFactors(e) {
     { key: 'bosgo',  label: 'Босго оноо',        v: kpiBosgo(e),  w: _f(w.bosgo) },
     { key: 'davtan', label: 'Давтан + шалгалт',  v: hasDavtan ? kpiDavtan(e) : null, w: hasDavtan ? _f(w.davtan) : 0 },
     { key: 'video',  label: 'Видео сургалт',     v: kpiVideo(e),  w: videoW },
-    { key: 'task',   label: 'Даалгавар',         v: kpiTask(e),   w: _f(w.task) }
+    /* ⭐ Даалгавар → АРГА ХЭМЖЭЭНИЙ БИЕЛЭЛТ. Эрсдлээс гарсан арга хэмжээг
+       баримтжуулсан хувь. Арга хэмжээ оногдоогүй бол хуучин даалгавраар. */
+    { key: 'task',   label: 'Арга хэмжээний биелэлт',
+      v: (kpiMeasure(e) != null ? kpiMeasure(e) : kpiTask(e)), w: _f(w.task) }
   ];
 }
 
@@ -3250,7 +3255,7 @@ function renderEmployeeDashboard() {
     { label: 'Босго оноо', desc: 'осол/зөрчилгүй', icon: 'ti-shield-check', score: kpiBosgo(e), weight: _f(w.bosgo), color: '#3730A3' },
     _hasD ? { label: 'Давтан + шалгалт', desc: 'энэ сарын давтан', icon: 'ti-refresh', score: kpiDavtan(e), weight: _f(w.davtan), color: '#0891B2' } : null,
     { label: 'Видео сургалт', desc: 'тэнцсэн хувь', icon: 'ti-player-play', score: kpiVideo(e), weight: _vidW, color: '#C2410C' },
-    { label: 'Даалгавар', desc: 'биелэлт', icon: 'ti-checkbox', score: kpiTask(e), weight: _f(w.task), color: '#16A34A' }
+    { label: 'Арга хэмжээний биелэлт', desc: 'баримтжуулсан хувь', icon: 'ti-checkbox', score: (kpiMeasure(e) != null ? kpiMeasure(e) : kpiTask(e)), weight: _f(w.task), color: '#16A34A' }
   ].filter(function (c) { return c && c.score != null; });
   var baseWsum = baseFactors.reduce(function (a, c) { return a + c.weight; }, 0) || 1;
   var baseScore = empBase(e);
@@ -4068,7 +4073,7 @@ function renderAdminDashboard() {
     { k: 'Босго оноо', fn: kpiBosgo, why: 'осол, зөрчил бүртгэгдээгүй бол автоматаар 100' },
     { k: 'Давтан + шалгалт', fn: kpiDavtan, why: 'энэ сард давтан зааварчилгаа товлогдоогүй бол тооцогдохгүй' },
     { k: 'Видео сургалт', fn: kpiVideo, why: 'ажилтанд видео хичээл оногдуулаагүй бол тооцогдохгүй' },
-    { k: 'Даалгавар', fn: kpiTask, why: 'нэрлэн даалгавар өгөөгүй бол тооцогдохгүй' },
+    { k: 'Арга хэмжээний биелэлт', fn: function (e) { return kpiMeasure(e) != null ? kpiMeasure(e) : kpiTask(e); }, why: 'эрсдэл, арга хэмжээ оногдоогүй бол тооцогдохгүй' },
     { k: 'Аюул мэдээлэл (бонус)', fn: empBonusScore, why: 'мэдээлэл ирээгүй бол 0' }
   ];
   var cov = covDefs.map(function (c) {
@@ -4102,7 +4107,7 @@ function renderAdminDashboard() {
     { k: 'Босго оноо', d: 'осол, зөрчилгүй байдал', fn: kpiBosgo, w: _f(w.bosgo), c: '#3730A3', p: 'violations' },
     { k: 'Давтан + шалгалт', d: 'энэ сард товлогдсон албад', fn: kpiDavtan, w: _f(w.davtan), c: '#0891B2', p: 'employees' },
     { k: 'Видео сургалт', d: 'оногдсоноос тэнцсэн хувь', fn: kpiVideo, w: _f(w.video), c: '#C2410C', p: 'video-track' },
-    { k: 'Даалгавар', d: 'хянагчийн үнэлгээгээр', fn: kpiTask, w: _f(w.task), c: '#16A34A', p: 'tasks' },
+    { k: 'Арга хэмжээний биелэлт', d: 'баримтжуулсан хувь', fn: function (e) { return kpiMeasure(e) != null ? kpiMeasure(e) : kpiTask(e); }, w: _f(w.task), c: '#16A34A', p: 'tasks' },
     { k: 'Аюул мэдээлэл (бонус)', d: 'баталгаажсан мэдээллээр', fn: empBonusScore, w: _f(w.bonus), c: '#059669', p: 'reportflow' }
   ];
   var wsum = factors.reduce(function (a, f) { return a + f.w; }, 0) || 1;
@@ -6389,30 +6394,73 @@ var MEA_PREFIX = 'measures/';
 var MEA_STORE = {};              // { файл: { rows: [] } }
 var MEA_DAYS = { A: 7, B: 14, C: 30, D: 60, E: 60 };
 
-/* Нэг эрсдлийн арга хэмжээг тусад нь задална */
+/* Нэг эрсдлийн арга хэмжээг тусад нь задална.
+   ⚡ 887 эрсдлийг ажилтан бүрд дахин задлах нь удаан тул кэшлэнэ. */
+var _meaCache = {}, _meaCacheN = 0;
 function riskMeasures(r) {
-  var raw = String((r && r.actions) || '').trim();
+  var ck = r && r.id;
+  if (ck && _meaCache[ck]) return _meaCache[ck];
+  var res = _riskMeasuresRaw(r);
+  if (ck) {
+    if (_meaCacheN > 4000) { _meaCache = {}; _meaCacheN = 0; }
+    _meaCache[ck] = res; _meaCacheN++;
+  }
+  return res;
+}
+/* ⭐ Монгол хэлэнд арга хэмжээ бүр ҮЙЛ ҮГЭЭР төгсдөг:
+     «…STOP товчлуурыг заавал ДАРАХ, …циллотыг …материалаар СОЛИХ,
+      …шаардлага хангасан шаттай БОЛОХ.»
+   Энэ бол гурван ӨӨР үйл ажиллагаа. Тиймээс таслалаар салгахдаа
+   «үйл үгээр төгссөн үү» гэдгийг шалгана — төгсөөгүй бол үргэлжлэл гэж
+   үзээд нийлүүлнэ («…хамруулЖ, гарын авлага өгөх» = НЭГ үйл ажиллагаа). */
+function _meaIsAction(s) {
+  var t = String(s || '').trim().replace(/[.;:]+$/, '');
+  if (t.length < 10) return false;
+  var last = t.split(/\s+/).pop() || '';
+  /* -х төгсгөлтэй (дарах, солих, болох, хийх, шалгах, зүүх, хангах) */
+  if (/(?:а|э|о|ө|и|ы|у|ү)х$/.test(last)) return true;
+  /* -на/-нэ/-но/-нө (шалгана, хөтөлнө), -даг/-дэг, -сан/-сэн байх */
+  if (/(?:на|нэ|но|нө)$/.test(last)) return true;
+  if (/(?:улна|үлнэ|лгана|лгэнэ)$/.test(last)) return true;
+  return false;
+}
+function _riskMeasuresRaw(r) {
+  var raw = String((r && r.actions) || '').replace(/\r/g, '').trim();
   if (!raw) return [];
-  /* Мөр таслалт, дугаарлалт, цэг таслалаар салгана. Хэт богиныг нийлүүлнэ. */
-  var parts = raw
-    .replace(/\r/g, '')
+
+  /* 1-р шат: мөр, «;», дугаарлалт, сумаар — эдгээр нь илэрхий заагууд */
+  var blocks = raw
     .split(/\n+|;+|(?:^|\s)(?=\d{1,2}[.)]\s)|(?:^|\s)(?=[•‣▪·]\s)/)
     .map(function (s) { return String(s).replace(/^\s*(?:\d{1,2}[.)]|[•‣▪·-])\s*/, '').trim(); })
     .filter(function (s) { return s.length > 2; });
-  if (parts.length < 2) {
-    /* Нэг мөр байвал «, » -ээр салгаж үзнэ — гэхдээ богино хэсгүүдийг нийлүүлнэ */
-    var alt = raw.split(/,\s+(?=[А-ЯӨҮЁ])/).map(function (s) { return s.trim(); }).filter(Boolean);
-    if (alt.length > 1 && alt.every(function (s) { return s.length > 12; })) parts = alt;
-  }
-  var out = [], acc = '';
-  parts.forEach(function (p) {
-    if (p.length < 12 && acc) { acc += ', ' + p; return; }
-    if (acc) out.push(acc);
-    acc = p;
+
+  /* 2-р шат: блок бүрийг ҮЙЛ АЖИЛЛАГААгаар нь задална */
+  var out = [];
+  blocks.forEach(function (b) {
+    /* Таслалын дараа зай байхгүй ч задална («…мөрдүүлэх,сургалт зохион…»).
+       Тоо таслалаар бичсэн («1,5 метр») бол үйл үгийн шалгуур нийлүүлж өгнө. */
+    var segs = b.split(/,\s*|\s+ба\s+|\s+болон\s+/).filter(function (s) { return s.trim(); });
+    var acc = '';
+    segs.forEach(function (sg, i) {
+      acc = acc ? (acc + ', ' + sg.trim()) : sg.trim();
+      /* Үйл үгээр төгссөн БА дараа нь үргэлжлэл байвал — тусад нь салгана */
+      if (_meaIsAction(acc) && i < segs.length - 1) { out.push(acc); acc = ''; }
+    });
+    if (acc.trim()) out.push(acc.trim());
   });
-  if (acc) out.push(acc);
-  return (out.length ? out : [raw]).map(function (t, i) {
-    return { i: i, text: t.slice(0, 400) };
+
+  /* 3-р шат: хэт богино хэсгийг өмнөхтэй нь нийлүүлнэ */
+  var fin = [];
+  out.forEach(function (p) {
+    var t = p.trim().replace(/^[,;\s]+/, '');
+    if (!t) return;
+    if (t.length < 12 && fin.length) { fin[fin.length - 1] += ', ' + t; return; }
+    fin.push(t);
+  });
+  return (fin.length ? fin : [raw]).map(function (t, i) {
+    var x = t.replace(/\s+/g, ' ').slice(0, 400);
+    /* Дунднаас нь тасалсан тул эхний үсгийг ТОМООР — уншихад цэвэрхэн */
+    return { i: i, text: x.charAt(0).toUpperCase() + x.slice(1) };
   });
 }
 /* Хугацаа: эрсдлийн түвшнээс хамаарна. Эхлэх цэг = эрсдэл бүртгэгдсэн өдөр */
@@ -6445,6 +6493,41 @@ function riskMeasureIsMine(r, emp) {
   return false;
 }
 
+/* ⚡ Утсаар авсан зураг 5–10 MB байдаг. R2 руу шууд илгээвэл удаан бөгөөд
+   орон зай их иддэг. Хөтөч дээр нь багасгаад илгээнэ (чанар хангалттай). */
+var MEA_IMG_MAX = 1600, MEA_IMG_Q = 0.82, MEA_IMG_SKIP = 600 * 1024;
+function meaShrinkImage(file) {
+  return new Promise(function (resolve) {
+    try {
+      if (!file || !/^image\//i.test(file.type || '')) return resolve(file);
+      if (file.size <= MEA_IMG_SKIP) return resolve(file);
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var sc = Math.min(1, MEA_IMG_MAX / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+          var cv = document.createElement('canvas');
+          cv.width = cw; cv.height = ch;
+          cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+          cv.toBlob(function (blob) {
+            URL.revokeObjectURL(url);
+            if (!blob || blob.size >= file.size) return resolve(file);
+            var name = String(file.name || 'zurag').replace(/\.[^.]+$/, '') + '.jpg';
+            var out;
+            try { out = new File([blob], name, { type: 'image/jpeg' }); }
+            catch (e) { out = blob; out.name = name; }
+            resolve(out);
+          }, 'image/jpeg', MEA_IMG_Q);
+        } catch (e) { URL.revokeObjectURL(url); resolve(file); }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    } catch (e) { resolve(file); }
+  });
+}
+
 /* ── Хадгалалт (R2, алба тус бүрээр) ── */
 function meaFileFor(dept) { return MEA_PREFIX + riskSlug(riskCanonDept(dept) || dept) + '.json'; }
 async function meaLoad(dept, force) {
@@ -6461,6 +6544,43 @@ async function meaSave(dept, store) {
   MEA_STORE[key] = store;
   return await riskR2PutJson(key, store);
 }
+/* Бүх албаны биелэлтийг татна (админ/KPI-д хэрэгтэй, файлууд жижиг) */
+async function meaLoadAll(force) {
+  var ds = ackDeptsWithDue();
+  for (var i = 0; i < ds.length; i++) {
+    try { await meaLoad(ds[i], force); } catch (e) {}
+  }
+  return MEA_STORE;
+}
+/* Тухайн ажилтны арга хэмжээний биелэлт (KPI, самбарт) */
+var _meaEmpCache = {}, _meaEmpSig = '';
+function empMeasureStats(e) {
+  if (!e || !e.uid) return { total: 0, done: 0, late: 0 };
+  var sig = String((DB.risks || []).length) + '|' + Object.keys(MEA_STORE).length;
+  if (_meaEmpSig !== sig) { _meaEmpCache = {}; _meaEmpSig = sig; }
+  if (_meaEmpCache[e.uid]) return _meaEmpCache[e.uid];
+  var store = MEA_STORE[meaFileFor(e.dept)] || null;
+  var total = 0, done = 0, late = 0;
+  (riskSeenBy(e).rows || []).forEach(function (r) {
+    if (!riskMeasureIsMine(r, e)) return;
+    var left = meaDaysLeft(riskMeasureDue(r));
+    riskMeasures(r).forEach(function (m) {
+      total++;
+      if (store && meaDone(store, r.id, m.i, e.uid)) done++;
+      else if (left != null && left < 0) late++;
+    });
+  });
+  var out = { total: total, done: done, late: late };
+  _meaEmpCache[e.uid] = out;
+  return out;
+}
+/* KPI-ийн «Арга хэмжээ» үзүүлэлт (0–100). Оногдоогүй бол null */
+function kpiMeasure(e) {
+  var s = empMeasureStats(e);
+  if (!s.total) return null;
+  return clamp(Math.round(s.done * 100 / s.total), 0, 100);
+}
+
 /* Тухайн хүн тухайн арга хэмжээг авсан бичлэг */
 function meaDone(store, riskId, mi, uid) {
   var rows = (store && store.rows) || [];
@@ -7115,6 +7235,139 @@ function ackAdminHTML() {
   H += '</tbody></table></div></div>';
   return H;
 }
+/* ══════════════════════════════════════════════════════════════════════
+   АДМИН: «ХЭН ЮУГ ХИЙГЭЭГҮЙ БАЙНА» — арга хэмжээний биелэлт
+   ══════════════════════════════════════════════════════════════════════ */
+var MEA_ADMIN = null;   // { rows:[{dept,total,done,late,people:[]}], at }
+
+async function meaAdminScan(onStep) {
+  var depts = ackDeptsWithDue();
+  var out = [];
+  for (var i = 0; i < depts.length; i++) {
+    if (onStep) onStep(i + 1, depts.length, depts[i]);
+    var d = depts[i];
+    await meaLoad(d, true);
+    var people = [];
+    var total = 0, done = 0, late = 0;
+    ackDueEmps(d).forEach(function (e) {
+      var s = empMeasureStats(e);
+      if (!s.total) return;
+      total += s.total; done += s.done; late += s.late;
+      people.push({ e: e, total: s.total, done: s.done, late: s.late });
+    });
+    people.sort(function (a, b) { return (b.late - a.late) || ((b.total - b.done) - (a.total - a.done)); });
+    out.push({ dept: d, total: total, done: done, late: late, people: people });
+  }
+  MEA_ADMIN = { rows: out, at: new Date().toISOString() };
+  return MEA_ADMIN;
+}
+function meaAdminHTML() {
+  if (!MEA_ADMIN) {
+    return '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+      '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">' +
+      '<i class="ti ti-checkbox" style="font-size:20px;color:#16A34A"></i>' +
+      '<div style="flex:1;min-width:200px"><b style="font-size:14px">Арга хэмжээний биелэлт</b>' +
+      '<div style="font-size:12px;color:#94A3B8">Хэн ямар арга хэмжээг хийгээгүй, хугацаа хэтэрсэн эсэхийг албаар харна</div></div>' +
+      '<button class="btn btn-secondary btn-sm" data-mea-scan="1"><i class="ti ti-refresh"></i> Шалгах</button>' +
+      '</div></div>';
+  }
+  var R = MEA_ADMIN.rows;
+  var tot = R.reduce(function (a, x) { return a + x.total; }, 0);
+  var dn = R.reduce(function (a, x) { return a + x.done; }, 0);
+  var lt = R.reduce(function (a, x) { return a + x.late; }, 0);
+  var pct = tot ? Math.round(dn * 100 / tot) : 0;
+  var H = '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+    '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px">' +
+    '<div><div style="font-size:26px;font-weight:900;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif;color:' +
+    (pct >= 90 ? '#059669' : pct >= 50 ? '#D97706' : '#DC2626') + '">' + pct + '%</div>' +
+    '<div style="font-size:11.5px;color:#64748B;font-weight:700">' + dn + ' / ' + tot + ' арга хэмжээ</div></div>' +
+    (lt ? '<div><div style="font-size:26px;font-weight:900;color:#DC2626;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + lt + '</div>' +
+      '<div style="font-size:11.5px;color:#DC2626;font-weight:700">хугацаа хэтэрсэн</div></div>' : '') +
+    '<div style="flex:1;min-width:150px;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+    '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669)"></div></div>' +
+    '<button class="btn btn-secondary btn-sm" data-mea-scan="1"><i class="ti ti-refresh"></i> Дахин шалгах</button> ' +
+    '<button class="btn btn-primary btn-sm" data-mea-xl="*"><i class="ti ti-file-spreadsheet"></i> Бүгдийг Excel</button></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="min-width:680px"><thead><tr>' +
+    '<th>Алба</th><th style="text-align:center">Арга хэмжээ</th><th style="text-align:center">Хийсэн</th>' +
+    '<th style="text-align:center">Хэтэрсэн</th><th style="width:140px">Явц</th><th>Хамгийн их дутуу</th><th></th>' +
+    '</tr></thead><tbody>';
+  R.forEach(function (x) {
+    var p = x.total ? Math.round(x.done * 100 / x.total) : 0;
+    var top = x.people.filter(function (q) { return q.done < q.total; }).slice(0, 3)
+      .map(function (q) { return esc(q.e.name) + ' <span style="color:#94A3B8">' + (q.total - q.done) + '</span>'; }).join(', ');
+    H += '<tr><td style="font-weight:600">' + esc(x.dept) + '</td>' +
+      '<td style="text-align:center">' + x.total + '</td>' +
+      '<td style="text-align:center;font-weight:800;color:' + (p === 100 ? '#059669' : '#334155') + '">' + x.done + '</td>' +
+      '<td style="text-align:center;font-weight:800;color:' + (x.late ? '#DC2626' : '#94A3B8') + '">' + (x.late || '—') + '</td>' +
+      '<td><div style="height:7px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + p + '%;background:' + (p === 100 ? '#059669' : p >= 50 ? '#F59E0B' : '#DC2626') + '"></div></div></td>' +
+      '<td style="font-size:12px;color:#B91C1C">' + (top || '<span style="color:#059669">— бүгд хийсэн</span>') + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+      '<button class="btn btn-sm btn-secondary" data-mea-who="' + esc(x.dept) + '" title="Хэн юуг хийгээгүй"><i class="ti ti-users"></i></button> ' +
+      '<button class="btn btn-sm btn-secondary" data-mea-xl="' + esc(x.dept) + '"><i class="ti ti-file-spreadsheet"></i></button></td></tr>';
+  });
+  H += '</tbody></table></div></div>';
+  return H;
+}
+/* Албаны дэлгэрэнгүй — хэн юуг хийгээгүй */
+function meaWhoModal(dept) {
+  var x = (MEA_ADMIN && MEA_ADMIN.rows.filter(function (r) { return r.dept === dept; })[0]);
+  if (!x) return;
+  var body = x.people.map(function (q) {
+    var pend = q.total - q.done;
+    return '<div style="display:flex;align-items:center;gap:11px;padding:9px 12px;border-bottom:1px solid #F8FAFC;font-size:12.5px">' +
+      '<span style="flex:1;min-width:0"><b>' + esc(q.e.name) + '</b>' +
+      '<span style="color:#94A3B8"> · ' + esc(q.e.pos || q.e.role || '') + '</span></span>' +
+      '<span style="flex-shrink:0;color:' + (pend ? '#B45309' : '#059669') + ';font-weight:700">' +
+      q.done + ' / ' + q.total + '</span>' +
+      (q.late ? '<span style="flex-shrink:0;background:#FEE2E2;color:#B91C1C;border-radius:7px;padding:2px 7px;font-size:11px;font-weight:800">' +
+        q.late + ' хэтэрсэн</span>' : '') + '</div>';
+  }).join('') || '<div style="padding:14px;color:#94A3B8">Арга хэмжээ оногдсон хүн алга.</div>';
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:13px;color:#475569;margin-bottom:11px"><b>' + esc(dept) + '</b> — ' +
+    x.done + ' / ' + x.total + ' арга хэмжээ баримтжуулсан' + (x.late ? ', <b style="color:#B91C1C">' + x.late + ' нь хугацаа хэтэрсэн</b>' : '') + '.</div>' +
+    '<div style="max-height:380px;overflow:auto;border:1px solid #F1F5F9;border-radius:11px">' + body + '</div>');
+  buildModal('Хэн юуг хийгээгүй', node, { width: '560px' });
+}
+/* Excel — мөр бүр = нэг хүний нэг арга хэмжээ */
+async function meaExport(dept) {
+  toast('Бүрдүүлж байна…', 'info');
+  var depts = (dept === '*') ? ackDeptsWithDue() : [dept];
+  var aoa = [
+    ['МОНОС ХҮНС ХХК'],
+    ['ЭРСДЭЛИЙН АРГА ХЭМЖЭЭНИЙ БИЕЛЭЛТ'],
+    [(dept === '*' ? 'Бүх алба' : 'Алба: ' + dept) + '   ·   Хэвлэсэн: ' + ackDateMn(new Date().toISOString())],
+    [],
+    ['д/д', 'Алба', 'Овог нэр', 'Албан тушаал', 'Эрсдэл', 'Түвшин', 'Авах арга хэмжээ',
+     'Хугацаа', 'Төлөв', 'Хийсэн огноо', 'Тайлбар', 'Баримт']
+  ];
+  var k = 0;
+  for (var di = 0; di < depts.length; di++) {
+    var d = depts[di];
+    var store = await meaLoad(d, true);
+    ackDueEmps(d).forEach(function (e) {
+      (riskSeenBy(e).rows || []).forEach(function (r) {
+        if (!riskMeasureIsMine(r, e)) return;
+        var due = riskMeasureDue(r), left = meaDaysLeft(due), L = riskLevel(r);
+        riskMeasures(r).forEach(function (m) {
+          var rec = meaDone(store, r.id, m.i, e.uid);
+          aoa.push([++k, d, e.name || '', e.pos || e.role || '',
+            String(r.hazard || '').slice(0, 120), L.code, m.text,
+            due, rec ? 'Хийсэн' : ((left != null && left < 0) ? 'ХУГАЦАА ХЭТЭРСЭН' : 'Хүлээгдэж буй'),
+            rec ? ackDateMn(rec.at) : '', rec ? (rec.text || '') : '',
+            rec ? ((rec.files || []).map(function (f) { return f.url; }).join('  ')) : '']);
+        });
+      });
+    });
+  }
+  if (!k) aoa.push(['', '', '', '', 'Арга хэмжээ олдсонгүй', '', '', '', '', '', '', '']);
+  ackWriteBook([{ name: 'Арга хэмжээ', aoa: aoa,
+    cols: [{ wch: 6 }, { wch: 26 }, { wch: 22 }, { wch: 24 }, { wch: 40 }, { wch: 8 }, { wch: 52 },
+           { wch: 12 }, { wch: 18 }, { wch: 13 }, { wch: 40 }, { wch: 46 }] }],
+    'Арга-хэмжээний-биелэлт-' + (dept === '*' ? 'бүх-алба' : String(dept).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '')) +
+    '-' + _ymd(new Date()) + '.xlsx');
+}
+
 /* ══ АДМИН: МЕНЕЖЕР БҮРТ ХАРИУЦАХ ХЭСГИЙГ ОНООХ ══════════════════════ */
 async function ackSectionModal() {
   if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ тохируулна', 'error'); return; }
@@ -7805,8 +8058,9 @@ function riskMeasureDoModal(r, mi) {
     var out = [];
     try {
       for (var i = 0; i < fs.length; i++) {
+        btn.innerHTML = '<i class="ti ti-loader-2"></i> Баримт ' + (i + 1) + '/' + fs.length + ' бэлтгэж байна…';
+        var f = await meaShrinkImage(fs[i]);          // ⚡ зургийг багасгана
         btn.innerHTML = '<i class="ti ti-loader-2"></i> Баримт ' + (i + 1) + '/' + fs.length + ' илгээж байна…';
-        var f = fs[i];
         var safe = String(f.name || 'file').replace(/[^\w.\-]+/g, '_').slice(-60);
         var key = 'evidence/' + riskSlug(riskCanonDept(me.dept) || me.dept || 'x') + '/' +
           String(r.id).replace(/[^\w\-]/g, '') + '/' + me.uid + '-' + Date.now() + '-' + i + '-' + safe;
@@ -8288,7 +8542,7 @@ function renderHazards() {
     H += (!isAdmin() && !isDeptHead())
       ? riskEmpBriefHTML(list, myPos, myDept)
       : riskDashHTML(list, sub);
-    if (isAdmin() || isDeptHead()) H += ackAdminHTML() + riskAdminSectionsHTML(list);
+    if (isAdmin() || isDeptHead()) H += ackAdminHTML() + meaAdminHTML() + riskAdminSectionsHTML(list);
   }
   sec.innerHTML = H;
   riskWire(sec, renderHazards);
@@ -8315,6 +8569,21 @@ function renderHazards() {
       var xl = ev.target.closest('[data-ack-xl]');
       if (xl) { ackExportDept(xl.getAttribute('data-ack-xl')); return; }
       if (ev.target.closest('[data-ack-sec]')) { ackSectionModal(); return; }
+      var mw = ev.target.closest('[data-mea-who]');
+      if (mw) { meaWhoModal(mw.getAttribute('data-mea-who')); return; }
+      var mx = ev.target.closest('[data-mea-xl]');
+      if (mx) { meaExport(mx.getAttribute('data-mea-xl')); return; }
+      var ms = ev.target.closest('[data-mea-scan]');
+      if (ms) {
+        var mo = ms.innerHTML; ms.disabled = true;
+        meaAdminScan(function (i, n) { ms.innerHTML = '<i class="ti ti-loader-2"></i> ' + i + '/' + n; })
+          .then(function () { renderHazards(); })
+          .catch(function (e) {
+            ms.disabled = false; ms.innerHTML = mo;
+            toast('Шалгаж чадсангүй: ' + ((e && e.message) || e), 'error');
+          });
+        return;
+      }
       var rm = ev.target.closest('[data-ack-remind]');
       if (rm) { ackRemindModal(rm.getAttribute('data-ack-remind')); return; }
       var sc = ev.target.closest('[data-ack-scan]');
