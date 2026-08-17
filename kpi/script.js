@@ -5962,8 +5962,11 @@ function ackSubordinates(boss) {
    хариуцахыг систем таамаглаж чадахгүй — админ нэг удаа оноож өгнө.
    Оноогоогүй менежер нь албаныхаа бүхнийг хардаг (хуучин байдал).
    ══════════════════════════════════════════════════════════════════════ */
-var ACK_SEC_FILE = ACK_PREFIX + '_sections.json';
+/* ⚠ Түлхүүрийг ХАТУУ бичнэ — хувьсагчийн ачаалах дараалалаас хамаарвал
+   зарим үед «undefined» руу хандаж, хоосон гэж тогтоод үлддэг байв. */
+var ACK_SEC_FILE = 'ack/_sections.json';
 var ACK_SEC = null;              // { uid: 'Пет шугам' | '*' }
+var ACK_SEC_OK = false;          // амжилттай уншсан эсэх (хоосон ч байж болно)
 
 function riskSectionOf(r) {
   var parts = String((r && r.src) || '').split(/[\\/]/).filter(Boolean);
@@ -5980,16 +5983,21 @@ function riskSectionsOf(dept) {
   return Object.keys(m).sort();
 }
 async function ackSecLoad(force) {
-  if (ACK_SEC && !force) return ACK_SEC;
+  if (ACK_SEC_OK && !force) return ACK_SEC;
   try {
-    var j = await riskR2GetJson(ACK_SEC_FILE);
+    var j = await riskR2GetJson('ack/_sections.json');
     ACK_SEC = (j && j.map) ? j.map : {};
-  } catch (e) { ACK_SEC = ACK_SEC || {}; }
+    ACK_SEC_OK = true;                      // 404 бол ч «хоосон» гэж тогтоно
+  } catch (e) {
+    /* Сүлжээ/CORS алдаа — дараагийн удаа ДАХИН оролдоно (тогтоохгүй) */
+    ACK_SEC = ACK_SEC || {};
+    console.error('[ack] хэсгийн зураглал уншигдсангүй', e);
+  }
   return ACK_SEC;
 }
 async function ackSecSave(map) {
-  ACK_SEC = map || {};
-  return await riskR2PutJson(ACK_SEC_FILE, { updatedAt: new Date().toISOString(), map: ACK_SEC });
+  ACK_SEC = map || {}; ACK_SEC_OK = true;
+  return await riskR2PutJson('ack/_sections.json', { updatedAt: new Date().toISOString(), map: ACK_SEC });
 }
 /* Менежерийн хариуцах хэсэг ('' = бүх алба) */
 function ackSecOf(emp) {
@@ -6392,7 +6400,7 @@ async function ackRefreshMine(force) {
   /* ⚠ Эрсдлийн хуудас кэшээс хурдан зурагддаг тул энэ мөчид менежерийн
      хэсгийн зураглал хараахан ирээгүй байж болно. Ирээгүй бол ЭНД татна —
      эс бөгөөс менежерт албаны бүх ажилтан хамаарч байгаа мэт харагдана. */
-  try { if (!ACK_SEC) await ackSecLoad(true); } catch (e) { console.error('[ack] хэсэг', e); }
+  try { if (!ACK_SEC_OK) await ackSecLoad(true); } catch (e) { console.error('[ack] хэсэг', e); }
   var me = null; try { me = myEmp(); } catch (e) {}
   if (!me || !me.uid) { ACK_ME = { ready: true, none: true }; return ACK_ME; }
   var dept = riskCanonDept(me.dept) || me.dept || '';
