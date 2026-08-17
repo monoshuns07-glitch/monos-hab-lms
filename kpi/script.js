@@ -12594,6 +12594,61 @@ function meaMineStats(emp) {
   };
 }
 
+/* Ажилтны МӨРДӨХ ДҮРЭМ (зан үйлийн арга хэмжээ) — баримт шаардахгүй */
+function meaMyRules(emp) {
+  if (!emp) return [];
+  var out = [], seen = {};
+  (riskSeenBy(emp).rows || []).forEach(function (r) {
+    riskMeasures(r).forEach(function (m) {
+      if (m.role !== 'self') return;
+      var k = meaKeyOf(riskCanonDept(r.dept) || r.dept, m.text);
+      if (seen[k]) return;
+      seen[k] = 1;
+      out.push({ risk: r, text: m.text, lvl: riskLevel(r), score: riskScore(r) });
+    });
+  });
+  return out.sort(function (a, b) { return b.score - a.score; });
+}
+
+/* ══ АДМИН/ХАРИУЦАГЧИЙН «Арга хэмжээ» хуудас ══════════════════════════ */
+function renderMeasureAdminPage(sec) {
+  var scoped = isDeptHead() && SESSION && SESSION.dept ? SESSION.dept : '';
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Арга хэмжээний биелэлт</h1>' +
+    '<p class="page-subtitle">Эрсдэл бүрээс гарсан <b>хэрэгжүүлэх</b> арга хэмжээний гүйцэтгэл. ' +
+    'Зан үйлийн дүрэм нь гарын үсгээр баталгаажих тул энд орохгүй.' +
+    (scoped ? ' · ' + esc(scoped) : '') + '</p></div></div>' +
+    meaAdminHTML() +
+    '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+    '<div style="font-size:13px;font-weight:800;color:#334155;margin-bottom:4px">Хэрхэн ажилладаг</div>' +
+    '<div style="font-size:12.5px;color:#64748B;line-height:1.7">' +
+    '① Эрсдлийн «Авах арга хэмжээ» нүдийг үйл ажиллагаа бүрээр задалдаг<br>' +
+    '② Агуулгаас нь хамааруулж хариуцагчийг тодорхойлдог (ХАБЭА · ИТА · ХН · албаны дарга)<br>' +
+    '③ Хариуцагч зураг/файл хавсаргаж баримтжуулмагц <b>биелсэнд тооцно</b><br>' +
+    '④ «Хэн хяналт тавих» баганынхан <b>хянагч</b> — хангалтгүй бол буцаана<br>' +
+    '⑤ Буруу оногдсоныг эрсдлийн дэлгэрэнгүйгээс <b>👤 товчоор</b> зөв хүнд шилжүүлнэ</div></div>';
+
+  if (!sec._meaAdmWired) {
+    sec._meaAdmWired = true;
+    sec.addEventListener('click', function (ev) {
+      var mw = ev.target.closest('[data-mea-who]');
+      if (mw) { meaWhoModal(mw.getAttribute('data-mea-who')); return; }
+      var mx = ev.target.closest('[data-mea-xl]');
+      if (mx) { meaExport(mx.getAttribute('data-mea-xl')); return; }
+      var ms = ev.target.closest('[data-mea-scan]');
+      if (ms) {
+        var mo = ms.innerHTML; ms.disabled = true;
+        meaAdminScan(function (i, n) { ms.innerHTML = '<i class="ti ti-loader-2"></i> ' + i + '/' + n; })
+          .then(function () { renderTasks(); })
+          .catch(function (e) {
+            ms.disabled = false; ms.innerHTML = mo;
+            toast('Шалгаж чадсангүй: ' + ((e && e.message) || e), 'error');
+          });
+      }
+    });
+  }
+}
+
 /* Ажилтны «Арга хэмжээний биелэлт» хуудас */
 function renderMeasurePage(sec) {
   var me = null; try { me = myEmp(); } catch (e) {}
@@ -12644,8 +12699,36 @@ function renderMeasurePage(sec) {
       (x.rec ? '' : '<button class="btn btn-sm btn-primary" data-mea-open="' + esc(x.risk.id) + '|' + x.mi + '" style="flex-shrink:0">' +
         '<i class="ti ti-camera-plus"></i> Бүртгэх</button>') +
       '</div>';
-  }).join('') || '<div class="empty-state" style="padding:30px"><i class="ti ti-checkbox"></i>' +
-    '<div>Танд оногдсон арга хэмжээ алга байна</div></div>';
+  }).join('') || '<div class="empty-state" style="padding:26px"><i class="ti ti-checkbox"></i>' +
+    '<div>Танд хэрэгжүүлэх арга хэмжээ оногдоогүй байна</div>' +
+    '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px;line-height:1.6">' +
+    'Хашлага тавих, сургалт зохион байгуулах зэрэг ажлыг албаны хариуцагч, ХАБЭА, ' +
+    'инженер техникийн алба хариуцна. Танаас доорх <b>мөрдөх дүрмийг</b> хүлээж байна.</div></div>';
+
+  /* ── 📌 МӨРДӨХ ДҮРЭМ — баримт шаардахгүй, гарын үсгээр баталгаажна ── */
+  var rules = meaMyRules(me);
+  var rulesHTML = rules.length
+    ? '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
+      '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
+      '<div style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
+      rules.length + '</div></div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:11px;line-height:1.6">' +
+      'Эдгээрийг ажлын явцад <b>өөрөө байнга мөрдөнө</b>. Зураг хавсаргах шаардлагагүй — ' +
+      'эрсдэлтэй танилцаж <b>гарын үсэг зурснаараа</b> хүлээн зөвшөөрсөнд тооцогдоно.</div>' +
+      '<div class="emp-todo-grid">' +
+      rules.slice(0, 40).map(function (x) {
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #F1F5F9;' +
+          'border-radius:12px;background:#F8FAFC">' +
+          '<span style="flex-shrink:0;font-size:10.5px;font-weight:800;color:' + x.lvl.color +
+          ';background:' + x.lvl.bg + ';border-radius:6px;padding:2px 6px">' + x.lvl.code + '</span>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;line-height:1.5">' + esc(x.text) + '</span>' +
+          '</div>';
+      }).join('') + '</div>' +
+      (rules.length > 40 ? '<div style="font-size:12px;color:#94A3B8;margin-top:8px">+' + (rules.length - 40) +
+        ' дүрэм — эрсдэлийн үнэлгээ цэсээс бүрэн үзнэ үү</div>' : '') +
+      '</div>'
+    : '';
 
   sec.innerHTML =
     '<div class="page-header"><div><h1>Арга хэмжээний биелэлт</h1>' +
@@ -12668,7 +12751,20 @@ function renderMeasurePage(sec) {
     '<div style="flex:1;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
     '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669)"></div></div>' +
     '<div style="font-size:13px;font-weight:900;color:' + (pct === 100 ? '#059669' : '#64748B') + '">' + pct + '%</div></div>' +
-    rows + '</div>';
+    rows + '</div>' +
+    rulesHTML;
+
+  /* Цэсний тоолуур — хүлээгдэж буй ажил (хугацаа хэтэрсэн байвал улаанаар) */
+  try {
+    var bd = document.getElementById('taskBadge');
+    if (bd) {
+      var n = (st.total - st.done);
+      bd.textContent = n || '';
+      bd.style.display = n ? 'inline-block' : 'none';
+      bd.style.background = st.late ? '#DC2626' : '';
+      bd.title = st.late ? st.late + ' арга хэмжээ хугацаа хэтэрсэн' : '';
+    }
+  } catch (er) {}
 
   if (!sec._meaPageWired) {
     sec._meaPageWired = true;
@@ -12685,8 +12781,10 @@ function renderMeasurePage(sec) {
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;
   sec.style.padding = '';
-  /* ⭐ Ажилтанд даалгаврын жагсаалт биш — АРГА ХЭМЖЭЭНИЙ биелэлт */
+  /* ⭐ Хуучин даалгаврын жагсаалт биш — АРГА ХЭМЖЭЭНИЙ биелэлт.
+     Ажилтанд өөрийн ажил+дүрэм, админ/хариуцагчид бүх албаны хяналт. */
   if (isEmp()) { renderMeasurePage(sec); return; }
+  if (isAdmin() || isDeptHead()) { renderMeasureAdminPage(sec); return; }
   DB.tasks = DB.tasks || [];
   var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
   var me = emp ? myEmp() : null;
