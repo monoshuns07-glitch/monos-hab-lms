@@ -2,5 +2,11 @@
   "version": 2,
   "framework": null,
   "cleanUrls": false,
-  "trailingSlash": true
+  "trailingSlash": true,
+  "crons": [
+    {
+      "path": "/api/push-daily/",
+      "schedule": "0 2 * * *"
+    }
+  ]
 }

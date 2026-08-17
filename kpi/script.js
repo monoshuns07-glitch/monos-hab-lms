@@ -3395,6 +3395,9 @@ function renderEmployeeDashboard() {
     '<p class="page-subtitle" style="margin-top:4px">' + esc(e.dept || '') + (e.pos ? ' · ' + esc(e.pos) : '') +
     ' &nbsp;·&nbsp; <span style="color:#94A3B8">' + salLbl + '</span></p></div>' +
 
+    /* 🔔 Сануулга — сайт хаалттай байхад ч мартуулахгүйн тулд */
+    (function () { try { return pushCardHTML(); } catch (er) { return ''; } })() +
+
     /* ① Түвшин + нийт оноо.
        ⚠ Дата дутуу үед «Алтан түвшин» гэж магтвал ХУДАЛ. Ганцхан «Босго
        оноо» дататай бол бүх ажилтан автоматаар 100 болдог тул тэр оноо
@@ -3552,6 +3555,7 @@ function renderEmployeeDashboard() {
       if (st) switchPage(st.getAttribute('data-gopage'));
     });
   }
+  try { pushWireOnce(); pushSyncState(); } catch (er) {}
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -12734,6 +12738,7 @@ function renderMeasurePage(sec) {
     '<div class="page-header"><div><h1>Арга хэмжээний биелэлт</h1>' +
     '<p class="page-subtitle">Эрсдэл бүрээс гарсан арга хэмжээг нэг бүрчлэн гүйцэтгэж, ' +
     '<b>баримтаар</b> баталгаажуулна</p></div></div>' +
+    pushCardHTML() +
     (st.late
       ? '<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:14px;padding:14px 16px;margin-bottom:13px;' +
         'color:#B91C1C;font-size:13px;line-height:1.6"><b>⚠ Хугацаа хэтэрсэн ' + st.late + ' арга хэмжээ байна.</b><br>' +
@@ -12776,6 +12781,289 @@ function renderMeasurePage(sec) {
       if (r) riskMeasureDoModal(r, parseInt(p[1], 10));
     });
   }
+  try { pushWireOnce(); pushSyncState(); } catch (er) {}
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   🔔 PUSH САНУУЛГА — вэб сайт ХААЛТТАЙ байхад ч сануулна
+   ----------------------------------------------------------------------
+   Ажилтан «Сануулга авах» дараад л зөвшөөрөл өгнө (браузер шаарддаг).
+   Дараа нь:
+     • хөтөч тухайн төхөөрөмжийн бүртгэлийг (subscription) буцаана
+     • түүнийг R2 дээрх push/subs.json-д ӨӨРИЙН uid-аар хадгална
+     • мөн хугацаа хэтэрсэн/хүлээгдэж буй арга хэмжээний ТООГ хамт бичнэ
+     • өдөрт нэг удаа Vercel-ийн cron (/api/push-daily) тэр тоог хараад
+       зөвхөн ХИЙХ ЮМ БАЙГАА хүнд сануулга илгээнэ
+   ⚠ Файлд НЭР, И-МЭЙЛ хадгалахгүй — зөвхөн uid, тоо, төхөөрөмжийн хаяг.
+   ⚠ iPhone дээр эхлээд «Утсанд суулгах» хийсэн байх ёстой (Apple-ийн шаардлага).
+   ══════════════════════════════════════════════════════════════════════ */
+var PUSH_PUB = 'BCNLcjRpD6ljHwlqpTTNKoyO10b4Rr_ITWO1lY7Vr7G7r7e-jhg2lGYJkCIp-0nK1xMdALYMyQpEYXJl4OhGGeQ';
+var PUSH_SUBS_FILE = 'push/subs.json';
+var PUSH_LS = 'kpi_push_v1';
+
+function pushSupported() {
+  try {
+    return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+  } catch (e) { return false; }
+}
+function pushStandalone() {
+  try {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      navigator.standalone === true;
+  } catch (e) { return false; }
+}
+/* iPhone/iPad дээр Safari нь СУУЛГААГҮЙ вэб сайтад push огт зөвшөөрдөггүй */
+function pushNeedsInstall() {
+  var ua = navigator.userAgent || '';
+  return /iPad|iPhone|iPod/.test(ua) && !pushStandalone();
+}
+function pushPerm() { try { return Notification.permission; } catch (e) { return 'default'; } }
+function pushLocal() { try { return JSON.parse(localStorage.getItem(PUSH_LS) || '{}') || {}; } catch (e) { return {}; } }
+function pushLocalSet(o) { try { localStorage.setItem(PUSH_LS, JSON.stringify(o || {})); } catch (e) {} }
+
+function pushB64ToU8(s) {
+  var pad = new Array(((4 - s.length % 4) % 4) + 1).join('=');
+  var raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  var u = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+  return u;
+}
+
+/* Одоогийн сануулах шаардлага — арга хэмжээ + танилцалт */
+function pushStats() {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me || !me.uid) return null;
+  var st = { total: 0, done: 0, late: 0 };
+  try { st = meaMineStats(me); } catch (e) {}
+  var out = { uid: me.uid, late: st.late || 0, pending: Math.max(0, (st.total || 0) - (st.done || 0) - (st.late || 0)) };
+  /* Танилцалт — ACK_ME нь эрсдлийн хуудсанд ачаалагддаг тул байвал л авна */
+  try {
+    if (ACK_ME && ACK_ME.ready && !ACK_ME.none) {
+      out.ackDue = (!ACK_ME.row && ACK_ME.gate && ACK_ME.gate.ok) ? 1 : 0;
+    } else {
+      var prev = pushLocal();
+      if (prev.ackDue != null) out.ackDue = prev.ackDue;
+    }
+  } catch (e) {}
+  return out;
+}
+
+/* subs.json-ыг уншиж → өөрчлөөд → бичээд → ЭРГЭЖ ШАЛГАНА.
+   Хэд хэдэн хүн зэрэг бүртгүүлэхэд бичлэг алдагдахаас сэргийлнэ. */
+async function pushSubsMerge(mutate, verifyUid) {
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var cur = null;
+    try { cur = await riskR2GetJson(PUSH_SUBS_FILE); } catch (e) { cur = null; }
+    var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+    var next = mutate(list.slice());
+    if (next === null) return true;                     // өөрчлөх зүйлгүй
+    await riskR2PutJson(PUSH_SUBS_FILE, { updatedAt: new Date().toISOString(), list: next });
+    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 450)); });
+    var back = null;
+    try { back = await riskR2GetJson(PUSH_SUBS_FILE); } catch (e) {}
+    var rows = (back && Array.isArray(back.list)) ? back.list : [];
+    var found = rows.filter(function (x) { return x && x.uid === verifyUid; }).length > 0;
+    if (verifyUid === null || found) return true;        // хүссэн бичлэг байрандаа
+  }
+  return false;
+}
+
+/* Сануулга ЭХЛҮҮЛЭХ (ажилтан товч дарсны дараа) */
+async function pushEnable() {
+  if (!pushSupported()) throw new Error('Таны хөтөч сануулгыг дэмжихгүй байна');
+  if (pushNeedsInstall()) throw new Error('iPhone дээр сануулга авахын тулд эхлээд «Утсанд суулгах» товчоор нүүр дэлгэцэд нэмнэ үү');
+  var s = pushStats();
+  if (!s) throw new Error('Таны ажилтны бүртгэл олдсонгүй');
+
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    throw new Error(perm === 'denied'
+      ? 'Сануулга хориглогдсон байна. Хөтчийн хаягийн хажуух 🔒 дарж «Сануулга (Notifications)»-ыг Зөвшөөрөх болгоно уу'
+      : 'Зөвшөөрөл өгөгдсөнгүй');
+  }
+  var reg = await navigator.serviceWorker.ready;
+  var sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    /* Сервер түлхүүр солигдсон бол хуучин бүртгэл ажиллахгүй — шинэчилнэ */
+    var same = false;
+    try {
+      var cur = new Uint8Array(sub.options.applicationServerKey || []);
+      var want = pushB64ToU8(PUSH_PUB);
+      same = cur.length === want.length;
+      for (var i = 0; same && i < want.length; i++) if (cur[i] !== want[i]) same = false;
+    } catch (e) { same = false; }
+    if (!same) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
+  }
+  if (!sub) {
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true, applicationServerKey: pushB64ToU8(PUSH_PUB)
+    });
+  }
+  var j = sub.toJSON();
+  var rec = {
+    uid: s.uid, endpoint: j.endpoint, keys: j.keys,
+    late: s.late, pending: s.pending, ackDue: s.ackDue || 0,
+    at: new Date().toISOString()
+  };
+  var ok = await pushSubsMerge(function (list) {
+    return list.filter(function (x) {
+      return x && x.uid !== rec.uid && x.endpoint !== rec.endpoint;
+    }).concat([rec]);
+  }, rec.uid);
+  if (!ok) throw new Error('Бүртгэлийг хадгалж чадсангүй — дахин оролдоно уу');
+  pushLocalSet({ on: 1, uid: s.uid, ep: rec.endpoint, late: s.late, pending: s.pending,
+    ackDue: s.ackDue || 0, syncedAt: Date.now() });
+  return true;
+}
+
+/* Сануулга ХААХ */
+async function pushDisable() {
+  var loc = pushLocal();
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+  } catch (e) {}
+  var uid = loc.uid || (function () { try { return (myEmp() || {}).uid; } catch (e) { return ''; } })();
+  try {
+    await pushSubsMerge(function (list) {
+      return list.filter(function (x) { return x && x.uid !== uid; });
+    }, null);
+  } catch (e) {}
+  pushLocalSet({ on: 0 });
+  return true;
+}
+
+/* Тоо өөрчлөгдсөн бол R2 дээрх бичлэгээ шинэчилнэ (зөвхөн ӨӨРЧЛӨГДӨХӨД).
+   Мөн бичлэг ямар нэг шалтгаанаар алга болсон бол өөрөө нөхнө. */
+function pushSyncState() {
+  if (!pushSupported()) return;
+  var loc = pushLocal();
+  if (!loc.on || pushPerm() !== 'granted') return;
+  var s = pushStats();
+  if (!s || s.uid !== loc.uid) return;
+  var stale = !loc.syncedAt || (Date.now() - loc.syncedAt) > 3 * 24 * 3600 * 1000;
+  var changed = (s.late !== loc.late) || (s.pending !== loc.pending) || ((s.ackDue || 0) !== (loc.ackDue || 0));
+  if (!changed && !stale) return;
+  if (pushSyncState._busy) return;
+  pushSyncState._busy = true;
+  (async function () {
+    try {
+      var reg = await navigator.serviceWorker.ready;
+      var sub = await reg.pushManager.getSubscription();
+      if (!sub) { pushLocalSet({ on: 0 }); return; }      // хэрэглэгч хөтчөөс хаасан
+      var j = sub.toJSON();
+      var rec = { uid: s.uid, endpoint: j.endpoint, keys: j.keys,
+        late: s.late, pending: s.pending, ackDue: s.ackDue || 0, at: new Date().toISOString() };
+      await pushSubsMerge(function (list) {
+        var mine = list.filter(function (x) { return x && x.uid === rec.uid; })[0];
+        if (mine && !changed && mine.endpoint === rec.endpoint) return null;   // бүх зүйл байрандаа
+        return list.filter(function (x) {
+          return x && x.uid !== rec.uid && x.endpoint !== rec.endpoint;
+        }).concat([rec]);
+      }, rec.uid);
+      pushLocalSet({ on: 1, uid: s.uid, ep: rec.endpoint, late: s.late, pending: s.pending,
+        ackDue: s.ackDue || 0, syncedAt: Date.now() });
+    } catch (e) { console.warn('[push] sync', e && e.message); }
+    finally { pushSyncState._busy = false; }
+  })();
+}
+
+/* Туршилтын сануулга — сервер яг одоо надад л илгээнэ */
+async function pushTest() {
+  if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) throw new Error('Нэвтрээгүй байна');
+  var idToken = await fauth.currentUser.getIdToken();
+  var r = await fetch('/api/push-daily/', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken: idToken, test: 1 })
+  });
+  var j = null; try { j = await r.json(); } catch (e) {}
+  if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ('Сервер ' + r.status));
+  if (!j.sent) throw new Error(j.why || 'Илгээх бүртгэл олдсонгүй — «Сануулга авах»-ыг дахин дарна уу');
+  return j;
+}
+
+/* Нүүр хуудас / арга хэмжээний хуудсанд гарах карт */
+function pushCardHTML() {
+  if (!pushSupported()) return '';
+  var s = null; try { s = pushStats(); } catch (e) {}
+  if (!s) return '';
+  var loc = pushLocal(), perm = pushPerm();
+  var on = (perm === 'granted' && !!loc.on);
+  var need = (s.late || s.pending || s.ackDue) ? true : false;
+
+  if (on) {
+    return '<div id="pushCard" class="card" style="padding:13px 16px;margin-bottom:13px;display:flex;' +
+      'align-items:center;gap:12px;flex-wrap:wrap;border:1.5px solid #D1FAE5;background:#F0FDF4">' +
+      '<i class="ti ti-bell-check" style="font-size:22px;color:#059669;flex-shrink:0"></i>' +
+      '<div style="flex:1;min-width:190px;font-size:12.5px;color:#065F46;line-height:1.6">' +
+      '<b>Сануулга ажиллаж байна.</b> Сайт хаалттай байсан ч хугацаа хэтэрсэн арга хэмжээг ' +
+      'энэ төхөөрөмж дээр сануулна.</div>' +
+      '<button class="btn btn-sm btn-secondary" data-push-test="1" style="flex-shrink:0">' +
+      '<i class="ti ti-send"></i> Туршиж үзэх</button>' +
+      '<button class="btn btn-sm" data-push-off="1" style="flex-shrink:0;background:#fff;color:#64748B;border:1px solid #E2E8F0">' +
+      'Хаах</button></div>';
+  }
+  if (perm === 'denied') {
+    return '<div id="pushCard" class="card" style="padding:13px 16px;margin-bottom:13px;display:flex;' +
+      'align-items:center;gap:12px;flex-wrap:wrap;border:1.5px solid #FDE68A;background:#FFFBEB">' +
+      '<i class="ti ti-bell-off" style="font-size:22px;color:#B45309;flex-shrink:0"></i>' +
+      '<div style="flex:1;min-width:190px;font-size:12.5px;color:#92400E;line-height:1.6">' +
+      '<b>Сануулга хориглогдсон байна.</b> Хөтчийн хаягийн зүүн талын <b>🔒</b> дарж ' +
+      '«Сануулга (Notifications)»-ыг <b>Зөвшөөрөх</b> болгоод хуудсаа шинэчилнэ үү.</div></div>';
+  }
+  if (pushNeedsInstall()) {
+    return '<div id="pushCard" class="card" style="padding:13px 16px;margin-bottom:13px;display:flex;' +
+      'align-items:center;gap:12px;flex-wrap:wrap;border:1.5px solid #E2E8F0">' +
+      '<i class="ti ti-device-mobile" style="font-size:22px;color:#4F46E5;flex-shrink:0"></i>' +
+      '<div style="flex:1;min-width:190px;font-size:12.5px;color:#475569;line-height:1.6">' +
+      '<b>iPhone дээр сануулга авах бол</b> доод талын <b>Хуваалцах ⤴</b> → ' +
+      '<b>«Нүүр дэлгэцэд нэмэх»</b> хийж аппаа суулгаад дараа нь энэ хуудсыг аппаас нээнэ үү.</div></div>';
+  }
+  return '<div id="pushCard" class="card" style="padding:13px 16px;margin-bottom:13px;display:flex;' +
+    'align-items:center;gap:12px;flex-wrap:wrap;border:1.5px solid ' + (need ? '#FECACA' : '#E2E8F0') +
+    ';background:' + (need ? '#FEF2F2' : '#fff') + '">' +
+    '<i class="ti ti-bell-ringing" style="font-size:22px;color:' + (need ? '#DC2626' : '#4F46E5') + ';flex-shrink:0"></i>' +
+    '<div style="flex:1;min-width:190px;font-size:12.5px;color:' + (need ? '#B91C1C' : '#475569') + ';line-height:1.6">' +
+    (need
+      ? '<b>Мартахгүйн тулд сануулга авна уу.</b> Сайт хаалттай, утас халаасанд байсан ч ' +
+        'хугацаа нь дуусах гэж байгаа арга хэмжээг таньд сануулна.'
+      : '<b>Сануулга авах.</b> Шинэ арга хэмжээ оногдох, хугацаа нь дуусах гэж байвал ' +
+        'сайт хаалттай байсан ч танд мэдэгдэнэ.') +
+    '</div>' +
+    '<button class="btn btn-sm btn-primary" data-push-on="1" style="flex-shrink:0">' +
+    '<i class="ti ti-bell"></i> Сануулга авах</button></div>';
+}
+
+/* Картыг дахин зурна (хуудсыг бүхэлд шинэчлэхгүйгээр) */
+function pushCardRefresh() {
+  var el = document.getElementById('pushCard');
+  if (!el) return;
+  var h = pushCardHTML();
+  if (h) el.outerHTML = h; else el.remove();
+}
+
+function pushWireOnce() {
+  if (pushWireOnce._done) return;
+  pushWireOnce._done = true;
+  document.addEventListener('click', function (ev) {
+    var on = ev.target.closest && ev.target.closest('[data-push-on]');
+    var off = ev.target.closest && ev.target.closest('[data-push-off]');
+    var ts = ev.target.closest && ev.target.closest('[data-push-test]');
+    if (!on && !off && !ts) return;
+    var btn = on || off || ts, old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> ...';
+    var job = on ? pushEnable() : (off ? pushDisable() : pushTest());
+    job.then(function () {
+      if (on) toast('Сануулга ажиллаж эхэллээ ✓', 'success');
+      else if (off) toast('Сануулга хаагдлаа', 'info');
+      else toast('Туршилтын сануулга илгээгдлээ — хэдэн секундын дараа гарч ирнэ', 'success');
+      pushCardRefresh();
+    }).catch(function (e) {
+      btn.disabled = false; btn.innerHTML = old;
+      toast((e && e.message) || 'Алдаа гарлаа', 'error');
+    });
+  });
 }
 
 function renderTasks() {
