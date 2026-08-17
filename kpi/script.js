@@ -6389,6 +6389,10 @@ async function ackRefreshMine(force) {
       }
     }
   } catch (e) { console.error('[ack] ажилтан', e); }
+  /* ⚠ Эрсдлийн хуудас кэшээс хурдан зурагддаг тул энэ мөчид менежерийн
+     хэсгийн зураглал хараахан ирээгүй байж болно. Ирээгүй бол ЭНД татна —
+     эс бөгөөс менежерт албаны бүх ажилтан хамаарч байгаа мэт харагдана. */
+  try { if (!ACK_SEC) await ackSecLoad(true); } catch (e) { console.error('[ack] хэсэг', e); }
   var me = null; try { me = myEmp(); } catch (e) {}
   if (!me || !me.uid) { ACK_ME = { ready: true, none: true }; return ACK_ME; }
   var dept = riskCanonDept(me.dept) || me.dept || '';
@@ -6649,8 +6653,11 @@ function ackBannerHTML() {
       '<i class="ti ti-clock-hour-4" style="font-size:21px;color:#94A3B8"></i>' +
       '<div style="flex:1;min-width:200px"><b>Таны ээлж хараахан болоогүй байна.</b><br>' +
       '<span style="font-size:12px">' + esc(A.gate.why || '') + '. ' +
-      (A.role === 'lead' ? 'Ажилтнууд тань бүгд танилцсаны дараа танд нээгдэнэ.'
-                         : 'Албадын хариуцагч нар баталгаажуулсны дараа танд нээгдэнэ.') + '</span>' +
+      (A.role === 'mgr'
+        ? 'Хариуцах хэсгийн тань ажилтнууд бүгд танилцсаны дараа танд нээгдэнэ.'
+        : A.role === 'lead'
+          ? 'Албаны тань ажилтан, менежерүүд бүгд танилцсаны дараа танд нээгдэнэ.'
+          : 'Албадын хариуцагч нар баталгаажуулсны дараа танд нээгдэнэ.') + '</span>' +
       (A.gate.of ? '<div style="margin-top:7px;height:7px;background:#E2E8F0;border-radius:99px;overflow:hidden">' +
         '<div style="height:100%;width:' + pc + '%;background:#6366F1"></div></div>' +
         '<div style="font-size:11px;color:#94A3B8;margin-top:3px">' + (A.gate.n || 0) + ' / ' + A.gate.of + ' танилцсан</div>' : '') +
