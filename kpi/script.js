@@ -11951,9 +11951,135 @@ function taskBodyHTML(x) {
     '</div></div>';
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   «АРГА ХЭМЖЭЭНИЙ БИЕЛЭЛТ» ЦЭС
+   Эрсдэл болгоныг ухаж ороход хэцүү тул надад оногдсон БҮХ арга хэмжээг
+   нэг дор жагсаана: хугацаа хэтэрсэн нь эхэнд, дараа нь хугацаатай.
+   ══════════════════════════════════════════════════════════════════════ */
+function meaMineList(emp) {
+  if (!emp) return [];
+  var seen = riskSeenBy(emp).rows || [];
+  var store = MEA_VIEW.store;
+  var out = [];
+  seen.forEach(function (r) {
+    if (!riskMeasureIsMine(r, emp)) return;
+    var due = riskMeasureDue(r), left = meaDaysLeft(due);
+    riskMeasures(r).forEach(function (m) {
+      var rec = store ? meaDone(store, r.id, m.i, emp.uid) : null;
+      out.push({ risk: r, mi: m.i, text: m.text, due: due, left: left, rec: rec,
+        lvl: riskLevel(r), score: riskScore(r) });
+    });
+  });
+  out.sort(function (a, b) {
+    if (!!a.rec !== !!b.rec) return a.rec ? 1 : -1;          // хийгээгүй нь эхэнд
+    if (a.left !== b.left) return (a.left || 0) - (b.left || 0); // яаралтай нь эхэнд
+    return b.score - a.score;
+  });
+  return out;
+}
+function meaMineStats(emp) {
+  var l = meaMineList(emp);
+  return {
+    total: l.length,
+    done: l.filter(function (x) { return x.rec; }).length,
+    late: l.filter(function (x) { return !x.rec && x.left != null && x.left < 0; }).length,
+    soon: l.filter(function (x) { return !x.rec && x.left != null && x.left >= 0 && x.left <= 3; }).length
+  };
+}
+
+/* Ажилтны «Арга хэмжээний биелэлт» хуудас */
+function renderMeasurePage(sec) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) {
+    sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-user-question"></i>' +
+      '<div>Таны бүртгэл олдсонгүй.</div></div>';
+    return;
+  }
+  var dept = riskCanonDept(me.dept) || me.dept || '';
+  /* Бичлэгүүд ирээгүй бол татаад дахин зурна */
+  if (!MEA_VIEW.store || MEA_VIEW.dept !== dept) {
+    if (!renderMeasurePage._busy) {
+      renderMeasurePage._busy = true;
+      meaLoad(dept).then(function (st) {
+        MEA_VIEW.store = st; MEA_VIEW.dept = dept;
+        renderMeasurePage._busy = false;
+        renderTasks();
+      }).catch(function (e) { renderMeasurePage._busy = false; console.error('[measures]', e); });
+    }
+  }
+  var list = meaMineList(me), st = meaMineStats(me);
+  var pct = st.total ? Math.round(st.done * 100 / st.total) : 0;
+
+  var card = function (n, label, color) {
+    return '<div style="flex:1;min-width:110px;background:' + color + '0D;border:1.5px solid ' + color +
+      '2E;border-radius:14px;padding:12px 14px">' +
+      '<div style="font-size:26px;font-weight:900;color:' + color + ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + n + '</div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:' + color + ';margin-top:3px">' + label + '</div></div>';
+  };
+
+  var rows = list.map(function (x) {
+    var late = !x.rec && x.left != null && x.left < 0;
+    var tone = x.rec ? '#059669' : (late ? '#DC2626' : (x.left <= 3 ? '#D97706' : '#64748B'));
+    return '<div style="display:flex;gap:12px;align-items:flex-start;padding:13px;border:1px solid ' +
+      (late ? '#FECACA' : '#F1F5F9') + ';border-radius:13px;margin-bottom:9px;background:' +
+      (x.rec ? '#F8FAFC' : (late ? '#FEF2F2' : '#fff')) + '">' +
+      '<span style="flex:0 0 24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;' +
+      'font-size:12px;font-weight:900;color:#fff;background:' + (x.rec ? '#059669' : (late ? '#DC2626' : '#CBD5E1')) + '">' +
+      (x.rec ? '✓' : '!') + '</span>' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:block;font-size:13.5px;font-weight:600;color:#1E293B;line-height:1.5">' + esc(x.text) + '</span>' +
+      '<span style="display:block;font-size:11.5px;color:#94A3B8;margin-top:3px">' +
+      '<b style="color:' + x.lvl.color + '">' + x.lvl.code + '</b> · ' + esc(String(x.risk.hazard || '').slice(0, 70)) + '</span>' +
+      '<span style="display:block;font-size:11.5px;color:' + tone + ';margin-top:4px;font-weight:600">' +
+      (x.rec ? '✓ ' + ackDateMn(x.rec.at) + '-нд баримтжуулсан'
+             : (late ? '⚠ ' + Math.abs(x.left) + ' хоногоор хэтэрсэн (' + x.due + ')'
+                     : '⏳ ' + x.due + ' хүртэл · ' + x.left + ' хоног')) + '</span></span>' +
+      (x.rec ? '' : '<button class="btn btn-sm btn-primary" data-mea-open="' + esc(x.risk.id) + '|' + x.mi + '" style="flex-shrink:0">' +
+        '<i class="ti ti-camera-plus"></i> Бүртгэх</button>') +
+      '</div>';
+  }).join('') || '<div class="empty-state" style="padding:30px"><i class="ti ti-checkbox"></i>' +
+    '<div>Танд оногдсон арга хэмжээ алга байна</div></div>';
+
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Арга хэмжээний биелэлт</h1>' +
+    '<p class="page-subtitle">Эрсдэл бүрээс гарсан арга хэмжээг нэг бүрчлэн гүйцэтгэж, ' +
+    '<b>баримтаар</b> баталгаажуулна</p></div></div>' +
+    (st.late
+      ? '<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:14px;padding:14px 16px;margin-bottom:13px;' +
+        'color:#B91C1C;font-size:13px;line-height:1.6"><b>⚠ Хугацаа хэтэрсэн ' + st.late + ' арга хэмжээ байна.</b><br>' +
+        'Эдгээрийг гүйцэтгэж баримтаа хавсаргах хүртэл өдөр бүр энд сануулна.</div>'
+      : '') +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:13px">' +
+    card(st.total, 'нийт арга хэмжээ', '#4F46E5') +
+    card(st.done, 'баримтжуулсан', '#059669') +
+    card(st.total - st.done, 'хүлээгдэж буй', '#D97706') +
+    card(st.late, 'хугацаа хэтэрсэн', '#DC2626') +
+    '</div>' +
+    '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
+    '<div style="display:flex;align-items:center;gap:11px;margin-bottom:11px">' +
+    '<div style="font-size:13px;font-weight:800;color:#334155">Явц</div>' +
+    '<div style="flex:1;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+    '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669)"></div></div>' +
+    '<div style="font-size:13px;font-weight:900;color:' + (pct === 100 ? '#059669' : '#64748B') + '">' + pct + '%</div></div>' +
+    rows + '</div>';
+
+  if (!sec._meaPageWired) {
+    sec._meaPageWired = true;
+    sec.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-mea-open]');
+      if (!b) return;
+      var p = String(b.getAttribute('data-mea-open')).split('|');
+      var r = (DB.risks || []).filter(function (x) { return String(x.id) === p[0]; })[0];
+      if (r) riskMeasureDoModal(r, parseInt(p[1], 10));
+    });
+  }
+}
+
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;
   sec.style.padding = '';
+  /* ⭐ Ажилтанд даалгаврын жагсаалт биш — АРГА ХЭМЖЭЭНИЙ биелэлт */
+  if (isEmp()) { renderMeasurePage(sec); return; }
   DB.tasks = DB.tasks || [];
   var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
   var me = emp ? myEmp() : null;
