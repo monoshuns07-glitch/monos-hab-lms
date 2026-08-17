@@ -755,6 +755,7 @@ async function loadDB() {
     /* Менежерийн хариуцах хэсгийн зураглал (жижиг файл) */
     try { await ackSecLoad(true); } catch (e) {}
     /* Арга хэмжээний биелэлт — KPI, самбарт хэрэгтэй (алба бүрд жижиг файл) */
+    try { await meaOwnLoad(true); } catch (e) {}
     try { await meaLoadAll(true); } catch (e) { console.error('[measures] R2', e); }
   }
   /* DB бэлэн болмогц суулгах туслах */
@@ -6561,9 +6562,38 @@ function meaKeyOf(dept, text) {
     .replace(/[^а-яөүёa-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 90);
   return riskSlug(d) + '|' + riskSlug(t);
 }
+/* ── АДМИНЫ ГАРААР ОНООЛТ (түлхүүр → uid жагсаалт) ──
+   Түлхүүр үгээр ангилах нь 100% зөв байдаггүй тул админ дурын арга хэмжээг
+   өөр хүнд шилжүүлж болно. Энэ нь автомат ангиллаас ДАВАМГАЙЛНА. */
+var MEA_OWN_FILE = 'measures/_owners.json';
+var MEA_OWN = null, MEA_OWN_OK = false;
+async function meaOwnLoad(force) {
+  if (MEA_OWN_OK && !force) return MEA_OWN;
+  try {
+    var j = await riskR2GetJson('measures/_owners.json');
+    MEA_OWN = (j && j.map) ? j.map : {}; MEA_OWN_OK = true;
+  } catch (e) { MEA_OWN = MEA_OWN || {}; }
+  return MEA_OWN;
+}
+async function meaOwnSave(map) {
+  MEA_OWN = map || {}; MEA_OWN_OK = true;
+  return await riskR2PutJson('measures/_owners.json', { updatedAt: new Date().toISOString(), map: MEA_OWN });
+}
+function meaOwnOverride(key) {
+  var ids = MEA_OWN && MEA_OWN[key];
+  if (!ids || !ids.length) return null;
+  var out = (DB.employees || []).filter(function (e) { return ids.indexOf(e.uid) >= 0; });
+  return out.length ? out : null;
+}
+
 /* Хэрэгжүүлэх арга хэмжээг ХЭН хариуцах вэ */
-function meaOwnersOf(r, role) {
+function meaOwnersOf(r, role, mtext) {
   var d = riskCanonDept(r && r.dept) || (r && r.dept) || '';
+  /* 1) Админ гараар оноосон бол ТЭР давамгайлна */
+  if (mtext) {
+    var ov = meaOwnOverride(meaKeyOf(d, mtext));
+    if (ov) return ov;
+  }
   var out = [];
   if (role === 'hab') {
     out = (DB.employees || []).filter(function (e) {
@@ -6668,7 +6698,7 @@ function empMeasureStats(e) {
     var left = meaDaysLeft(riskMeasureDue(r));
     riskMeasures(r).forEach(function (m) {
       if (m.role === 'self') return;
-      var owners = meaOwnersOf(r, m.role);
+      var owners = meaOwnersOf(r, m.role, m.text);
       if (!owners.some(function (o) { return o.uid === e.uid; })) return;
       var key = meaKeyOf(dept, m.text);
       if (seenKey[key]) return;
@@ -6693,13 +6723,45 @@ function kpiMeasure(e) {
    ⭐ ТҮЛХҮҮРЭЭР хайна — албан дотор ижил арга хэмжээ олон эрсдэлд давтагдвал
    НЭГ л удаа хийгдэнэ (30 эрсдэлд «сургалт зохион байгуулах» = 1 ажил). */
 function meaDone(store, key, uid) {
+  var r = meaRec(store, key, uid);
+  /* Хянагч буцаасан бол ХИЙГДЭЭГҮЙ гэж үзнэ */
+  return (r && r.status !== 'returned') ? r : null;
+}
+/* Бичлэгийг төлвөөс үл хамааран олно (буцаагдсаныг ч харуулах хэрэгтэй) */
+function meaRec(store, key, uid) {
   var rows = (store && store.rows) || [];
   for (var i = 0; i < rows.length; i++) {
     if (rows[i].key !== key) continue;
-    if (!uid || rows[i].uid === uid) return rows[i];   // uid өгөөгүй бол ХЭН Ч хийсэн болно
+    if (!uid || rows[i].uid === uid) return rows[i];
   }
   return null;
 }
+/* Тухайн хүн энэ эрсдлийн ХЯНАГЧ мөн үү («Хэн хяналт тавих» багана) */
+function meaIsSupervisor(r, emp) {
+  if (!emp) return false;
+  var s = riskMeasureOwners(r);
+  return s.emps.some(function (o) { return o.uid === emp.uid; });
+}
+/* Хянагч гүйцэтгэлийг БУЦААНА (дахин хийлгэнэ) */
+async function meaReturn(dept, key, by, note) {
+  var d = riskCanonDept(dept) || dept || '';
+  for (var i = 0; i < 3; i++) {
+    var st = await meaLoad(d, true);
+    var row = meaRec(st, key);
+    if (!row) return { ok: false, error: 'Бичлэг олдсонгүй' };
+    row.status = 'returned';
+    row.returnedBy = (by && by.name) || '';
+    row.returnedAt = new Date().toISOString();
+    row.returnNote = String(note || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    st.updatedAt = row.returnedAt;
+    try { await meaSaveDept(d, st); } catch (e) { continue; }
+    var back = await meaLoad(d, true);
+    var b = meaRec(back, key);
+    if (b && b.status === 'returned') return { ok: true, rec: b };
+  }
+  return { ok: false, error: 'Хадгалж чадсангүй' };
+}
+function meaSaveDept(d, st) { return meaSave(d, st); }
 /* Бичлэг нэмэх (баримттай) — бичсэний дараа эргэж шалгана */
 async function meaAdd(emp, r, mi, text, files) {
   if (!emp || !emp.uid) return { ok: false, error: 'Ажилтны бүртгэл олдсонгүй' };
@@ -7468,7 +7530,7 @@ async function meaExport(dept) {
         var key = meaKeyOf(d, m.text);
         if (seen[key]) return;
         seen[key] = 1;
-        var owners = meaOwnersOf(r, m.role);
+        var owners = meaOwnersOf(r, m.role, m.text);
         var rec = meaDone(store, key);
         aoa.push([++k, d,
           owners.map(function (o) { return o.name; }).join(', ') || '—',
@@ -8098,9 +8160,11 @@ function riskMeasureBlockHTML(r) {
     var rows = work.map(function (m) {
       var key = meaKeyOf(dept, m.text);
       var rec = store ? meaDone(store, key) : null;
+      var raw = store ? meaRec(store, key) : null;      // буцаагдсан бичлэг ч энд
       if (rec) doneN++;
-      var owners = meaOwnersOf(r, m.role);
+      var owners = meaOwnersOf(r, m.role, m.text);
       var isMine = !!(me && owners.some(function (o) { return o.uid === me.uid; }));
+      var isSup = !!(me && meaIsSupervisor(r, me));
       var late = (!rec && left != null && left < 0);
       var bg = rec ? '#F0FDF4' : (late ? '#FEF2F2' : '#fff');
       var bd = rec ? '#BBF7D0' : (late ? '#FECACA' : '#E2E8F0');
@@ -8122,10 +8186,22 @@ function riskMeasureBlockHTML(r) {
           : '<span style="display:block;font-size:11.5px;color:' + (late ? '#DC2626' : '#64748B') + ';margin-top:4px">' +
             (late ? '⚠ Хугацаа ' + Math.abs(left) + ' хоногоор хэтэрсэн (' + due + ')'
                   : '⏳ ' + due + ' хүртэл · ' + left + ' хоног үлдсэн') + '</span>') +
+        (raw && raw.status === 'returned'
+          ? '<span style="display:block;font-size:11.5px;color:#B91C1C;margin-top:4px">↩ ' +
+            esc(raw.returnedBy || 'Хянагч') + ' буцаасан' + (raw.returnNote ? ': ' + esc(raw.returnNote.slice(0, 90)) : '') +
+            ' — дахин гүйцэтгэж баримтжуулна уу</span>' : '') +
         '</span>' +
         (isMine && !rec
           ? '<button class="btn btn-sm btn-primary" data-mea-do="' + esc(r.id) + '|' + m.i + '" style="flex-shrink:0">' +
             '<i class="ti ti-camera-plus"></i> Бүртгэх</button>'
+          : '') +
+        (isSup && rec
+          ? '<button class="btn btn-sm btn-secondary" data-mea-ret="' + esc(r.id) + '|' + m.i + '" style="flex-shrink:0" ' +
+            'title="Хангалтгүй бол буцааж дахин хийлгэнэ"><i class="ti ti-arrow-back-up"></i> Буцаах</button>'
+          : '') +
+        (isAdmin() || isDeptHead()
+          ? '<button class="btn btn-sm btn-secondary" data-mea-own="' + esc(r.id) + '|' + m.i + '" style="flex-shrink:0" ' +
+            'title="Хариуцагчийг солих"><i class="ti ti-user-cog"></i></button>'
           : '') +
         '</div></div>';
     }).join('');
@@ -8144,16 +8220,114 @@ function riskMeasureBlockHTML(r) {
   if (me && store) H += riskMeasureLogHTML(r, me, store);
   return H;
 }
-/* Дэлгэрэнгүй дэх «Бүртгэх» товчнуудыг холбоно */
+/* Дэлгэрэнгүй дэх товчнуудыг холбоно */
 function riskMeasureWire(host, r) {
   if (!host || host._meaWired) return;
   host._meaWired = true;
   host.addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-mea-do]');
-    if (!b) return;
-    var parts = String(b.getAttribute('data-mea-do')).split('|');
-    riskMeasureDoModal(r, parseInt(parts[1], 10));
+    if (b) { riskMeasureDoModal(r, parseInt(String(b.getAttribute('data-mea-do')).split('|')[1], 10)); return; }
+    var rt = ev.target.closest('[data-mea-ret]');
+    if (rt) { meaReturnModal(r, parseInt(String(rt.getAttribute('data-mea-ret')).split('|')[1], 10)); return; }
+    var ow = ev.target.closest('[data-mea-own]');
+    if (ow) { meaOwnerModal(r, parseInt(String(ow.getAttribute('data-mea-own')).split('|')[1], 10)); return; }
   });
+}
+
+/* ── ХЯНАГЧ: гүйцэтгэлийг буцаах ── */
+function meaReturnModal(r, mi) {
+  var m = riskMeasures(r)[mi]; if (!m) return;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var dept = riskCanonDept(r.dept) || r.dept || '';
+  var key = meaKeyOf(dept, m.text);
+  var rec = meaRec(MEA_VIEW.store, key);
+  var node = elc('div');
+  node.innerHTML =
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:#1E293B;line-height:1.55">' +
+    esc(m.text) + '</div>' +
+    (rec ? '<div style="font-size:12.5px;color:#64748B;margin-bottom:11px">' +
+      '<b>' + esc(rec.name || '') + '</b> · ' + ackDateMn(rec.at) +
+      (rec.text ? ' — ' + esc(rec.text) : '') + '</div>' : '') +
+    '<label style="font-size:12.5px;font-weight:700;color:#334155;display:block;margin-bottom:6px">' +
+    'Юуг дутуу гэж үзсэн бэ? (гүйцэтгэгчид харагдана)</label>' +
+    '<textarea id="mrNote" rows="3" placeholder="Жишээ: зураг нь тодорхойгүй байна, хийсэн ажлаа ойроос дахин авна уу." ' +
+    'style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;border-radius:11px;font-size:13px;font-family:inherit;line-height:1.55;resize:vertical"></textarea>' +
+    '<button class="btn btn-primary" id="mrGo" style="width:100%;margin-top:12px;background:#DC2626;border-color:#DC2626">' +
+    '<i class="ti ti-arrow-back-up"></i> Буцаах — дахин гүйцэтгүүлэх</button>' +
+    '<div id="mrSt" style="margin-top:9px;font-size:12.5px"></div>';
+  buildModal('Гүйцэтгэлийг буцаах', node, { width: '480px' });
+  node.querySelector('#mrGo').addEventListener('click', async function () {
+    var btn = this, old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+    var res = await meaReturn(dept, key, me, node.querySelector('#mrNote').value);
+    if (!res.ok) {
+      node.querySelector('#mrSt').innerHTML = '<span style="color:#B91C1C">⚠ ' + esc(res.error) + '</span>';
+      btn.disabled = false; btn.innerHTML = old; return;
+    }
+    MEA_VIEW.store = await meaLoad(dept, true);
+    closeModal(); toast('↩ Буцаагдлаа — гүйцэтгэгчид харагдана', 'success');
+    setTimeout(function () { riskOpenDetail(r.id); }, 200);
+  });
+}
+
+/* ── АДМИН: арга хэмжээний хариуцагчийг солих ── */
+function meaOwnerModal(r, mi) {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ солино', 'error'); return; }
+  var m = riskMeasures(r)[mi]; if (!m) return;
+  var dept = riskCanonDept(r.dept) || r.dept || '';
+  var key = meaKeyOf(dept, m.text);
+  var cur = meaOwnersOf(r, m.role, m.text).map(function (e) { return e.uid; });
+  /* Сонгох боломжтой хүмүүс: тухайн алба + ХАБЭА + ИТА + ЗХНА-гийн удирдлага */
+  var cand = (DB.employees || []).filter(function (e) {
+    if (riskSameDept(e.dept, dept)) return true;
+    var rl = ackRoleOf(e);
+    return (rl === 'lead' || rl === 'mgr') &&
+      /Хөдөлмөрийн аюулгүй|Инженер техник|Захиргаа/i.test(e.dept || '');
+  }).sort(function (a, b) {
+    var ra = ackRoleOf(a), rb = ackRoleOf(b);
+    var w = { lead: 0, mgr: 1, emp: 2, prod: 0, ceo: 0 };
+    return (w[ra] - w[rb]) || String(a.name || '').localeCompare(String(b.name || ''), 'mn');
+  });
+  var node = elc('div');
+  node.innerHTML =
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:#1E293B;line-height:1.55">' +
+    esc(m.text) + '</div>' +
+    '<div style="font-size:12px;color:#94A3B8;margin-bottom:9px;line-height:1.5">' +
+    'Автомат ангилал: <b>' + esc(ackRoleLabel(m.role === 'lead' ? 'lead' : m.role)) + '</b>. ' +
+    'Буруу бол зөв хүнийг сонгоно уу — энэ арга хэмжээ албан дотор хаана ч гарсан ижил хүнд оногдоно.</div>' +
+    '<div style="max-height:320px;overflow:auto;border:1px solid #F1F5F9;border-radius:11px">' +
+    cand.map(function (e) {
+      return '<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid #F8FAFC;cursor:pointer;font-size:12.5px">' +
+        '<input type="checkbox" class="moC" value="' + esc(e.uid) + '"' + (cur.indexOf(e.uid) >= 0 ? ' checked' : '') + '>' +
+        '<span style="flex:1"><b>' + esc(e.name || '') + '</b><span style="color:#94A3B8"> · ' +
+        esc(e.pos || e.role || '') + '</span></span>' +
+        '<span style="font-size:10.5px;color:#94A3B8">' + esc(ackRoleLabel(ackRoleOf(e))) + '</span></label>';
+    }).join('') + '</div>' +
+    '<button class="btn btn-primary" id="moGo" style="width:100%;margin-top:12px">' +
+    '<i class="ti ti-device-floppy"></i> Хадгалах</button>' +
+    '<button class="btn btn-secondary btn-sm" id="moReset" style="width:100%;margin-top:7px">' +
+    'Автомат ангилалд буцаах</button>' +
+    '<div id="moSt" style="margin-top:9px;font-size:12.5px"></div>';
+  buildModal('Хариуцагчийг солих', node, { width: '520px' });
+
+  var save = async function (ids) {
+    var st = node.querySelector('#moSt');
+    st.innerHTML = '<span style="color:#64748B">Хадгалж байна…</span>';
+    await meaOwnLoad(true);
+    var map = MEA_OWN || {};
+    if (ids && ids.length) map[key] = ids; else delete map[key];
+    try {
+      await meaOwnSave(map);
+      closeModal(); toast('✓ Хариуцагч шинэчлэгдлээ', 'success');
+      setTimeout(function () { riskOpenDetail(r.id); }, 200);
+    } catch (e) { st.innerHTML = '<span style="color:#B91C1C">⚠ ' + esc((e && e.message) || e) + '</span>'; }
+  };
+  node.querySelector('#moGo').addEventListener('click', function () {
+    var ids = Array.prototype.slice.call(node.querySelectorAll('.moC:checked')).map(function (c) { return c.value; });
+    if (!ids.length) { node.querySelector('#moSt').innerHTML = '<span style="color:#B91C1C">Хамгийн багадаа нэг хүн сонгоно уу</span>'; return; }
+    save(ids);
+  });
+  node.querySelector('#moReset').addEventListener('click', function () { save(null); });
 }
 
 /* Гүйцэтгэлээ бүртгэх — тайлбар + БАРИМТ (заавал) */
@@ -12390,7 +12564,7 @@ function meaMineList(emp) {
     var due = riskMeasureDue(r), left = meaDaysLeft(due);
     riskMeasures(r).forEach(function (m) {
       if (m.role === 'self') return;
-      var owners = meaOwnersOf(r, m.role);
+      var owners = meaOwnersOf(r, m.role, m.text);
       if (!owners.some(function (o) { return o.uid === emp.uid; })) return;
       var key = meaKeyOf(dept, m.text);
       if (seenKey[key]) return;
