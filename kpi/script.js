@@ -3132,6 +3132,20 @@ function habeaExamsHTML(e) {
 /* Эерэг ажилтны дашбоард — "би өсч байна", бусадтай харьцуулахгүй */
 function renderEmployeeDashboard() {
   var sec = pageEl('dashboard'); if (!sec) return;
+  /* ⭐ Арга хэмжээний биелэлт нүүр хуудсанд харагдах ёстой тул бичлэгүүд нь
+     ирээгүй бол ЭНД татаад дахин зурна (нэг удаа). */
+  try {
+    var _me0 = myEmp();
+    var _d0 = _me0 ? (riskCanonDept(_me0.dept) || _me0.dept) : '';
+    if (_d0 && !MEA_STORE[meaFileFor(_d0)] && !renderEmployeeDashboard._meaBusy) {
+      renderEmployeeDashboard._meaBusy = true;
+      meaLoad(_d0).then(function (st) {
+        MEA_VIEW.store = st; MEA_VIEW.dept = _d0;
+        renderEmployeeDashboard._meaBusy = false;
+        renderEmployeeDashboard();
+      }).catch(function () { renderEmployeeDashboard._meaBusy = false; });
+    }
+  } catch (er) {}
   var e = myEmployeeRecord();
   if (!e) { sec.innerHTML = '<div class="empty-state" style="padding:40px"><i class="ti ti-user-question"></i><div>Таны мэдээлэл олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.</div></div>'; return; }
   if (fbReady && (Date.now() - (renderEmployeeDashboard._lastRefresh || 0) > 8000)) {
@@ -3318,7 +3332,28 @@ function renderEmployeeDashboard() {
       gain: gainOf(_vidW, kpiVideo(e) || 0) });
   }
 
-  // 3) Даалгавар — гүйцэтгэлийн ҮНЭЛГЭЭГЭЭР тооцогдоно
+  /* 3) ⭐ АРГА ХЭМЖЭЭ — «хугацаанд нь хэрэгжүүлэх» гэсэн санаа НҮҮР ХУУДСАНД
+     харагдахгүй бол ажилтан мартана. Хугацаа хэтэрсэн нь хамгийн ДЭЭР гарна. */
+  var mst = { total: 0, done: 0, late: 0 };
+  try { mst = meaMineStats(e); } catch (er) {}
+  if (mst.late) {
+    todoList.unshift({ icon: 'ti-alarm', color: '#DC2626',
+      txt: mst.late + ' арга хэмжээ ХУГАЦАА ХЭТЭРСЭН',
+      sub: 'Яаралтай гүйцэтгээд зураг/файлаа хавсаргана уу', page: 'tasks',
+      gain: gainOf(_f(w.task), kpiMeasure(e) || 0) });
+  }
+  var _mPend = mst.total - mst.done - mst.late;
+  if (_mPend > 0) {
+    todoList.push({ icon: 'ti-checkbox', color: '#16A34A',
+      txt: _mPend + ' арга хэмжээ хүлээгдэж байна',
+      sub: 'Гүйцэтгээд баримтаа хавсаргавал биелсэнд тооцно', page: 'tasks',
+      gain: gainOf(_f(w.task), kpiMeasure(e) || 0) });
+  }
+  if (mst.total && mst.done >= mst.total) {
+    goodList.push({ icon: 'ti-checkbox', txt: 'Бүх арга хэмжээг баримтжуулсан (' + mst.done + '/' + mst.total + ')' });
+  }
+
+  // 3б) Хуучин даалгавар (үлдэгдэл байвал)
   if (tsk.total) {
     var _notDone = tsk.total - tsk.done - tsk.pending;
     if (tsk.pending) goodList.push({ icon: 'ti-send', txt: tsk.pending + ' даалгавар хянагдаж байна' });
