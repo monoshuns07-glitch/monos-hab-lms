@@ -752,6 +752,8 @@ async function loadDB() {
     } catch (e) { console.error('[tasks] R2', e); }
     /* Нэг удаагийн ажлын нээлтүүд (жижиг файл) */
     try { await riskReleasesLoad(); } catch (e) {}
+    /* Менежерийн хариуцах хэсгийн зураглал (жижиг файл) */
+    try { await ackSecLoad(true); } catch (e) {}
   }
   /* DB бэлэн болмогц суулгах туслах */
   var _applyR2 = function () {
@@ -5939,14 +5941,81 @@ function ackSubordinates(boss) {
   if (role !== 'mgr' && role !== 'lead') return [];
   var want = (role === 'mgr') ? ['emp'] : ['emp', 'mgr'];
   var unit = ackUnitOf(boss);
+  /* ⭐ Менежерт ЗӨВХӨН өөрийн хэсгийн (шугам/цех) ажилтнууд хамаарна */
+  var sec = (role === 'mgr') ? ackSecOf(boss) : '';
   return ackDueEmps(boss.dept).filter(function (e) {
     if (e.uid === boss.uid) return false;
     if (want.indexOf(ackRoleOf(e)) < 0) return false;
     /* ИТА нь хоёр хэсэгт хуваагддаг — өөрийн хэсгийнхээ хүмүүс */
     if (unit && ackUnitOf(e) !== unit) return false;
+    if (sec && !ackInSection(e, boss.dept, sec)) return false;
     return true;
   });
 }
+/* ══════════════════════════════════════════════════════════════════════
+   МЕНЕЖЕРИЙН ХАРИУЦАХ ХЭСЭГ (шугам / цех)
+   ----------------------------------------------------------------------
+   Эрсдлийн файл бүр эх фолдороо (src) хадгалдаг:
+     «ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД / ШХҮ 24 / Пет шугам / …xlsx»
+   Тэндээс ХЭСГИЙН нэр гарч ирнэ. Гэвч ажилтны бүртгэлд хэсгийн талбар
+   БАЙХГҮЙ (department, position л бий) тул аль менежер аль хэсгийг
+   хариуцахыг систем таамаглаж чадахгүй — админ нэг удаа оноож өгнө.
+   Оноогоогүй менежер нь албаныхаа бүхнийг хардаг (хуучин байдал).
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_SEC_FILE = ACK_PREFIX + '_sections.json';
+var ACK_SEC = null;              // { uid: 'Пет шугам' | '*' }
+
+function riskSectionOf(r) {
+  var parts = String((r && r.src) || '').split(/[\\/]/).filter(Boolean);
+  return parts.length >= 4 ? parts[2] : '';       // алба дараах хавтас
+}
+/* Тухайн албанд ямар хэсгүүд байна вэ (эрсдлийн датагаас) */
+function riskSectionsOf(dept) {
+  var m = {};
+  (DB.risks || []).forEach(function (r) {
+    if (!riskSameDept(r.dept, dept)) return;
+    var s = riskSectionOf(r);
+    if (s) m[s] = (m[s] || 0) + 1;
+  });
+  return Object.keys(m).sort();
+}
+async function ackSecLoad(force) {
+  if (ACK_SEC && !force) return ACK_SEC;
+  try {
+    var j = await riskR2GetJson(ACK_SEC_FILE);
+    ACK_SEC = (j && j.map) ? j.map : {};
+  } catch (e) { ACK_SEC = ACK_SEC || {}; }
+  return ACK_SEC;
+}
+async function ackSecSave(map) {
+  ACK_SEC = map || {};
+  return await riskR2PutJson(ACK_SEC_FILE, { updatedAt: new Date().toISOString(), map: ACK_SEC });
+}
+/* Менежерийн хариуцах хэсэг ('' = бүх алба) */
+function ackSecOf(emp) {
+  if (!emp || !emp.uid || !ACK_SEC) return '';
+  var v = ACK_SEC[emp.uid];
+  return (!v || v === '*') ? '' : String(v);
+}
+/* Тухайн хэсэгт ямар албан тушаалууд ажилладаг вэ (эрсдлийн датагаас) */
+function riskSectionPositions(dept, section) {
+  var out = {};
+  (DB.risks || []).forEach(function (r) {
+    if (!riskSameDept(r.dept, dept)) return;
+    if (riskSectionOf(r) !== section) return;
+    riskPositions(r).forEach(function (p) { if (p) out[p] = 1; });
+    if (r.position) out[r.position] = 1;
+  });
+  return Object.keys(out);
+}
+/* Ажилтан тухайн хэсэгт хамаарах уу — албан тушаалаар нь тааруулна */
+function ackInSection(emp, dept, section) {
+  if (!section) return true;
+  var mine = String((emp && (emp.pos || emp.role)) || '').trim();
+  if (!mine) return false;
+  return riskSectionPositions(dept, section).some(function (p) { return riskNameMatch(p, mine); });
+}
+
 /* Тухайн албаны (дэд хэсгийн) МЕНЕЖЕРҮҮД */
 function ackMgrsOf(dept, unit) {
   return ackDueEmps(dept).filter(function (e) {
@@ -6873,6 +6942,7 @@ function ackAdminHTML() {
       '<i class="ti ti-writing-sign" style="font-size:20px;color:#4F46E5"></i>' +
       '<div style="flex:1;min-width:200px"><b style="font-size:14px">Танилцсан байдал</b>' +
       '<div style="font-size:12px;color:#94A3B8">Хэн эрсдэлтэйгээ танилцаж гарын үсэг зурсныг албаар харна</div></div>' +
+      '<button class="btn btn-secondary btn-sm" data-ack-sec="1"><i class="ti ti-sitemap"></i> Менежерийн хэсэг</button> ' +
       '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Шалгах</button>' +
       '</div></div>';
   }
@@ -6887,6 +6957,7 @@ function ackAdminHTML() {
     '<div style="font-size:11.5px;color:#64748B;font-weight:700">' + dn + ' / ' + tot + ' танилцсан</div></div>' +
     '<div style="flex:1;min-width:160px;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
     '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669);border-radius:99px"></div></div>' +
+    '<button class="btn btn-secondary btn-sm" data-ack-sec="1"><i class="ti ti-sitemap"></i> Менежерийн хэсэг</button> ' +
     '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Дахин шалгах</button></div>' +
     '<div style="overflow-x:auto"><table class="table" style="min-width:640px"><thead><tr>' +
     '<th>Алба</th><th style="text-align:center">Ёстой</th><th style="text-align:center">Танилцсан</th>' +
@@ -6908,6 +6979,95 @@ function ackAdminHTML() {
   H += '</tbody></table></div></div>';
   return H;
 }
+/* ══ АДМИН: МЕНЕЖЕР БҮРТ ХАРИУЦАХ ХЭСГИЙГ ОНООХ ══════════════════════ */
+async function ackSectionModal() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ тохируулна', 'error'); return; }
+  await ackSecLoad(true);
+  var node = elc('div', 'modal-info', '<div id="secBody">Ачаалж байна…</div>');
+  buildModal('Менежерийн хариуцах хэсэг', node, { width: '640px' });
+
+  var draw = function () {
+    var depts = ackDeptsWithDue().filter(function (d) { return ackMgrsOf(d, '').length; });
+    var H = '<div style="font-size:12.5px;color:#64748B;line-height:1.6;margin-bottom:13px">' +
+      'Менежер бүр <b>зөвхөн хариуцах хэсгийнхээ</b> эрсдэл, ажилтныг харна. ' +
+      'Хэсгүүд нь эрсдлийн файлын хавтаснаас автоматаар гарч ирдэг. ' +
+      '<b>«Бүх алба»</b> гэвэл албаныхаа бүхнийг харна.</div>';
+    depts.forEach(function (d) {
+      var secs = riskSectionsOf(d);
+      var mgrs = ackMgrsOf(d, '');
+      /* ⚠ Эрсдлийн үнэлгээ нь хараахан ороогүй хэсэг (ж: Биб шугам) ч
+         сонголтод үлдэх ёстой — эс бөгөөс хадгалсан утга алга болно. */
+      mgrs.forEach(function (m) {
+        var v = ACK_SEC && ACK_SEC[m.uid];
+        if (v && v !== '*' && secs.indexOf(v) < 0) secs.push(v);
+      });
+      secs.sort();
+      H += '<div style="margin-bottom:15px">' +
+        '<div style="font-size:13px;font-weight:800;color:#1E293B;margin-bottom:2px">' + esc(d) + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:8px">' +
+        (secs.length ? secs.length + ' хэсэг: ' + esc(secs.join(' · ')) : 'Энэ албанд хэсэг бүртгэгдээгүй — бүгд албаараа харна') +
+        '</div>';
+      mgrs.forEach(function (m) {
+        var cur = (ACK_SEC && ACK_SEC[m.uid]) || '*';
+        H += '<div style="display:flex;align-items:center;gap:10px;padding:8px 11px;border:1px solid #F1F5F9;' +
+          'border-radius:11px;margin-bottom:6px;background:#fff">' +
+          '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#1E293B">' + esc(m.name || '') + '</div>' +
+          '<div style="font-size:11.5px;color:#94A3B8">' + esc(m.pos || m.role || '') + '</div></div>' +
+          '<select data-sec-uid="' + esc(m.uid) + '" style="flex-shrink:0;min-width:190px;padding:7px 10px;' +
+          'border:1.5px solid #E2E8F0;border-radius:9px;font-size:12.5px;font-family:inherit;background:#fff">' +
+          '<option value="*"' + (cur === '*' ? ' selected' : '') + '>Бүх алба</option>' +
+          secs.map(function (s) {
+            return '<option value="' + esc(s) + '"' + (cur === s ? ' selected' : '') + '>' + esc(s) +
+              (riskSectionsOf(d).indexOf(s) < 0 ? ' (эрсдэл ороогүй)' : '') + '</option>';
+          }).join('') +
+          '<option value="__new">＋ Шинэ хэсэг бичих…</option>' +
+          '</select></div>';
+      });
+      H += '</div>';
+    });
+    if (!depts.length) H += '<div style="color:#94A3B8;font-size:13px">Менежер бүхий алба олдсонгүй.</div>';
+    H += '<div style="display:flex;gap:9px;margin-top:6px">' +
+      '<button class="btn btn-primary" id="secSave"><i class="ti ti-device-floppy"></i> Хадгалах</button>' +
+      '<div id="secSt" style="align-self:center;font-size:12.5px;color:#64748B"></div></div>';
+    node.querySelector('#secBody').innerHTML = H;
+
+    /* «Шинэ хэсэг бичих» — датад ороогүй шугам/цехийг гараар нэмнэ */
+    Array.prototype.forEach.call(node.querySelectorAll('[data-sec-uid]'), function (sel) {
+      sel.addEventListener('change', function () {
+        if (sel.value !== '__new') return;
+        var name = window.prompt('Хэсгийн нэр (жишээ: Биб шугам):', '');
+        name = String(name || '').trim();
+        if (!name) { sel.value = '*'; return; }
+        var op = document.createElement('option');
+        op.value = name; op.textContent = name + ' (эрсдэл ороогүй)';
+        sel.insertBefore(op, sel.options[sel.options.length - 1]);
+        sel.value = name;
+      });
+    });
+
+    node.querySelector('#secSave').addEventListener('click', async function () {
+      var btn = this, old = btn.innerHTML;
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+      var map = {};
+      Array.prototype.forEach.call(node.querySelectorAll('[data-sec-uid]'), function (sel) {
+        var v = String(sel.value || '*');
+        if (v && v !== '*') map[sel.getAttribute('data-sec-uid')] = v;
+      });
+      try {
+        await ackSecSave(map);
+        node.querySelector('#secSt').innerHTML = '<span style="color:#059669">✓ Хадгалагдлаа</span>';
+        toast('✓ Менежерийн хэсэг хадгалагдлаа', 'success');
+        ACK_ME = null;
+        renderHazards();
+      } catch (e) {
+        node.querySelector('#secSt').innerHTML = '<span style="color:#B91C1C">⚠ ' + esc((e && e.message) || e) + '</span>';
+      }
+      btn.disabled = false; btn.innerHTML = old;
+    });
+  };
+  draw();
+}
+
 function ackRemindModal(dept) {
   var x = (ACK_ADMIN && ACK_ADMIN.rows.filter(function (r) { return r.dept === dept; })[0]);
   if (!x) return;
@@ -7019,14 +7179,18 @@ function riskSeenBy(emp) {
      «таны ажлын байрны үнэлгээ хараахан хийгдээгүй, албанд ийм эрсдэл бий»
      гэсэн утгаар. Хоосон дэлгэцээс хамаагүй хэрэгтэй. */
   if (emp.dept) {
+    /* ⭐ Менежерт хэсэг (шугам/цех) оноосон бол ЗӨВХӨН тэр хэсгийнх */
+    var sec = '';
+    try { if (ackRoleOf(emp) === 'mgr') sec = ackSecOf(emp); } catch (e) {}
     var deptAll = all.filter(function (r) {
       if (r.dept && !riskSameDept(r.dept, emp.dept)) return false;
       /* Нэг удаагийн ажил (автокран, өндөрт гагнуур) нээгдээгүй бол
          албаны жагсаалтад ч харагдахгүй — зөвхөн нээлгэсэн хүнд. */
       if (r.onDemand && !riskIsReleasedTo(r, emp)) return false;
+      if (sec && riskSectionOf(r) !== sec) return false;
       return true;
     });
-    if (deptAll.length) return { rows: deptAll, scope: 'dept' };
+    if (deptAll.length) return { rows: deptAll, scope: sec ? 'section' : 'dept' };
   }
   return { rows: [], scope: 'none' };
 }
@@ -7836,6 +8000,7 @@ function renderHazards() {
       if (ev.target.closest('[data-ack-dl]')) { ackExportMine(); return; }
       var xl = ev.target.closest('[data-ack-xl]');
       if (xl) { ackExportDept(xl.getAttribute('data-ack-xl')); return; }
+      if (ev.target.closest('[data-ack-sec]')) { ackSectionModal(); return; }
       var rm = ev.target.closest('[data-ack-remind]');
       if (rm) { ackRemindModal(rm.getAttribute('data-ack-remind')); return; }
       var sc = ev.target.closest('[data-ack-scan]');
