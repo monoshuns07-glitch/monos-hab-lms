@@ -8380,11 +8380,15 @@ function riskDetailHTML(r) {
       '</div>';
   }
 
-  /* ── Юу хийх ёстой ── */
-  var s3 = riskFactBox('👤', 'Хэн хяналт тавих', r.responsible) +
+  /* ── Юу хийх ёстой ──
+     ⚠ Эх файлын «Авах арга хэмжээ» бичвэрийг ХЭВЭЭР үлдээнэ. Задарсан
+     хэлбэрийг нь түүний АРД талд нэмнэ (нэг нь эх сурвалж, нөгөө нь
+     гүйцэтгэлийн жагсаалт). */
+  var s3 = riskFactBox('🛡️', 'Урьдчилан сэргийлэхийн тулд авах арга хэмжээ', r.actions, '#0F172A') +
+    riskFactBox('👤', 'Хэн хяналт тавих', r.responsible) +
     riskFactBox('📅', 'Хэзээ', r.due);
-  if (s3 || r.actions) H += riskSectionHead('ЮУ ХИЙЖ УРЬДЧИЛАН СЭРГИЙЛЭХ ВЭ') + s3;
-  /* ⭐ Арга хэмжээг НЭГ БҮРЧЛЭН — гүйцэтгэл, хугацаа, баримттай нь */
+  if (s3) H += riskSectionHead('ЮУ ХИЙЖ УРЬДЧИЛАН СЭРГИЙЛЭХ ВЭ') + s3;
+  /* ⭐ Дээрх арга хэмжээг НЭГ БҮРЧЛЭН — хугацаа, гүйцэтгэл, баримттай нь */
   H += riskMeasureBlockHTML(r);
 
   /* ── Арга хэмжээний дараах үлдэгдэл эрсдэл ── */
@@ -8500,7 +8504,9 @@ function renderHazards() {
       ? '<div class="page-actions">' +
         '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button>' +
         '<button class="btn btn-secondary" data-risk-rel="1" title="Автокран, өндөрт гагнуур зэрэг нэг удаагийн ажлын эрсдлийг ажилтанд нээнэ"><i class="ti ti-lock-open"></i> Ажилбар нээх</button>' +
-        '<button class="btn btn-secondary" data-risk-assign="1"><i class="ti ti-user-check"></i> Арга хэмжээ хувиарлах</button>' +
+        /* ⚠ «Арга хэмжээ хувиарлах» нь Даалгавар цэс рүү даалгавар үүсгэдэг
+           байсан — одоо арга хэмжээ нь эрсдлийн дэлгэрэнгүй дотроо
+           гүйцэтгэгддэг тул энэ товч хэрэггүй боллоо. */
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
         '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
