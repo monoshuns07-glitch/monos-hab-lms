@@ -5889,7 +5889,10 @@ function ackUnitOf(emp) {
   if (/механик|автоматик|ээлжийн|машинист|оператор/.test(p)) return 'Тоног төхөөрөмж';
   return 'Тоног төхөөрөмж';        // тодорхойгүй бол том хэсэгт
 }
-/* Хүний ШАТЫГ тогтооно: ceo / prod / lead / emp */
+/* Хүний ШАТЫГ тогтооно: ceo / prod / lead / mgr / emp
+   ⚠ Дараалал чухал: захирал → хариуцагч → менежер → ажилтан.
+   «Хүний нөөцийн ахлах менежер» гэх мэт хүн эхлээд ХАРИУЦАГЧ гэж
+   таарах ёстой, тэгэхгүй бол менежер болж доошилно. */
 function ackRoleOf(emp) {
   if (!emp) return 'emp';
   var p = String(emp.pos || emp.role || '');
@@ -5900,6 +5903,7 @@ function ackRoleOf(emp) {
     var L = ACK_LEADS[j];
     if (L.pos.test(p) && riskSameDept(L.dept, emp.dept)) return 'lead';
   }
+  if (/менежер/i.test(p)) return 'mgr';
   return 'emp';
 }
 /* Тухайн албанд (болон дэд хэсэгт) хариуцагч хэн бэ */
@@ -5926,14 +5930,27 @@ function ackDirector(key) {
   }
   return null;
 }
-/* Тухайн хариуцагчийн ХАРИУЦАХ ажилтнууд (эрсдэл харагддаг, энгийн ажилтан) */
-function ackSubordinates(lead) {
-  if (!lead) return [];
-  var unit = ackUnitOf(lead);
-  return ackDueEmps(lead.dept).filter(function (e) {
-    if (e.uid === lead.uid) return false;
-    if (ackRoleOf(e) !== 'emp') return false;
-    /* ИТА нь хоёр хэсэгт хуваагддаг — өөрийн хэсгийнхээ ажилтнууд */
+/* Тухайн хүн ХЭНИЙГ хүлээх ёстой вэ (өөрөөсөө доод шатныхан).
+   · менежер   → албаныхаа энгийн ажилтнууд
+   · хариуцагч → албаныхаа ажилтан БА менежерүүд */
+function ackSubordinates(boss) {
+  if (!boss) return [];
+  var role = ackRoleOf(boss);
+  if (role !== 'mgr' && role !== 'lead') return [];
+  var want = (role === 'mgr') ? ['emp'] : ['emp', 'mgr'];
+  var unit = ackUnitOf(boss);
+  return ackDueEmps(boss.dept).filter(function (e) {
+    if (e.uid === boss.uid) return false;
+    if (want.indexOf(ackRoleOf(e)) < 0) return false;
+    /* ИТА нь хоёр хэсэгт хуваагддаг — өөрийн хэсгийнхээ хүмүүс */
+    if (unit && ackUnitOf(e) !== unit) return false;
+    return true;
+  });
+}
+/* Тухайн албаны (дэд хэсгийн) МЕНЕЖЕРҮҮД */
+function ackMgrsOf(dept, unit) {
+  return ackDueEmps(dept).filter(function (e) {
+    if (ackRoleOf(e) !== 'mgr') return false;
     if (unit && ackUnitOf(e) !== unit) return false;
     return true;
   });
@@ -5971,9 +5988,9 @@ function ackLeadsAll() {
   });
   return out;
 }
-/* ⭐ ДАРААЛАЛ: ажилтан → хариуцагч → Үйлдвэрлэлийн захирал → Гүйцэтгэх захирал
-   Ажилтан хүлээхгүй. Хариуцагч нь ажилтнуудаа бүрэн танилцсаны дараа зурна.
-   Захирлууд нь бүх хариуцагч зурсны дараа. */
+/* ⭐ ДАРААЛАЛ: ажилтан → МЕНЕЖЕР → хариуцагч → Үйлдвэрлэлийн захирал → ГЗ
+   Ажилтан хүлээхгүй. Менежер нь албаныхаа ажилтнуудыг, хариуцагч нь ажилтан
+   БА менежерүүдийг, захирлууд нь бүх хариуцагчийг хүлээнэ. */
 function ackCanSign(emp, signed) {
   var role = ackRoleOf(emp);
   var has = function (uid) { return !!(uid && signed && signed[uid]); };
@@ -5989,12 +6006,13 @@ function ackCanSign(emp, signed) {
   };
   if (role === 'emp') return { ok: true };            // ажилтан ЭХЛЭЭД зурна
 
-  if (role === 'lead') {
+  if (role === 'mgr' || role === 'lead') {
     var subs = ackSubordinates(emp);
     var miss = subs.filter(function (e) { return !has(e.uid); });
     if (miss.length) {
+      var what = (role === 'mgr') ? 'ажилтан' : 'ажилтан/менежер';
       return { ok: false, n: subs.length - miss.length, of: subs.length, miss: miss,
-        why: 'Танай хариуцах ' + miss.length + ' ажилтан хараахан танилцаагүй байна (' + names(miss) + ')' };
+        why: 'Танай хариуцах ' + miss.length + ' ' + what + ' хараахан танилцаагүй байна (' + names(miss) + ')' };
     }
     return { ok: true, n: subs.length, of: subs.length };
   }
@@ -6018,10 +6036,16 @@ function ackCanSign(emp, signed) {
 /* Нэг ажилтны баримтад ЯМАР гарын үсгүүд байх ёстой вэ (ЗУРАХ дарааллаараа:
    ажилтан → хариуцагч → Үйлдвэрлэлийн захирал → Гүйцэтгэх захирал) */
 function ackChainFor(emp) {
-  var out = [];
-  if (emp) out.push({ role: ackRoleOf(emp) === 'emp' ? 'emp' : ackRoleOf(emp), emp: emp });
+  var out = [], myRole = ackRoleOf(emp);
+  if (emp) out.push({ role: myRole, emp: emp });
+  /* Ажилтны баримт дээр албаныхаа МЕНЕЖЕРҮҮД гарын үсэг зурна */
+  if (myRole === 'emp') {
+    ackMgrsOf(emp && emp.dept, ackUnitOf(emp)).forEach(function (m) {
+      if (!emp || m.uid !== emp.uid) out.push({ role: 'mgr', emp: m });
+    });
+  }
   var lead = ackLeadFor(emp && emp.dept, ackUnitOf(emp));
-  if (lead && (!emp || lead.uid !== emp.uid)) out.push({ role: 'lead', emp: lead });
+  if (lead && !out.some(function (x) { return x.emp.uid === lead.uid; })) out.push({ role: 'lead', emp: lead });
   var prod = ackDirector('prod');
   if (prod && !out.some(function (x) { return x.emp.uid === prod.uid; })) out.push({ role: 'prod', emp: prod });
   var ceo = ackDirector('ceo');
@@ -6325,7 +6349,8 @@ function ackChainRows(emp, deptStore, topStore) {
 function ackRoleLabel(role) {
   return role === 'ceo' ? 'Гүйцэтгэх захирал'
     : role === 'prod' ? 'Үйлдвэрлэл хариуцсан захирал'
-    : role === 'lead' ? 'Хариуцагч удирдлага' : 'Ажилтан';
+    : role === 'lead' ? 'Хариуцагч удирдлага'
+    : role === 'mgr' ? 'Менежер' : 'Ажилтан';
 }
 function ackDateMn(iso) {
   if (!iso) return '';
@@ -6779,10 +6804,15 @@ async function ackExportDept(dept) {
     var ver = ackVersionOf(dept);
     var store = await ackLoad(dept, true), top = await ackTop(true);
     var lead = ackLeadFor(dept, '');
-    /* ⭐ Дараалал: ажилтнууд ЭХЭНД, дараа нь хариуцагч, эцэст нь захирлууд */
+    /* ⭐ Дараалал: ажилтнууд → МЕНЕЖЕРҮҮД → хариуцагч → захирлууд */
     var tail = [];
     var units = {};
     ackDueEmps(dept).forEach(function (e) { units[ackUnitOf(e) || ''] = 1; });
+    Object.keys(units).forEach(function (u) {
+      ackMgrsOf(dept, u).forEach(function (m) {
+        if (!tail.some(function (x) { return x.emp.uid === m.uid; })) tail.push({ emp: m, row: ackSignedRow(store, m.uid, ver) });
+      });
+    });
     Object.keys(units).forEach(function (u) {
       var L = ackLeadFor(dept, u) || lead;
       if (L && !tail.some(function (x) { return x.emp.uid === L.uid; })) tail.push({ emp: L, row: ackLatestRow(store, L.uid) });
