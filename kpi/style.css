@@ -2466,3 +2466,31 @@ body.modal-open #hazardFab { display: none; }
   .sidebar { box-shadow: 0 0 0 100vmax rgba(15,17,40,0); transition: transform .22s ease, box-shadow .22s ease; }
   .sidebar.open { box-shadow: 0 0 0 100vmax rgba(15,17,40,.45); }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   ЭРСДЭЛИЙН ДЭЛГЭРЭНГҮЙ — 2 БАГАНА
+   Зүүн = «юу вэ, яагаад», баруун = «юу хийх». Өмнө нь бүгд нэг нарийн
+   баганаар цуврааад 1,546px (2.1 дэлгэц) болдог байв.
+   ══════════════════════════════════════════════════════════════════ */
+.risk-det-cols {
+  display: grid;
+  grid-template-columns: 1fr 1.12fr;
+  gap: 0 16px;
+  align-items: start;
+}
+.risk-det-cols > div { min-width: 0; }
+@media (max-width: 900px) {
+  .risk-det-cols { grid-template-columns: 1fr; gap: 0; }
+}
+/* Нугалаасын гоёл — сум эргэж, стандарт гурвалжныг нуана */
+details > summary::-webkit-details-marker { display: none; }
+details > summary::marker { content: ''; }
+details[open] > summary .ti-chevron-right { transform: rotate(90deg); }
+details > summary .ti-chevron-right { transition: transform .15s; }
+
+/* ══ НЯГТ ХҮСНЭГТ — нэг эрсдэл = нэг мөр ══ */
+.rk-line:last-child { border-bottom: none !important; }
+.rk-line:hover { background: #F8FAFC; }
+@media (max-width: 760px) {
+  .rk-hide-sm { display: none !important; }
+}
