@@ -14399,6 +14399,82 @@ function reqRowHTML(r, showWho) {
     '</div>';
 }
 
+/* ══ АВАХ ШААРДЛАГАТАЙ ХХХ — эрсдэлийн үнэлгээнээс шууд ══
+   Хүсэлтийн таб урьд нь ЗӨВХӨН гаргасан хүсэлтийг харуулдаг байсан тул
+   шинэ хэрэглэгчид хоосон харагддаг байв. Одоо «юу авах ёстой»-г
+   эрсдэлийн үнэлгээнээс өөрөө цуглуулж, нэг товчоор хүсэлт болгоно. */
+function reqNeededPPE() {
+  var rows = [];
+  try {
+    if (isAdmin() || isDeptHead() || riskDirScope()) rows = risksForView();
+    else { var me = myEmp(); rows = me ? (riskSeenBy(me).rows || []) : []; }
+  } catch (e) { rows = []; }
+  var seen = {}, out = [];
+  rows.forEach(function (r) {
+    var dept = riskCanonDept(r.dept) || r.dept || '';
+    var lst = [];
+    try { lst = riskPPEList(r); } catch (e) { return; }
+    lst.forEach(function (x) {
+      if (!x.buy) return;                       // зөвхөн ХУДАЛДАН АВАХ шинжтэй
+      var k = meaKeyOf(dept, x.text);
+      if (seen[k]) { seen[k].n++; if (r.position && seen[k].pos.indexOf(r.position) < 0) seen[k].pos.push(r.position); return; }
+      seen[k] = { key: k, text: x.text, kinds: x.kinds, dept: dept, risk: r, mi: x.i, n: 1,
+        pos: r.position ? [r.position] : [], lvl: riskLevel(r), score: riskScore(r) };
+      out.push(seen[k]);
+    });
+  });
+  return out.sort(function (a, b) { return b.score - a.score; });
+}
+
+function reqNeedHTML() {
+  var need = reqNeededPPE();
+  if (!need.length) return '';
+  var canReq = false;
+  try { canReq = reqCanCreate(); } catch (e) {}
+  var doneN = 0;
+  var rowsH = need.slice(0, 60).map(function (x) {
+    var ex = null;
+    try { ex = riskReqForMeasure(x.risk, x.text); } catch (e) {}
+    if (ex) doneN++;
+    var S = ex ? (REQ_ST[ex.status] || REQ_ST.running) : null;
+    return '<div style="display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border:1px solid ' +
+      (ex ? '#D1FAE5' : '#FDE68A') + ';border-radius:11px;margin-bottom:8px;background:' +
+      (ex ? '#F0FDF4' : '#FFFBEB') + '">' +
+      '<span style="flex:0 0 auto;font-size:16px;line-height:1.3">' + (ex ? '✅' : '🛒') + '</span>' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:block;font-size:13px;color:#1E293B;line-height:1.55">' + esc(x.text) + '</span>' +
+      '<span style="display:block;font-size:11px;color:#94A3B8;margin-top:4px">' +
+      x.kinds.map(function (k) {
+        return '<span style="display:inline-block;background:#EEF2FF;color:#4338CA;border-radius:5px;' +
+          'padding:1px 7px;margin-right:4px;font-weight:700">' + esc(k) + '</span>';
+      }).join('') +
+      '<span style="color:#B6BECC">' + esc(x.dept) +
+      (x.pos.length ? ' · ' + esc(x.pos.slice(0, 2).join(', ')) : '') +
+      (x.n > 1 ? ' · ' + x.n + ' эрсдэлд' : '') + '</span></span></span>' +
+      (ex
+        ? '<button data-req-open="' + esc(ex.id) + '" style="flex-shrink:0;cursor:pointer;font-family:inherit;' +
+          'background:' + S.bg + ';border:1.5px solid ' + S.c + '3D;color:' + S.c + ';border-radius:9px;' +
+          'padding:6px 11px;font-size:11.5px;font-weight:800">' + S.t + '</button>'
+        : (canReq
+          ? '<button class="btn btn-sm btn-primary" data-need-req="' + esc(x.risk.id) + '|' + x.mi + '" style="flex-shrink:0">' +
+            '<i class="ti ti-send"></i> Хүсэлт гаргах</button>'
+          : '')) +
+      '</div>';
+  }).join('');
+
+  return '<div class="card" style="padding:15px 17px;margin-bottom:13px;border:1.5px solid #FDE68A">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:3px">' +
+    '<div style="font-size:14px;font-weight:800;color:#92400E">🛒 Авах шаардлагатай ХХХ</div>' +
+    '<div style="background:#FEF3C7;color:#92400E;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
+    doneN + ' / ' + need.length + '</div></div>' +
+    '<div style="font-size:12px;color:#8A6D3B;margin-bottom:11px;line-height:1.6">' +
+    'Эрсдэлийн үнэлгээнд <b>«хангах, олгох, авах»</b> гэж бичсэн ажлын хувцас, хамгаалах хэрэгсэл. ' +
+    'Товч дарахад маршрут (ХАБЭА → Санхүү → Хангамж) урьдчилан бөглөгдөнө.</div>' +
+    rowsH +
+    (need.length > 60 ? '<div style="font-size:12px;color:#94A3B8;margin-top:6px">+' + (need.length - 60) + ' бусад</div>' : '') +
+    '</div>';
+}
+
 function renderRequestPage(box) {
   if (!box) return;
   var me = reqMe();
@@ -14450,6 +14526,9 @@ function renderRequestPage(box) {
     card(all.filter(function (r) { return r.status === 'done'; }).length, 'батлагдсан', '#059669') +
     '</div>';
 
+  /* ⭐ АВАХ ШААРДЛАГАТАЙ ХХХ — хүсэлт гараагүй байсан ч эндээс харагдана */
+  try { H += reqNeedHTML(); } catch (e) { console.warn('[req] need', e && e.message); }
+
   /* ── Миний шийдэх (ирц) ── */
   if (inbox.length) {
     H += '<div class="card" style="padding:15px 17px;margin-bottom:13px;border:1.5px solid #FECACA;background:#FEF2F2">' +
@@ -14487,6 +14566,12 @@ function renderRequestPage(box) {
     box._reqWired = true;
     box.addEventListener('click', function (ev) {
       if (ev.target.closest('[data-req-new]')) { reqNewModal(); return; }
+      var nb = ev.target.closest('[data-need-req]');
+      if (nb) {
+        var q = String(nb.getAttribute('data-need-req')).split('|');
+        ppeOpenRequest(q[0], parseInt(q[1], 10));
+        return;
+      }
       var op = ev.target.closest('[data-req-open]');
       if (op) { reqDetailModal(op.getAttribute('data-req-open')); return; }
     });
