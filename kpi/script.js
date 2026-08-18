@@ -8062,6 +8062,10 @@ var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
 
 /* ── Интерактив дашбоард (бүх эрхэд нийтлэг) ── */
 function riskDashHTML(list, subtitle) {
+  /* ⚠ Алба сонгосон бол БҮХ тоо (нийт, түвшин, матриц) тэр албаных байна */
+  if (RISK_FILTER.dept) {
+    list = (list || []).filter(function (r) { return riskSameDept(r.dept, RISK_FILTER.dept); });
+  }
   /* ⚠ Өмнө нь [0, 0, 0, 0] буюу 4 нүдтэй байсан ч түвшин 5 бий. Улмаас хамгийн
      ноцтой «Үл зөвшөөрөгдөх» картан дээр undefined/NaN гардаг байв.
      Мөн үнэлгээ хийгдээгүй эрсдэл хаана ч тоологдохгүй өнгөрдөг байсан. */
@@ -9087,6 +9091,12 @@ function riskEmpMerged(list) {
 
 function riskEmpBriefHTML(list, myPos, myDept) {
   var all = riskEmpMerged(list);
+  /* ⚠ Алба сонгох нь ХАМРАХ ХҮРЭЭ — том тоо, түвшний картууд, матриц бүгд
+     тэр албаных болно. Өмнө нь зөвхөн доорх жагсаалт шүүгдэж, «ИТА 107»
+     дарсан ч дээр нь 361 гэж хэвээр гарч, тоо зөрсөн мэт харагддаг байв. */
+  if (RISK_FILTER.dept) {
+    all = all.filter(function (r) { return riskSameDept(r.dept, RISK_FILTER.dept); });
+  }
   if (!all.length) return '';
 
   /* ── Шүүлтүүр (дарж болдог) ── */
