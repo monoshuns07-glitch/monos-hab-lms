@@ -9441,7 +9441,7 @@ function renderHazards() {
   sec.innerHTML = H;
   riskWire(sec, renderHazards);
 
-  try { ntfWireOnce(); ntfBadgeRefresh(); } catch (e) {}
+  try { ntfWireOnce(); renderNotifBadge(); } catch (e) {}
 
   /* Хүсэлтүүдийг нэг удаа арын талд татна — тоолуур, нүүр хуудсанд хэрэгтэй */
   if (!REQ_OK && !renderHazards._reqBusy) {
@@ -11692,8 +11692,18 @@ function updateWeightTotal() {
 /* ============ Мэдэгдэл ============ */
 function renderNotifBadge() {
   var unread = DB.notifications.filter(function (n) { return !n.read; }).length;
+  /* ⭐ R2 дээрх мэдэгдэл (арга хэмжээ хэрэгжүүлсэн гэх мэт) — нэмж тоолно */
+  try {
+    var me = reqMe();
+    if (me && me.uid && NTF_OK) unread += ntfUnread(me.uid);
+  } catch (e) {}
   var dot = $('.icon-btn.notif .notif-dot');
-  if (dot) dot.style.display = unread ? 'block' : 'none';
+  if (dot) {
+    dot.style.display = unread ? 'flex' : 'none';
+    dot.textContent = unread > 9 ? '9+' : (unread || '');
+    dot.style.alignItems = 'center'; dot.style.justifyContent = 'center';
+    dot.style.fontSize = '9.5px'; dot.style.fontWeight = '900'; dot.style.color = '#fff';
+  }
 }
 function openNotifications(anchor) {
   closeMenu();
@@ -11701,9 +11711,32 @@ function openNotifications(anchor) {
   var head = elc('div', 'notif-head', '<strong>Мэдэгдэл</strong>' +
     '<button class="link-btn" data-notif-all>Бүгдийг уншсан</button>');
   panel.appendChild(head);
-  if (!DB.notifications.length) {
+
+  /* ⭐ R2 дээрх мэдэгдэл — арга хэмжээ хэрэгжүүлсэн, хүсэлт ирсэн гэх мэт.
+     Ажилтан баримтжуулмагц удирдлагад нь ЭНД гарч ирнэ. */
+  var meN = reqMe(), r2list = [];
+  try { if (meN && meN.uid && NTF_OK) r2list = ntfMine(meN.uid).slice(0, 40); } catch (e) {}
+  r2list.forEach(function (n) {
+    var isNew = !(n.read || {})[meN.uid];
+    var item = elc('div', 'notif-item' + (isNew ? ' unread' : ''),
+      '<div class="notif-dotmark"></div><div class="notif-body">' +
+      '<div><b>' + esc(n.title || '') + '</b>' +
+      (n.body ? '<br><span style="color:#64748B;font-size:12px">' + esc(n.body) + '</span>' : '') +
+      '</div><span>' + timeAgo(n.at) + (n.byName ? ' · ' + esc(n.byName) : '') + '</span></div>');
+    item.addEventListener('click', function () {
+      closeMenu();
+      try { ntfMarkRead(meN.uid).then(renderNotifBadge).catch(function () {}); } catch (e) {}
+      try {
+        RISK_TAB = (n.kind === 'req') ? 'req' : 'ppl';
+        switchPage('hazards');
+      } catch (e) {}
+    });
+    panel.appendChild(item);
+  });
+
+  if (!DB.notifications.length && !r2list.length) {
     panel.appendChild(elc('div', 'notif-empty', 'Мэдэгдэл алга'));
-  } else {
+  } else if (DB.notifications.length) {
     DB.notifications.slice().reverse().forEach(function (n) {
       var item = elc('div', 'notif-item' + (n.read ? '' : ' unread'),
         '<div class="notif-dotmark"></div><div class="notif-body"><div>' + esc(n.text) +
@@ -14642,14 +14675,15 @@ function ntfBadgeRefresh() {
 function ntfWireOnce() {
   if (ntfWireOnce._done) return;
   ntfWireOnce._done = true;
-  document.addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('.icon-btn.notif');
-    if (b) { ntfModal(); return; }
-  });
+  /* ⚠ Хонхны товчийг ХУУЧИН зохицуулагч (openNotifications) барьдаг —
+     тэр нь stopPropagation дууддаг тул энд дахин холбохгүй. Оронд нь
+     R2-ийн мэдэгдлийг ТЭР САМБАР дотор нэмж харуулна. */
   if (!NTF_OK && !ntfWireOnce._busy) {
     ntfWireOnce._busy = true;
-    ntfLoad().then(function () { ntfWireOnce._busy = false; ntfBadgeRefresh(); })
-      .catch(function () { ntfWireOnce._busy = false; });
+    ntfLoad().then(function () {
+      ntfWireOnce._busy = false;
+      try { renderNotifBadge(); } catch (e) { ntfBadgeRefresh(); }
+    }).catch(function () { ntfWireOnce._busy = false; });
   }
 }
 
