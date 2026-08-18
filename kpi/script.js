@@ -7749,8 +7749,11 @@ function todoPageHTML() {
     H += card('bad', '✍️', d.ackMiss, 'ажилтан эрсдэлтэйгээ танилцаж гарын үсэг зураагүй',
       '<b>' + (g.n || 0) + ' / ' + (g.of || 0) + ' танилцсан.</b> Тэд бүгд зурсны дараа ' +
       '<b>таны</b> гарын үсэг нээгдэнэ.' +
+      /* ⚠ ackCanSign нь ажилтныг ШУУД буцаадаг (ackAdminScan шиг {e:…} биш).
+         Хоёуланг нь дэмжинэ — эс бөгөөс нэрс хоосон шошго болж гарна. */
       '<div style="margin-top:7px">' +
-      (g.miss || []).slice(0, 10).map(function (m) { return pill(m.e && m.e.name || ''); }).join('') +
+      (g.miss || []).map(function (m) { return (m && m.e && m.e.name) || (m && m.name) || ''; })
+        .filter(Boolean).slice(0, 10).map(pill).join('') +
       ((g.miss || []).length > 10 ? '<span style="font-size:11.5px;color:#94A3B8"> +' + (g.miss.length - 10) + '</span>' : '') +
       '</div>',
       '<button class="btn btn-primary btn-sm" data-ack-remind="' + esc(d.dept) + '" style="flex-shrink:0">' +
