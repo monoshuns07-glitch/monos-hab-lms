@@ -9603,6 +9603,32 @@ function renderHazards() {
 
   try { ntfWireOnce(); renderNotifBadge(); } catch (e) {}
 
+  /* ⚠ ЗАХИРЛУУД: эрсдлийг эхэлж ачаалахад ажилтны жагсаалт хараахан ирээгүй
+     байдаг тул албан тушаал нь мэдэгдэхгүй → зөвхөн өөрийн албаных татагддаг
+     байв. Жагсаалт ирсний дараа хамрах хүрээ нь дутуу байвал ДАХИН татна. */
+  try {
+    var _dsc = riskDirScope();
+    if (_dsc && !renderHazards._dirBusy) {
+      var _want = riskDirDepts().length;
+      var _have = {};
+      (DB.risks || []).forEach(function (r) {
+        var d = riskCanonDept(r.dept) || r.dept || ''; if (d) _have[d] = 1;
+      });
+      if (_want > 1 && Object.keys(_have).length < _want) {
+        renderHazards._dirBusy = true;
+        try { localStorage.removeItem(RISK_CACHE_KEY); } catch (e2) {}
+        riskR2Load().then(function (res) {
+          renderHazards._dirBusy = false;
+          console.log('[risks] захирлын хамрах хүрээгээр дахин ачааллаа: ' +
+            ((res && res.n) || 0) + ' эрсдэл');
+          renderHazards();
+        }).catch(function (e3) {
+          renderHazards._dirBusy = false; console.error('[risks] дахин ачаалал', e3);
+        });
+      }
+    }
+  } catch (e) {}
+
   /* Хүсэлтүүдийг нэг удаа арын талд татна — тоолуур, нүүр хуудсанд хэрэгтэй */
   if (!REQ_OK && !renderHazards._reqBusy) {
     renderHazards._reqBusy = true;
