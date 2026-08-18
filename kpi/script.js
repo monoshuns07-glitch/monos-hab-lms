@@ -14585,7 +14585,7 @@ async function ntfSend(toList, info) {
   });
   var to = Object.keys(uids);
   if (!to.length) return false;
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   var rec = {
     id: 'N-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
     at: new Date().toISOString(), to: to,
@@ -14629,7 +14629,7 @@ async function ntfMarkRead(uid) {
 /* Хонхны тоолуур */
 function ntfBadgeRefresh() {
   try {
-    var me = myEmp(); if (!me || !me.uid) return;
+    var me = reqMe(); if (!me || !me.uid) return;
     var n = ntfUnread(me.uid);
     var dot = document.querySelector('.icon-btn.notif .notif-dot');
     if (dot) {
@@ -14654,7 +14654,7 @@ function ntfWireOnce() {
 }
 
 function ntfModal() {
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   if (!me) { toast('Таны бүртгэл олдсонгүй', 'error'); return; }
   var list = ntfMine(me.uid);
   var node = elc('div', 'modal-info');
@@ -14831,7 +14831,7 @@ function pplRowHTML(st) {
 
 function renderPeoplePage(box) {
   if (!box) return;
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   var admin = isAdmin() || isDeptHead();
   var subs = [];
   try { subs = admin ? ackDueEmps((me && me.dept) || (SESSION && SESSION.dept) || '') : ackSubordinates(me); } catch (e) {}
@@ -14940,7 +14940,7 @@ function renderPeoplePage(box) {
 
 /* Excel — ажилтан бүрийн бүрэн дата + саналууд тусдаа хуудсаар */
 function pplExport(stats) {
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   var aoa = [
     ['МОНОС ХҮНС ХХК'],
     ['ХАРИУЦАХ АЖИЛТНУУДЫН ЭРСДЭЛИЙН БАЙДАЛ'],
