@@ -8895,7 +8895,7 @@ function riskTabList(list) {
   var rq = 0, nsub = 0;
   try { var me0 = myEmp(); if (me0 && REQ_OK) rq = reqWaitingFor(me0.uid).length; } catch (e) {}
   /* ⭐ Хариуцах ажилтантай хүнд «Ажилтнуудын байдал» таб — эрсдэлүүдийн ЯГ АРД */
-  try { nsub = ackSubordinates(myEmp()).length; } catch (e) {}
+  try { nsub = pplMyPeople().length; } catch (e) {}
   if (admin || nsub) {
     tabs.push({ key: 'ppl', icon: 'ti-users', label: 'Ажилтнуудын байдал',
       n: nsub || null, tone: '' });
@@ -15057,6 +15057,38 @@ function pplRowsOf(e) {
 /* deep=true үед л арга хэмжээ, дүрэм, санал тооцно (хүнд).
    ⚠ meaMineStats нь эрсдэл бүрийн арга хэмжээг задалж, хариуцагчийг
    тооцдог тул 267 ажилтанд зэрэг ажиллуулбал хөтөч ХӨЛДӨНӨ. */
+/* ⭐ МИНИЙ ХЯНАХ ХҮМҮҮС — таб ба хуудас ХОЁУЛАН үүнийг ашиглана.
+   · менежер/хариуцагч → өөрийн ажилтнууд
+   · Үйлдвэрлэл хариуцсан захирал → 5 албаны ХАРИУЦАГЧ нар
+   · Гүйцэтгэх захирал → БҮХ хариуцагч нар
+   · админ → бүх ажилтан */
+function pplMyPeople() {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var dsc = '';
+  try { dsc = riskDirScope(); } catch (e) {}
+  if (dsc) {
+    /* Захирал — хариуцагч нарыг хянана */
+      var want = (dsc === 'prod') ? riskDirDepts() : null;
+    var out = [];
+    (DB.employees || []).forEach(function (x) {
+      if (!x.uid || (me && x.uid === me.uid)) return;
+      var r = ''; try { r = ackRoleOf(x); } catch (e) { return; }
+      if (r !== 'lead') return;
+      if (want && !want.some(function (d) { return riskSameDept(d, x.dept); })) return;
+      out.push(x);
+    });
+    return out;
+  }
+  if (isAdmin() || isDeptHead()) {
+    var d0 = (me && me.dept) || (SESSION && SESSION.dept) || '';
+    var lst = [];
+    try { lst = ackDueEmps(d0); } catch (e) {}
+    if (!lst || !lst.length) { try { lst = (DB.employees || []).filter(function (x) { return x.uid; }); } catch (e) { lst = []; } }
+    return lst;
+  }
+  try { return ackSubordinates(me) || []; } catch (e) { return []; }
+}
+
 function pplEmpStat(e, deep) {
   var seen = { rows: [] };
   try { seen = riskSeenBy(e); } catch (er) {}
@@ -15090,8 +15122,23 @@ function pplEmpStat(e, deep) {
       PPL_DEEP[e.uid] = { mst: mst, rules: rules };
     }
   }
+  /* БАГИЙН ЯВЦ — энэ хүн өөрөө хариуцагч/менежер бол баг нь хэдэн хувь зурсан бэ */
+  var team = null;
+  try {
+    var rl = ackRoleOf(e);
+    if (rl === 'lead' || rl === 'mgr') {
+      var tm = ackSubordinates(e) || [];
+      if (tm.length) {
+        var tv = ackVersionOf(riskCanonDept(e.dept) || e.dept || '');
+        var dn = 0;
+        tm.forEach(function (t) { if (ackSignedRow(PPL_ACK, t.uid, tv)) dn++; });
+        team = { n: tm.length, done: dn };
+      }
+    }
+  } catch (er) {}
+
   return { e: e, rows: rows, lv: lv, top: top, ver: ver, row: row, prev: prev, rd: rd,
-    mst: mst, rules: rules, deep: !!deep, scope: seen.scope || 'none',
+    mst: mst, rules: rules, deep: !!deep, scope: seen.scope || 'none', team: team,
     ideas: (row && row.ideas) || (prev && prev.ideas) || [] };
 }
 
@@ -15134,8 +15181,13 @@ function pplRowHTML(st) {
     ';font-weight:' + (st.scope === 'pos' ? '600' : '800') + '">' +
     (st.scope === 'pos' ? 'ажлын байрных' : st.scope === 'none' ? 'эрсдэлгүй' : '⚠ албаных') +
     '</span></span>' +
-    '<span style="flex:0 0 128px;text-align:right;font-size:11.5px;font-weight:700;color:' + sigCol + '">' +
-    sigTxt + '</span>' +
+    '<span style="flex:0 0 128px;text-align:right">' +
+    '<span style="display:block;font-size:11.5px;font-weight:700;color:' + sigCol + '">' + sigTxt + '</span>' +
+    (st.team
+      ? '<span style="display:block;font-size:10.5px;font-weight:700;margin-top:2px;color:' +
+        (st.team.done >= st.team.n ? '#059669' : '#B45309') + '">баг ' +
+        st.team.done + '/' + st.team.n + '</span>'
+      : '') + '</span>' +
     '<i class="ti ti-chevron-' + (open ? 'up' : 'down') + '" style="flex:0 0 18px;color:#CBD5E1"></i></div>';
 
   /* ⭐ ХЯНАГЧИЙН ҮЙЛДЭЛ — гүйцэтгээгүй хүнийг шахна.
@@ -15194,7 +15246,14 @@ function pplRowHTML(st) {
         (mea.late ? ' · <b style="color:#B91C1C">' + mea.late + ' хугацаа хэтэрсэн</b>' : '') +
         (mea.soon ? ' · ' + mea.soon + ' удахгүй дуусна' : '')
       : '<span style="color:#94A3B8">Оногдоогүй</span>') +
-    fact('МӨРДӨХ ДҮРЭМ', st.rules ? st.rules + ' дүрэм (баримт шаардахгүй)' : '<span style="color:#94A3B8">—</span>');
+    fact('МӨРДӨХ ДҮРЭМ', st.rules ? st.rules + ' дүрэм (баримт шаардахгүй)' : '<span style="color:#94A3B8">—</span>') +
+    (st.team
+      ? fact('ТҮҮНИЙ БАГ', '<b style="color:' +
+          (st.team.done >= st.team.n ? '#059669' : '#B45309') + '">' + st.team.done + ' / ' + st.team.n +
+          '</b> ажилтан танилцсан' +
+          (st.team.done < st.team.n
+            ? ' · <span style="color:#B45309">' + (st.team.n - st.team.done) + ' хүн дээр гацаж байна</span>' : ''))
+      : '');
 
   /* Санал */
   if ((st.ideas || []).length) {
@@ -15225,10 +15284,7 @@ function renderPeoplePage(box) {
   var me = reqMe();
   var admin = isAdmin() || isDeptHead();
   var subs = [];
-  try { subs = admin ? ackDueEmps((me && me.dept) || (SESSION && SESSION.dept) || '') : ackSubordinates(me); } catch (e) {}
-  if (admin && (!subs || !subs.length)) {
-    try { subs = (DB.employees || []).filter(function (x) { return x.uid; }); } catch (e) { subs = []; }
-  }
+  try { subs = pplMyPeople(); } catch (e) { subs = []; }
 
   var dept = riskCanonDept((me && me.dept) || (SESSION && SESSION.dept) || '') ||
     ((subs[0] && subs[0].dept) || '');
@@ -15287,9 +15343,15 @@ function renderPeoplePage(box) {
 
   box.innerHTML =
     '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:12px">' +
-    '<div><div style="font-size:15px;font-weight:800;color:#0F172A">Миний хариуцах ажилтнууд</div>' +
-    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ажилтан бүрийн эрсдэл, танилцалт, санал, арга хэмжээг нэг бүрчлэн. ' +
-    'Мөр дээр дарж дэлгэрэнгүйг нээнэ.</div></div>' +
+    (function () {
+      var d2 = ''; try { d2 = riskDirScope(); } catch (e) {}
+      var ttl = d2 ? 'Албадын хариуцагч нарын байдал' : 'Миний хариуцах ажилтнууд';
+      var sub = d2
+        ? 'Таны танилцалт эдгээр хариуцагч нарыг хүлээдэг. Хэн дээр гацсан, баг нь хэдэн хувь гүйцэтгэсэн бэ.'
+        : 'Ажилтан бүрийн эрсдэл, танилцалт, санал, арга хэмжээг нэг бүрчлэн. Мөр дээр дарж дэлгэрэнгүйг нээнэ.';
+      return '<div><div style="font-size:15px;font-weight:800;color:#0F172A">' + ttl + '</div>' +
+        '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">' + sub + '</div></div>';
+    })() +
     '<button class="btn btn-primary btn-sm" data-ppl-pokeall="1" style="margin-left:auto">' +
     '<i class="ti ti-bell-ringing"></i> Зураагүй бүгдэд сануулах</button>' +
     '<button class="btn btn-secondary btn-sm" data-ppl-xl="1">' +
