@@ -1174,17 +1174,45 @@ function riskCanAdd() {
 function riskR2Url(key) { return TASK_R2 + '/' + key; }
 
 /* R2-оос JSON уншина (эрх шаардахгүй — CORS нь зөвхөн манай домэйнд нээлттэй) */
-async function riskR2GetJson(key) {
-  var r = await fetch(riskR2Url(key) + '?t=' + Date.now(), { cache: 'no-store' });
-  if (!r.ok) { if (r.status === 404) return null; throw new Error('R2 ' + r.status); }
-  return await r.json();
+/* Зөвхөн УНШИХ лавлах файлууд — эдгээрийг хэн ч «уншаад нэгтгээд бичдэггүй»
+   тул богино хугацаанд кэшлэхэд аюулгүй. Хүсэлт/мэдэгдэл/гарын үсэг/индекс
+   энд ОРОХГҮЙ — тэднийг кэшлэвэл зэрэг ажиллаж буй хүний бичлэг дарагдана. */
+var R2_CACHEABLE = /^(employees\/all\.json|tasks\/all\.json|ack\/_sections\.json|measures\/_owners\.json|risks\/d\/)/;
+var R2_TTL = 20000;
+var _r2Mem = {};        /* key -> { t, val } */
+var _r2Fly = {};        /* key -> хүлээгдэж буй promise */
+function riskR2CacheBust() { _r2Mem = {}; }
+async function riskR2GetJson(key, opts) {
+  var k = String(key);
+  var fresh = !!(opts && opts.fresh);
+  var ok = !fresh && R2_CACHEABLE.test(k);
+  if (ok) {
+    var c = _r2Mem[k];
+    if (c && (Date.now() - c.t) < R2_TTL) return c.val;
+  }
+  /* Зэрэг явж буй ижил хүсэлтийг нэгтгэнэ (шинэ дата шаардсан үед ч аюулгүй —
+     яг тэр агшны хариу л буцна) */
+  if (_r2Fly[k]) return await _r2Fly[k];
+  var p = (async function () {
+    var r = await fetch(riskR2Url(k) + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) { if (r.status === 404) return null; throw new Error('R2 ' + r.status); }
+    return await r.json();
+  })();
+  _r2Fly[k] = p;
+  try {
+    var v = await p;
+    if (ok) _r2Mem[k] = { t: Date.now(), val: v };
+    return v;
+  } finally { delete _r2Fly[k]; }
 }
 
 /* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
 async function riskR2PutJson(key, obj) {
   var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
   blob.name = key.split('/').pop();
-  return await r2Put(blob, key);
+  var out = await r2Put(blob, key);
+  riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
+  return out;
 }
 
 /* Файлын албаны нэрийг СИСТЕМИЙН албаны нэр рүү хөрвүүлнэ.
@@ -1285,7 +1313,7 @@ async function riskR2Publish(rows, onStep, opts) {
      Эс бөгөөс нэг албаны хүн эрсдэл нэмэхэд бусад алба индексээс УНАНА. */
   var keep = [];
   try {
-    var old = await riskR2GetJson(RISK_R2_INDEX);
+    var old = await riskR2GetJson(RISK_R2_INDEX, { fresh: true });
     (old && old.depts || []).forEach(function (d) {
       if (!d || !d.name) return;
       var replaced = mine.some(function (m) { return m.slug === d.slug || riskSameDept(m.name, d.name); });
