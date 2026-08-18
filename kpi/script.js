@@ -14932,11 +14932,13 @@ function pplEmpStat(e, deep) {
   var seen = { rows: [] };
   try { seen = riskSeenBy(e); } catch (er) {}
   var rows = pplRowsOf(e);
-  var lv = { A: 0, B: 0, C: 0, D: 0, un: 0 }, top = 0;
+  /* ⚠ Өмнө нь E түвшин байхгүй байсан тул 3 эрсдэл тоонд ОРОХГҮЙ,
+     задаргаа нийт тоотой таарахгүй байв. */
+  var lv = { A: 0, B: 0, C: 0, D: 0, E: 0, un: 0 }, top = 0;
   rows.forEach(function (r) {
     if (riskIsUnscored(r)) { lv.un++; return; }
     var c = riskLevel(r).code;
-    if (lv[c] != null) lv[c]++;
+    if (lv[c] != null) lv[c]++; else lv.un++;
     var s = riskScore(r); if (s > top) top = s;
   });
   var ver = '';
@@ -14953,7 +14955,7 @@ function pplEmpStat(e, deep) {
     try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
   }
   return { e: e, rows: rows, lv: lv, top: top, ver: ver, row: row, prev: prev, rd: rd,
-    mst: mst, rules: rules, deep: !!deep,
+    mst: mst, rules: rules, deep: !!deep, scope: seen.scope || 'none',
     ideas: (row && row.ideas) || (prev && prev.ideas) || [] };
 }
 
@@ -14965,10 +14967,13 @@ function pplRowHTML(st) {
   var sigTxt = sig === 'ok' ? '✓ ' + ackDateMn(st.row.at)
     : sig === 'old' ? 'Хуучин хувилбарт зурсан' : 'Зураагүй';
 
-  var chip = function (n, c, bg, t) {
+  /* ⚠ Өмнө нь чипс хоорондоо наалдаж «91871» гэсэн утгагүй тоо болдог байв.
+     Одоо түвшний ҮСЭГ + тоо, хооронд нь зайтай. */
+  var chip = function (code, n, c, bg, t) {
     if (!n) return '';
-    return '<span title="' + t + '" style="display:inline-block;background:' + bg + ';color:' + c +
-      ';border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:800;margin-right:3px">' + n + '</span>';
+    return '<span title="' + t + ': ' + n + '" style="display:inline-block;background:' + bg + ';color:' + c +
+      ';border-radius:6px;padding:1px 6px;font-size:10.5px;font-weight:800;margin:0 3px 2px 0;' +
+      'white-space:nowrap">' + code + '&#8201;' + n + '</span>';
   };
 
   var H = '<div style="border:1px solid ' + (open ? '#C7D2FE' : '#E2E8F0') + ';border-radius:12px;' +
@@ -14981,14 +14986,18 @@ function pplRowHTML(st) {
     '<span style="flex:1;min-width:0">' +
     '<span style="display:block;font-size:13.5px;font-weight:700;color:#1E293B">' + esc(e.name || '—') + '</span>' +
     '<span style="display:block;font-size:11.5px;color:#94A3B8">' + esc(e.pos || e.role || '—') + '</span></span>' +
-    '<span class="rk-hide-sm" style="flex:0 0 116px;text-align:center">' +
-    chip(st.lv.A, '#fff', '#DC2626', 'Онцгой') + chip(st.lv.B, '#fff', '#EA580C', 'Өндөр') +
-    chip(st.lv.C, '#854D0E', '#FEF9C3', 'Дундаж') + chip(st.lv.D, '#166534', '#DCFCE7', 'Бага') +
-    chip(st.lv.un, '#64748B', '#F1F5F9', 'Үнэлгээгүй') + '</span>' +
-    '<span style="flex:0 0 54px;text-align:center">' +
+    '<span class="rk-hide-sm" style="flex:0 0 168px;text-align:left;line-height:1.5">' +
+    chip('A', st.lv.A, '#fff', '#DC2626', 'Онцгой') + chip('B', st.lv.B, '#fff', '#EA580C', 'Өндөр') +
+    chip('C', st.lv.C, '#854D0E', '#FEF9C3', 'Дундаж') + chip('D', st.lv.D, '#166534', '#DCFCE7', 'Бага') +
+    chip('E', st.lv.E, '#166534', '#F0FDF4', 'Ач холбогдол бага') +
+    chip('—', st.lv.un, '#64748B', '#F1F5F9', 'Үнэлгээгүй') + '</span>' +
+    '<span style="flex:0 0 96px;text-align:center">' +
     '<span style="font-size:17px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif">' +
     st.rows.length + '</span>' +
-    '<span style="display:block;font-size:9.5px;color:#94A3B8">эрсдэл</span></span>' +
+    '<span style="display:block;font-size:9.5px;color:' + (st.scope === 'pos' ? '#94A3B8' : '#B45309') +
+    ';font-weight:' + (st.scope === 'pos' ? '600' : '800') + '">' +
+    (st.scope === 'pos' ? 'ажлын байрных' : st.scope === 'none' ? 'эрсдэлгүй' : '⚠ албаных') +
+    '</span></span>' +
     '<span style="flex:0 0 128px;text-align:right;font-size:11.5px;font-weight:700;color:' + sigCol + '">' +
     sigTxt + '</span>' +
     '<i class="ti ti-chevron-' + (open ? 'up' : 'down') + '" style="flex:0 0 18px;color:#CBD5E1"></i></div>';
@@ -15010,7 +15019,18 @@ function pplRowHTML(st) {
       return s ? ' · <b>' + esc(s) + '</b>' : '';
     })()) +
     fact('ЭРСДЭЛ', st.rows.length + ' ширхэг · хамгийн өндөр <b style="color:' + L.color + '">' +
-      (st.top || '—') + (st.top ? ' (' + L.code + ' · ' + L.name + ')' : '') + '</b>') +
+      (st.top || '—') + (st.top ? ' (' + L.code + ' · ' + L.name + ')' : '') + '</b>' +
+      (st.scope === 'pos'
+        ? '<br><span style="font-size:11.5px;color:#059669">✓ Энэ хүний ажлын байрны үнэлгээ хийгдсэн</span>'
+        : st.scope === 'none'
+          ? '<br><span style="font-size:11.5px;color:#94A3B8">Эрсдэл олдсонгүй</span>'
+          : '<br><span style="font-size:11.5px;color:#B45309">⚠ Энэ ажлын байрны үнэлгээ ХИЙГДЭЭГҮЙ тул ' +
+            'албаны эрсдлийг түр харуулж байна. Үнэлгээ хийгдмэгц зөвхөн өөрийнх нь эрсдэл гарна.</span>')) +
+    fact('ТҮВШНЭЭР', ['A', 'B', 'C', 'D', 'E'].map(function (k) {
+      return st.lv[k] ? '<b>' + k + '</b> ' + st.lv[k] : '';
+    }).filter(Boolean).join(' &nbsp;·&nbsp; ') +
+      (st.lv.un ? ' &nbsp;·&nbsp; <b>үнэлгээгүй</b> ' + st.lv.un : '') +
+      ' &nbsp;=&nbsp; <b>' + st.rows.length + '</b>') +
     fact('ТАНИЛЦСАН', st.row
       ? '<b style="color:#059669">✓ ' + ackDateMn(st.row.at) + '</b> · ' + st.row.n + ' эрсдэл · гарын үсэг ' +
         '<b style="font-family:Consolas,monospace;letter-spacing:.12em">' + esc(st.row.code || '') + '</b>' +
@@ -15061,13 +15081,17 @@ function renderPeoplePage(box) {
 
   var dept = riskCanonDept((me && me.dept) || (SESSION && SESSION.dept) || '') ||
     ((subs[0] && subs[0].dept) || '');
-  if (!PPL_ACK && dept && !renderPeoplePage._busy) {
+  /* ⚠ Хэсгийн зураглал ачаалагдаагүй бол ackSecOf() ХООСОН буцааж, хэсэг
+     оноосон хүнд албаны бүх эрсдэл харагддаг байв. Заавал эхлээд татна. */
+  if ((!PPL_ACK || !ACK_SEC_OK) && dept && !renderPeoplePage._busy) {
     renderPeoplePage._busy = true;
-    ackLoad(dept).then(function (st) {
-      PPL_ACK = st || { rows: [] };
-      renderPeoplePage._busy = false;
-      renderHazards();
-    }).catch(function () { renderPeoplePage._busy = false; PPL_ACK = { rows: [] }; });
+    Promise.all([ackLoad(dept), ACK_SEC_OK ? Promise.resolve(ACK_SEC) : ackSecLoad(true)])
+      .then(function (res) {
+        PPL_ACK = res[0] || { rows: [] };
+        PPL_CACHE = {};                       // хэсэг ирсэн тул дахин тооцно
+        renderPeoplePage._busy = false;
+        renderHazards();
+      }).catch(function () { renderPeoplePage._busy = false; PPL_ACK = { rows: [] }; });
   }
 
   if (!subs.length) {
@@ -15128,8 +15152,8 @@ function renderPeoplePage(box) {
     '<div style="display:flex;align-items:center;gap:10px;padding:0 13px 8px;font-size:10.5px;font-weight:800;' +
     'color:#94A3B8;letter-spacing:.4px;border-bottom:1px solid #F1F5F9;margin-bottom:9px">' +
     '<span style="flex:0 0 30px"></span><span style="flex:1">АЖИЛТАН</span>' +
-    '<span class="rk-hide-sm" style="flex:0 0 116px;text-align:center">ТҮВШИН</span>' +
-    '<span style="flex:0 0 54px;text-align:center">ТОО</span>' +
+    '<span class="rk-hide-sm" style="flex:0 0 168px">ТҮВШИН (A онцгой → E бага)</span>' +
+    '<span style="flex:0 0 96px;text-align:center">ЭРСДЭЛ</span>' +
     '<span style="flex:0 0 128px;text-align:right">ТАНИЛЦСАН</span><span style="flex:0 0 18px"></span></div>' +
     stats.map(pplRowHTML).join('') +
     (more ? '<button class="btn" data-ppl-all="1" style="width:100%;margin-top:6px;padding:11px;' +
@@ -15168,7 +15192,8 @@ function pplExport(stats) {
      '   ·   Хэвлэсэн: ' + ackDateMn(new Date().toISOString())],
     [],
     ['д/д', 'Овог нэр', 'Албан тушаал', 'Алба', 'Хэсэг', 'Эрсдэл',
-     'Онцгой', 'Өндөр', 'Дундаж', 'Бага', 'Үнэлгээгүй', 'Хамгийн өндөр оноо',
+     'A онцгой', 'B өндөр', 'C дундаж', 'D бага', 'E ач бага', 'Үнэлгээгүй',
+     'Хамгийн өндөр оноо', 'Эрсдэл хаанаас',
      'Танилцсан', 'Огноо', 'Гарын үсэг', 'Нэг бүрчлэн уншсан', 'Санал',
      'Арга хэмжээ', 'Баримтжуулсан', 'Хугацаа хэтэрсэн', 'Мөрдөх дүрэм']
   ];
@@ -15177,7 +15202,8 @@ function pplExport(stats) {
   stats.forEach(function (s, i) {
     var sec = ''; try { sec = ackSecOf(s.e); } catch (e) {}
     aoa.push([i + 1, s.e.name || '', s.e.pos || s.e.role || '', s.e.dept || '', sec,
-      s.rows.length, s.lv.A, s.lv.B, s.lv.C, s.lv.D, s.lv.un, s.top || '',
+      s.rows.length, s.lv.A, s.lv.B, s.lv.C, s.lv.D, s.lv.E, s.lv.un, s.top || '',
+      s.scope === 'pos' ? 'Ажлын байрных' : s.scope === 'none' ? 'Эрсдэлгүй' : 'Албаных (үнэлгээгүй)',
       s.row ? 'Тийм' : (s.prev ? 'Хуучин хувилбарт' : 'Үгүй'),
       s.row ? String(s.row.at).slice(0, 10) : '',
       s.row ? (s.row.code || '') : '',
@@ -15193,7 +15219,8 @@ function pplExport(stats) {
     ackWriteBook([
       { name: 'Ажилтнууд', aoa: aoa,
         cols: [{ wch: 5 }, { wch: 24 }, { wch: 26 }, { wch: 24 }, { wch: 16 }, { wch: 9 },
-               { wch: 8 }, { wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 11 }, { wch: 15 },
+               { wch: 9 }, { wch: 9 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 11 },
+               { wch: 15 }, { wch: 20 },
                { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 17 }, { wch: 8 },
                { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 13 }] },
       { name: 'Санал', aoa: ideas,
