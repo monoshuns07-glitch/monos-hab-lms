@@ -8835,9 +8835,13 @@ function riskMxCellOf(r) {
   /* ⚠ Үнэлгээ хийгдээгүй эрсдлийг матрицад БҮҮ байрлуул — эс бөгөөс
      «Үнэлгээгүй» гэсэн тоо матриц дээр нэг, картан дээр өөр гарна. */
   if (riskIsUnscored(r)) return null;
-  var p = Math.round(Number(r && r.p) || 0), n = Math.round(Number(r && r.n) || 0);
-  if (p < 1 || n < 1) return null;
-  return { p: Math.min(5, p), n: Math.min(5, n) };
+  /* ⚠ P/N нь олон хүний үнэлгээний ДУНДАЖ тул 0.33 гэх мэт нэгээс бага гарч
+     болно. Math.round(0.33) = 0 болж матрицаас огт унадаг байсныг зассан —
+     оноотой эрсдэл ҮРГЭЛЖ нүдэнд орно (хамгийн багадаа 1-р мөр/багана). */
+  var p = Number(r && r.p) || 0, n = Number(r && r.n) || 0;
+  if (p <= 0 || n <= 0) return null;
+  return { p: Math.min(5, Math.max(1, Math.round(p))),
+           n: Math.min(5, Math.max(1, Math.round(n))) };
 }
 function riskMxKey(r) { var c = riskMxCellOf(r); return c ? (c.p + ',' + c.n) : ''; }
 
