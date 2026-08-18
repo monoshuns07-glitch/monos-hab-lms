@@ -7652,14 +7652,26 @@ async function ackSectionModal() {
   if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ тохируулна', 'error'); return; }
   await ackSecLoad(true);
   var node = elc('div', 'modal-info', '<div id="secBody">Ачаалж байна…</div>');
-  buildModal('Менежерийн хариуцах хэсэг', node, { width: '640px' });
+  buildModal('Хэсгийн хуваарилалт — хэн юуг харах вэ', node, { width: 'min(760px, 96vw)' });
+
+  /* Дахин зурахад сонгосон утга, нэмсэн хүн алдагдахгүй байх */
+  var SEC_EXTRA = {}, SEC_PEND = {};
+  var keep = function () {
+    Array.prototype.forEach.call(node.querySelectorAll('[data-sec-uid]'), function (sel) {
+      SEC_PEND[sel.getAttribute('data-sec-uid')] = String(sel.value || '*');
+    });
+  };
 
   var draw = function () {
-    var depts = ackDeptsWithDue().filter(function (d) { return ackMgrsOf(d, '').length; });
+    /* ⚠ Өмнө нь ЗӨВХӨН менежертэй алба гарч байсан тул бусад албаны
+       ажилтанд хэсэг оноох боломжгүй байв. Одоо бүх алба гарна. */
+    var depts = ackDeptsWithDue();
     var H = '<div style="font-size:12.5px;color:#64748B;line-height:1.6;margin-bottom:13px">' +
-      'Менежер бүр <b>зөвхөн хариуцах хэсгийнхээ</b> эрсдэл, ажилтныг харна. ' +
-      'Хэсгүүд нь эрсдлийн файлын хавтаснаас автоматаар гарч ирдэг. ' +
-      '<b>«Бүх алба»</b> гэвэл албаныхаа бүхнийг харна.</div>';
+      'Хэсэг оноосон хүн <b>зөвхөн тэр хэсгийн</b> эрсдлийг харна. ' +
+      'Хэсгүүд нь эрсдлийн файлын хавтаснаас автоматаар гардаг. ' +
+      '<b>«Бүх алба»</b> гэвэл албаныхаа бүхнийг харна.<br>' +
+      '<b>Менежерээс гадна дурын ажилтанд</b> оноож болно — доод талын ' +
+      '«＋ Ажилтан нэмэх»-ээс сонгоно уу.</div>';
     depts.forEach(function (d) {
       var secs = riskSectionsOf(d);
       var mgrs = ackMgrsOf(d, '');
@@ -7675,8 +7687,15 @@ async function ackSectionModal() {
         '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:8px">' +
         (secs.length ? secs.length + ' хэсэг: ' + esc(secs.join(' · ')) : 'Энэ албанд хэсэг бүртгэгдээгүй — бүгд албаараа харна') +
         '</div>';
-      mgrs.forEach(function (m) {
-        var cur = (ACK_SEC && ACK_SEC[m.uid]) || '*';
+      /* Менежер + аль хэдийн хэсэг оноосон хүн + гараар нэмсэн хүн */
+      var shown = mgrs.slice();
+      ackDueEmps(d).forEach(function (e) {
+        if (shown.some(function (x) { return x.uid === e.uid; })) return;
+        var assigned = ACK_SEC && ACK_SEC[e.uid] && ACK_SEC[e.uid] !== '*';
+        if (assigned || (SEC_EXTRA[d] || []).indexOf(e.uid) >= 0) shown.push(e);
+      });
+      shown.forEach(function (m) {
+        var cur = SEC_PEND[m.uid] || (ACK_SEC && ACK_SEC[m.uid]) || '*';
         H += '<div style="display:flex;align-items:center;gap:10px;padding:8px 11px;border:1px solid #F1F5F9;' +
           'border-radius:11px;margin-bottom:6px;background:#fff">' +
           '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#1E293B">' + esc(m.name || '') + '</div>' +
@@ -7689,8 +7708,27 @@ async function ackSectionModal() {
               (riskSectionsOf(d).indexOf(s) < 0 ? ' (эрсдэл ороогүй)' : '') + '</option>';
           }).join('') +
           '<option value="__new">＋ Шинэ хэсэг бичих…</option>' +
-          '</select></div>';
+          '</select>' +
+          (ackRoleOf(m) === 'mgr' ? '' :
+            '<button data-sec-del="' + esc(m.uid) + '" title="Жагсаалтаас хасах" ' +
+            'style="flex-shrink:0;border:1px solid #FECACA;background:#FEE2E2;color:#991B1B;' +
+            'border-radius:8px;padding:6px 9px;cursor:pointer;font-family:inherit">' +
+            '<i class="ti ti-x"></i></button>') +
+          '</div>';
       });
+      /* ＋ Дурын ажилтныг жагсаалтад нэмэх */
+      var rest = ackDueEmps(d).filter(function (e) {
+        return !shown.some(function (x) { return x.uid === e.uid; });
+      }).sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+      if (rest.length) {
+        H += '<select data-sec-add="' + esc(d) + '" style="width:100%;padding:8px 11px;border:1.5px dashed #CBD5E1;' +
+          'border-radius:10px;font-size:12.5px;font-family:inherit;background:#F8FAFC;color:#475569;cursor:pointer">' +
+          '<option value="">＋ Ажилтан нэмэх… (' + rest.length + ')</option>' +
+          rest.map(function (e) {
+            return '<option value="' + esc(e.uid) + '">' + esc(e.name || '') +
+              (e.pos || e.role ? ' — ' + esc(e.pos || e.role) : '') + '</option>';
+          }).join('') + '</select>';
+      }
       H += '</div>';
     });
     if (!depts.length) H += '<div style="color:#94A3B8;font-size:13px">Менежер бүхий алба олдсонгүй.</div>';
@@ -7698,6 +7736,29 @@ async function ackSectionModal() {
       '<button class="btn btn-primary" id="secSave"><i class="ti ti-device-floppy"></i> Хадгалах</button>' +
       '<div id="secSt" style="align-self:center;font-size:12.5px;color:#64748B"></div></div>';
     node.querySelector('#secBody').innerHTML = H;
+
+    /* ＋ Ажилтан нэмэх / хасах */
+    Array.prototype.forEach.call(node.querySelectorAll('[data-sec-add]'), function (sel) {
+      sel.addEventListener('change', function () {
+        var d2 = sel.getAttribute('data-sec-add');
+        if (!sel.value) return;
+        SEC_EXTRA[d2] = SEC_EXTRA[d2] || [];
+        if (SEC_EXTRA[d2].indexOf(sel.value) < 0) SEC_EXTRA[d2].push(sel.value);
+        keep(); draw();
+      });
+    });
+    Array.prototype.forEach.call(node.querySelectorAll('[data-sec-del]'), function (b) {
+      b.addEventListener('click', function () {
+        var uid = b.getAttribute('data-sec-del');
+        keep();
+        delete SEC_PEND[uid];
+        Object.keys(SEC_EXTRA).forEach(function (k) {
+          SEC_EXTRA[k] = (SEC_EXTRA[k] || []).filter(function (u) { return u !== uid; });
+        });
+        if (ACK_SEC) delete ACK_SEC[uid];
+        draw();
+      });
+    });
 
     /* «Шинэ хэсэг бичих» — датад ороогүй шугам/цехийг гараар нэмнэ */
     Array.prototype.forEach.call(node.querySelectorAll('[data-sec-uid]'), function (sel) {
@@ -7716,10 +7777,11 @@ async function ackSectionModal() {
     node.querySelector('#secSave').addEventListener('click', async function () {
       var btn = this, old = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+      keep();
       var map = {};
-      Array.prototype.forEach.call(node.querySelectorAll('[data-sec-uid]'), function (sel) {
-        var v = String(sel.value || '*');
-        if (v && v !== '*') map[sel.getAttribute('data-sec-uid')] = v;
+      Object.keys(SEC_PEND).forEach(function (uid) {
+        var v = SEC_PEND[uid];
+        if (v && v !== '*') map[uid] = v;
       });
       try {
         await ackSecSave(map);
@@ -7839,8 +7901,16 @@ function risksForView() {
 function riskSeenBy(emp) {
   var all = DB.risks || [];
   if (!emp) return { rows: [], scope: 'none' };
-  var mine = all.filter(function (r) { return riskAppliesTo(r, emp); });
-  if (mine.length) return { rows: mine, scope: 'pos' };
+  /* ⭐ Админ энэ хүнд ХЭСЭГ оноосон бол (менежер эсэхээс үл хамааран)
+     зөвхөн тэр хэсгийн эрсдэл харагдана. Оноогоогүй бол хуучнаараа. */
+  var sec0 = '';
+  try { sec0 = ackSecOf(emp); } catch (e) {}
+  var mine = all.filter(function (r) {
+    if (!riskAppliesTo(r, emp)) return false;
+    if (sec0 && riskSectionOf(r) !== sec0) return false;
+    return true;
+  });
+  if (mine.length) return { rows: mine, scope: sec0 ? 'section' : 'pos' };
 
   /* ⚠ Ажлын байрных нь үнэлгээ ХИЙГДЭЭГҮЙ хүн (жишээ нь албаны дарга, жолооч)
      өмнө нь ХООСОН дэлгэц хардаг байв. Тэдэнд албаныхаа эрсдлийг харуулна —
@@ -7848,8 +7918,7 @@ function riskSeenBy(emp) {
      гэсэн утгаар. Хоосон дэлгэцээс хамаагүй хэрэгтэй. */
   if (emp.dept) {
     /* ⭐ Менежерт хэсэг (шугам/цех) оноосон бол ЗӨВХӨН тэр хэсгийнх */
-    var sec = '';
-    try { if (ackRoleOf(emp) === 'mgr') sec = ackSecOf(emp); } catch (e) {}
+    var sec = sec0;
     var deptAll = all.filter(function (r) {
       if (r.dept && !riskSameDept(r.dept, emp.dept)) return false;
       /* Нэг удаагийн ажил (автокран, өндөрт гагнуур) нээгдээгүй бол
@@ -8226,6 +8295,8 @@ function riskOpenDetail(id) {
     if (!host._ppeWired) {
       host._ppeWired = true;
       host.addEventListener('click', function (ev) {
+        var ro = ev.target.closest('[data-req-open]');
+        if (ro) { closeModal(); setTimeout(function () { reqDetailModal(ro.getAttribute('data-req-open')); }, 80); return; }
         var pb = ev.target.closest('[data-ppe-req]');
         if (!pb) return;
         var q = String(pb.getAttribute('data-ppe-req')).split('|');
@@ -8246,6 +8317,19 @@ function riskOpenDetail(id) {
     });
   };
   wire(node);
+
+  /* Хүсэлтүүд ирээгүй бол татаад дахин зурна */
+  if (!REQ_OK && !riskOpenDetail._reqBusy) {
+    riskOpenDetail._reqBusy = true;
+    reqLoad().then(function () {
+      riskOpenDetail._reqBusy = false;
+      var host2 = node.parentNode ? node : null;
+      if (!host2) return;
+      host2.innerHTML = navHTML + riskDetailHTML(r);
+      host2._riskNavWired = false; host2._ppeWired = false;
+      wire(host2);
+    }).catch(function (e) { riskOpenDetail._reqBusy = false; });
+  }
 
   /* Албаны биелэлтийн бичлэгүүд ирсний дараа блокийг дахин зурна */
   var dept = riskCanonDept(r.dept) || r.dept || '';
@@ -13648,10 +13732,23 @@ function riskPPEBlockHTML(r) {
         return '<span style="display:inline-block;background:#EEF2FF;color:#4338CA;border-radius:5px;' +
           'padding:1px 7px;margin-right:4px;font-weight:700">' + esc(k) + '</span>';
       }).join('') + '</span></span>' +
-      (isBuy && canReq
-        ? '<button class="btn btn-sm btn-primary" data-ppe-req="' + esc(r.id) + '|' + x.i + '" style="flex-shrink:0">' +
-          '<i class="ti ti-send"></i> Хүсэлт гаргах</button>'
-        : '') + '</div>';
+      (function () {
+        if (!isBuy) return '';
+        /* Энэ заалтад хүсэлт аль хэдийн гарсан бол дахин гаргуулахгүй — явцыг нь харуулна */
+        var ex = null; try { ex = riskReqForMeasure(r, x.text); } catch (e) {}
+        if (ex) {
+          var S2 = REQ_ST[ex.status] || REQ_ST.running;
+          var ov2 = reqOverdue(ex);
+          return '<button data-req-open="' + esc(ex.id) + '" style="flex-shrink:0;cursor:pointer;font-family:inherit;' +
+            'background:' + S2.bg + ';border:1.5px solid ' + S2.c + '3D;color:' + S2.c + ';border-radius:9px;' +
+            'padding:6px 11px;font-size:11.5px;font-weight:800;text-align:left;line-height:1.4">' +
+            S2.t + '<span style="display:block;font-weight:600;font-size:10.5px;opacity:.85">' +
+            (ov2 > 0 ? '⚠ ' + ov2 + ' өдөр хэтэрсэн' : riskReqWhere(ex)) + '</span></button>';
+        }
+        if (!canReq) return '';
+        return '<button class="btn btn-sm btn-primary" data-ppe-req="' + esc(r.id) + '|' + x.i + '" style="flex-shrink:0">' +
+          '<i class="ti ti-send"></i> Хүсэлт гаргах</button>';
+      })() + '</div>';
   };
 
   var H = '';
@@ -13670,7 +13767,60 @@ function riskPPEBlockHTML(r) {
       '🦺 АЖИЛТАН ӨМСӨХ / ХЭРЭГЛЭХ (' + wear.length + ')</div>' +
       wear.map(function (x) { return row(x, false); }).join('');
   }
+  /* ⭐ Гаргасан хүсэлтүүд — хаана яваа нь эндээс харагдана */
+  H += riskReqLogHTML(r);
   return H;
+}
+
+/* Энэ эрсдэлээс гарсан ХҮСЭЛТҮҮД (бүгдэд харагдана) */
+function riskReqsOf(r) {
+  if (!REQ_OK || !r) return [];
+  var rid = String(r.id);
+  return (REQ_ROWS || []).filter(function (x) { return x && String(x.riskId || '') === rid; })
+    .sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+}
+/* Тухайн АРГА ХЭМЖЭЭНИЙ төлөө хүсэлт гаргасан эсэх */
+function riskReqForMeasure(r, mtext) {
+  var t = String(mtext || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return riskReqsOf(r).filter(function (x) {
+    return String(x.measure || '').replace(/\s+/g, ' ').trim().toLowerCase() === t;
+  })[0] || null;
+}
+/* Хүсэлтийн одоогийн байдал — нэг мөрөөр */
+function riskReqWhere(x) {
+  if (x.status === 'done') return 'Бүрэн батлагдсан';
+  if (x.status === 'cancelled') return 'Цуцалсан';
+  var st = (x.steps || [])[x.step || 0];
+  if (!st) return '';
+  if (x.status === 'returned') return esc(st.name || '') + ' буцаасан';
+  var ov = reqOverdue(x);
+  return esc(st.name || st.dept || '') + ' дээр' +
+    (ov > 0 ? ' · ⚠ ' + ov + ' өдөр хэтэрсэн' : ' · ' + reqDaysAtStep(x) + ' өдөр болсон');
+}
+/* 📨 ЭНЭ ЭРСДЭЛД ГАРГАСАН ХҮСЭЛТ — «Таны авсан арга хэмжээ»-тэй ижил хэв */
+function riskReqLogHTML(r) {
+  var list = riskReqsOf(r);
+  if (!list.length) return '';
+  return '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #F1F5F9">' +
+    '<div style="font-size:12.5px;font-weight:900;color:#334155;letter-spacing:.3px;margin-bottom:8px">' +
+    '📨 ЭНЭ ЭРСДЭЛД ГАРГАСАН ХҮСЭЛТ (' + list.length + ')</div>' +
+    list.map(function (x) {
+      var S = REQ_ST[x.status] || REQ_ST.running;
+      var ov = reqOverdue(x);
+      return '<div data-req-open="' + esc(x.id) + '" style="background:#fff;border:1px solid ' +
+        (ov > 0 ? '#FECACA' : '#E2E8F0') + ';border-left:3px solid ' + (ov > 0 ? '#DC2626' : S.c) +
+        ';border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer">' +
+        '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">' +
+        '<span style="flex:1;min-width:140px;font-size:13px;font-weight:700;color:#1E293B;line-height:1.5">' +
+        esc(x.title || '') + '</span>' +
+        '<span style="background:' + S.bg + ';color:' + S.c + ';border-radius:6px;padding:2px 9px;' +
+        'font-size:11px;font-weight:800;flex-shrink:0">' + S.t + '</span></div>' +
+        '<div style="font-size:11.5px;color:' + (ov > 0 ? '#B91C1C' : '#94A3B8') + ';margin-top:5px">' +
+        '👤 ' + esc(x.byName || '') + ' · ' + ackDateMn(x.at) + ' · ' + riskReqWhere(x) + '</div>' +
+        '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">' +
+        (x.steps || []).map(function (st, i) { return reqStepChip(x, st, i); }).join('') + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
 }
 
 /* «Хүсэлт гаргах» товч → урьдчилан бөглөсөн хүсэлтийн цонх */
