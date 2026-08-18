@@ -15106,6 +15106,21 @@ function pplRowHTML(st) {
     sigTxt + '</span>' +
     '<i class="ti ti-chevron-' + (open ? 'up' : 'down') + '" style="flex:0 0 18px;color:#CBD5E1"></i></div>';
 
+  /* ⭐ ХЯНАГЧИЙН ҮЙЛДЭЛ — гүйцэтгээгүй хүнийг шахна.
+     Хариуцагч эрсдэл тус бүр дээр ажиллахгүй — ХЯНАНА. */
+  var need = [];
+  if (!st.row) need.push('гарын үсэг зураагүй');
+  if (st.deep && st.mst.late) need.push(st.mst.late + ' хугацаа хэтэрсэн');
+  if (st.scope !== 'pos' && st.scope !== 'none') need.push('ажлын байрны үнэлгээгүй');
+  if (need.length) {
+    H += '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:0 13px 11px">' +
+      '<span style="font-size:11.5px;color:#B45309;font-weight:700">⚠ ' + need.join(' · ') + '</span>' +
+      (!st.row
+        ? '<button class="btn btn-sm" data-ppl-poke="' + esc(e.uid) + '" style="margin-left:auto;' +
+          'background:#EEF2FF;color:#4338CA;border:1px solid #C7D2FE"><i class="ti ti-bell"></i> Сануулах</button>'
+        : '') + '</div>';
+  }
+
   if (!open) return H + '</div>';
   /* Задалсан үед л арга хэмжээ, дүрмийг тооцно (хурдны төлөө) */
   if (!st.deep) { try { st = pplEmpStat(e, true); } catch (er) {} }
@@ -15243,7 +15258,9 @@ function renderPeoplePage(box) {
     '<div><div style="font-size:15px;font-weight:800;color:#0F172A">Миний хариуцах ажилтнууд</div>' +
     '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ажилтан бүрийн эрсдэл, танилцалт, санал, арга хэмжээг нэг бүрчлэн. ' +
     'Мөр дээр дарж дэлгэрэнгүйг нээнэ.</div></div>' +
-    '<button class="btn btn-secondary btn-sm" data-ppl-xl="1" style="margin-left:auto">' +
+    '<button class="btn btn-primary btn-sm" data-ppl-pokeall="1" style="margin-left:auto">' +
+    '<i class="ti ti-bell-ringing"></i> Зураагүй бүгдэд сануулах</button>' +
+    '<button class="btn btn-secondary btn-sm" data-ppl-xl="1">' +
     '<i class="ti ti-file-spreadsheet"></i> Excel татах</button></div>' +
     '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">' +
     card(stats.length, 'ажилтан', '#4F46E5') +
@@ -15252,6 +15269,29 @@ function renderPeoplePage(box) {
     (meaShow ? card(meaDoneN + ' / ' + meaTot, 'арга хэмжээ', '#0891B2') : '') +
     (meaShow ? card(meaLate, 'хугацаа хэтэрсэн', meaLate ? '#DC2626' : '#64748B') : '') +
     '</div>' +
+    (function () {
+      /* ⚠ АЖЛЫН БАЙРНЫ ҮНЭЛГЭЭ ХИЙГДЭЭГҮЙ — ХАБЭА-гаас
+         шалтгаалах цоорхой. Хариуцагч үүнийг хараад шахах ёстой. */
+      var gap = {};
+      stats.forEach(function (x) {
+        if (x.scope === 'pos' || x.scope === 'none') return;
+        var p = x.e.pos || x.e.role || '—';
+        gap[p] = (gap[p] || 0) + 1;
+      });
+      var ks = Object.keys(gap);
+      if (!ks.length) return '';
+      return '<div class="card" style="padding:13px 16px;margin-bottom:12px;border:1.5px solid #FDE68A;background:#FFFBEB">' +
+        '<div style="font-size:13.5px;font-weight:800;color:#92400E;margin-bottom:3px">' +
+        '⚠ Ажлын байрны үнэлгээ хийгдээгүй — ' + ks.length + ' ажлын байр</div>' +
+        '<div style="font-size:12px;color:#8A6D3B;line-height:1.6;margin-bottom:8px">' +
+        'Эдгээр хүмүүст албаны эрсдлийг ТҮР харуулж байна. Үнэлгээг ХАБЭА-н алба хийнэ.</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        ks.sort(function (a, b) { return gap[b] - gap[a]; }).map(function (p) {
+          return '<span style="background:#fff;border:1px solid #FDE68A;border-radius:8px;padding:4px 10px;' +
+            'font-size:12px;color:#92400E;font-weight:700">' + esc(p) +
+            ' <b style="color:#B45309">' + gap[p] + '</b></span>';
+        }).join('') + '</div></div>';
+    })() +
     (!PPL_ACK
       ? '<div style="font-size:12.5px;color:#94A3B8;margin-bottom:9px"><i class="ti ti-loader-2"></i> ' +
         'Танилцалтын мэдээллийг ачаалж байна…</div>'
@@ -15280,6 +15320,13 @@ function renderPeoplePage(box) {
         return;
       }
       if (ev.target.closest('[data-ppl-all]')) { PPL_ALL = true; renderHazards(); return; }
+      var pk = ev.target.closest('[data-ppl-poke]');
+      if (pk) { pplPoke([pk.getAttribute('data-ppl-poke')], stats, pk); return; }
+      var pka = ev.target.closest('[data-ppl-pokeall]');
+      if (pka) {
+        var ids = stats.filter(function (x) { return !x.row; }).map(function (x) { return x.e.uid; });
+        pplPoke(ids, stats, pka); return;
+      }
       if (ev.target.closest('[data-ppl-xl]')) {
         /* Excel-д БҮГДИЙГ гүнзгий тооцоод оруулна */
         var full = subs.map(function (e) { return pplEmpStat(e, true); })
@@ -15288,6 +15335,31 @@ function renderPeoplePage(box) {
       }
     });
   }
+}
+
+/* Хянагч ажилтанд САНУУЛНА — хонх + push.
+   Энэ нь хариуцагчийн ГОЛ хэрэгсэл. */
+function pplPoke(uids, stats, btn) {
+  uids = (uids || []).filter(Boolean);
+  if (!uids.length) { toast('Бүгд гарын үсгээ зурсан байна', 'info'); return; }
+  var emps = (stats || []).filter(function (x) { return uids.indexOf(x.e.uid) >= 0; })
+    .map(function (x) { return x.e; });
+  if (!emps.length) return;
+  var old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i>'; }
+  var me = reqMe();
+  ntfSend(emps, {
+    kind: 'ack',
+    title: 'Эрсдэлтэй танилцаж гарын үсгээ зурна уу',
+    body: ((me && me.name) || 'Хариуцагч') + ' танаас хүлээж байна. Эрсдэлүүдээ нэг бүрчлэн уншаад гарын үсгээ зурна уу.',
+    url: '/kpi/?page=hazards'
+  }).then(function () {
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    toast('✓ ' + emps.length + ' ажилтанд сануулга илгээлээ', 'success');
+  }).catch(function (er) {
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    toast('Илгээж чадсангүй', 'error');
+  });
 }
 
 /* Excel — ажилтан бүрийн бүрэн дата + саналууд тусдаа хуудсаар */
