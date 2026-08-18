@@ -1139,6 +1139,38 @@ function riskSlug(name) {
   return (ascii ? ascii + '-' : 'd-') + h.toString(36);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ЗАХИРЛУУДЫН ХАМРАХ ХҮРЭЭ
+   · Гүйцэтгэх захирал — БҮХ албаны эрсдэл
+   · Үйлдвэрлэл хариуцсан захирал — ХХҮ, ШХҮ, ЧХЛ, ИТА, ЧБА (5 алба)
+   Эдгээр нь албадаар нь хуваагдаж, товч дарж шүүгдэнэ.
+   ⚠ Ажилтны жагсаалт ирээгүй байж болзошгүй тул СЕШНий албан тушаалаар ч
+     таньдаг (ackRoleOf нь myEmp() шаарддаг). */
+var RISK_PROD_DEPTS = /хуурай\s*хүнс|шингэн\s*хүнс|чанарын\s*хяналт|инженер\s*техник|чанарын\s*баталгаа/i;
+function riskDirScope() {
+  var p = '';
+  try { var me = myEmp(); if (me) p = me.pos || me.role || ''; } catch (e) {}
+  if (!p && typeof SESSION !== 'undefined' && SESSION) p = SESSION.pos || SESSION.role || '';
+  p = String(p || '');
+  if (/гүйцэтгэх\s*захирал/i.test(p)) return 'all';
+  if (/үйлдвэрлэл\s*хариуцсан\s*захирал/i.test(p)) return 'prod';
+  return '';
+}
+/* Тухайн захиралд ямар албад хамаарах вэ */
+function riskDirDepts() {
+  var sc = riskDirScope();
+  if (!sc) return [];
+  var ds = ((RISK_INDEX && RISK_INDEX.depts) || []).map(function (d) { return d.name; });
+  if (!ds.length) { try { ds = deptList() || []; } catch (e) { ds = []; } }
+  if (sc === 'all') return ds;
+  return ds.filter(function (n) { return RISK_PROD_DEPTS.test(n); });
+}
+/* Эрсдэл нэмэх эрхтэй юу — админ, албаны дарга, ХЭСЭГ ОНООСОН ажилтан */
+function riskCanAdd() {
+  if (isAdmin() || isDeptHead()) return true;
+  try { return !!ackSecOf(myEmp()); } catch (e) { return false; }
+}
+
 function riskR2Url(key) { return TASK_R2 + '/' + key; }
 
 /* R2-оос JSON уншина (эрх шаардахгүй — CORS нь зөвхөн манай домэйнд нээлттэй) */
@@ -1203,7 +1235,11 @@ function riskDedupe(rows) {
   return order.map(function (k) { return by[k]; });
 }
 
-async function riskR2Publish(rows, onStep) {
+async function riskR2Publish(rows, onStep, opts) {
+  opts = opts || {};
+  /* scopeDepts — энэ хэрэглэгч ЗӨВХӨН эдгээр албанд эрх мэдэлтэй.
+     Өгөгдвөл бусад албаны бичлэгийг ХӨНДӨХГҮЙ, индекст нь хэвээр үлдээнэ. */
+  var scope = opts.scopeDepts || null;
   var list = riskDedupe(rows || []);
   var byDept = {};
   list.forEach(function (r) {
@@ -1213,21 +1249,47 @@ async function riskR2Publish(rows, onStep) {
   });
   var names = Object.keys(byDept);
   /* ⚠ Хамгаалалт: 100-аас дээш эрсдэл ердөө 1-2 албанд нурсан бол албаны нэр
-     хөрвүүлэлт бүтээгүй гэсэн үг — тэр байдлаар нийтэлбэл дата эвдэрнэ. */
-  if (list.length > 100 && names.length < 3) {
+     хөрвүүлэлт бүтээгүй гэсэн үг — тэр байдлаар нийтэлбэл дата эвдэрнэ.
+     (Хэсэгчилсэн нийтлэлтэд энэ шалгуур хамаарахгүй — тэнд ганц алба хэвийн.) */
+  if (!scope && list.length > 100 && names.length < 3) {
     throw new Error('Албаны нэр тодорхойлогдсонгүй (' + names.length + ' алба). ' +
       'Ажилтны жагсаалт ачаалагдсаны дараа дахин оролдоно уу.');
   }
+  /* Эрхээсээ гадуур алба руу бичихийг хориглоно */
+  if (scope) {
+    var bad = names.filter(function (n) {
+      return !scope.some(function (sd) { return riskSameDept(sd, n); });
+    });
+    if (bad.length) {
+      throw new Error('Танд «' + bad[0] + '» албанд бичих эрх алга. ' +
+        'Зөвхөн өөрийн албандаа эрсдэл нэмнэ.');
+    }
+  }
+  /* hash = тухайн албаны эрсдлийн АГУУЛГЫН хураангуй. Танилцалтын гарын
+     үсэг үүнд холбогдоно: агуулга нь өөрчлөгдсөн алба л дахин зурна. */
+  var mine = names.map(function (n) {
+    return { name: n, slug: riskSlug(n), n: byDept[n].length, hash: ackHashOf(byDept[n]) };
+  });
+
+  /* ⭐ ОДОО БАЙГАА ИНДЕКСТЭЙ НИЙЛҮҮЛНЭ — өөрийн бичихгүй албадыг хэвээр.
+     Эс бөгөөс нэг албаны хүн эрсдэл нэмэхэд бусад алба индексээс УНАНА. */
+  var keep = [];
+  try {
+    var old = await riskR2GetJson(RISK_R2_INDEX);
+    (old && old.depts || []).forEach(function (d) {
+      if (!d || !d.name) return;
+      var replaced = mine.some(function (m) { return m.slug === d.slug || riskSameDept(m.name, d.name); });
+      if (!replaced) keep.push(d);
+    });
+  } catch (e) { console.warn('[riskR2] хуучин индекс уншигдсангүй', e); }
+
+  var allDepts = mine.concat(keep);
   var index = {
     version: Date.now(),
     updatedAt: new Date().toISOString(),
     updatedBy: (SESSION && SESSION.email) || 'admin',
-    total: list.length,
-    /* hash = тухайн албаны эрсдлийн АГУУЛГЫН хураангуй. Танилцалтын гарын
-       үсэг үүнд холбогдоно: агуулга нь өөрчлөгдсөн алба л дахин зурна. */
-    depts: names.map(function (n) {
-      return { name: n, slug: riskSlug(n), n: byDept[n].length, hash: ackHashOf(byDept[n]) };
-    })
+    total: allDepts.reduce(function (a, d) { return a + (d.n || 0); }, 0),
+    depts: allDepts
   };
   for (var i = 0; i < names.length; i++) {
     var n = names[i];
@@ -1338,13 +1400,21 @@ async function riskR2Load() {
   /* Кэш — хувилбар өөрчлөгдөөгүй бол сүлжээ ашиглахгүй */
   try {
     var c = JSON.parse(localStorage.getItem(RISK_CACHE_KEY) || 'null');
-    if (c && c.version === idx.version && Array.isArray(c.rows)) {
+    if (c && c.version === idx.version && Array.isArray(c.rows) &&
+        String(c.scope || '') === String(riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || ''))) {
       DB.risks = c.rows; return { cached: true, n: c.rows.length };
     }
   } catch (e) {}
 
   var want = idx.depts;
-  if (!isAdmin() && SESSION && SESSION.dept) {
+  var dsc = riskDirScope();
+  if (dsc === 'prod') {
+    /* Үйлдвэрлэлийн захирал — 5 алба */
+    var five = idx.depts.filter(function (d) { return RISK_PROD_DEPTS.test(d.name); });
+    if (five.length) want = five;
+  } else if (dsc === 'all') {
+    want = idx.depts;                             // Гүйцэтгэх захирал — бүгд
+  } else if (!isAdmin() && SESSION && SESSION.dept) {
     var mine = idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
     if (mine.length) want = mine;                 // олдохгүй бол бүгдийг (аюулгүй тал руу)
   }
@@ -1356,7 +1426,10 @@ async function riskR2Load() {
     } catch (e) { console.error('[riskR2] ' + want[i].name + ' уншигдсангүй', e); }
   }
   DB.risks = out;
-  try { localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out })); }
+  try {
+    localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out,
+      scope: riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || '') }));
+  }
   catch (e) { /* хэтэрхий том бол кэшлэхгүй — асуудалгүй */ }
   return { cached: false, n: out.length, depts: want.length };
 }
@@ -1444,8 +1517,13 @@ function actionRiskRelease() {
    Туслах админы хувьд алба нь өөрийнхөөр ТҮГЖИГДЭНЭ.
    ══════════════════════════════════════════════════════════════════════ */
 function actionRiskAdd() {
-  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ / туслах админ', 'error'); return; }
-  var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '') : '';
+  if (!riskCanAdd()) { toast('Танд эрсдэл нэмэх эрх алга', 'error'); return; }
+  /* ⭐ Хэсэг оноосон ажилтан — өөрийн алба, өөрийн хэсэгтээ л нэмнэ */
+  var mySec = '', meAdd = null;
+  try { meAdd = myEmp(); } catch (e) {}
+  if (!isAdmin() && !isDeptHead()) { try { mySec = ackSecOf(meAdd) || ''; } catch (e) {} }
+  var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '')
+    : (mySec ? (riskCanonDept(meAdd && meAdd.dept) || (meAdd && meAdd.dept) || '') : '');
   var depts = deptList();
   var emps = (DB.employees || []).filter(function (e) {
     return !lockDept || riskSameDept(lockDept, e.dept);
@@ -1471,7 +1549,9 @@ function actionRiskAdd() {
 
   var node = elc('div', 'modal-info',
     '<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:12.5px;color:#3730A3;line-height:1.6">' +
-    'Энд оруулсан зүйл сонгосон ажилтнуудад <b>шууд харагдана</b>. Ажлын өдрийн зааварчилгаа, шинэ аюулын мэдэгдэл оруулахад тохиромжтой.</div>' +
+    'Энд оруулсан зүйл сонгосон ажилтнуудад <b>шууд харагдана</b>. Ажлын өдрийн зааварчилгаа, шинэ аюулын мэдэгдэл оруулахад тохиромжтой.<br>' +
+    '<b>📅 Огноо: ' + ackDateMn(new Date().toISOString()) + '</b> — өнөөдрийн огноо автоматаар хамт бүртгэгдэнэ.' +
+    (mySec ? '<br>🏷 Хэсэг: <b>' + esc(mySec) + '</b> — эрсдэл энэ хэсэгт бүртгэгдэнэ.' : '') + '</div>' +
     fld('raHaz', 'Аюул / гарчиг *', 'Жишээ: Шатны бүсэд гулгах, унах') +
     fld('raProc', 'Ямар ажил хийж байхад', 'Жишээ: Угаалга, цэвэрлэгээ хийх үед') +
     fld('raLoc', 'Байршил', 'Жишээ: 2-р давхрын шат') +
@@ -1530,7 +1610,12 @@ function actionRiskAdd() {
       p: P, n: N, h: Hh, pv: [P], nv: [N], hv: [Hh],
       r: P * N * Hh, rAfter: 0, rOk: true, unscored: false,
       category: 'Зааварчилгаа',
+      /* ⭐ Хэсэг оноосон хүн нэмвэл ТЭР ХЭСЭГТ бүртгэгдэнэ (riskSectionOf нь
+         src замын 3 дахь хэсгээс хэсгийн нэрийг уншдаг) */
+      src: mySec ? ('ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД/' + dept + '/' + mySec + '/Гараар нэмсэн.xlsx') : '',
+      addedBy: mySec ? 'section' : (isAdmin() ? 'admin' : 'depthead'),
       createdAt: new Date().toISOString(),
+      createdDay: todayISO(),
       createdBy: (SESSION && SESSION.email) || 'admin'
     };
     save.disabled = true; save.innerHTML = '<i class="ti ti-loader"></i> Хадгалж байна…';
@@ -1593,9 +1678,17 @@ async function riskPersist(msg) {
   var n = (DB.risks || []).length;
   var t = toast((msg || 'Эрсдэл байршуулж байна') + '…', 'info');
   try {
+    /* Админ бүх албыг ачаалдаг тул бүрэн нийтэлнэ. Бусад нь ЗӨВХӨН
+       өөрийн албандаа — бусдын датаг хамгаална. */
+    var scopeD = null;
+    if (!isAdmin()) {
+      var myD = (SESSION && SESSION.dept) || '';
+      try { var _me = myEmp(); if (_me && _me.dept) myD = _me.dept; } catch (e) {}
+      if (myD) scopeD = [myD];
+    }
     var idx = await riskR2Publish(DB.risks || [], function (s) {
       try { console.log('[riskR2] ' + s); } catch (e) {}
-    });
+    }, { scopeDepts: scopeD });
     toast('✓ ' + n + ' эрсдэл ' + idx.depts.length + ' албанд байршлаа', 'success');
     return idx;
   } catch (e) {
@@ -7893,6 +7986,8 @@ function risksForView() {
   }
   var all = (DB.risks || []).slice();
   if (isAdmin()) return all;
+  /* ⭐ Захирлууд — хамрах хүрээнийхээ БҮХ албаны эрсдлийг харна */
+  if (riskDirScope()) return all;
   if (isDeptHead()) {
     var d = SESSION && SESSION.dept;
     /* Яг таг тэнцүү биш — «ИТА» ↔ «Инженер техникийн алба» зэргийг тааруулна */
@@ -8819,6 +8914,55 @@ function riskTabList(list) {
   return tabs;
 }
 
+/* ══ ЗАХИРЛЫН АЛБАДЫН ТОВЧНУУД ══
+   ЧХЛ дээр дарвал ЧХЛ-ийн бүх эрсдэл л харагдана. «Бүгд» гэвэл нийтээр. */
+function riskDeptBarHTML(list) {
+  var ds = riskDirDepts();
+  if (!ds.length) return '';
+  var cnt = {};
+  (list || []).forEach(function (r) {
+    var d = riskCanonDept(r.dept) || r.dept || '';
+    ds.forEach(function (n) { if (riskSameDept(n, d)) cnt[n] = (cnt[n] || 0) + 1; });
+  });
+  var tot = (list || []).length;
+  var sc = riskDirScope();
+  var btn = function (name, label, n, on) {
+    return '<button data-risk-deptsel="' + esc(name) + '" title="' + esc(name || 'Бүх алба') +
+      '" style="cursor:pointer;font-family:inherit;' +
+      'border:1.5px solid ' + (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+      ';color:' + (on ? '#fff' : '#334155') + ';border-radius:11px;padding:8px 13px;text-align:left;' +
+      'font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + esc(label) +
+      '<span style="display:block;font-size:16px;font-weight:900;line-height:1.15;font-family:\'Bricolage Grotesque\',sans-serif">' +
+      n + '</span></button>';
+  };
+  return '<div class="card" style="padding:13px 15px;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div style="font-size:13.5px;font-weight:800;color:#1E293B">Албадаар харах</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8">' +
+    (sc === 'all' ? 'Гүйцэтгэх захирал — бүх алба' : 'Үйлдвэрлэл хариуцсан захирал — ' + ds.length + ' алба') +
+    '</div></div>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap">' +
+    btn('', 'Бүгд', tot, !RISK_FILTER.dept) +
+    ds.map(function (n) { return btn(n, riskDeptShort(n), cnt[n] || 0, RISK_FILTER.dept === n); }).join('') +
+    '</div></div>';
+}
+/* Албаны нэрийг товчлох — ЧХЛ, ИТА гэх мэт */
+function riskDeptShort(name) {
+  var n = String(name || '');
+  if (/хуурай\s*хүнс/i.test(n)) return 'ХХҮ';
+  if (/шингэн\s*хүнс/i.test(n)) return 'ШХҮ';
+  if (/чанарын\s*хяналт/i.test(n)) return 'ЧХЛ';
+  if (/инженер\s*техник/i.test(n)) return 'ИТА';
+  if (/чанарын\s*баталгаа/i.test(n)) return 'ЧБА';
+  if (/ложистик/i.test(n)) return 'Ложистик';
+  if (/хангамж/i.test(n)) return 'Хангамж';
+  if (/захиргаа|хүний нөөц/i.test(n)) return 'ЗХНА';
+  if (/санхүү/i.test(n)) return 'Санхүү';
+  if (/маркетинг/i.test(n)) return 'Маркетинг';
+  if (/хөдөлмөрийн аюулгүй/i.test(n)) return 'ХАБЭА';
+  return n.length > 16 ? n.slice(0, 15) + '…' : n;
+}
+
 function riskTabsHTML(list) {
   var tabs = riskTabList(list);
   if (tabs.length < 2) return '';
@@ -8890,6 +9034,8 @@ function riskEmpBriefHTML(list, myPos, myDept) {
   /* ── Шүүлтүүр (дарж болдог) ── */
   var rows = all.filter(function (r) {
     if (!riskMxPass(r)) return false;
+    /* Захирал алба сонгосон бол зөвхөн тэр албаных */
+    if (RISK_FILTER.dept && !riskSameDept(r.dept, RISK_FILTER.dept)) return false;
     if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
     if (RISK_FILTER.q) {
       var hay = [r.hazard, r.process, r.location, r.cause, r.actions, r.responsible]
@@ -9298,6 +9444,14 @@ function riskWire(sec, redraw) {
   sec.addEventListener('click', function (ev) {
     var lv = ev.target.closest('[data-risk-lv]');
     if (lv) { var n = lv.getAttribute('data-risk-lv'); RISK_FILTER.level = (RISK_FILTER.level === n ? '' : n); RISK_FILTER.cell = 0; redraw(); return; }
+    /* Захирлын албаны сонголт */
+    var dsb = ev.target.closest('[data-risk-deptsel]');
+    if (dsb) {
+      var dn = dsb.getAttribute('data-risk-deptsel');
+      RISK_FILTER.dept = (RISK_FILTER.dept === dn) ? '' : dn;
+      RISK_FILTER.level = ''; RISK_FILTER.mx = ''; RISK_FILTER.cell = 0;
+      redraw(); return;
+    }
     /* Хүснэгт ⇄ Карт сэлгэх */
     var rmb = ev.target.closest('[data-risk-rowmode]');
     if (rmb) { riskRowModeSet(rmb.getAttribute('data-risk-rowmode')); redraw(); return; }
@@ -9373,6 +9527,10 @@ function renderHazards() {
 
   var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
     '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
+    ((!isAdmin() && !isDeptHead() && riskCanAdd())
+      ? '<div class="page-actions">' +
+        '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button></div>'
+      : '') +
     ((isAdmin() || isDeptHead())
       ? '<div class="page-actions">' +
         '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button>' +
@@ -9431,6 +9589,8 @@ function renderHazards() {
       H += ackAdminHTML();
     } else {
       RISK_TAB = 'risks';
+      /* Захирлуудад — албадаар хуваасан товчнууд */
+      H += riskDeptBarHTML(list);
       /* ТАНИЛЦАЛТ — хүн бүр (захирал, хариуцагч, ажилтан) гарын үсэг зурна */
       H += ackBannerHTML();
       /* Ажилтанд — эрэмбэлсэн, энгийн хэлээр. Админ/туслах админд — дашбоард. */
