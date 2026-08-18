@@ -13385,9 +13385,24 @@ function taskBodyHTML(x) {
    Эрсдэл болгоныг ухаж ороход хэцүү тул надад оногдсон БҮХ арга хэмжээг
    нэг дор жагсаана: хугацаа хэтэрсэн нь эхэнд, дараа нь хугацаатай.
    ══════════════════════════════════════════════════════════════════════ */
+/* ⭐ ДҮРЭМ, АРГА ХЭМЖЭЭГ ЗӨВХӨН АЖЛЫН БАЙРНЫ эрсдлээс гаргана.
+   ⚠ Ажилтны ажлын байрны үнэлгээ хийгдээгүй бол `riskSeenBy` нь АЛБАНЫ
+   бүх эрсдлийг буцаадаг (танилцуулах зорилгоор). Тэрнээс дүрэм гаргавал
+   Бэлтгэгчид ХИМИЙН БОДИСЫН дүрэм оногдох гэх мэт БУРУУ зүйл болно. */
+function riskMineStrict(emp) {
+  var s = { rows: [], scope: 'none' };
+  try { s = riskSeenBy(emp); } catch (e) {}
+  return (s.scope === 'pos' || s.scope === 'section') ? (s.rows || []) : [];
+}
+/* Ажлын байрны үнэлгээ хийгдсэн үү */
+function riskHasOwn(emp) {
+  try { var s = riskSeenBy(emp); return s.scope === 'pos' || s.scope === 'section'; }
+  catch (e) { return false; }
+}
+
 function meaMineList(emp) {
   if (!emp) return [];
-  var seen = riskSeenBy(emp).rows || [];
+  var seen = riskMineStrict(emp);
   var store = MEA_VIEW.store;
   var out = [], seenKey = {};
   /* ⭐ ЗӨВХӨН надад оногдсон ХЭРЭГЖҮҮЛЭХ ажлууд (зан үйлийн дүрэм энд орохгүй) */
@@ -13427,7 +13442,7 @@ function meaMineStats(emp) {
 function meaMyRules(emp) {
   if (!emp) return [];
   var out = [], seen = {};
-  (riskSeenBy(emp).rows || []).forEach(function (r) {
+  riskMineStrict(emp).forEach(function (r) {
     riskMeasures(r).forEach(function (m) {
       if (m.role !== 'self') return;
       var k = meaKeyOf(riskCanonDept(r.dept) || r.dept, m.text);
