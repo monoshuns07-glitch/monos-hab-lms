@@ -9631,13 +9631,12 @@ function renderHazards() {
   } catch (e) {}
 
   /* Хүсэлтүүдийг нэг удаа арын талд татна — тоолуур, нүүр хуудсанд хэрэгтэй */
-  if (!REQ_OK && !renderHazards._reqBusy) {
-    renderHazards._reqBusy = true;
+  if (!REQ_OK && !renderHazards._reqOnce) {
+    renderHazards._reqOnce = true;             /* нэг удаа л */
     reqLoad().then(function () {
-      renderHazards._reqBusy = false;
       try { reqSyncViolations(); } catch (e) {}
       renderHazards();
-    }).catch(function (e) { renderHazards._reqBusy = false; console.error('[req]', e); });
+    }).catch(function (e) { console.error('[req]', e); });
   }
 
   /* Ажилтнуудын байдлын таб */
@@ -13500,15 +13499,15 @@ function renderMeasurePage(sec, embed) {
   }
   var dept = riskCanonDept(me.dept) || me.dept || '';
   /* Бичлэгүүд ирээгүй бол татаад дахин зурна */
-  if (!MEA_VIEW.store || MEA_VIEW.dept !== dept) {
-    if (!renderMeasurePage._busy) {
-      renderMeasurePage._busy = true;
-      meaLoad(dept).then(function (st) {
-        MEA_VIEW.store = st; MEA_VIEW.dept = dept;
-        renderMeasurePage._busy = false;
-        meaRedraw();
-      }).catch(function (e) { renderMeasurePage._busy = false; console.error('[measures]', e); });
-    }
+  if ((!MEA_VIEW.store || MEA_VIEW.dept !== dept) && renderMeasurePage._for !== dept) {
+    renderMeasurePage._for = dept;             /* нэг албанд НЭГ УДАА */
+    meaLoad(dept).then(function (st) {
+      MEA_VIEW.store = st || { rows: [] }; MEA_VIEW.dept = dept;
+      meaRedraw();
+    }).catch(function (e) {
+      MEA_VIEW.store = MEA_VIEW.store || { rows: [] }; MEA_VIEW.dept = dept;
+      console.error('[measures]', e);
+    });
   }
   var list = meaMineList(me), st = meaMineStats(me);
   var pct = st.total ? Math.round(st.done * 100 / st.total) : 0;
@@ -14493,13 +14492,12 @@ function renderRequestPage(box) {
   if (!box) return;
   var me = reqMe();
   if (!REQ_OK) {
-    if (!renderRequestPage._busy) {
-      renderRequestPage._busy = true;
+    if (!renderRequestPage._once) {
+      renderRequestPage._once = true;          /* нэг удаа л */
       reqLoad().then(function () {
-        renderRequestPage._busy = false;
         try { reqSyncViolations(); } catch (e) {}
         renderHazards();
-      }).catch(function (e) { renderRequestPage._busy = false; console.error('[req]', e); });
+      }).catch(function (e) { console.error('[req]', e); });
     }
     box.innerHTML = '<div style="padding:34px;text-align:center;color:#94A3B8">' +
       '<i class="ti ti-loader-2" style="font-size:26px;display:block;margin-bottom:8px"></i>Хүсэлтүүдийг ачаалж байна…</div>';
@@ -15189,16 +15187,20 @@ function renderPeoplePage(box) {
     ((subs[0] && subs[0].dept) || '');
   /* ⚠ Хэсгийн зураглал ачаалагдаагүй бол ackSecOf() ХООСОН буцааж, хэсэг
      оноосон хүнд албаны бүх эрсдэл харагддаг байв. Заавал эхлээд татна. */
-  if ((!PPL_ACK || !ACK_SEC_OK) && dept && !renderPeoplePage._busy) {
-    renderPeoplePage._busy = true;
-    Promise.all([ackLoad(dept), ACK_SEC_OK ? Promise.resolve(ACK_SEC) : ackSecLoad(true)])
+  /* ⚠⚠ ГАЦАЛТААС СЭРГИЙЛЭХ: өмнө нь ачаалалт бүтээгүй үед (сүлжээ)
+     нөхцөл үргэлж үнэн байж, дахин зурах бүрд дахин ачаалах → МӨНХИЙН
+     ДАВТАЛТ → САЙТ ГАЦДАГ байв. Одоо НЭГ УДАА л оролдоно. */
+  if (!renderPeoplePage._once && dept) {
+    renderPeoplePage._once = true;
+    Promise.all([ackLoad(dept), ackSecLoad(true)])
       .then(function (res) {
         PPL_ACK = res[0] || { rows: [] };
-        PPL_CACHE = {}; PPL_DEEP = {};        // хэсэг ирсэн тул дахин тооцно
-        renderPeoplePage._busy = false;
-        renderHazards();
-      }).catch(function () { renderPeoplePage._busy = false; PPL_ACK = { rows: [] }; });
+        PPL_CACHE = {}; PPL_DEEP = {};
+        var bx = document.querySelector('#riskTabPpl');
+        if (bx) renderPeoplePage(bx);          /* зөвхөн энэ хайрцагыг */
+      }).catch(function () { PPL_ACK = PPL_ACK || { rows: [] }; });
   }
+  if (!PPL_ACK) PPL_ACK = { rows: [] };
 
   if (!subs.length) {
     box.innerHTML = '<div class="empty-state" style="padding:36px"><i class="ti ti-users"></i>' +
