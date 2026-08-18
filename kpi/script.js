@@ -5720,12 +5720,14 @@ function deleteRiskDashboard(dept, cb) {
       N — үр дагавар, хор уршгийн хэмжээ (1-5)
       H — үнэлгээ хийсэн ажилчдын санал (1-5)
    R-ийн утгаар 5 зэрэглэнэ (A хамгийн ноцтой). */
+/* bg/bd = том картын зөөлөн дэвсгэр · mxBg/mxBd = 50px матрицын нүдний ТОД
+   хувилбар. Жижиг нүдэнд цайвар өнгө ялгагдахгүй тул тусад нь өгөв. */
 var RISK_LEVELS = [
-  { code: 'E', max: 3,   name: 'Бага',            color: '#16A34A', bg: '#F0FDF4', bd: '#BBF7D0' },
-  { code: 'D', max: 10,  name: 'Зөвшөөрөгдөх',    color: '#65A30D', bg: '#F7FEE7', bd: '#D9F99D' },
-  { code: 'C', max: 50,  name: 'Дундаж',          color: '#D97706', bg: '#FFFBEB', bd: '#FDE68A' },
-  { code: 'B', max: 100, name: 'Ихээхэн',         color: '#EA580C', bg: '#FFF7ED', bd: '#FED7AA' },
-  { code: 'A', max: 1e9, name: 'Үл зөвшөөрөгдөх', color: '#DC2626', bg: '#FEF2F2', bd: '#FECACA' }
+  { code: 'E', max: 3,   name: 'Бага',            color: '#16A34A', bg: '#F0FDF4', bd: '#BBF7D0', mxBg: '#DCFCE7', mxBd: '#86EFAC', mxFg: '#166534' },
+  { code: 'D', max: 10,  name: 'Зөвшөөрөгдөх',    color: '#65A30D', bg: '#F7FEE7', bd: '#D9F99D', mxBg: '#ECFCCB', mxBd: '#BEF264', mxFg: '#3F6212' },
+  { code: 'C', max: 50,  name: 'Дундаж',          color: '#D97706', bg: '#FFFBEB', bd: '#FDE68A', mxBg: '#FEF08A', mxBd: '#FACC15', mxFg: '#854D0E' },
+  { code: 'B', max: 100, name: 'Ихээхэн',         color: '#EA580C', bg: '#FFF7ED', bd: '#FED7AA', mxBg: '#FED7AA', mxBd: '#FB923C', mxFg: '#9A3412' },
+  { code: 'A', max: 1e9, name: 'Үл зөвшөөрөгдөх', color: '#DC2626', bg: '#FEF2F2', bd: '#FECACA', mxBg: '#FECACA', mxBd: '#F87171', mxFg: '#991B1B' }
 ];
 /* Эрсдэлийн утга: файлаас уншсан R. Хуучин prob×sev-ийг ч дэмжинэ. */
 function riskScore(r) {
@@ -8825,7 +8827,8 @@ function riskMeasureLogHTML(r, me, store) {
    будна — матриц ба картын өнгө, нэр ҮРГЭЛЖ таарна. */
 function riskMxLevelBand(li) {
   var L = (li != null && RISK_LEVELS[li]) ? RISK_LEVELS[li] : RISK_LEVEL_NONE;
-  return { bg: L.bg, bd: L.bd, fg: L.color, on: L.color, code: L.code, name: L.name };
+  return { bg: L.mxBg || L.bg, bd: L.mxBd || L.bd, fg: L.mxFg || L.color,
+    on: L.color, code: L.code, name: L.name };
 }
 /* Эрсдэл матрицын аль нүдэнд орох вэ (1..5) — оноогүй бол null */
 function riskMxCellOf(r) {
@@ -8898,7 +8901,7 @@ function riskMatrixHTML(rows, sideHTML) {
       return Object.keys(wst).some(function (k) { return RISK_LEVELS[wst[k]] === L; });
     }).map(function (L) {
       return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;' +
-        'border-radius:3px;background:' + L.bg + ';border:1px solid ' + L.bd + '"></span>' +
+        'border-radius:3px;background:' + (L.mxBg || L.bg) + ';border:1px solid ' + (L.mxBd || L.bd) + '"></span>' +
         L.code + ' · ' + L.name + '</span>';
     }).join('') +
     (un ? '<button data-risk-mx="none" style="border:1.5px solid #E2E8F0;' +
