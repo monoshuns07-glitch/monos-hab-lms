@@ -6208,9 +6208,9 @@ function ackDeptsWithDue() {
 /* Компанийн БҮХ хариуцагч (алба · дэд хэсэг тус бүрээр).
    Эрсдлийн датагүйгээр ажилтны жагсаалтаас тодорхойлно — захирлын хуудсан
    дээр ч бүх алба зөв тоологдоно. */
-function ackLeadsAll() {
+function ackLeadsAll(depts) {
   var out = [], seen = {}, emps = DB.employees || [];
-  ackDeptsWithDue().forEach(function (d) {
+  ((depts && depts.length) ? depts : ackDeptsWithDue()).forEach(function (d) {
     var units = {};
     emps.forEach(function (e) { if (riskSameDept(e.dept, d)) units[ackUnitOf(e) || ''] = 1; });
     if (!Object.keys(units).length) units[''] = 1;
@@ -6251,11 +6251,16 @@ function ackCanSign(emp, signed) {
   }
 
   /* Захирлууд — бүх албаны хариуцагч зурсан байх ёстой */
-  var leads = ackLeadsAll();
+  /* ⚠ Үйлдвэрлэл хариуцсан захирал зөвхөн ӨӨРИЙН харьяа албадын хариуцагчийг
+     хүлээнэ. Өмнө нь компанийн БҮХ 12 хариуцагчийг хүлээж, Санхүү/Ложистик/
+     Маркетинг зэрэг огт хамааралгүй албанаас болж мөнхөд гацдаг байв. */
+  var scope = (role === 'prod') ? riskDirDepts(emp) : null;
+  var leads = ackLeadsAll(scope);
   var missL = leads.filter(function (e) { return !has(e.uid); });
   if (missL.length) {
     return { ok: false, n: leads.length - missL.length, of: leads.length, miss: missL,
-      why: missL.length + ' албаны хариуцагч хараахан баталгаажуулаагүй байна (' + names(missL) + ')' };
+      why: missL.length + ' хариуцагч хараахан баталгаажуулаагүй байна (' + names(missL) + ')' +
+        (scope ? ' — таны харьяа ' + scope.length + ' алба' : '') };
   }
   if (role === 'prod') return { ok: true, n: leads.length, of: leads.length };
   /* Гүйцэтгэх захирал — хамгийн сүүлд */
@@ -8055,22 +8060,38 @@ var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
 
 /* ── Интерактив дашбоард (бүх эрхэд нийтлэг) ── */
 function riskDashHTML(list, subtitle) {
-  var byLevel = [0, 0, 0, 0];
+  /* ⚠ Өмнө нь [0, 0, 0, 0] буюу 4 нүдтэй байсан ч түвшин 5 бий. Улмаас хамгийн
+     ноцтой «Үл зөвшөөрөгдөх» картан дээр undefined/NaN гардаг байв.
+     Мөн үнэлгээ хийгдээгүй эрсдэл хаана ч тоологдохгүй өнгөрдөг байсан. */
+  var byLevel = RISK_LEVELS.map(function () { return 0; }), unN = 0;
   list.forEach(function (r) {
-    var L = riskLevel(r);
-    var i = RISK_LEVELS.indexOf(L); if (i >= 0) byLevel[i]++;
+    var i = RISK_LEVELS.indexOf(riskLevel(r));
+    if (i >= 0) byLevel[i]++; else unN++;
   });
   var total = list.length;
 
-  var cards = RISK_LEVELS.map(function (L, i) {
+  /* Ноцтойгоос нь эхлүүлж харуулна (бусад харагдацтай ижил дараалал) */
+  var cards = RISK_LEVELS.slice().reverse().map(function (L) {
+    var i = RISK_LEVELS.indexOf(L);
     var on = RISK_FILTER.level === L.name;
     return '<button class="risk-lv" data-risk-lv="' + esc(L.name) + '" style="flex:1;min-width:110px;text-align:left;' +
       'background:' + (on ? L.color : L.bg) + ';border:1.5px solid ' + (on ? L.color : L.bd) + ';' +
       'border-radius:14px;padding:12px 14px;cursor:pointer;font-family:inherit;transition:all .15s">' +
       '<div style="font-size:26px;font-weight:900;color:' + (on ? '#fff' : L.color) + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + byLevel[i] + '</div>' +
-      '<div style="font-size:12.5px;font-weight:700;color:' + (on ? '#fff' : L.color) + ';margin-top:3px">' + L.name + '</div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:' + (on ? '#fff' : L.color) + ';margin-top:3px">' +
+      L.code + ' · ' + L.name + '</div>' +
       '</button>';
   }).join('');
+  if (unN) {
+    var uOn = RISK_FILTER.level === RISK_LEVEL_NONE.name;
+    cards += '<button class="risk-lv" data-risk-lv="' + esc(RISK_LEVEL_NONE.name) + '" style="flex:1;min-width:110px;' +
+      'text-align:left;background:' + (uOn ? RISK_LEVEL_NONE.color : RISK_LEVEL_NONE.bg) + ';border:1.5px solid ' +
+      (uOn ? RISK_LEVEL_NONE.color : RISK_LEVEL_NONE.bd) + ';border-radius:14px;padding:12px 14px;cursor:pointer;font-family:inherit">' +
+      '<div style="font-size:26px;font-weight:900;color:' + (uOn ? '#fff' : RISK_LEVEL_NONE.color) +
+      ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + unN + '</div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:' + (uOn ? '#fff' : RISK_LEVEL_NONE.color) +
+      ';margin-top:3px">Үнэлгээгүй</div></button>';
+  }
 
   /* Арга хэмжээний ҮР ДҮН: R (өмнө) → R (дараа) */
   var withAfter = list.filter(function (r) { return riskScoreAfter(r) > 0; });
@@ -8796,15 +8817,21 @@ function riskMeasureLogHTML(r, me, store) {
    Нүд бүрд тэр цонхонд байгаа эрсдлийн ТОО. Дарвал зөвхөн тэднийг шүүнэ.
    ⚠ Оноог ЗОХИОХГҮЙ — эрсдэл бүрийн бодит p, n дундажаас л тооцно.
    ══════════════════════════════════════════════════════════════════════ */
-function riskMxBand(p, n) {
-  var v = p * n;
-  if (v >= 15) return { bg: '#FEE2E2', bd: '#FCA5A5', fg: '#991B1B', on: '#DC2626' };
-  if (v >= 8)  return { bg: '#FFEDD5', bd: '#FDBA74', fg: '#9A3412', on: '#EA580C' };
-  if (v >= 4)  return { bg: '#FEF9C3', bd: '#FDE047', fg: '#854D0E', on: '#CA8A04' };
-  return         { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534', on: '#16A34A' };
+/* ⚠ ӨМНӨ НЬ нүдийг P × N-ээр будаж байсан нь БУРУУ: эрсдэлийн жинхэнэ
+   зэрэглэл R = P × N × H-ээс тооцогддог. Улмаас нүдний өнгө картан дээрх
+   түвшинтэй 55% тохиолдолд зөрж, «Онцгой» улаан нүдэнд 42 эрсдэл байхад
+   картан дээр «Үл зөвшөөрөгдөх 0» гэж харагддаг байв.
+   Одоо нүд бүрийг дотроо байгаа ХАМГИЙН ӨНДӨР эрсдэлийн зэрэглэлээр
+   будна — матриц ба картын өнгө, нэр ҮРГЭЛЖ таарна. */
+function riskMxLevelBand(li) {
+  var L = (li != null && RISK_LEVELS[li]) ? RISK_LEVELS[li] : RISK_LEVEL_NONE;
+  return { bg: L.bg, bd: L.bd, fg: L.color, on: L.color, code: L.code, name: L.name };
 }
 /* Эрсдэл матрицын аль нүдэнд орох вэ (1..5) — оноогүй бол null */
 function riskMxCellOf(r) {
+  /* ⚠ Үнэлгээ хийгдээгүй эрсдлийг матрицад БҮҮ байрлуул — эс бөгөөс
+     «Үнэлгээгүй» гэсэн тоо матриц дээр нэг, картан дээр өөр гарна. */
+  if (riskIsUnscored(r)) return null;
   var p = Math.round(Number(r && r.p) || 0), n = Math.round(Number(r && r.n) || 0);
   if (p < 1 || n < 1) return null;
   return { p: Math.min(5, p), n: Math.min(5, n) };
@@ -8812,11 +8839,14 @@ function riskMxCellOf(r) {
 function riskMxKey(r) { var c = riskMxCellOf(r); return c ? (c.p + ',' + c.n) : ''; }
 
 function riskMatrixHTML(rows, sideHTML) {
-  var cnt = {}, un = 0, any = 0;
+  var cnt = {}, wst = {}, un = 0, any = 0;
   (rows || []).forEach(function (r) {
     var c = riskMxCellOf(r);
     if (!c) { un++; return; }
-    cnt[c.p + ',' + c.n] = (cnt[c.p + ',' + c.n] || 0) + 1; any++;
+    var k = c.p + ',' + c.n;
+    cnt[k] = (cnt[k] || 0) + 1; any++;
+    var li = RISK_LEVELS.indexOf(riskLevel(r));
+    if (li > (wst[k] == null ? -1 : wst[k])) wst[k] = li;   /* нүдний ХАМГИЙН ӨНДӨР */
   });
   if (!any) return '';
 
@@ -8841,10 +8871,11 @@ function riskMatrixHTML(rows, sideHTML) {
       '<span style="font-size:11px;font-weight:800;color:#64748B">' + p + '</span>' +
       '<span style="font-size:10px;color:#B6BECC;margin-left:4px">' + PL[p] + '</span></td>';
     for (var n = 1; n <= 5; n++) {
-      var k = p + ',' + n, c = cnt[k] || 0, B = riskMxBand(p, n);
+      var k = p + ',' + n, c = cnt[k] || 0, B = riskMxLevelBand(wst[k]);
       var on = RISK_FILTER.mx === k;
       H += '<td>' + (c
-        ? '<button data-risk-mx="' + k + '" title="Магадлал ' + p + ' × Үр дагавар ' + n + ' — ' + c + ' эрсдэл" ' +
+        ? '<button data-risk-mx="' + k + '" title="Магадлал ' + p + ' × Үр дагавар ' + n +
+          ' — ' + c + ' эрсдэл · хамгийн өндөр нь ' + B.code + ' · ' + B.name + '" ' +
           'style="width:50px;height:34px;cursor:pointer;font-family:inherit;border-radius:8px;' +
           'background:' + (on ? B.on : B.bg) + ';border:1.5px solid ' + (on ? B.on : B.bd) + ';' +
           'color:' + (on ? '#fff' : B.fg) + ';font-size:15px;font-weight:900;line-height:1">' + c + '</button>'
@@ -8860,10 +8891,15 @@ function riskMatrixHTML(rows, sideHTML) {
   }
   H += '</tr></table></div>' +
     '<div style="display:flex;gap:11px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:10.5px;color:#94A3B8">' +
-    ['#DCFCE7|Бага', '#FEF9C3|Дунд', '#FFEDD5|Их', '#FEE2E2|Онцгой'].map(function (s) {
-      var q = s.split('|');
+    /* ⚠ Өмнө нь энд «Бага/Дунд/Их/Онцгой» гэсэн ӨӨР нэр бичигдсэн байсан нь
+       картан дээрх «Зөвшөөрөгдөх/Дундаж/Ихээхэн/Үл зөвшөөрөгдөх»-тэй таарахгүй,
+       нэг зүйлийг хоёр нэрээр дуудаж эргэлзээ төрүүлдэг байв. */
+    RISK_LEVELS.slice().reverse().filter(function (L) {
+      return Object.keys(wst).some(function (k) { return RISK_LEVELS[wst[k]] === L; });
+    }).map(function (L) {
       return '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;' +
-        'border-radius:3px;background:' + q[0] + ';border:1px solid rgba(0,0,0,.08)"></span>' + q[1] + '</span>';
+        'border-radius:3px;background:' + L.bg + ';border:1px solid ' + L.bd + '"></span>' +
+        L.code + ' · ' + L.name + '</span>';
     }).join('') +
     (un ? '<button data-risk-mx="none" style="border:1.5px solid #E2E8F0;' +
       'background:' + (RISK_FILTER.mx === 'none' ? '#64748B' : '#F8FAFC') + ';color:' +
@@ -9017,7 +9053,13 @@ function riskEmpMerged(list) {
     if (seenH[k]) {
       var p = String(r.position || '').trim();
       if (p && seenH[k]._posList.indexOf(p) < 0) seenH[k]._posList.push(p);
-      if (riskScore(r) > riskScore(seenH[k])) { seenH[k].r = r.r; seenH[k].p = r.p; seenH[k].n = r.n; seenH[k].h = r.h; }
+      /* ⚠ Өмнө нь оноог л хуулж, хуучин «unscored» тэмдгийг үлдээдэг байв.
+         Ингэснээр нэг эрсдэл нэгэн зэрэг «үнэлгээгүй» гэж тоологдож БАС
+         матрицын өнгөт нүдэнд орж, 37 vs 36 гэсэн хоёр өөр тоо гардаг байсан. */
+      if (riskScore(r) > riskScore(seenH[k])) {
+        seenH[k].r = r.r; seenH[k].p = r.p; seenH[k].n = r.n; seenH[k].h = r.h;
+        seenH[k].unscored = r.unscored;
+      }
       return;
     }
     var copy = {}; for (var f in r) copy[f] = r[f];
@@ -9056,7 +9098,8 @@ function riskEmpBriefHTML(list, myPos, myDept) {
       '<span style="font-size:12px;color:#DC2626;font-weight:700;margin-left:5px">яаралтай</span></div>' : '') +
     '</div>' +
     '<div style="font-size:12.5px;color:#4338CA;line-height:1.6;margin-top:5px">' +
-    (high ? '<b>' + high + '</b> өндөр эрсдэлээс эхлээд сэргийлнэ үү.' : 'Өндөр эрсдэл алга. Дүрмээ мөрдөнө үү.') +
+    (high ? '<b>' + high + '</b> ширхэг A/B түвшний эрсдэлээс эхлээд сэргийлнэ үү.'
+          : 'A/B түвшний эрсдэл алга. Дүрмээ мөрдөнө үү.') +
     (myPos ? '<br><span style="color:#8A94A6;font-size:11.5px">' + esc(myPos) + '</span>' : '') + '</div>';
   var H = '';
 
@@ -9927,7 +9970,7 @@ function actionRiskTemplate() {
       ['N', 'Үр дагаврын хэмжээ', '1 чадвар алдахгүй · 2 хөнгөн · 3 эмнэлэгт · 4 удаан эмчилгээ · 5 амь нас'],
       ['H', 'Ажилчдын санал', '1 маш бага · 2 бага · 3 их · 4 маш их · 5 ноцтой'],
       [], ['R-ийн зэрэглэл'], [],
-      ['A', 'R ≥ 100', 'Үл зөвшөөрөгдөх'],
+      ['A', 'R > 100', 'Үл зөвшөөрөгдөх'],
       ['B', 'R = 51-100', 'Ихээхэн'],
       ['C', 'R = 11-50', 'Дундаж'],
       ['D', 'R = 4-10', 'Зөвшөөрөгдөх'],
@@ -15170,10 +15213,12 @@ function pplRowHTML(st) {
     '<span style="display:block;font-size:13.5px;font-weight:700;color:#1E293B">' + esc(e.name || '—') + '</span>' +
     '<span style="display:block;font-size:11.5px;color:#94A3B8">' + esc(e.pos || e.role || '—') + '</span></span>' +
     '<span class="rk-hide-sm" style="flex:0 0 168px;text-align:left;line-height:1.5">' +
-    chip('A', st.lv.A, '#fff', '#DC2626', 'Онцгой') + chip('B', st.lv.B, '#fff', '#EA580C', 'Өндөр') +
-    chip('C', st.lv.C, '#854D0E', '#FEF9C3', 'Дундаж') + chip('D', st.lv.D, '#166534', '#DCFCE7', 'Бага') +
-    chip('E', st.lv.E, '#166534', '#F0FDF4', 'Ач холбогдол бага') +
-    chip('—', st.lv.un, '#64748B', '#F1F5F9', 'Үнэлгээгүй') + '</span>' +
+    /* ⚠ Энд «Онцгой/Өндөр/Ач холбогдол бага» гэсэн ГУРАВ ДАХЬ нэршил бичигдсэн
+       байв. Нэрийг зөвхөн RISK_LEVELS-ээс авна — бүх дэлгэц дээр ижил болно. */
+    RISK_LEVELS.slice().reverse().map(function (L) {
+      return chip(L.code, st.lv[L.code], L.color, L.bg, L.name);
+    }).join('') +
+    chip('—', st.lv.un, RISK_LEVEL_NONE.color, RISK_LEVEL_NONE.bg, 'Үнэлгээгүй') + '</span>' +
     '<span style="flex:0 0 96px;text-align:center">' +
     '<span style="font-size:17px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif">' +
     st.rows.length + '</span>' +
