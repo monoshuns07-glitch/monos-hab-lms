@@ -9664,6 +9664,19 @@ function renderHazards() {
     ACK_BUSY = true;
     ackRefreshMine().then(function () {
       ACK_BUSY = false;
+      /* ⚠ ackRefreshMine нь АЖИЛТНЫ ЖАГСААЛТ ба ХЭСГИЙН зураглалыг
+         шинээр татдаг. Өмнө нь зөвхөн танилцалтын самбарыг солихдоо ТАБУУДыг
+         дахин тооцдоггүй байсан тул менежерт «Ажилтнуудын байдал» таб
+         ОГТ гардаггүй байв. Жагсаалт ирсний дараа НЭГ удаа бүхэлд нь дахин зурна. */
+      var nsub2 = 0;
+      try { nsub2 = ackSubordinates(myEmp()).length; } catch (e2) {}
+      var hasTab = !!sec.querySelector('[data-risk-tab="ppl"]');
+      if (nsub2 > 0 && !hasTab && !renderHazards._tabRedraw) {
+        renderHazards._tabRedraw = true;
+        PPL_CACHE = {};
+        renderHazards();
+        return;
+      }
       var b = sec.querySelector('#ackBanner');
       if (b) b.outerHTML = ackBannerHTML();
     }).catch(function (e) { ACK_BUSY = false; console.error('[ack]', e); });
