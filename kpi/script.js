@@ -762,7 +762,7 @@ async function loadDB() {
   var _applyR2 = function () {
     try {
       if (!DB) return;
-      if (_R2_RISKS && _R2_RISKS.length) DB.risks = _R2_RISKS;
+      if (_R2_RISKS && _R2_RISKS.length) { DB.risks = _R2_RISKS; riskCacheBust(); }
       if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
     } catch (e) {}
   };
@@ -1189,8 +1189,18 @@ async function riskR2PutJson(key, obj) {
 
 /* Файлын албаны нэрийг СИСТЕМИЙН албаны нэр рүү хөрвүүлнэ.
    Ингэснээр цаашид яг таг тэнцүүгээр шүүх боломжтой болно. */
+var _cdCache = {}, _cdSig = null, _cdN = 0;
 function riskCanonDept(d) {
   if (!d) return '';
+  var sig = _empSig();
+  if (_cdSig !== sig) { _cdCache = {}; _cdN = 0; _cdSig = sig; }   /* жагсаалт солигдвол цэвэрлэнэ */
+  var _k = String(d);
+  if (_cdCache.hasOwnProperty(_k)) return _cdCache[_k];
+  var _v = _riskCanonDeptRaw(d);
+  var _r = _cachePut(_cdCache, _cdN, _k, _v); _cdN = _r.n;
+  return _v;
+}
+function _riskCanonDeptRaw(d) {
   var sys = [];
   try { sys = deptList ? deptList() : []; } catch (e) {}
   /* ⚠ Ажилтны жагсаалт хоосон бол албаны нэрийг ХӨРВҮҮЛЭХГҮЙ.
@@ -1402,7 +1412,7 @@ async function riskR2Load() {
     var c = JSON.parse(localStorage.getItem(RISK_CACHE_KEY) || 'null');
     if (c && c.version === idx.version && Array.isArray(c.rows) &&
         String(c.scope || '') === String(riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || ''))) {
-      DB.risks = c.rows; return { cached: true, n: c.rows.length };
+      DB.risks = c.rows; riskCacheBust(); return { cached: true, n: c.rows.length };
     }
   } catch (e) {}
 
@@ -1425,7 +1435,7 @@ async function riskR2Load() {
       if (Array.isArray(part)) out = out.concat(part);
     } catch (e) { console.error('[riskR2] ' + want[i].name + ' уншигдсангүй', e); }
   }
-  DB.risks = out;
+  DB.risks = out; riskCacheBust();
   try {
     localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out,
       scope: riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || '') }));
@@ -1638,7 +1648,7 @@ function actionRiskAdd() {
    Үүний дараа хүн бүр R2-оос уншина, Firestore-ийн уншилт огт зарцуулагдахгүй. */
 async function actionRiskToR2(btn) {
   if (!isAdmin()) { toast('Зөвхөн админ', 'error'); return; }
-  DB.risks = riskDedupe(DB.risks || []);      // давхардлыг эхлээд арилгана
+  DB.risks = riskDedupe(DB.risks || []); riskCacheBust();   // давхардлыг эхлээд арилгана
   var rows = DB.risks;
   if (!rows.length) { toast('Шилжүүлэх эрсдэл алга. Эхлээд «Фолдер / ZIP»-ээр оруулна уу.', 'error'); return; }
   if (!confirm(rows.length + ' эрсдлийг R2 руу нийтлэх үү?\n\n' +
@@ -1669,7 +1679,7 @@ async function riskPersist(msg) {
      (байршуулалт унасан ч мөрүүд санах ойд үлдэнэ). Хадгалахын өмнө үргэлж
      давхардлыг арилгана — ижил алба+ажлын байр+аюул+үйл ажиллагаа нэг л удаа. */
   var before = (DB.risks || []).length;
-  DB.risks = riskDedupe(DB.risks || []);
+  DB.risks = riskDedupe(DB.risks || []); riskCacheBust();
   var removed = before - DB.risks.length;
   if (removed > 0) {
     try { console.log('[risks] давхардсан ' + removed + ' мөр хасав'); } catch (e) {}
@@ -2031,12 +2041,26 @@ function categoryAverages() {
 }
 
 /* — Албаны түвшний оноо (coverage + бонус + анхны тусламж + PPE) — */
+/* ⚠ ГҮЙЦЭТГЭЛ: deptList ба riskCanonDept нь эрсдэл бүрийн давталт дотроос
+   дуудагддаг. Кэшгүй үед 267 ажилтныг эрсдэл БҮРД дахин гүйж, дата өсөх
+   бүрд ажлын хэмжээ үржвэрээр өсдөг байв (дата 8 дахин → 17 дахин удаан).
+   Ажилтны жагсаалт солигдвол гарын үсэг нь өөрчлөгдөж, кэш өөрөө шинэчлэгдэнэ. */
+var _empSigV = '';
+function _empSig() {
+  var e = (DB && DB.employees) || [];
+  return e.length + '|' + ((e[0] && e[0].uid) || '') + '|' + ((e[e.length - 1] && e[e.length - 1].uid) || '');
+}
+var _dlCache = null, _dlSig = null;
 function deptList() {
+  var sig = _empSig();
+  if (_dlCache && _dlSig === sig) return _dlCache;
   // Ажилтан хамгийн олонтой албанаас эхлэн эрэмбэлнэ (жинхэнэ бүртгэлээр)
   var c = {}; (DB.employees || []).forEach(function (e) { if (e.dept) c[e.dept] = (c[e.dept] || 0) + 1; });
-  return Object.keys(c).sort(function (a, b) {
+  _dlCache = Object.keys(c).sort(function (a, b) {
     return (c[b] - c[a]) || a.localeCompare(b, 'mn');
   });
+  _dlSig = sig;
+  return _dlCache;
 }
 function deptMembers(dept) { return (DB.employees || []).filter(function (e) { return e.dept === dept && !e.onLeave; }); }
 function deptCoverage(dept) {
@@ -6053,8 +6077,18 @@ function ackUnitOf(emp) {
    ⚠ Дараалал чухал: захирал → хариуцагч → менежер → ажилтан.
    «Хүний нөөцийн ахлах менежер» гэх мэт хүн эхлээд ХАРИУЦАГЧ гэж
    таарах ёстой, тэгэхгүй бол менежер болж доошилно. */
+var _roleCache = {}, _roleSig = null;
 function ackRoleOf(emp) {
   if (!emp) return 'emp';
+  var sig = _empSig();
+  if (_roleSig !== sig) { _roleCache = {}; _roleSig = sig; }
+  var ck = emp.uid || emp.email;
+  if (ck && _roleCache.hasOwnProperty(ck)) return _roleCache[ck];
+  var v = _ackRoleOfRaw(emp);
+  if (ck) _roleCache[ck] = v;
+  return v;
+}
+function _ackRoleOfRaw(emp) {
   var p = String(emp.pos || emp.role || '');
   for (var i = 0; i < ACK_DIRECTORS.length; i++) {
     if (ACK_DIRECTORS[i].match.test(p)) return ACK_DIRECTORS[i].key;
@@ -6067,7 +6101,17 @@ function ackRoleOf(emp) {
   return 'emp';
 }
 /* Тухайн албанд (болон дэд хэсэгт) хариуцагч хэн бэ */
+var _leadCache = {}, _leadSig = null;
 function ackLeadFor(dept, unit) {
+  var sig = _empSig();
+  if (_leadSig !== sig) { _leadCache = {}; _leadSig = sig; }
+  var ck = String(dept || '') + '\u0001' + String(unit || '');
+  if (_leadCache.hasOwnProperty(ck)) return _leadCache[ck];
+  var v = _ackLeadForRaw(dept, unit);
+  _leadCache[ck] = v;
+  return v;
+}
+function _ackLeadForRaw(dept, unit) {
   var emps = DB.employees || [];
   for (var j = 0; j < ACK_LEADS.length; j++) {
     var L = ACK_LEADS[j];
@@ -6752,17 +6796,17 @@ function meaKeyOf(dept, text) {
    Түлхүүр үгээр ангилах нь 100% зөв байдаггүй тул админ дурын арга хэмжээг
    өөр хүнд шилжүүлж болно. Энэ нь автомат ангиллаас ДАВАМГАЙЛНА. */
 var MEA_OWN_FILE = 'measures/_owners.json';
-var MEA_OWN = null, MEA_OWN_OK = false;
+var MEA_OWN = null, MEA_OWN_OK = false, MEA_OWN_VER = 0;
 async function meaOwnLoad(force) {
   if (MEA_OWN_OK && !force) return MEA_OWN;
   try {
     var j = await riskR2GetJson('measures/_owners.json');
-    MEA_OWN = (j && j.map) ? j.map : {}; MEA_OWN_OK = true;
+    MEA_OWN = (j && j.map) ? j.map : {}; MEA_OWN_OK = true; MEA_OWN_VER++;
   } catch (e) { MEA_OWN = MEA_OWN || {}; }
   return MEA_OWN;
 }
 async function meaOwnSave(map) {
-  MEA_OWN = map || {}; MEA_OWN_OK = true;
+  MEA_OWN = map || {}; MEA_OWN_OK = true; MEA_OWN_VER++;
   return await riskR2PutJson('measures/_owners.json', { updatedAt: new Date().toISOString(), map: MEA_OWN });
 }
 function meaOwnOverride(key) {
@@ -6773,7 +6817,25 @@ function meaOwnOverride(key) {
 }
 
 /* Хэрэгжүүлэх арга хэмжээг ХЭН хариуцах вэ */
+var _ownCache = {}, _ownSig = null, _ownN = 0;
 function meaOwnersOf(r, role, mtext) {
+  /* Хариу нь зөвхөн алба + хэсэг + үүрэг + бичвэрээс хамаарна — эрсдлийн
+     бусад талбар нөлөөлөхгүй тул мянга мянган эрсдэл цөөхөн түлхүүр болно. */
+  var sig = _empSig() + '#' + _ownVer();
+  if (_ownSig !== sig) { _ownCache = {}; _ownN = 0; _ownSig = sig; }
+  var _sec = ''; try { _sec = riskSectionOf(r) || ''; } catch (e) {}
+  var _d0 = riskCanonDept(r && r.dept) || (r && r.dept) || '';
+  var ck = _d0 + '\u0001' + _sec + '\u0001' + String(role || '') + '\u0001' + String(mtext || '');
+  if (_ownCache.hasOwnProperty(ck)) return _ownCache[ck];
+  var v = _meaOwnersOfRaw(r, role, mtext);
+  var rr = _cachePut(_ownCache, _ownN, ck, v, 30000); _ownN = rr.n;
+  return v;
+}
+/* Админ хариуцагчийг сольвол кэш шинэчлэгдэх ёстой */
+function _ownVer() {
+  try { return Object.keys(MEA_OWN || {}).length + '.' + MEA_OWN_VER; } catch (e) { return 0; }
+}
+function _meaOwnersOfRaw(r, role, mtext) {
   var d = riskCanonDept(r && r.dept) || (r && r.dept) || '';
   /* 1) Админ гараар оноосон бол ТЭР давамгайлна */
   if (mtext) {
@@ -7426,11 +7488,18 @@ function ackMinSec(sec) {
 
 /* Тухайн албанд эрсдэл ХАРАГДДАГ (тиймээс танилцах ёстой) ажилтнууд.
    ⚠ Дэлгэц дээр харагддагтай ЯГ ижил дүрмээр (riskSeenBy) тодорхойлно. */
+var _dueCache = {};
 function ackDueEmps(dept) {
-  return (DB.employees || []).filter(function (e) {
+  var sig = _riskSig();
+  if (_seenSig !== sig) { _seenCache = {}; _dueCache = {}; _seenN = 0; _seenSig = sig; }
+  var k = String(dept || '');
+  if (_dueCache.hasOwnProperty(k)) return _dueCache[k];
+  var out = (DB.employees || []).filter(function (e) {
     if (dept && !riskSameDept(e.dept, dept)) return false;
     return riskSeenBy(e).rows.length > 0;
   });
+  _dueCache[k] = out;
+  return out;
 }
 /* Нэг хуудасны бүтэц. people = [{emp, row}] дарааллаараа */
 function ackSheetAoa(title, sub, people, nRisks) {
@@ -7989,7 +8058,7 @@ function risksForView() {
      хадгалсан хуулбараас шууд сэргээнэ — ачаалалтын дараалалд хамаарахгүй. */
   if (!(DB.risks || []).length) {
     var c = riskCacheLoad();
-    if (c && c.rows.length) DB.risks = c.rows;
+    if (c && c.rows.length) { DB.risks = c.rows; riskCacheBust(); }
   }
   var all = (DB.risks || []).slice();
   if (isAdmin()) return all;
@@ -8018,9 +8087,33 @@ function risksForView() {
 /* ⭐ ТУХАЙН АЖИЛТАН ЮУГ ХАРАХ ВЭ — нэг эх сурвалж.
    Дэлгэц ба танилцалтын бүртгэл хоёр ЯГ ижил жагсаалттай байхын тулд
    аль аль нь үүнийг дуудна. */
+/* ⚠⚠ ГҮЙЦЭТГЭЛИЙН ГОЛ ТҮГЖЭЭ.
+   riskSeenBy нь 887 эрсдлийг шүүж, дотор нь regex-тэй riskAppliesTo дуудна.
+   Үүнийг ackDueEmps нь 267 ажилтан бүрд, ackDueEmps-ийг нь KPI бодолт
+   ажилтан бүрд дуудсанаар 267 × 267 × 887 болж, хуудас 47 секунд царцдаг
+   байв. Ажилтан бүрийн хариуг НЭГ л удаа бодож хадгална.
+   Дата (эрсдэл/ажилтан/хэсгийн хуваарилалт) өөрчлөгдвөл гарын үсэг нь
+   солигдож, кэш өөрөө хүчингүй болно. */
+var RISK_VER = 0;
+function riskCacheBust() { RISK_VER++; _seenCache = {}; _dueCache = {}; }
+function _riskSig() {
+  var r = (DB && DB.risks) || [];
+  var sc = 0; try { sc = Object.keys(ACK_SEC || {}).length; } catch (e) {}
+  return _empSig() + '#' + r.length + '#' + RISK_VER + '#' + sc + '#' + (ACK_SEC_OK ? 1 : 0);
+}
+var _seenCache = {}, _seenSig = null, _seenN = 0;
 function riskSeenBy(emp) {
-  var all = DB.risks || [];
   if (!emp) return { rows: [], scope: 'none' };
+  var sig = _riskSig();
+  if (_seenSig !== sig) { _seenCache = {}; _dueCache = {}; _seenN = 0; _seenSig = sig; }
+  var ck = emp.uid || emp.email || emp.name;
+  if (ck && _seenCache.hasOwnProperty(ck)) return _seenCache[ck];
+  var out = _riskSeenByRaw(emp);
+  if (ck) { var rr = _cachePut(_seenCache, _seenN, ck, out, 2000); _seenN = rr.n; }
+  return out;
+}
+function _riskSeenByRaw(emp) {
+  var all = DB.risks || [];
   /* ⭐ Админ энэ хүнд ХЭСЭГ оноосон бол (менежер эсэхээс үл хамааран)
      зөвхөн тэр хэсгийн эрсдэл харагдана. Оноогоогүй бол хуучнаараа. */
   var sec0 = '';
