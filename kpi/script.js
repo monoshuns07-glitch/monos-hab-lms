@@ -9059,7 +9059,11 @@ var RISK_TAB = 'risks';
 
 function riskTabList(list) {
   var admin = isAdmin() || isDeptHead();
-  var tabs = [{ key: 'risks', icon: 'ti-shield-half', label: 'Эрсдэлүүд', n: (list || []).length, tone: '' }];
+  /* ⚠ Хуудсан дээрх тоо нь давхардал нэгтгэсний ДАРААХ тоо тул табан дээр ч
+     ижил байх ёстой — өмнө нь таб «515», хуудас «361» гэж зөрдөг байв. */
+  var nRisk = (list || []).length;
+  try { nRisk = riskEmpMerged(list || []).length; } catch (e) {}
+  var tabs = [{ key: 'risks', icon: 'ti-shield-half', label: 'Эрсдэлүүд', n: nRisk, tone: '' }];
   var rq = 0, nsub = 0;
   try { var me0 = myEmp(); if (me0 && REQ_OK) rq = reqWaitingFor(me0.uid).length; } catch (e) {}
   /* ⭐ Хариуцах ажилтантай хүнд «Ажилтнуудын байдал» таб — эрсдэлүүдийн ЯГ АРД */
