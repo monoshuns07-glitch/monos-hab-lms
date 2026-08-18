@@ -42,6 +42,19 @@ var SESSION = null;
 var ADMIN_EMAILS = ['buynt666@gmail.com'];
 function isAdmin() { return SESSION && SESSION.role === 'admin'; }
 function isDeptHead() { return SESSION && SESSION.role === 'depthead'; }
+/* Туслах админы эрх нь kpi_state/main.userRoles-д байдаг тул DB ачаалагдсаны
+   ДАРАА л мэдэгдэнэ. Хэд хэдэн газраас дуудагдана — DB хожуу ирсэн ч эрх нь
+   алдагдахгүй. Админыг ХЭЗЭЭ Ч бууруулахгүй. */
+function applyRoleOverride() {
+  if (!SESSION || !SESSION.email || SESSION.role !== 'employee') return false;
+  var m = DB && DB.userRoles;
+  var ro = m && (m[SESSION.email] || m[String(SESSION.email).toLowerCase()]);
+  if (!ro || ro.role !== 'depthead') return false;
+  SESSION.role = 'depthead';
+  if (ro.department) SESSION.dept = ro.department;
+  try { console.log('[role] туслах админ: ' + SESSION.dept); } catch (e) {}
+  return true;
+}
 function isEmp() { return SESSION && SESSION.role === 'employee'; }
 /* ⚠ Нэвтэрсэн хүнийг ЗӨВХӨН empId-ээр хайж болохгүй. Ажилтны бүртгэл нь
    users цуглуулгаас ачаалалт бүрд дахин үүсдэг тул id нь өөрчлөгдөж болно.
@@ -18050,24 +18063,29 @@ async function init() {
         try { var _raw = localStorage.getItem(LSKEY); DB = _raw ? JSON.parse(_raw) : seedDB(); }
         catch (e2) { try { DB = seedDB(); } catch (e3) {} }
       }
-      // Дата дараа ирвэл автоматаар дахин зурна
-      loadDB().then(function () { try { renderAll(); } catch (e) {} }).catch(function () {});
+      /* ⚠ Дата дараа ирвэл автоматаар дахин зурна.
+         Өмнө нь ЭНД эрхийн шилжилтийг дахин шалгадаггүй байсан тул сүлжээ
+         удаан үед ТУСЛАХ АДМИН энгийн ажилтан болж үлддэг байв — таб нь
+         6-гийн оронд 4 гарч, албаныхаа удирдлагын цонхнууд огт нээгддэггүй.
+         Эрх нь kpi_state/main.userRoles-д байдаг тул DB ирсний ДАРАА л мэдэгдэнэ. */
+      loadDB().then(function () {
+        try {
+          if (applyRoleOverride()) {
+            loadDB().then(function () {
+              try { applyRole(); } catch (e2) {}
+              try { renderAll(); } catch (e2) {}
+            }).catch(function () {});
+            return;
+          }
+          renderAll();
+        } catch (e) {}
+      }).catch(function () {});
     }
   } catch (err) {
     console.error('[init] loadDB:', err);
     if (!DB || !DB.settings) { try { DB = seedDB(); } catch (e2) {} }
   }
-  // DB.userRoles-с SESSION эрхийн override шалгана — зөвхөн employee→depthead тохиолдолд
-  // (admin-ийн role хэзээ ч бууруулагдахгүй, kpi_state/main-д хадгалагдсан override)
-  if (SESSION && SESSION.email && SESSION.role === 'employee' && DB.userRoles && DB.userRoles[SESSION.email]) {
-    var _ro = DB.userRoles[SESSION.email];
-    if (_ro.role === 'depthead') {
-      SESSION.role = 'depthead';
-      if (_ro.department) SESSION.dept = _ro.department;
-      // loadDB дахин ачаална — depthead шүүлт зөв role-оор ажиллана
-      await loadDB();
-    }
-  }
+  if (applyRoleOverride()) await loadDB();   // depthead шүүлт зөв role-оор ажиллана
   // Алхам бүрийг тусад нь хамгаална — нэг нь унасан ч апп бүрэн ажиллана
   try { injectControls(); } catch (err) { console.error('[init] injectControls:', err); }
   try { applyRole(); } catch (err) { console.error('[init] applyRole:', err); }
