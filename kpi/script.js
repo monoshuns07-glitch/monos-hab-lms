@@ -7468,7 +7468,7 @@ function ackAdminHTML() {
       '<i class="ti ti-writing-sign" style="font-size:20px;color:#4F46E5"></i>' +
       '<div style="flex:1;min-width:200px"><b style="font-size:14px">Танилцсан байдал</b>' +
       '<div style="font-size:12px;color:#94A3B8">Хэн эрсдэлтэйгээ танилцаж гарын үсэг зурсныг албаар харна</div></div>' +
-      '<button class="btn btn-secondary btn-sm" data-ack-sec="1"><i class="ti ti-sitemap"></i> Менежерийн хэсэг</button> ' +
+      '<button class="btn btn-secondary btn-sm" data-ack-sec="1" title="Менежер болон дурын ажилтанд аль хэсгийн эрсдэл харагдахыг тохируулна"><i class="ti ti-sitemap"></i> Хэсгийн хуваарилалт</button> ' +
       '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Шалгах</button>' +
       '</div></div>';
   }
@@ -7483,7 +7483,7 @@ function ackAdminHTML() {
     '<div style="font-size:11.5px;color:#64748B;font-weight:700">' + dn + ' / ' + tot + ' танилцсан</div></div>' +
     '<div style="flex:1;min-width:160px;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
     '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669);border-radius:99px"></div></div>' +
-    '<button class="btn btn-secondary btn-sm" data-ack-sec="1"><i class="ti ti-sitemap"></i> Менежерийн хэсэг</button> ' +
+    '<button class="btn btn-secondary btn-sm" data-ack-sec="1" title="Менежер болон дурын ажилтанд аль хэсгийн эрсдэл харагдахыг тохируулна"><i class="ti ti-sitemap"></i> Хэсгийн хуваарилалт</button> ' +
     '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Дахин шалгах</button></div>' +
     '<div style="overflow-x:auto"><table class="table" style="min-width:640px"><thead><tr>' +
     '<th>Алба</th><th style="text-align:center">Ёстой</th><th style="text-align:center">Танилцсан</th>' +
