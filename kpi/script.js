@@ -8183,9 +8183,14 @@ var RISK_PAGE = 150, _riskShown = 150, _riskShownSig = null;
 
 /* ── Интерактив дашбоард (бүх эрхэд нийтлэг) ── */
 function riskDashHTML(list, subtitle) {
+  /* ⚠ ДАВХАРДЛЫГ НЭГТГЭНЭ. Админ/туслах админы дашбоард үүнийг хийдэггүй
+     байсан тул нэг л албыг хоёр хүн ХОЁР ӨӨР тоогоор хардаг байв:
+     туслах админд «157» (түүхий мөр), захиралд «129» (нэгтгэсэн).
+     Мөн табан дээр 129, хуудсан дээр 157 гэж зөрдөг байсан. */
+  list = riskEmpMerged(list || []);
   /* ⚠ Алба сонгосон бол БҮХ тоо (нийт, түвшин, матриц) тэр албаных байна */
   if (RISK_FILTER.dept) {
-    list = (list || []).filter(function (r) { return riskSameDept(r.dept, RISK_FILTER.dept); });
+    list = list.filter(function (r) { return riskSameDept(r.dept, RISK_FILTER.dept); });
   }
   /* ⚠ Өмнө нь [0, 0, 0, 0] буюу 4 нүдтэй байсан ч түвшин 5 бий. Улмаас хамгийн
      ноцтой «Үл зөвшөөрөгдөх» картан дээр undefined/NaN гардаг байв.
@@ -8445,6 +8450,9 @@ function riskGroupedHTML(list) {
 }
 
 function riskAdminSectionsHTML(list) {
+  /* Дээрх дашбоардтай ИЖИЛ олонлогоос тоолно — эс бөгөөс задаргаа нь
+     дээрх нийт тоотой таарахгүй болно. */
+  list = riskEmpMerged(list || []);
   var H = riskCoverageHTML(list) + riskGroupedHTML(list);
 
   /* ── Албадаар (хураангуй хүснэгт — шатлалт харагдац дээр нэмэлт) ── */
