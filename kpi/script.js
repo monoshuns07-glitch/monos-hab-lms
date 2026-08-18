@@ -14691,13 +14691,27 @@ function ntfModal() {
    арга хэмжээ нь хаана байгаа — нэг дор, нэг бүрчлэн.
    ══════════════════════════════════════════════════════════════════════ */
 var PPL_OPEN = {};        // задалсан ажилтнууд
+var PPL_ALL = false;      // бүгдийг зурах уу (анхдагчаар эхний 60)
 var PPL_ACK = null;       // тухайн албаны танилцалтын сан
 
-function pplEmpStat(e) {
+/* ⚡ Эрсдлийн жагсаалт нь ажилтан бүрд 887 мөр шүүдэг тул КЭШЛЭНЭ */
+var PPL_CACHE = {};
+function pplRowsOf(e) {
+  if (PPL_CACHE[e.uid]) return PPL_CACHE[e.uid];
   var seen = { rows: [] };
   try { seen = riskSeenBy(e); } catch (er) {}
   var rows = [];
   try { rows = riskEmpMerged(seen.rows || []); } catch (er) { rows = seen.rows || []; }
+  PPL_CACHE[e.uid] = rows;
+  return rows;
+}
+/* deep=true үед л арга хэмжээ, дүрэм, санал тооцно (хүнд).
+   ⚠ meaMineStats нь эрсдэл бүрийн арга хэмжээг задалж, хариуцагчийг
+   тооцдог тул 267 ажилтанд зэрэг ажиллуулбал хөтөч ХӨЛДӨНӨ. */
+function pplEmpStat(e, deep) {
+  var seen = { rows: [] };
+  try { seen = riskSeenBy(e); } catch (er) {}
+  var rows = pplRowsOf(e);
   var lv = { A: 0, B: 0, C: 0, D: 0, un: 0 }, top = 0;
   rows.forEach(function (r) {
     if (riskIsUnscored(r)) { lv.un++; return; }
@@ -14714,10 +14728,13 @@ function pplEmpStat(e) {
   } catch (er) {}
   var rd = { done: 0, total: rows.length, ok: false };
   try { if (e.uid === (myEmp() || {}).uid) rd = ackReadStat(rows, ver); } catch (er) {}
-  var mst = { total: 0, done: 0, late: 0 }, rules = 0;
-  try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
+  var mst = { total: 0, done: 0, late: 0, soon: 0 }, rules = 0;
+  if (deep) {
+    try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
+  }
   return { e: e, rows: rows, lv: lv, top: top, ver: ver, row: row, prev: prev, rd: rd,
-    mst: mst, rules: rules, ideas: (row && row.ideas) || (prev && prev.ideas) || [] };
+    mst: mst, rules: rules, deep: !!deep,
+    ideas: (row && row.ideas) || (prev && prev.ideas) || [] };
 }
 
 function pplRowHTML(st) {
@@ -14757,6 +14774,8 @@ function pplRowHTML(st) {
     '<i class="ti ti-chevron-' + (open ? 'up' : 'down') + '" style="flex:0 0 18px;color:#CBD5E1"></i></div>';
 
   if (!open) return H + '</div>';
+  /* Задалсан үед л арга хэмжээ, дүрмийг тооцно (хурдны төлөө) */
+  if (!st.deep) { try { st = pplEmpStat(e, true); } catch (er) {} }
 
   /* ── Задалсан: нарийвчилсан дата ── */
   var fact = function (l, v, c) {
@@ -14839,15 +14858,25 @@ function renderPeoplePage(box) {
     return;
   }
 
-  var stats = subs.map(pplEmpStat).sort(function (a, b) {
-    if (!!a.row !== !!b.row) return a.row ? 1 : -1;      // зураагүй нь дээр
-    return b.top - a.top;
-  });
+  /* ⚡ Хэт олон ажилтантай үед (админ) хэсэгчлэн зурна */
+  var LIMIT = 60;
+  var stats = subs.map(function (e) { return pplEmpStat(e, false); })
+    .sort(function (a, b) {
+      if (!!a.row !== !!b.row) return a.row ? 1 : -1;    // зураагүй нь дээр
+      return b.top - a.top;
+    });
+  var more = 0;
+  if (stats.length > LIMIT && !PPL_ALL) { more = stats.length - LIMIT; stats = stats.slice(0, LIMIT); }
   var signed = stats.filter(function (s) { return s.row; }).length;
   var ideas = stats.reduce(function (a, s) { return a + (s.ideas || []).length; }, 0);
-  var meaLate = stats.reduce(function (a, s) { return a + (s.mst.late || 0); }, 0);
-  var meaTot = stats.reduce(function (a, s) { return a + (s.mst.total || 0); }, 0);
-  var meaDoneN = stats.reduce(function (a, s) { return a + (s.mst.done || 0); }, 0);
+  /* Арга хэмжээний нийлбэрийг ЗӨВХӨН цөөн хүнтэй үед бодно (хүнд тооцоо) */
+  var meaLate = 0, meaTot = 0, meaDoneN = 0, meaShow = stats.length <= 25;
+  if (meaShow) {
+    stats.forEach(function (s) {
+      var d = s.deep ? s : pplEmpStat(s.e, true);
+      meaLate += d.mst.late || 0; meaTot += d.mst.total || 0; meaDoneN += d.mst.done || 0;
+    });
+  }
   var pct = stats.length ? Math.round(signed * 100 / stats.length) : 0;
 
   var card = function (n, label, color) {
@@ -14868,8 +14897,8 @@ function renderPeoplePage(box) {
     card(stats.length, 'ажилтан', '#4F46E5') +
     card(signed + ' / ' + stats.length, 'танилцсан', pct === 100 ? '#059669' : pct >= 50 ? '#D97706' : '#DC2626') +
     card(ideas, 'ирсэн санал', '#7C3AED') +
-    card(meaDoneN + ' / ' + meaTot, 'арга хэмжээ', '#0891B2') +
-    card(meaLate, 'хугацаа хэтэрсэн', meaLate ? '#DC2626' : '#64748B') +
+    (meaShow ? card(meaDoneN + ' / ' + meaTot, 'арга хэмжээ', '#0891B2') : '') +
+    (meaShow ? card(meaLate, 'хугацаа хэтэрсэн', meaLate ? '#DC2626' : '#64748B') : '') +
     '</div>' +
     (!PPL_ACK
       ? '<div style="font-size:12.5px;color:#94A3B8;margin-bottom:9px"><i class="ti ti-loader-2"></i> ' +
@@ -14882,7 +14911,11 @@ function renderPeoplePage(box) {
     '<span class="rk-hide-sm" style="flex:0 0 116px;text-align:center">ТҮВШИН</span>' +
     '<span style="flex:0 0 54px;text-align:center">ТОО</span>' +
     '<span style="flex:0 0 128px;text-align:right">ТАНИЛЦСАН</span><span style="flex:0 0 18px"></span></div>' +
-    stats.map(pplRowHTML).join('') + '</div>';
+    stats.map(pplRowHTML).join('') +
+    (more ? '<button class="btn" data-ppl-all="1" style="width:100%;margin-top:6px;padding:11px;' +
+      'background:#F8FAFC;color:#475569;border:1.5px dashed #CBD5E1;border-radius:12px;font-weight:700">' +
+      '<i class="ti ti-chevron-down"></i> Үлдсэн ' + more + ' ажилтныг үзэх</button>' : '') +
+    '</div>';
 
   if (!box._pplWired) {
     box._pplWired = true;
@@ -14894,7 +14927,13 @@ function renderPeoplePage(box) {
         renderHazards();
         return;
       }
-      if (ev.target.closest('[data-ppl-xl]')) { pplExport(stats); return; }
+      if (ev.target.closest('[data-ppl-all]')) { PPL_ALL = true; renderHazards(); return; }
+      if (ev.target.closest('[data-ppl-xl]')) {
+        /* Excel-д БҮГДИЙГ гүнзгий тооцоод оруулна */
+        var full = subs.map(function (e) { return pplEmpStat(e, true); })
+          .sort(function (a, b) { return (!!a.row !== !!b.row) ? (a.row ? 1 : -1) : (b.top - a.top); });
+        pplExport(full); return;
+      }
     });
   }
 }
