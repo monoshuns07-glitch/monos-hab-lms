@@ -7651,10 +7651,133 @@ async function ackExportDept(dept) {
 /* ══ АДМИНД: ХЭН ТАНИЛЦААГҮЙ БАЙНА ══════════════════════════════════ */
 var ACK_ADMIN = null;          // { rows: [{dept, due, done, miss:[]}], at }
 
+/* ══════════════════════════════════════════════════════════════════════
+   «ГҮЙЦЭЭХ АЖИЛ» — туслах админд зориулсан ажлын жагсаалт
+   Бусад цонх «юу буруу байна»-г харуулдаг. Энэ нь «БИ ЮУ ХИЙХ ЁСТОЙ»-г
+   гурван мөрөөр хэлнэ. Шинэ тоо ЗОХИОХГҮЙ — бүгд одоо байгаа логикоос.
+   ══════════════════════════════════════════════════════════════════════ */
+function todoData() {
+  var dept = ackOwnDeptOnly();
+  if (!dept) { try { var m0 = myEmp(); dept = riskCanonDept(m0 && m0.dept) || (m0 && m0.dept) || ''; } catch (e) {} }
+  var emps = (DB.employees || []).filter(function (e) { return dept && riskSameDept(e.dept, dept); });
+
+  /* ① Ажлын байр бүрд үнэлгээ хийгдсэн үү — нэг хүнээр төлөөлүүлж шалгана */
+  var byPos = {}, gaps = [];
+  emps.forEach(function (e) {
+    var p = String(e.pos || e.role || '').trim() || '—';
+    (byPos[p] = byPos[p] || []).push(e);
+  });
+  Object.keys(byPos).forEach(function (p) {
+    var has = false;
+    try { has = riskHasOwn(byPos[p][0]); } catch (e) {}
+    if (!has) gaps.push({ pos: p, n: byPos[p].length });
+  });
+  gaps.sort(function (a, b) { return b.n - a.n; });
+
+  /* ② P/N/H оноогүй эрсдэл — түвшин нь тодорхойгүй үлдсэн */
+  var rows = riskEmpMerged((DB.risks || []).filter(function (r) { return dept && riskSameDept(r.dept, dept); }));
+  var uns = rows.filter(riskIsUnscored);
+
+  /* ③ Танилцаагүй ажилтан — гарын үсгийн хаалт (ackEnsure аль хэдийн бодсон) */
+  var g = (ACK_ME && ACK_ME.gate) || null;
+  var ackMiss = (g && g.miss) ? g.miss.length : 0;
+
+  return { dept: dept, emps: emps, byPos: byPos, gaps: gaps,
+    gapPeople: gaps.reduce(function (a, x) { return a + x.n; }, 0),
+    rows: rows, uns: uns, gate: g, ackMiss: ackMiss };
+}
+
+function todoPageHTML() {
+  var d;
+  try { d = todoData(); } catch (e) { return '<div class="empty-state" style="padding:30px">Ачаалж байна…</div>'; }
+
+  var card = function (tone, icon, big, title, body, btn) {
+    var C = tone === 'bad' ? { bg: '#FEF2F2', bd: '#FECACA', fg: '#B91C1C' }
+      : tone === 'warn' ? { bg: '#FFFBEB', bd: '#FDE68A', fg: '#B45309' }
+        : { bg: '#F0FDF4', bd: '#BBF7D0', fg: '#15803D' };
+    return '<div style="background:' + C.bg + ';border:1.5px solid ' + C.bd + ';border-radius:14px;' +
+      'padding:15px 17px;margin-bottom:11px">' +
+      '<div style="display:flex;align-items:flex-start;gap:13px;flex-wrap:wrap">' +
+      '<div style="font-size:22px;line-height:1.1">' + icon + '</div>' +
+      '<div style="flex:1;min-width:220px">' +
+      '<div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">' +
+      '<span style="font-size:27px;font-weight:900;color:' + C.fg +
+      ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' + big + '</span>' +
+      '<span style="font-size:14px;font-weight:800;color:' + C.fg + '">' + title + '</span></div>' +
+      '<div style="font-size:12.5px;color:#475569;line-height:1.65;margin-top:6px">' + body + '</div>' +
+      '</div>' + (btn || '') + '</div></div>';
+  };
+  var pill = function (t) {
+    return '<span style="display:inline-block;background:#fff;border:1px solid #E2E8F0;border-radius:7px;' +
+      'padding:2px 8px;margin:3px 4px 0 0;font-size:11.5px;font-weight:700;color:#334155">' + esc(t) + '</span>';
+  };
+
+  var H = '<div class="card" style="padding:17px 19px;margin-bottom:13px">' +
+    '<div style="font-size:15px;font-weight:800;color:#1E293B">Гүйцээх ажил</div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-top:3px">' + esc(d.dept || '—') +
+    ' · ' + d.emps.length + ' ажилтан · ' + d.rows.length + ' эрсдэл</div></div>';
+
+  /* ① Ажлын байрны үнэлгээ */
+  if (d.gaps.length) {
+    H += card('bad', '⚠️', d.gaps.length, 'ажлын байрны эрсдэлийн үнэлгээ хийгдээгүй',
+      '<b>' + d.gapPeople + ' / ' + d.emps.length + ' ажилтан</b> мөрдөх дүрэмгүй үлдсэн. ' +
+      'Ажлын байрны үнэлгээ хийгдсэний дараа тэдэнд эрсдэл, дүрэм автоматаар оногдоно.' +
+      '<div style="margin-top:7px">' +
+      d.gaps.slice(0, 12).map(function (x) { return pill(x.pos + ' · ' + x.n); }).join('') +
+      (d.gaps.length > 12 ? '<span style="font-size:11.5px;color:#94A3B8"> +' + (d.gaps.length - 12) + '</span>' : '') +
+      '</div>',
+      '<button class="btn btn-primary btn-sm" data-risk-add="1" style="flex-shrink:0">' +
+      '<i class="ti ti-plus"></i> Үнэлгээ нэмэх</button>');
+  } else {
+    H += card('ok', '✅', d.emps.length, 'ажилтан бүрийн ажлын байр үнэлэгдсэн', 'Энэ хэсэгт хийх зүйл алга.', '');
+  }
+
+  /* ② Оноогүй эрсдэл */
+  if (d.uns.length) {
+    H += card('warn', '📐', d.uns.length, 'эрсдэлд P / N / H оноо тавигдаагүй',
+      'Оноогүй тул түвшин нь тодорхойгүй — матриц болон эрэмбэд ороогүй байна. ' +
+      'R = P × N × H бөглөгдмөгц зэрэглэл нь өөрөө гарна.',
+      '<button class="btn btn-sm btn-secondary" data-todo-uns="1" style="flex-shrink:0">' +
+      '<i class="ti ti-list-search"></i> Жагсаалтыг харах</button>');
+  } else {
+    H += card('ok', '✅', d.rows.length, 'эрсдэл бүрэн үнэлэгдсэн', 'P, N, H бүгд бөглөгдсөн байна.', '');
+  }
+
+  /* ③ Танилцалт */
+  if (d.ackMiss) {
+    var g = d.gate || {};
+    H += card('bad', '✍️', d.ackMiss, 'ажилтан эрсдэлтэйгээ танилцаж гарын үсэг зураагүй',
+      '<b>' + (g.n || 0) + ' / ' + (g.of || 0) + ' танилцсан.</b> Тэд бүгд зурсны дараа ' +
+      '<b>таны</b> гарын үсэг нээгдэнэ.' +
+      '<div style="margin-top:7px">' +
+      (g.miss || []).slice(0, 10).map(function (m) { return pill(m.e && m.e.name || ''); }).join('') +
+      ((g.miss || []).length > 10 ? '<span style="font-size:11.5px;color:#94A3B8"> +' + (g.miss.length - 10) + '</span>' : '') +
+      '</div>',
+      '<button class="btn btn-primary btn-sm" data-ack-remind="' + esc(d.dept) + '" style="flex-shrink:0">' +
+      '<i class="ti ti-bell"></i> Сануулах</button>');
+  } else {
+    H += card('ok', '✅', '', 'Албаныхан бүгд танилцсан', 'Таны гарын үсэг нээлттэй.', '');
+  }
+  return H;
+}
+
+/* Туслах админ (depthead) бол ЗӨВХӨН өөрийн албаны нэрийг буцаана.
+   Жинхэнэ админд '' — бүх алба нээлттэй. Нэг эх сурвалжаас шийднэ. */
+function ackOwnDeptOnly() {
+  if (isAdmin() || !isDeptHead()) return '';
+  var d = (SESSION && SESSION.dept) || '';
+  try { var me = myEmp(); if (me && me.dept) d = me.dept; } catch (e) {}
+  return riskCanonDept(d) || d || '';
+}
+
 async function ackAdminScan(onStep) {
   var depts = {};
   ackDueEmps('').forEach(function (e) { depts[riskCanonDept(e.dept) || e.dept] = 1; });
   var names = Object.keys(depts).filter(Boolean).sort();
+  /* ⚠ ТУСЛАХ АДМИН зөвхөн ӨӨРИЙН албаны танилцалтыг харна. Өмнө нь
+     компанийн 11 албаны хэн гарын үсэг зураагүйг бүгдийг харуулдаг байв. */
+  var only = ackOwnDeptOnly();
+  if (only) names = names.filter(function (n) { return riskSameDept(n, only); });
   var top = await ackTop(true);
   var out = [];
   for (var i = 0; i < names.length; i++) {
@@ -7879,8 +8002,12 @@ async function ackSectionModal() {
 
   var draw = function () {
     /* ⚠ Өмнө нь ЗӨВХӨН менежертэй алба гарч байсан тул бусад албаны
-       ажилтанд хэсэг оноох боломжгүй байв. Одоо бүх алба гарна. */
+       ажилтанд хэсэг оноох боломжгүй байв. Одоо бүх алба гарна.
+       ⚠ Гэхдээ ТУСЛАХ АДМИН зөвхөн ӨӨРИЙН албандаа хуваарилна — өмнө нь
+       компанийн дурын 267 ажилтанд хэсэг оноож чаддаг байв. */
     var depts = ackDeptsWithDue();
+    var onlyD = ackOwnDeptOnly();
+    if (onlyD) depts = depts.filter(function (d) { return riskSameDept(d, onlyD); });
     var H = '<div style="font-size:12.5px;color:#64748B;line-height:1.6;margin-bottom:13px">' +
       'Хэсэг оноосон хүн <b>зөвхөн тэр хэсгийн</b> эрсдлийг харна. ' +
       'Хэсгүүд нь эрсдлийн файлын хавтаснаас автоматаар гардаг. ' +
@@ -9084,6 +9211,14 @@ function riskTabList(list) {
     tabs.push({ key: 'ack', icon: 'ti-signature', label: 'Танилцсан байдал', n: null, tone: '' });
     tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Арга хэмжээний биелэлт', n: null, tone: '' });
     tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
+    /* ⭐ ТУСЛАХ АДМИНД — «юу буруу байна» биш «БИ ЮУ ХИЙХ ЁСТОЙ» гэдгийг
+       нэг дор. Тоонууд нь өөр цонхнуудад аль хэдийн бодогддог. */
+    if (ackOwnDeptOnly()) {
+      var td = 0;
+      try { var t0 = todoData(); td = (t0.gaps.length ? 1 : 0) + (t0.uns.length ? 1 : 0) + (t0.ackMiss ? 1 : 0); } catch (e) {}
+      tabs.push({ key: 'todo', icon: 'ti-checklist', label: 'Гүйцээх ажил',
+        n: td || null, tone: td ? '#DC2626' : '' });
+    }
   } else {
     var st = { total: 0, done: 0, late: 0 }, nr = 0;
     try { var me = myEmp(); st = meaMineStats(me); nr = meaMyRules(me).length; } catch (e) {}
@@ -9785,6 +9920,8 @@ function renderHazards() {
       H += '<div id="riskTabMea"></div>';
     } else if (RISK_TAB === 'ppl') {
       H += '<div id="riskTabPpl"></div>';
+    } else if (RISK_TAB === 'todo') {
+      H += todoPageHTML();
     } else if (RISK_TAB === 'req') {
       H += '<div id="riskTabReq"></div>';
     } else if (RISK_TAB === 'ack' && admin) {
@@ -9888,6 +10025,12 @@ function renderHazards() {
     sec.addEventListener('click', function (ev) {
       var tb = ev.target.closest('[data-risk-tab]');
       if (tb) { RISK_TAB = tb.getAttribute('data-risk-tab'); renderHazards(); return; }
+      /* «Гүйцээх ажил» → оноогүй эрсдлийг эрсдэлийн жагсаалтад шүүж үзүүлнэ */
+      if (ev.target.closest('[data-todo-uns]')) {
+        RISK_FILTER.level = RISK_LEVEL_NONE.name;
+        RISK_FILTER.mx = ''; RISK_FILTER.q = ''; RISK_FILTER.cell = 0;
+        RISK_TAB = 'risks'; renderHazards(); return;
+      }
       if (ev.target.closest('[data-ack-read]')) {
         if (!ACK_ME || !ACK_ME.ready) return;
         ackReadOpen(riskEmpMerged(risksForView()), ACK_ME.ver, renderHazards);
