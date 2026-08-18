@@ -3343,6 +3343,24 @@ function renderEmployeeDashboard() {
       sub: 'Яаралтай гүйцэтгээд зураг/файлаа хавсаргана уу', page: 'tasks',
       gain: gainOf(_f(w.task), kpiMeasure(e) || 0) });
   }
+  /* ⭐ ХУВЦАС, ХХХ-ИЙН ХҮСЭЛТ — миний шийдвэрийг хүлээж байгаа нь.
+     Хугацаа хэтэрвэл KPI-ийн босго онооноос хасагдана. */
+  try {
+    if (REQ_OK && e.uid) {
+      var _rq = reqWaitingFor(e.uid);
+      var _rqLate = _rq.filter(function (x) { return reqOverdue(x) > 0; });
+      if (_rqLate.length) {
+        todoList.unshift({ icon: 'ti-shirt', color: '#DC2626',
+          txt: _rqLate.length + ' хүсэлт ХУГАЦАА ХЭТЭРСЭН',
+          sub: 'Батлах эсэхээ шийднэ үү — өдөр бүр оноо хасагдаж байна', page: 'hazards', gain: 0 });
+      } else if (_rq.length) {
+        todoList.unshift({ icon: 'ti-shirt', color: '#D97706',
+          txt: _rq.length + ' хүсэлт таны шийдвэрийг хүлээж байна',
+          sub: 'Ажлын хувцас, хамгаалах хэрэгслийн хүсэлт', page: 'hazards', gain: 0 });
+      }
+    }
+  } catch (er) {}
+
   var _mPend = mst.total - mst.done - mst.late;
   if (_mPend > 0) {
     todoList.push({ icon: 'ti-checkbox', color: '#16A34A',
@@ -8144,6 +8162,16 @@ function riskOpenDetail(id) {
 
   var wire = function (host) {
     riskMeasureWire(host, r);
+    if (!host._ppeWired) {
+      host._ppeWired = true;
+      host.addEventListener('click', function (ev) {
+        var pb = ev.target.closest('[data-ppe-req]');
+        if (!pb) return;
+        var q = String(pb.getAttribute('data-ppe-req')).split('|');
+        closeModal();
+        setTimeout(function () { ppeOpenRequest(q[0], parseInt(q[1], 10)); }, 80);
+      });
+    }
     if (host._riskNavWired) return;
     host._riskNavWired = true;
     host.addEventListener('click', function (ev) {
@@ -8187,8 +8215,16 @@ function riskFactBox(icon, label, value, tone) {
 /* ══ АРГА ХЭМЖЭЭНИЙ БЛОК — эрсдлийн дэлгэрэнгүйн дотор ══════════════ */
 var MEA_VIEW = { store: null, dept: '' };     // нээлттэй эрсдлийн албаны бичлэгүүд
 
+/* ⚠ ХХХ-ийн заалт нь ДООР тусдаа блокт гарах тул эндээс хасагдана */
 function riskMeasureBlockHTML(r) {
+  RISK_MEA_SKIP_PPE = true;
+  try { return _riskMeasureBlockHTML(r); } finally { RISK_MEA_SKIP_PPE = false; }
+}
+var RISK_MEA_SKIP_PPE = false;
+function _riskMeasureBlockHTML(r) {
   var list = riskMeasures(r);
+  /* ХХХ-ийн заалт нь доор ТУСДАА блокт гарах тул эндээс хасна (давхардуулахгүй) */
+  if (RISK_MEA_SKIP_PPE) list = list.filter(function (m) { return !meaIsPPE(m.text); });
   if (!list.length) return '';
   var me = null; try { me = myEmp(); } catch (e) {}
   var dept = riskCanonDept(r.dept) || r.dept || '';
@@ -8598,14 +8634,18 @@ var RISK_TAB = 'risks';
 function riskTabList(list) {
   var admin = isAdmin() || isDeptHead();
   var tabs = [{ key: 'risks', icon: 'ti-shield-half', label: 'Эрсдэлүүд', n: (list || []).length, tone: '' }];
+  var rq = 0;
+  try { var me0 = myEmp(); if (me0 && REQ_OK) rq = reqWaitingFor(me0.uid).length; } catch (e) {}
   if (admin) {
     tabs.push({ key: 'ack', icon: 'ti-signature', label: 'Танилцсан байдал', n: null, tone: '' });
     tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Арга хэмжээний биелэлт', n: null, tone: '' });
+    tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
   } else {
     var st = { total: 0, done: 0, late: 0 }, nr = 0;
     try { var me = myEmp(); st = meaMineStats(me); nr = meaMyRules(me).length; } catch (e) {}
     tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Миний арга хэмжээ',
       n: (st.total - st.done) + nr, tone: st.late ? '#DC2626' : '' });
+    tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
   }
   return tabs;
 }
@@ -9060,6 +9100,15 @@ function riskDetailHTML(r) {
       riskBigHead('3', 'Нэг бүрчлэн гүйцэтгэх', 'Дүрмийг өөрөө мөрдөнө · ажлыг зураг/файлаар баримтжуулна', '#059669') +
       mb + '</div>';
   }
+  /* 🦺 ХХХ нь мөнгө, батлалт, хугацаа шаарддаг тул ТУСДАА блок болж,
+     худалдан авах ёстойг нь шууд ХҮСЭЛТ болгож илгээнэ */
+  var pb = riskPPEBlockHTML(r);
+  if (pb) {
+    H += '<div class="card" style="padding:15px 17px;margin-bottom:12px;border:1.5px solid #FDE68A">' +
+      riskBigHead('4', 'Ажлын хувцас, хамгаалах хэрэгсэл',
+        'Худалдан авах шаардлагатайг нь маршрутаар батлуулж авна', '#D97706') +
+      pb + '</div>';
+  }
   H += '</div></div>';   /* ← баруун багана + 2 багана дуусав */
 
   /* ── Бүртгэлийн мэдээлэл ── */
@@ -9205,6 +9254,8 @@ function renderHazards() {
     if (RISK_TAB === 'mea') {
       /* Агуулгыг доор renderMeasurePage/renderMeasureAdminPage дүүргэнэ */
       H += '<div id="riskTabMea"></div>';
+    } else if (RISK_TAB === 'req') {
+      H += '<div id="riskTabReq"></div>';
     } else if (RISK_TAB === 'ack' && admin) {
       H += ackAdminHTML();
     } else {
@@ -9219,6 +9270,21 @@ function renderHazards() {
   sec.innerHTML = H;
   riskWire(sec, renderHazards);
 
+  /* Хүсэлтүүдийг нэг удаа арын талд татна — тоолуур, нүүр хуудсанд хэрэгтэй */
+  if (!REQ_OK && !renderHazards._reqBusy) {
+    renderHazards._reqBusy = true;
+    reqLoad().then(function () {
+      renderHazards._reqBusy = false;
+      try { reqSyncViolations(); } catch (e) {}
+      renderHazards();
+    }).catch(function (e) { renderHazards._reqBusy = false; console.error('[req]', e); });
+  }
+
+  /* Хувцас, ХХХ-ийн хүсэлтийн таб */
+  if (RISK_TAB === 'req') {
+    var rbox = sec.querySelector('#riskTabReq');
+    if (rbox) renderRequestPage(rbox);
+  }
   /* Арга хэмжээний табыг тухайн ролийн хуудсаар дүүргэнэ (код давхардуулахгүй) */
   if (RISK_TAB === 'mea') {
     var box = sec.querySelector('#riskTabMea');
@@ -13189,6 +13255,18 @@ function pushStats() {
   var st = { total: 0, done: 0, late: 0 };
   try { st = meaMineStats(me); } catch (e) {}
   var out = { uid: me.uid, late: st.late || 0, pending: Math.max(0, (st.total || 0) - (st.done || 0) - (st.late || 0)) };
+  /* Батлах хүлээгдэж буй хүсэлт — хугацаа хэтэрсэн нь «late» дээр нэмэгдэнэ */
+  try {
+    if (REQ_OK) {
+      var wq = reqWaitingFor(me.uid);
+      out.reqN = wq.length;
+      out.late += wq.filter(function (r) { return reqOverdue(r) > 0; }).length;
+      out.pending += wq.filter(function (r) { return reqOverdue(r) <= 0; }).length;
+    } else {
+      var prev0 = pushLocal();
+      if (prev0.reqN != null) out.reqN = prev0.reqN;
+    }
+  } catch (e) {}
   /* Танилцалт — ACK_ME нь эрсдлийн хуудсанд ачаалагддаг тул байвал л авна */
   try {
     if (ACK_ME && ACK_ME.ready && !ACK_ME.none) {
@@ -13255,7 +13333,7 @@ async function pushEnable() {
   var j = sub.toJSON();
   var rec = {
     uid: s.uid, endpoint: j.endpoint, keys: j.keys,
-    late: s.late, pending: s.pending, ackDue: s.ackDue || 0,
+    late: s.late, pending: s.pending, ackDue: s.ackDue || 0, reqN: s.reqN || 0,
     at: new Date().toISOString()
   };
   var ok = await pushSubsMerge(function (list) {
@@ -13265,7 +13343,7 @@ async function pushEnable() {
   }, rec.uid);
   if (!ok) throw new Error('Бүртгэлийг хадгалж чадсангүй — дахин оролдоно уу');
   pushLocalSet({ on: 1, uid: s.uid, ep: rec.endpoint, late: s.late, pending: s.pending,
-    ackDue: s.ackDue || 0, syncedAt: Date.now() });
+    ackDue: s.ackDue || 0, reqN: s.reqN || 0, syncedAt: Date.now() });
   return true;
 }
 
@@ -13296,7 +13374,8 @@ function pushSyncState() {
   var s = pushStats();
   if (!s || s.uid !== loc.uid) return;
   var stale = !loc.syncedAt || (Date.now() - loc.syncedAt) > 3 * 24 * 3600 * 1000;
-  var changed = (s.late !== loc.late) || (s.pending !== loc.pending) || ((s.ackDue || 0) !== (loc.ackDue || 0));
+  var changed = (s.late !== loc.late) || (s.pending !== loc.pending) ||
+    ((s.ackDue || 0) !== (loc.ackDue || 0)) || ((s.reqN || 0) !== (loc.reqN || 0));
   if (!changed && !stale) return;
   if (pushSyncState._busy) return;
   pushSyncState._busy = true;
@@ -13307,7 +13386,8 @@ function pushSyncState() {
       if (!sub) { pushLocalSet({ on: 0 }); return; }      // хэрэглэгч хөтчөөс хаасан
       var j = sub.toJSON();
       var rec = { uid: s.uid, endpoint: j.endpoint, keys: j.keys,
-        late: s.late, pending: s.pending, ackDue: s.ackDue || 0, at: new Date().toISOString() };
+        late: s.late, pending: s.pending, ackDue: s.ackDue || 0, reqN: s.reqN || 0,
+        at: new Date().toISOString() };
       await pushSubsMerge(function (list) {
         var mine = list.filter(function (x) { return x && x.uid === rec.uid; })[0];
         if (mine && !changed && mine.endpoint === rec.endpoint) return null;   // бүх зүйл байрандаа
@@ -13316,7 +13396,7 @@ function pushSyncState() {
         }).concat([rec]);
       }, rec.uid);
       pushLocalSet({ on: 1, uid: s.uid, ep: rec.endpoint, late: s.late, pending: s.pending,
-        ackDue: s.ackDue || 0, syncedAt: Date.now() });
+        ackDue: s.ackDue || 0, reqN: s.reqN || 0, syncedAt: Date.now() });
     } catch (e) { console.warn('[push] sync', e && e.message); }
     finally { pushSyncState._busy = false; }
   })();
@@ -13418,6 +13498,763 @@ function pushWireOnce() {
     });
   });
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   🦺 АЖЛЫН ХУВЦАС, ХАМГААЛАХ ХЭРЭГСЭЛ (ХХХ) — ТУСДАА ЯЛГАНА
+   ----------------------------------------------------------------------
+   Эрсдэлийн үнэлгээний «Авах арга хэмжээ»-ний дотор ХХХ-тэй холбоотой
+   заалт 203 удаа таарсан. Тэдгээр нь бусад арга хэмжээнээс ӨӨР шинжтэй:
+     · зарим нь ХУДАЛДАН АВАХ шаардлагатай (мөнгө, батлалт, хугацаа)
+     · зарим нь ажилтан ӨӨРӨӨ өмсөх дүрэм
+   Тиймээс дэлгэрэнгүйд тусад нь гаргаж, авах ёстойг нь шууд ХҮСЭЛТ
+   болгож илгээх боломжтой болголоо.
+
+   ⚠ Кирилл дээр \b ажиллахгүй тул «ШИЛжүүлэх», «ажлын БҮС», «газарДУУЛГА»,
+     «ПАЙЗ ЗҮҮх», «ШИЛ сав» зэрэг ХУДАЛ таарцыг тусгайлан хасна.
+   ══════════════════════════════════════════════════════════════════════ */
+var PPE_ITEMS = [
+  { k: 'Гар — бээлий, ханцуйвч',   re: /бээлий|ханцуйвч|гар хамгаалах/i },
+  { k: 'Нүд — хамгаалалтын шил',   re: /нүдний шил|хамгаалалтын шил|хамгаалалттай шил|нүдэвч/i },
+  { k: 'Амьсгал — маск, респиратор', re: /маск|ffp2|респиратор|амьсгал хамгаалах/i },
+  { k: 'Нүүр — баг, бамбай',       re: /нүүр хамгаалах|нүүрний баг|бамбай/i },
+  { k: 'Сонсгол — чихэвч',         re: /чихэвч|сонсгол хамгаалах|чихний бөглөө/i },
+  { k: 'Толгой — каск, дуулга',    re: /каск|шлем|толгой хамгаалах|хамгаалалтын малгай/i },
+  { k: 'Хөл — хамгаалалтын гутал', re: /safety гутал|хамгаалалтын гутал|ажлын гутал|гутлаа|хальтардаггүй улт|углааш/i },
+  { k: 'Бие — ажлын хувцас',       re: /ажлын хувцас|хамгаалах хувцас|иж бүрэн хувцас|улирлын онцлогт тохирсон|улиралд тохирсон хувцас|хувцасаа|хувцасыг|халаад|хормогч/i },
+  { k: 'Гэрэл ойлгогч хантааз',    re: /хантааз/i },
+  { k: 'Ерөнхий ХХХ',              re: /ххх|нэг бүрийн хамгаалах|хамгаалах хэрэгсэл|хамгаалах хэрэгслэ|хамгаалах хэрэгсли|хамгаалалтын нэг удаагийн/i }
+];
+var PPE_FALSE = [
+  /газардуулга/i, /пайз/i, /унтраах товчийг дараад/i, /усны хамгаалалттай болгох/i,
+  /хөдөлмөрийн гэрээнд өөрчлөлт/i, /ажлын бүс(?:эд| рүү| ру)/i,
+  /ачааг (?:шилжүүлэхийн|газраас)/i, /тохойн байрлал/i, /дэлгэцийн хамгаалалт/i,
+  /хамгаалалтыг авахгүй байх, зүсэлтэд/i, /хурц ирмэгтэй булан тохой/i, /чийгшилийг/i,
+  /нүдээ аньж/i, /шил сав/i, /шилжүүлэгч зам|тэргий?н өндөр|тэргэнц/i,
+  /хэвийг бэхлэх бүслүүр/i, /хаалт хашилт/i
+];
+/* Худалдан авах / олгох шинжтэй үү (ханг-, олго-, худалдан ав-…) */
+var PPE_BUY = /ханг|олго|худалдан ав|авч ашиглуул|сонгож|сонгон авах|судал|шинээр|тэй болох|нөөц|сайжруул/i;
+var PPE_NOTBUY = /өөрийн хальтардаггүй|углааш|сонгон өмсөх/i;
+
+/* Энэ арга хэмжээ ХХХ-тэй холбоотой юу? → төрлүүдийн жагсаалт (хоосон бол үгүй) */
+function meaPPEKinds(text) {
+  var t = String(text || '');
+  if (!t) return [];
+  for (var i = 0; i < PPE_FALSE.length; i++) if (PPE_FALSE[i].test(t)) return [];
+  var out = [];
+  PPE_ITEMS.forEach(function (it) { if (it.re.test(t)) out.push(it.k); });
+  if (out.length > 1) out = out.filter(function (k) { return k !== 'Ерөнхий ХХХ'; });
+  return out;
+}
+function meaIsPPE(text) { return meaPPEKinds(text).length > 0; }
+function meaPPEBuy(text) {
+  var t = String(text || '');
+  return PPE_BUY.test(t) && !PPE_NOTBUY.test(t);
+}
+
+/* Тухайн эрсдлийн ХХХ-ийн заалтууд */
+function riskPPEList(r) {
+  var out = [];
+  try {
+    riskMeasures(r).forEach(function (m) {
+      var kinds = meaPPEKinds(m.text);
+      if (!kinds.length) return;
+      out.push({ i: m.i, text: m.text, kinds: kinds, buy: meaPPEBuy(m.text) });
+    });
+  } catch (e) {}
+  return out;
+}
+
+/* Дэлгэрэнгүй доторх «🦺 Ажлын хувцас, хамгаалах хэрэгсэл» блок */
+function riskPPEBlockHTML(r) {
+  var list = riskPPEList(r);
+  if (!list.length) return '';
+  var buy = list.filter(function (x) { return x.buy; });
+  var wear = list.filter(function (x) { return !x.buy; });
+  var canReq = false;
+  try { canReq = reqCanCreate(); } catch (e) {}
+
+  var row = function (x, isBuy) {
+    return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid ' +
+      (isBuy ? '#FDE68A' : '#F1F5F9') + ';border-radius:11px;margin-bottom:8px;background:' +
+      (isBuy ? '#FFFBEB' : '#F8FAFC') + '">' +
+      '<span style="flex:0 0 auto;font-size:16px;line-height:1.3">' + (isBuy ? '🛒' : '🦺') + '</span>' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:block;font-size:13px;color:#1E293B;line-height:1.55">' + esc(x.text) + '</span>' +
+      '<span style="display:block;font-size:11px;color:#94A3B8;margin-top:4px">' +
+      x.kinds.map(function (k) {
+        return '<span style="display:inline-block;background:#EEF2FF;color:#4338CA;border-radius:5px;' +
+          'padding:1px 7px;margin-right:4px;font-weight:700">' + esc(k) + '</span>';
+      }).join('') + '</span></span>' +
+      (isBuy && canReq
+        ? '<button class="btn btn-sm btn-primary" data-ppe-req="' + esc(r.id) + '|' + x.i + '" style="flex-shrink:0">' +
+          '<i class="ti ti-send"></i> Хүсэлт гаргах</button>'
+        : '') + '</div>';
+  };
+
+  var H = '';
+  if (buy.length) {
+    H += '<div style="font-size:11.5px;font-weight:800;color:#B45309;letter-spacing:.3px;margin:2px 0 7px">' +
+      '🛒 ХУДАЛДАН АВАХ / ОЛГОХ ЁСТОЙ (' + buy.length + ')</div>' +
+      buy.map(function (x) { return row(x, true); }).join('') +
+      (canReq
+        ? '<div style="font-size:11.5px;color:#94A3B8;line-height:1.55;margin:-2px 0 11px">' +
+          '«Хүсэлт гаргах» дарвал маршрут (ХАБЭА → Санхүү → Хангамж) урьдчилан бөглөгдөж, ' +
+          'хугацаа хэтэрвэл тухайн шатны хүний KPI-аас хасагдана.</div>'
+        : '<div style="font-size:11.5px;color:#94A3B8;margin:-2px 0 11px">Хүсэлтийг менежер, албаны хариуцагч гаргана.</div>');
+  }
+  if (wear.length) {
+    H += '<div style="font-size:11.5px;font-weight:800;color:#334155;letter-spacing:.3px;margin:2px 0 7px">' +
+      '🦺 АЖИЛТАН ӨМСӨХ / ХЭРЭГЛЭХ (' + wear.length + ')</div>' +
+      wear.map(function (x) { return row(x, false); }).join('');
+  }
+  return H;
+}
+
+/* «Хүсэлт гаргах» товч → урьдчилан бөглөсөн хүсэлтийн цонх */
+function ppeOpenRequest(riskId, mi) {
+  var r = (DB.risks || []).filter(function (x) { return String(x.id) === String(riskId); })[0];
+  if (!r) { toast('Эрсдэл олдсонгүй', 'error'); return; }
+  var m = riskMeasures(r).filter(function (x) { return x.i === mi; })[0];
+  if (!m) { toast('Арга хэмжээ олдсонгүй', 'error'); return; }
+  var kinds = meaPPEKinds(m.text);
+  var L = riskLevel(r);
+  reqNewModal({
+    title: kinds.length ? kinds[0].split('—').pop().trim() : 'Хамгаалах хэрэгсэл',
+    items: '',
+    forWho: (r.position || (r.positions || []).join(', ') || ''),
+    reason: 'Эрсдэлийн үнэлгээгээр шаардсан. Эрсдэлийн зэрэг: ' + L.code + ' · ' + L.name +
+      ' (' + riskScore(r) + '). Алба: ' + (riskCanonDept(r.dept) || r.dept || ''),
+    riskId: String(r.id), riskHazard: r.hazard || '', measure: m.text
+  });
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   ХХХ-ИЙН ХҮСЭЛТ — ОЛОН ШАТТ БАТЛАЛТ
+   ----------------------------------------------------------------------
+   Асуудал: ажлын хувцас, хамгаалах хэрэгсэл авахад менежер → эрүүл ахуйч →
+   санхүү → эрүүл ахуйч → хангамж → ... гэсэн 7 дамжлагаар явж, хаана
+   гацсан нь ХЭНД Ч ХАРАГДДАГГҮЙ тул сар сараар хойшилдог.
+
+   Шийдэл:
+     ① Хүсэлт гаргагч МАРШРУТАА ӨӨРӨӨ сонгоно (алба + албан тушаалтан),
+        шат бүрийн хугацааг өөрөө тавина (доод тал 2 ажлын өдөр)
+     ② Хүсэлт бүр ХЭН дээр ХЭДЭН ӨДӨР байгаа нь самбар дээр ил харагдана
+     ③ Хугацаа хэтэрвэл push сануулга + KPI-ийн «Босго оноо»-ноос
+        хоногт 1 оноо (дээд тал 10) хасагдана
+     ④ Батлагч нэг удаа хугацаа сунгах эрхтэй — үндэслэлтэй бол шийтгэлгүй
+   ══════════════════════════════════════════════════════════════════════ */
+var REQ_FILE = 'requests/_all.json';
+var REQ_ROWS = null, REQ_OK = false;
+var REQ_MIN_DAYS = 2;            // нэг шатны доод хугацаа (ажлын өдөр)
+var REQ_PEN_MAX = 10;            // KPI-аас хасах дээд оноо
+
+async function reqLoad(force) {
+  if (REQ_OK && !force) return REQ_ROWS;
+  try {
+    var j = await riskR2GetJson(REQ_FILE);
+    REQ_ROWS = (j && Array.isArray(j.list)) ? j.list : [];
+    REQ_OK = true;
+  } catch (e) { REQ_ROWS = REQ_ROWS || []; }
+  return REQ_ROWS;
+}
+
+/* Уншиж → өөрчилж → бичээд → ЭРГЭЖ ШАЛГАНА (зэрэг ажиллахад алдагдахгүй) */
+async function reqSaveMerge(mutate, verifyId) {
+  for (var k = 0; k < 3; k++) {
+    var cur = [];
+    try { var j = await riskR2GetJson(REQ_FILE); cur = (j && Array.isArray(j.list)) ? j.list : []; } catch (e) {}
+    var next = mutate(cur.slice());
+    if (!next) return true;
+    await riskR2PutJson(REQ_FILE, { updatedAt: new Date().toISOString(), list: next });
+    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 400)); });
+    var back = [];
+    try { var j2 = await riskR2GetJson(REQ_FILE); back = (j2 && Array.isArray(j2.list)) ? j2.list : []; } catch (e) {}
+    REQ_ROWS = back; REQ_OK = true;
+    if (!verifyId) return true;
+    if (back.some(function (x) { return x && x.id === verifyId; })) return true;
+  }
+  return false;
+}
+
+/* ── Ажлын өдрөөр тооцох (Бямба, Ням орохгүй) ── */
+function reqAddWorkDays(fromMs, days) {
+  var d = new Date(fromMs), n = Math.max(1, parseInt(days, 10) || 1);
+  while (n > 0) { d.setDate(d.getDate() + 1); var w = d.getDay(); if (w !== 0 && w !== 6) n--; }
+  d.setHours(18, 0, 0, 0);
+  return d.toISOString();
+}
+function reqWorkDaysSince(iso) {
+  if (!iso) return 0;
+  var a = new Date(iso), b = new Date();
+  if (isNaN(a) || b <= a) return 0;
+  var d = new Date(a), n = 0;
+  while (d < b) { d.setDate(d.getDate() + 1); var w = d.getDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
+
+function reqStep(r) { return (r && r.steps) ? (r.steps[r.step || 0] || null) : null; }
+function reqOverdue(r) {
+  if (!r || r.status !== 'running') return 0;
+  var s = reqStep(r);
+  return (s && s.dueAt) ? reqWorkDaysSince(s.dueAt) : 0;
+}
+function reqPenalty(r) { return Math.min(REQ_PEN_MAX, reqOverdue(r)); }
+function reqDaysAtStep(r) {
+  var s = reqStep(r);
+  if (!s || !s.startAt) return 0;
+  return reqWorkDaysSince(s.startAt);
+}
+
+function reqWaitingFor(uid) {
+  return (REQ_ROWS || []).filter(function (r) {
+    if (r.status !== 'running') return false;
+    var s = reqStep(r); return s && s.uid === uid;
+  });
+}
+function reqMine(uid) { return (REQ_ROWS || []).filter(function (r) { return r.byUid === uid; }); }
+function reqCanCreate() {
+  if (isAdmin() || isDeptHead()) return true;
+  try { return ackRoleOf(myEmp()) !== 'emp'; } catch (e) { return false; }
+}
+/* Хүсэлтийг зогсоох/цуцлах эрх — гаргасан хүн, ХАБЭА, админ */
+function reqCanCancel(r) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  return isAdmin() || (me && r.byUid === me.uid);
+}
+
+var REQ_ST = {
+  running:   { t: 'Явагдаж байна', c: '#2563EB', bg: '#EFF6FF' },
+  returned:  { t: 'Буцаагдсан',    c: '#DC2626', bg: '#FEF2F2' },
+  done:      { t: 'Бүрэн батлагдсан', c: '#059669', bg: '#F0FDF4' },
+  cancelled: { t: 'Цуцалсан',      c: '#64748B', bg: '#F8FAFC' }
+};
+
+/* ══ ҮЙЛДЛҮҮД ══ */
+async function reqCreate(data) {
+  var me = myEmp();
+  if (!me) throw new Error('Таны бүртгэл олдсонгүй');
+  var id = 'REQ-' + new Date().getFullYear() + '-' + Date.now().toString(36).toUpperCase();
+  var now = new Date().toISOString();
+  var steps = (data.steps || []).map(function (s, i) {
+    return {
+      i: i, dept: s.dept || '', uid: s.uid, name: s.name || '', pos: s.pos || '',
+      days: Math.max(REQ_MIN_DAYS, parseInt(s.days, 10) || REQ_MIN_DAYS),
+      status: 'wait', at: '', note: '', dueAt: '', startAt: '', ext: 0
+    };
+  });
+  if (!steps.length) throw new Error('Дор хаяж нэг батлах шат сонгоно уу');
+  steps[0].status = 'pending';
+  steps[0].startAt = now;
+  steps[0].dueAt = reqAddWorkDays(Date.now(), steps[0].days);
+
+  var rec = {
+    id: id, at: now,
+    byUid: me.uid, byName: me.name || '', byPos: me.pos || me.role || '',
+    byDept: riskCanonDept(me.dept) || me.dept || '',
+    title: data.title || '', items: data.items || '', forWho: data.forWho || '',
+    reason: data.reason || '', sum: parseFloat(data.sum) || 0,
+    riskId: data.riskId || '', riskHazard: data.riskHazard || '', measure: data.measure || '',
+    steps: steps, step: 0, status: 'running',
+    log: [{ at: now, uid: me.uid, name: me.name || '', what: 'Хүсэлт гаргав' }]
+  };
+  var ok = await reqSaveMerge(function (list) { return list.concat([rec]); }, id);
+  if (!ok) throw new Error('Хадгалж чадсангүй — дахин оролдоно уу');
+  return rec;
+}
+
+async function reqAct(id, kind, note, extDays) {
+  var me = myEmp();
+  if (!me) throw new Error('Таны бүртгэл олдсонгүй');
+  var done = false;
+  var ok = await reqSaveMerge(function (list) {
+    var r = list.filter(function (x) { return x && x.id === id; })[0];
+    if (!r) return null;
+    var s = r.steps[r.step];
+    if (!s) return null;
+    var now = new Date().toISOString();
+    r.log = r.log || [];
+
+    if (kind === 'ok') {
+      if (s.uid !== me.uid && !isAdmin()) return null;
+      s.status = 'ok'; s.at = now; s.note = note || '';
+      s.lateDays = reqWorkDaysSince(s.dueAt);
+      r.log.push({ at: now, uid: me.uid, name: me.name || '', what: 'Баталлаа', note: note || '' });
+      if (r.step >= r.steps.length - 1) { r.status = 'done'; r.doneAt = now; }
+      else {
+        r.step++;
+        var n = r.steps[r.step];
+        n.status = 'pending'; n.startAt = now; n.dueAt = reqAddWorkDays(Date.now(), n.days);
+      }
+    } else if (kind === 'back') {
+      if (s.uid !== me.uid && !isAdmin()) return null;
+      s.status = 'back'; s.at = now; s.note = note || '';
+      r.status = 'returned';
+      r.log.push({ at: now, uid: me.uid, name: me.name || '', what: 'Буцаав', note: note || '' });
+    } else if (kind === 'ext') {
+      if (s.uid !== me.uid && !isAdmin()) return null;
+      if (s.ext) return null;                       // нэг л удаа сунгана
+      var d = Math.max(1, parseInt(extDays, 10) || 1);
+      s.ext = d; s.extNote = note || '';
+      s.dueAt = reqAddWorkDays(Date.now(), d);
+      r.log.push({ at: now, uid: me.uid, name: me.name || '',
+        what: 'Хугацааг ' + d + ' ажлын өдрөөр сунгав', note: note || '' });
+    } else if (kind === 'cancel') {
+      r.status = 'cancelled';
+      r.log.push({ at: now, uid: me.uid, name: me.name || '', what: 'Цуцлав', note: note || '' });
+    } else if (kind === 'resend') {
+      if (r.byUid !== me.uid && !isAdmin()) return null;
+      s.status = 'pending'; s.at = ''; s.note = ''; s.startAt = now;
+      s.dueAt = reqAddWorkDays(Date.now(), s.days);
+      r.status = 'running';
+      r.log.push({ at: now, uid: me.uid, name: me.name || '', what: 'Засаад дахин илгээв', note: note || '' });
+    } else return null;
+    done = true;
+    return list;
+  }, id);
+  if (!ok || !done) throw new Error('Хадгалж чадсангүй — хуудсаа шинэчлээд дахин оролдоно уу');
+  return true;
+}
+
+/* ══ KPI — хугацаа хэтэрсэн шатны эзэнд зөрчил бүртгэнэ ══
+   ⚠ Зөрчил нь «Босго оноо»-ноос хасагдана (DB.violations). Хоногт 1 оноо,
+   дээд тал 10. Шат дуусмагц оноо ЗОГСОНО (устгахгүй — түүх үлдэнэ).
+   Админ буруу гэж үзвэл Зөрчлийн бүртгэлээс устгаж болно. */
+function reqSyncViolations() {
+  if (!isAdmin() && !isDeptHead()) return 0;
+  DB.violations = DB.violations || [];
+  var changed = 0;
+  (REQ_ROWS || []).forEach(function (r) {
+    var over = reqOverdue(r);
+    if (over <= 0) return;
+    var s = reqStep(r);
+    if (!s || !s.uid) return;
+    var emp = (DB.employees || []).filter(function (e) { return e.uid === s.uid; })[0];
+    if (!emp) return;
+    var vid = 'VL-REQ-' + r.id + '-' + r.step;
+    var pts = Math.min(REQ_PEN_MAX, over);
+    var desc = 'ХХХ-ийн хүсэлт «' + (r.title || r.id) + '» — ' + over +
+      ' ажлын өдөр хугацаа хэтэрсэн (шат ' + (r.step + 1) + ')';
+    var ex = DB.violations.filter(function (v) { return v.id === vid; })[0];
+    if (ex) {
+      if (ex.points !== pts || ex.desc !== desc) { ex.points = pts; ex.desc = desc; changed++; }
+    } else {
+      DB.violations.push({
+        id: vid, empId: emp.id, date: todayISO(), desc: desc, points: pts,
+        by: 'систем (автомат)', createdAt: new Date().toISOString(), reqId: r.id
+      });
+      changed++;
+    }
+  });
+  if (changed) { try { saveDB(); } catch (e) {} }
+  return changed;
+}
+
+/* ══ ХАРАГДАЦ ══ */
+function reqPersonOptions(dept) {
+  var list = (DB.employees || []).filter(function (e) {
+    if (!e.uid) return false;
+    if (!dept) return true;
+    return riskSameDept(dept, e.dept);
+  });
+  return list.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || '')); });
+}
+/* Урьдчилан санал болгох маршрут: ХАБЭА → Санхүү → Хангамж */
+function reqDefaultRoute() {
+  var sys = [];
+  try { sys = deptList() || []; } catch (e) {}
+  var find = function (re) { return sys.filter(function (d) { return re.test(d); })[0] || ''; };
+  return [
+    { dept: find(/хөдөлмөрийн аюулгүй|хабэа/i), days: 2 },
+    { dept: find(/санхүү/i), days: 3 },
+    { dept: find(/хангамж/i), days: 14 }
+  ].filter(function (s) { return s.dept; });
+}
+
+function reqStepChip(r, s, idx) {
+  var cur = (r.step === idx && r.status === 'running');
+  var col = s.status === 'ok' ? '#059669' : s.status === 'back' ? '#DC2626'
+    : cur ? (reqOverdue(r) > 0 ? '#DC2626' : '#2563EB') : '#CBD5E1';
+  var ic = s.status === 'ok' ? '✓' : s.status === 'back' ? '↩' : (idx + 1);
+  return '<span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;' +
+    'background:' + col + '14;border:1px solid ' + col + '3D;font-size:11.5px;font-weight:700;color:' + col + '">' +
+    '<span style="width:15px;height:15px;border-radius:50%;background:' + col + ';color:#fff;display:inline-flex;' +
+    'align-items:center;justify-content:center;font-size:9.5px;font-weight:900">' + ic + '</span>' +
+    esc(String(s.name || s.dept || '').split(' ').slice(0, 2).join(' ')) + '</span>';
+}
+
+function reqRowHTML(r, showWho) {
+  var S = REQ_ST[r.status] || REQ_ST.running;
+  var over = reqOverdue(r), s = reqStep(r);
+  var at = reqDaysAtStep(r);
+  return '<div data-req-open="' + esc(r.id) + '" style="border:1px solid ' + (over > 0 ? '#FECACA' : '#E2E8F0') +
+    ';border-left:4px solid ' + (over > 0 ? '#DC2626' : S.c) + ';border-radius:12px;padding:12px 14px;' +
+    'margin-bottom:9px;cursor:pointer;background:' + (over > 0 ? '#FEF2F2' : '#fff') + '">' +
+    '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+    '<div style="flex:1;min-width:220px">' +
+    '<div style="font-size:14px;font-weight:800;color:#0F172A;line-height:1.4">' + esc(r.title || '—') + '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:3px">' +
+    esc(r.id) + ' · ' + ackDateMn(r.at) + ' · ' + esc(r.byName || '') +
+    (r.byDept ? ' (' + esc(r.byDept) + ')' : '') +
+    (r.sum ? ' · <b style="color:#334155">' + Number(r.sum).toLocaleString() + '₮</b>' : '') + '</div>' +
+    '</div>' +
+    '<div style="flex-shrink:0;text-align:right">' +
+    '<span style="background:' + S.bg + ';color:' + S.c + ';border-radius:7px;padding:3px 10px;font-size:11.5px;font-weight:800">' +
+    S.t + '</span>' +
+    (r.status === 'running' && s
+      ? '<div style="font-size:11.5px;margin-top:5px;color:' + (over > 0 ? '#B91C1C' : '#64748B') + ';font-weight:' + (over > 0 ? '800' : '600') + '">' +
+        (over > 0 ? '⚠ ' + over + ' өдөр хэтэрсэн · −' + reqPenalty(r) + ' оноо'
+                  : (showWho !== false ? esc(s.name || '') + ' дээр ' + at + ' өдөр' : at + ' өдөр болж байна')) + '</div>'
+      : '') +
+    '</div></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">' +
+    (r.steps || []).map(function (x, i) { return reqStepChip(r, x, i); }).join('') + '</div>' +
+    '</div>';
+}
+
+function renderRequestPage(box) {
+  if (!box) return;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!REQ_OK) {
+    if (!renderRequestPage._busy) {
+      renderRequestPage._busy = true;
+      reqLoad().then(function () {
+        renderRequestPage._busy = false;
+        try { reqSyncViolations(); } catch (e) {}
+        renderHazards();
+      }).catch(function (e) { renderRequestPage._busy = false; console.error('[req]', e); });
+    }
+    box.innerHTML = '<div style="padding:34px;text-align:center;color:#94A3B8">' +
+      '<i class="ti ti-loader-2" style="font-size:26px;display:block;margin-bottom:8px"></i>Хүсэлтүүдийг ачаалж байна…</div>';
+    return;
+  }
+
+  var uid = me && me.uid;
+  var inbox = uid ? reqWaitingFor(uid) : [];
+  var mine = uid ? reqMine(uid) : [];
+  var all = (REQ_ROWS || []).slice().sort(function (a, b) {
+    var oa = reqOverdue(a), ob = reqOverdue(b);
+    if (oa !== ob) return ob - oa;
+    return String(b.at).localeCompare(String(a.at));
+  });
+  var admin = isAdmin() || isDeptHead();
+  var stuck = all.filter(function (r) { return reqOverdue(r) > 0; });
+  var run = all.filter(function (r) { return r.status === 'running'; });
+
+  var card = function (n, label, color) {
+    return '<div style="flex:1;min-width:104px;background:' + color + '0D;border:1.5px solid ' + color +
+      '2E;border-radius:13px;padding:11px 13px">' +
+      '<div style="font-size:24px;font-weight:900;color:' + color + ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + n + '</div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:' + color + ';margin-top:3px">' + label + '</div></div>';
+  };
+
+  var H = '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:13px">' +
+    '<div><div style="font-size:15px;font-weight:800;color:#0F172A">Ажлын хувцас, хамгаалах хэрэгслийн хүсэлт</div>' +
+    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Хүсэлт хаана, хэдэн өдөр болсныг бүгд хардаг. ' +
+    'Хугацаа хэтэрвэл хоногт <b>1 оноо</b> (дээд тал ' + REQ_PEN_MAX + ') KPI-аас хасагдана.</div></div>' +
+    (reqCanCreate()
+      ? '<button class="btn btn-primary" data-req-new="1" style="margin-left:auto"><i class="ti ti-plus"></i> Шинэ хүсэлт</button>'
+      : '') + '</div>';
+
+  H += '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">' +
+    card(inbox.length, 'миний шийдэх', inbox.length ? '#DC2626' : '#64748B') +
+    card(run.length, 'явагдаж байна', '#2563EB') +
+    card(stuck.length, 'хугацаа хэтэрсэн', stuck.length ? '#DC2626' : '#64748B') +
+    card(all.filter(function (r) { return r.status === 'done'; }).length, 'батлагдсан', '#059669') +
+    '</div>';
+
+  /* ── Миний шийдэх (ирц) ── */
+  if (inbox.length) {
+    H += '<div class="card" style="padding:15px 17px;margin-bottom:13px;border:1.5px solid #FECACA;background:#FEF2F2">' +
+      '<div style="font-size:14px;font-weight:800;color:#B91C1C;margin-bottom:3px">⚠ Таны шийдвэрийг хүлээж байна (' + inbox.length + ')</div>' +
+      '<div style="font-size:12px;color:#B91C1C;margin-bottom:11px">Хугацаа хэтэрвэл таны KPI-аас хасагдана. Ажиллах боломжгүй бол <b>хугацаа сунгах</b> хүс.</div>' +
+      inbox.map(function (r) { return reqRowHTML(r, false); }).join('') + '</div>';
+  }
+
+  /* ── Миний гаргасан ── */
+  if (mine.length) {
+    H += '<div class="card" style="padding:15px 17px;margin-bottom:13px">' +
+      '<div style="font-size:14px;font-weight:800;color:#334155;margin-bottom:11px">Миний гаргасан хүсэлт (' + mine.length + ')</div>' +
+      mine.slice(0, 25).map(function (r) { return reqRowHTML(r, true); }).join('') + '</div>';
+  }
+
+  /* ── Бүх хүсэлтийн самбар ── */
+  if (admin || all.length) {
+    var show = admin ? all : all.filter(function (r) {
+      return r.byUid === uid || (r.steps || []).some(function (s) { return s.uid === uid; });
+    });
+    H += '<div class="card" style="padding:15px 17px">' +
+      '<div style="font-size:14px;font-weight:800;color:#334155;margin-bottom:3px">' +
+      (admin ? 'Бүх хүсэлт — самбар' : 'Холбогдох хүсэлтүүд') + ' (' + show.length + ')</div>' +
+      '<div style="font-size:12px;color:#94A3B8;margin-bottom:11px">Хугацаа хэтэрсэн нь дээр гарна. Мөр дээр дарж дэлгэрэнгүйг үзнэ.</div>' +
+      (show.length ? show.slice(0, 60).map(function (r) { return reqRowHTML(r, true); }).join('')
+        : '<div class="empty-state" style="padding:26px"><i class="ti ti-inbox"></i><div>Хүсэлт бүртгэгдээгүй байна</div>' +
+          (reqCanCreate() ? '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px">«Шинэ хүсэлт» товчоор эхлүүлнэ үү.</div>' : '') +
+          '</div>') +
+      '</div>';
+  }
+
+  box.innerHTML = H;
+
+  if (!box._reqWired) {
+    box._reqWired = true;
+    box.addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-req-new]')) { reqNewModal(); return; }
+      var op = ev.target.closest('[data-req-open]');
+      if (op) { reqDetailModal(op.getAttribute('data-req-open')); return; }
+    });
+  }
+}
+
+/* ── Шинэ хүсэлт гаргах цонх ── */
+function reqNewModal(pre) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) { toast('Таны бүртгэл олдсонгүй', 'error'); return; }
+  var sys = [];
+  try { sys = deptList() || []; } catch (e) {}
+  var route = reqDefaultRoute();
+
+  var node = elc('div', 'modal-info');
+  var stepRow = function (s, i) {
+    var people = reqPersonOptions(s.dept);
+    return '<div data-rq-row="' + i + '" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;' +
+      'padding:10px;border:1px solid #E2E8F0;border-radius:11px;margin-bottom:8px;background:#F8FAFC">' +
+      '<div style="flex:0 0 22px;height:22px;border-radius:50%;background:#4F46E5;color:#fff;display:flex;' +
+      'align-items:center;justify-content:center;font-size:11px;font-weight:900;margin-bottom:8px">' + (i + 1) + '</div>' +
+      '<div style="flex:1;min-width:150px"><label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:3px">Алба</label>' +
+      '<select data-rq-dept="' + i + '" class="rf-input" style="width:100%;padding:8px 10px;font-size:12.5px">' +
+      '<option value="">— сонгох —</option>' +
+      sys.map(function (d) { return '<option value="' + esc(d) + '"' + (d === s.dept ? ' selected' : '') + '>' + esc(d) + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div style="flex:1;min-width:150px"><label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:3px">Албан тушаалтан</label>' +
+      '<select data-rq-uid="' + i + '" class="rf-input" style="width:100%;padding:8px 10px;font-size:12.5px">' +
+      '<option value="">— сонгох —</option>' +
+      people.map(function (e) {
+        return '<option value="' + esc(e.uid) + '"' + (e.uid === s.uid ? ' selected' : '') + '>' +
+          esc(e.name || '') + (e.pos || e.role ? ' — ' + esc(e.pos || e.role) : '') + '</option>';
+      }).join('') + '</select></div>' +
+      '<div style="flex:0 0 92px"><label style="font-size:11px;font-weight:700;color:#64748B;display:block;margin-bottom:3px">Хоног</label>' +
+      '<input type="number" data-rq-days="' + i + '" class="rf-input" min="' + REQ_MIN_DAYS + '" value="' +
+      (s.days || REQ_MIN_DAYS) + '" style="width:100%;padding:8px 10px;font-size:12.5px"></div>' +
+      '<button type="button" data-rq-del="' + i + '" class="btn btn-sm" style="flex-shrink:0;background:#FEE2E2;color:#991B1B;border-color:#FECACA;margin-bottom:1px"><i class="ti ti-trash"></i></button>' +
+      '</div>';
+  };
+
+  var draw = function () {
+    node.innerHTML =
+      '<div class="rf-field"><label style="font-weight:700;font-size:13px">Юу авах вэ <span style="color:#DC2626">*</span></label>' +
+      '<input type="text" id="rqTitle" class="rf-input" placeholder="Жишээ: Халуунд тэсвэртэй бээлий 40 ширхэг" value="' + esc((pre && pre.title) || '') + '"></div>' +
+      '<div class="rf-field" style="margin-top:10px"><label style="font-weight:700;font-size:13px">Дэлгэрэнгүй (төрөл, хэмжээ, тоо ширхэг)</label>' +
+      '<textarea id="rqItems" class="rf-input" rows="3" placeholder="Жишээ: 9 размер 20ш, 10 размер 20ш. Стандарт: EN388">' + esc((pre && pre.items) || '') + '</textarea></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">' +
+      '<div class="rf-field" style="flex:1;min-width:150px"><label style="font-weight:700;font-size:13px">Хэнд зориулж</label>' +
+      '<input type="text" id="rqFor" class="rf-input" placeholder="Жишээ: Пет шугамын 12 ажилтан" value="' + esc((pre && pre.forWho) || '') + '"></div>' +
+      '<div class="rf-field" style="flex:0 0 150px"><label style="font-weight:700;font-size:13px">Нийт үнэ (₮)</label>' +
+      '<input type="number" id="rqSum" class="rf-input" placeholder="0" min="0"></div></div>' +
+      '<div class="rf-field" style="margin-top:10px"><label style="font-weight:700;font-size:13px">Үндэслэл</label>' +
+      '<textarea id="rqReason" class="rf-input" rows="2" placeholder="Аль эрсдэлээс үүдэлтэй, яагаад яаралтай вэ">' + esc((pre && pre.reason) || '') + '</textarea></div>' +
+      (pre && pre.riskHazard
+        ? '<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:9px 12px;margin-top:9px;font-size:12px;color:#3730A3;line-height:1.55">' +
+          '<b>Эрсдэлээс:</b> ' + esc(pre.riskHazard) + (pre.measure ? '<br><b>Арга хэмжээ:</b> ' + esc(pre.measure) : '') + '</div>'
+        : '') +
+      '<div style="margin-top:16px;padding-top:13px;border-top:1px solid #F1F5F9">' +
+      '<div style="font-size:13.5px;font-weight:800;color:#334155;margin-bottom:3px">Батлах маршрут</div>' +
+      '<div style="font-size:12px;color:#8A94A6;margin-bottom:10px">Шат бүрд <b>алба, албан тушаалтан, хугацааг</b> та өөрөө сонгоно. ' +
+      'Доод хугацаа ' + REQ_MIN_DAYS + ' ажлын өдөр. Хэтэрвэл тухайн хүний KPI-аас хасагдана.</div>' +
+      route.map(stepRow).join('') +
+      '<button type="button" class="btn btn-secondary btn-sm" id="rqAdd"><i class="ti ti-plus"></i> Шат нэмэх</button></div>' +
+      '<button class="btn btn-primary btn-block" id="rqSend" style="margin-top:15px"><i class="ti ti-send"></i> Хүсэлт илгээх</button>' +
+      '<div id="rqSt" style="margin-top:9px;font-size:12.5px;line-height:1.6"></div>';
+
+    /* Алба солиход хүний жагсаалт шинэчлэгдэнэ */
+    node.querySelectorAll('[data-rq-dept]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var i = +sel.getAttribute('data-rq-dept');
+        route[i].dept = sel.value; route[i].uid = '';
+        sync(); draw();
+      });
+    });
+    node.querySelectorAll('[data-rq-del]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = +b.getAttribute('data-rq-del');
+        sync(); route.splice(i, 1); draw();
+      });
+    });
+    var addBtn = node.querySelector('#rqAdd');
+    if (addBtn) addBtn.addEventListener('click', function () { sync(); route.push({ dept: '', days: REQ_MIN_DAYS }); draw(); });
+    var sendBtn = node.querySelector('#rqSend');
+    if (sendBtn) sendBtn.addEventListener('click', send);
+  };
+
+  var form = { title: '', items: '', forWho: '', sum: '', reason: '' };
+  var sync = function () {
+    var g = function (id) { var el = node.querySelector('#' + id); return el ? el.value : ''; };
+    form.title = g('rqTitle') || form.title; form.items = g('rqItems') || form.items;
+    form.forWho = g('rqFor') || form.forWho; form.sum = g('rqSum') || form.sum;
+    form.reason = g('rqReason') || form.reason;
+    node.querySelectorAll('[data-rq-row]').forEach(function (row) {
+      var i = +row.getAttribute('data-rq-row');
+      if (!route[i]) return;
+      var d = row.querySelector('[data-rq-uid]'), dd = row.querySelector('[data-rq-dept]'),
+          dy = row.querySelector('[data-rq-days]');
+      if (dd) route[i].dept = dd.value;
+      if (d) {
+        route[i].uid = d.value;
+        var e = (DB.employees || []).filter(function (x) { return x.uid === d.value; })[0];
+        route[i].name = e ? (e.name || '') : ''; route[i].pos = e ? (e.pos || e.role || '') : '';
+      }
+      if (dy) route[i].days = Math.max(REQ_MIN_DAYS, parseInt(dy.value, 10) || REQ_MIN_DAYS);
+    });
+  };
+
+  var send = function () {
+    sync();
+    var st = node.querySelector('#rqSt');
+    var say = function (h, c) { st.innerHTML = '<span style="color:' + (c || '#64748B') + '">' + h + '</span>'; };
+    if (!form.title.trim()) { say('⚠️ «Юу авах вэ» талбарыг бөглөнө үү', '#B91C1C'); return; }
+    var steps = route.filter(function (s) { return s.uid; });
+    if (!steps.length) { say('⚠️ Дор хаяж нэг батлах албан тушаалтан сонгоно уу', '#B91C1C'); return; }
+    var btn = node.querySelector('#rqSend');
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Илгээж байна…';
+    reqCreate({
+      title: form.title.trim(), items: form.items.trim(), forWho: form.forWho.trim(),
+      sum: form.sum, reason: form.reason.trim(),
+      riskId: (pre && pre.riskId) || '', riskHazard: (pre && pre.riskHazard) || '',
+      measure: (pre && pre.measure) || '', steps: steps
+    }).then(function () {
+      closeModal();
+      toast('Хүсэлт илгээгдлээ — ' + esc(steps[0].name) + ' дээр очлоо', 'success');
+      renderHazards();
+    }).catch(function (e) {
+      btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Хүсэлт илгээх';
+      say('⚠️ ' + esc((e && e.message) || 'Алдаа'), '#B91C1C');
+    });
+  };
+
+  draw();
+  buildModal('Ажлын хувцас / хамгаалах хэрэгслийн хүсэлт', node, { width: 'min(760px, 96vw)' });
+}
+
+/* ── Хүсэлтийн дэлгэрэнгүй + үйлдэл ── */
+function reqDetailModal(id) {
+  var r = (REQ_ROWS || []).filter(function (x) { return x && x.id === id; })[0];
+  if (!r) { toast('Хүсэлт олдсонгүй', 'error'); return; }
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var s = reqStep(r), over = reqOverdue(r);
+  var mine = me && s && s.uid === me.uid && r.status === 'running';
+  var S = REQ_ST[r.status] || REQ_ST.running;
+
+  var node = elc('div', 'modal-info');
+  var H = '<div style="background:' + S.bg + ';border:1.5px solid ' + S.c + '3D;border-radius:13px;padding:14px 16px;margin-bottom:13px">' +
+    '<div style="font-size:16px;font-weight:800;color:#0F172A;line-height:1.4">' + esc(r.title || '—') + '</div>' +
+    '<div style="font-size:12px;color:#64748B;margin-top:5px">' + esc(r.id) + ' · ' +
+    esc(r.byName || '') + ' (' + esc(r.byDept || '') + ') · ' + ackDateMn(r.at) + '</div>' +
+    '<div style="margin-top:9px"><span style="background:' + S.c + ';color:#fff;border-radius:7px;padding:3px 11px;font-size:12px;font-weight:800">' + S.t + '</span>' +
+    (over > 0 ? '<span style="margin-left:8px;color:#B91C1C;font-size:12.5px;font-weight:800">⚠ ' + over +
+      ' ажлын өдөр хэтэрсэн · ' + esc(s.name || '') + '-ийн KPI-аас −' + reqPenalty(r) + ' оноо</span>' : '') +
+    '</div></div>';
+
+  var fact = function (l, v) {
+    if (!v) return '';
+    return '<div style="display:flex;gap:11px;padding:9px 0;border-bottom:1px solid #F1F5F9">' +
+      '<span style="flex:0 0 118px;font-size:11.5px;font-weight:800;color:#94A3B8;letter-spacing:.3px">' + l + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:13px;color:#1E293B;line-height:1.6;white-space:pre-wrap">' + esc(String(v)) + '</span></div>';
+  };
+  H += '<div class="card" style="padding:13px 16px;margin-bottom:13px">' +
+    fact('ДЭЛГЭРЭНГҮЙ', r.items) + fact('ХЭНД ЗОРИУЛЖ', r.forWho) +
+    fact('ҮНДЭСЛЭЛ', r.reason) + fact('ЭРСДЭЛ', r.riskHazard) + fact('АРГА ХЭМЖЭЭ', r.measure) +
+    (r.sum ? fact('НИЙТ ҮНЭ', Number(r.sum).toLocaleString() + ' ₮') : '') + '</div>';
+
+  /* Маршрутын мөр */
+  H += '<div class="card" style="padding:13px 16px;margin-bottom:13px">' +
+    '<div style="font-size:13px;font-weight:800;color:#334155;margin-bottom:10px">Батлалтын явц</div>' +
+    (r.steps || []).map(function (x, i) {
+      var cur = (i === r.step && r.status === 'running');
+      var col = x.status === 'ok' ? '#059669' : x.status === 'back' ? '#DC2626'
+        : cur ? (over > 0 ? '#DC2626' : '#2563EB') : '#CBD5E1';
+      var late = x.status === 'ok' ? (x.lateDays || 0) : (cur ? over : 0);
+      return '<div style="display:flex;gap:11px;padding:9px 0;' + (i ? 'border-top:1px solid #F8FAFC' : '') + '">' +
+        '<span style="flex:0 0 24px;height:24px;border-radius:50%;background:' + col + ';color:#fff;display:flex;' +
+        'align-items:center;justify-content:center;font-size:11px;font-weight:900">' +
+        (x.status === 'ok' ? '✓' : x.status === 'back' ? '↩' : (i + 1)) + '</span>' +
+        '<span style="flex:1;min-width:0">' +
+        '<span style="display:block;font-size:13px;font-weight:700;color:#1E293B">' + esc(x.name || '—') +
+        '<span style="font-weight:500;color:#94A3B8"> · ' + esc(x.pos || x.dept || '') + '</span></span>' +
+        '<span style="display:block;font-size:11.5px;color:' + (late > 0 ? '#B91C1C' : '#94A3B8') + ';margin-top:2px">' +
+        (x.status === 'ok' ? '✓ ' + ackDateMn(x.at) + ' баталсан' + (late > 0 ? ' (' + late + ' өдөр хоцорсон)' : '')
+          : x.status === 'back' ? '↩ ' + ackDateMn(x.at) + ' буцаасан'
+          : cur ? (over > 0 ? '⚠ ' + over + ' ажлын өдөр хэтэрсэн' : 'Хүлээгдэж байна · ' + x.days + ' хоногийн хугацаатай')
+          : 'Ээлж хүлээж байна') +
+        (x.ext ? ' · ' + x.ext + ' хоногоор сунгасан' : '') + '</span>' +
+        (x.note ? '<span style="display:block;font-size:12px;color:#475569;margin-top:4px;background:#F8FAFC;' +
+          'border-radius:8px;padding:6px 9px;line-height:1.55">' + esc(x.note) + '</span>' : '') +
+        '</span></div>';
+    }).join('') + '</div>';
+
+  /* Үйлдлүүд */
+  if (mine) {
+    H += '<div class="card" style="padding:13px 16px;margin-bottom:13px;border:1.5px solid #DBEAFE">' +
+      '<div style="font-size:13px;font-weight:800;color:#1E40AF;margin-bottom:8px">Таны шийдвэр</div>' +
+      '<textarea id="rqNote" class="rf-input" rows="2" placeholder="Тайлбар (буцаах бол ЗААВАЛ бичнэ)"></textarea>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+      '<button class="btn btn-primary" data-rq-act="ok" style="flex:1;min-width:130px"><i class="ti ti-check"></i> Батлах</button>' +
+      '<button class="btn" data-rq-act="back" style="flex:1;min-width:130px;background:#FEE2E2;color:#991B1B;border-color:#FECACA"><i class="ti ti-arrow-back-up"></i> Буцаах</button>' +
+      (s && !s.ext ? '<button class="btn btn-secondary" data-rq-act="ext" style="flex-shrink:0"><i class="ti ti-clock-plus"></i> Хугацаа сунгах</button>' : '') +
+      '</div></div>';
+  }
+  if (r.status === 'returned' && me && r.byUid === me.uid) {
+    H += '<div class="card" style="padding:13px 16px;margin-bottom:13px;border:1.5px solid #FECACA">' +
+      '<div style="font-size:13px;color:#B91C1C;line-height:1.6;margin-bottom:9px">Хүсэлт буцаагдсан. Тайлбарыг уншаад засаад дахин илгээнэ үү.</div>' +
+      '<button class="btn btn-primary" data-rq-act="resend"><i class="ti ti-send"></i> Дахин илгээх</button></div>';
+  }
+  if (reqCanCancel(r) && (r.status === 'running' || r.status === 'returned')) {
+    H += '<button class="btn btn-secondary btn-sm" data-rq-act="cancel" style="width:100%;margin-bottom:12px">Хүсэлтийг цуцлах</button>';
+  }
+
+  /* Түүх */
+  H += '<details class="card" style="padding:12px 15px">' +
+    '<summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:#64748B">' +
+    '<i class="ti ti-chevron-right" style="font-size:14px"></i>Түүх (' + ((r.log || []).length) + ')</summary>' +
+    '<div style="margin-top:9px">' + (r.log || []).map(function (l) {
+      return '<div style="font-size:12px;color:#64748B;padding:5px 0;border-top:1px solid #F8FAFC;line-height:1.5">' +
+        '<b style="color:#334155">' + esc(l.name || '') + '</b> — ' + esc(l.what || '') +
+        '<span style="color:#CBD5E1"> · ' + ackDateMn(l.at) + '</span>' +
+        (l.note ? '<br><span style="color:#475569">' + esc(l.note) + '</span>' : '') + '</div>';
+    }).join('') + '</div></details>';
+
+  node.innerHTML = H;
+  node.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-rq-act]');
+    if (!b) return;
+    var kind = b.getAttribute('data-rq-act');
+    var nt = node.querySelector('#rqNote');
+    var note = nt ? nt.value.trim() : '';
+    if (kind === 'back' && !note) { toast('Буцаах шалтгаанаа бичнэ үү', 'warn'); return; }
+    var ext = 0;
+    if (kind === 'ext') {
+      var v = prompt('Хэдэн ажлын өдрөөр сунгах вэ? (1–14)', '3');
+      ext = Math.max(1, Math.min(14, parseInt(v, 10) || 0));
+      if (!ext) return;
+      if (!note) { toast('Сунгах шалтгаанаа тайлбар талбарт бичнэ үү', 'warn'); return; }
+    }
+    if (kind === 'cancel' && !confirm('Энэ хүсэлтийг цуцлах уу?')) return;
+    var old = b.innerHTML; b.disabled = true; b.innerHTML = '<i class="ti ti-loader-2"></i>';
+    reqAct(r.id, kind, note, ext).then(function () {
+      closeModal();
+      toast(kind === 'ok' ? 'Баталлаа ✓' : kind === 'back' ? 'Буцаалаа'
+        : kind === 'ext' ? 'Хугацаа сунгагдлаа' : kind === 'resend' ? 'Дахин илгээлээ' : 'Цуцаллаа',
+        kind === 'back' ? 'warn' : 'success');
+      renderHazards();
+    }).catch(function (e) {
+      b.disabled = false; b.innerHTML = old;
+      toast((e && e.message) || 'Алдаа гарлаа', 'error');
+    });
+  });
+  buildModal('Хүсэлтийн дэлгэрэнгүй', node, { width: 'min(720px, 96vw)' });
+}
+
 
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;

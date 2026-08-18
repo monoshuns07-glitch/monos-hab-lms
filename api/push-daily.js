@@ -142,7 +142,23 @@ function messageFor(rec, weekday) {
   const late = +rec.late || 0;
   const pending = +rec.pending || 0;
   const ackDue = +rec.ackDue || 0;
+  const reqN = +rec.reqN || 0;
 
+  /* Батлах хүлээгдэж буй хүсэлт нь бусдыг ЗОГСООДОГ тул хамгийн эхэнд */
+  if (reqN > 0 && late > 0) {
+    return {
+      title: '⚠ ' + reqN + ' хүсэлт таны шийдвэрийг хүлээж байна',
+      body: 'Хугацаа хэтэрсэн тул KPI-ийн босго онооноос хасагдаж эхэллээ.',
+      tag: 'monos-req', url: '/kpi/?page=hazards'
+    };
+  }
+  if (reqN > 0 && (weekday === 1 || weekday === 4)) {
+    return {
+      title: reqN + ' хүсэлт таны шийдвэрийг хүлээж байна',
+      body: 'Ажлын хувцас, хамгаалах хэрэгслийн хүсэлт. Дарж шууд нээнэ.',
+      tag: 'monos-req', url: '/kpi/?page=hazards'
+    };
+  }
   if (late > 0) {
     return {
       title: '⚠ ' + late + ' арга хэмжээ хугацаа хэтэрсэн',
