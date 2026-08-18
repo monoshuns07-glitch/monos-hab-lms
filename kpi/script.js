@@ -4950,7 +4950,17 @@ function taskSortFn(a, b) {
 /* ══ Файл байршуулах (Cloudflare R2) ══
    Том файлыг 50MB-ын хэсгүүдэд хувааж илгээнэ (multipart) — видео 5GB хүртэл.
    Өмнө нь энд 12MB-ын таг байсан тул PPT/видео хавсаргах боломжгүй байв. */
-var TASK_R2 = 'https://monos-upload.buynt666.workers.dev';
+/* ⚠ ЛОКАЛ ХӨГЖҮҮЛЭЛТ: R2 worker нь CORS-оор ЗӨВХӨН monos-hab.vercel.app-аас
+   уншихыг зөвшөөрдөг. localhost дээр ажиллаж байвал dev-server.js-ийн /r2
+   прокси руу чиглүүлнэ — тэр нь сервер талаас дамжуулдаг тул CORS хамаарахгүй.
+   Vercel дээр энэ нөхцөл хэзээ ч биелэхгүй тул жинхэнэ сайтад огт нөлөөгүй. */
+var TASK_R2 = (function () {
+  try {
+    var h = location.hostname;
+    if (h === 'localhost' || h === '127.0.0.1') return location.origin + '/r2';
+  } catch (e) {}
+  return 'https://monos-upload.buynt666.workers.dev';
+})();
 var TASK_R2_KEY = 'monos2026';
 var R2_CHUNK = 50 * 1024 * 1024;      // нэг хэсэг
 var R2_SIMPLE_MAX = 90 * 1024 * 1024; // үүнээс жижиг бол энгийн PUT
