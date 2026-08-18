@@ -9607,24 +9607,25 @@ function renderHazards() {
      байдаг тул албан тушаал нь мэдэгдэхгүй → зөвхөн өөрийн албаных татагддаг
      байв. Жагсаалт ирсний дараа хамрах хүрээ нь дутуу байвал ДАХИН татна. */
   try {
+    /* ⚠⚠ ГАЦАЛТААС СЭРГИЙЛЭХ: өмнө нь дахин ачаалсны дараа тугийг
+       буцаагаад шууд дахин зурдаг байсан тул хамрах хүрээ бүрдэхгүй үед
+       (албаны нэр давхцах, хоосон алба г.м.) МӨНХИЙН давтагдаж сайт ГАЦДАГ байв.
+       Одоо НЭГ УДАА л оролдоно — туг хэзээ ч буцаахгүй. */
     var _dsc = riskDirScope();
-    if (_dsc && !renderHazards._dirBusy) {
+    if (_dsc && !renderHazards._dirOnce) {
       var _want = riskDirDepts().length;
       var _have = {};
       (DB.risks || []).forEach(function (r) {
         var d = riskCanonDept(r.dept) || r.dept || ''; if (d) _have[d] = 1;
       });
       if (_want > 1 && Object.keys(_have).length < _want) {
-        renderHazards._dirBusy = true;
+        renderHazards._dirOnce = true;            /* ← ХЭЗЭЭ Ч буцаахгүй */
         try { localStorage.removeItem(RISK_CACHE_KEY); } catch (e2) {}
         riskR2Load().then(function (res) {
-          renderHazards._dirBusy = false;
           console.log('[risks] захирлын хамрах хүрээгээр дахин ачааллаа: ' +
             ((res && res.n) || 0) + ' эрсдэл');
           renderHazards();
-        }).catch(function (e3) {
-          renderHazards._dirBusy = false; console.error('[risks] дахин ачаалал', e3);
-        });
+        }).catch(function (e3) { console.error('[risks] дахин ачаалал', e3); });
       }
     }
   } catch (e) {}
@@ -9673,7 +9674,7 @@ function renderHazards() {
       var hasTab = !!sec.querySelector('[data-risk-tab="ppl"]');
       if (nsub2 > 0 && !hasTab && !renderHazards._tabRedraw) {
         renderHazards._tabRedraw = true;
-        PPL_CACHE = {};
+        PPL_CACHE = {}; PPL_DEEP = {};
         renderHazards();
         return;
       }
@@ -15013,7 +15014,7 @@ var PPL_ALL = false;      // бүгдийг зурах уу (анхдагчаа�
 var PPL_ACK = null;       // тухайн албаны танилцалтын сан
 
 /* ⚡ Эрсдлийн жагсаалт нь ажилтан бүрд 887 мөр шүүдэг тул КЭШЛЭНЭ */
-var PPL_CACHE = {};
+var PPL_CACHE = {}, PPL_DEEP = {};
 function pplRowsOf(e) {
   if (PPL_CACHE[e.uid]) return PPL_CACHE[e.uid];
   var seen = { rows: [] };
@@ -15048,9 +15049,16 @@ function pplEmpStat(e, deep) {
   } catch (er) {}
   var rd = { done: 0, total: rows.length, ok: false };
   try { if (e.uid === (myEmp() || {}).uid) rd = ackReadStat(rows, ver); } catch (er) {}
+  /* ⚡ meaMineStats нь эрсдэл бүрийн арга хэмжээг задалж, хариуцагчийг 267
+     ажилтнаас хайдаг тул МАШ ХҮНД. Хүн тус бүрээр нэг л удаа бодож кэшлэнэ —
+     эс бөгөөс хуудас дахин зурагдах бүрд дахин бодож САЙТ ГАЦНА. */
   var mst = { total: 0, done: 0, late: 0, soon: 0 }, rules = 0;
   if (deep) {
-    try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
+    if (PPL_DEEP[e.uid]) { mst = PPL_DEEP[e.uid].mst; rules = PPL_DEEP[e.uid].rules; }
+    else {
+      try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
+      PPL_DEEP[e.uid] = { mst: mst, rules: rules };
+    }
   }
   return { e: e, rows: rows, lv: lv, top: top, ver: ver, row: row, prev: prev, rd: rd,
     mst: mst, rules: rules, deep: !!deep, scope: seen.scope || 'none',
@@ -15186,7 +15194,7 @@ function renderPeoplePage(box) {
     Promise.all([ackLoad(dept), ACK_SEC_OK ? Promise.resolve(ACK_SEC) : ackSecLoad(true)])
       .then(function (res) {
         PPL_ACK = res[0] || { rows: [] };
-        PPL_CACHE = {};                       // хэсэг ирсэн тул дахин тооцно
+        PPL_CACHE = {}; PPL_DEEP = {};        // хэсэг ирсэн тул дахин тооцно
         renderPeoplePage._busy = false;
         renderHazards();
       }).catch(function () { renderPeoplePage._busy = false; PPL_ACK = { rows: [] }; });
@@ -15212,7 +15220,7 @@ function renderPeoplePage(box) {
   var signed = stats.filter(function (s) { return s.row; }).length;
   var ideas = stats.reduce(function (a, s) { return a + (s.ideas || []).length; }, 0);
   /* Арга хэмжээний нийлбэрийг ЗӨВХӨН цөөн хүнтэй үед бодно (хүнд тооцоо) */
-  var meaLate = 0, meaTot = 0, meaDoneN = 0, meaShow = stats.length <= 25;
+  var meaLate = 0, meaTot = 0, meaDoneN = 0, meaShow = stats.length <= 20;
   if (meaShow) {
     stats.forEach(function (s) {
       var d = s.deep ? s : pplEmpStat(s.e, true);
