@@ -8962,6 +8962,10 @@ function riskTabList(list) {
 function riskDeptBarHTML(list) {
   var ds = riskDirDepts();
   if (!ds.length) return '';
+  /* ⚠ Доорх хураангуй нь давхардлыг нэгтгэсэн тоог харуулдаг. Энд түүхий
+     мөрийг тоолж байсан тул «Бүгд 515» ба «314 эрсдэл» гэсэн хоёр өөр тоо
+     зэрэгцэн гарч, аль нь үнэн болох нь ойлгомжгүй байв. */
+  list = riskEmpMerged(list || []);
   var cnt = {};
   (list || []).forEach(function (r) {
     var d = riskCanonDept(r.dept) || r.dept || '';
@@ -9056,7 +9060,12 @@ function riskEmpMerged(list) {
   var nzz = function (v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase(); };
   var seenH = {}, merged = [];
   (list || []).forEach(function (r) {
-    var k = nzz(r.hazard) + '|' + nzz(r.actions);
+    /* ⚠ Түлхүүрт АЛБА заавал орно. Өмнө нь зөвхөн аюул+арга хэмжээгээр
+       нийлүүлдэг байсан тул захирлын дэлгэц дээр ИТА ба ХХҮ-ийн ижил
+       нэртэй эрсдэл НЭГ мөр болж 47 мөр алга болж, нийлсэн мөр нь ганц
+       албаны нэрийг авдаг учир «ИТА» товч дарахад бусад нь гээгддэг байв.
+       Өөр албаны үнэлгээ бол ӨӨР үнэлгээ — нийлүүлж болохгүй. */
+    var k = nzz(riskCanonDept(r.dept) || r.dept) + '|' + nzz(r.hazard) + '|' + nzz(r.actions);
     if (seenH[k]) {
       var p = String(r.position || '').trim();
       if (p && seenH[k]._posList.indexOf(p) < 0) seenH[k]._posList.push(p);
