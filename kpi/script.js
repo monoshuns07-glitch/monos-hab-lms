@@ -13695,6 +13695,23 @@ function reqWorkDaysSince(iso) {
   return n;
 }
 
+/* ⚠ ХАБЭА/админ хэрэглэгч ажилтны бүртгэлд байхгүй байж болно.
+   Тэр үед сешнээс нь биеийг нөхөж, хүсэлт гаргах боломжийг хаахгүй. */
+function reqMe() {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (me && me.uid) return me;
+  try {
+    if (SESSION && (isAdmin() || isDeptHead())) {
+      var uid = SESSION.uid || '';
+      try { if (!uid && typeof fauth !== 'undefined' && fauth && fauth.currentUser) uid = fauth.currentUser.uid; } catch (e2) {}
+      if (!uid && SESSION.email) uid = 'u:' + String(SESSION.email).toLowerCase();
+      return { uid: uid, name: SESSION.name || SESSION.email || 'ХАБЭА-н алба',
+        pos: SESSION.pos || 'ХАБЭА-н алба', dept: SESSION.dept || '' };
+    }
+  } catch (e) {}
+  return null;
+}
+
 function reqStep(r) { return (r && r.steps) ? (r.steps[r.step || 0] || null) : null; }
 function reqOverdue(r) {
   if (!r || r.status !== 'running') return 0;
@@ -13719,9 +13736,14 @@ function reqCanCreate() {
   if (isAdmin() || isDeptHead()) return true;
   try { return ackRoleOf(myEmp()) !== 'emp'; } catch (e) { return false; }
 }
+/* Тухайн шатыг би шийдэх ёстой юу */
+function reqIsMyStep(r) {
+  var me = reqMe(), s = reqStep(r);
+  return !!(me && s && r.status === 'running' && s.uid === me.uid);
+}
 /* Хүсэлтийг зогсоох/цуцлах эрх — гаргасан хүн, ХАБЭА, админ */
 function reqCanCancel(r) {
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   return isAdmin() || (me && r.byUid === me.uid);
 }
 
@@ -13734,7 +13756,7 @@ var REQ_ST = {
 
 /* ══ ҮЙЛДЛҮҮД ══ */
 async function reqCreate(data) {
-  var me = myEmp();
+  var me = reqMe();
   if (!me) throw new Error('Таны бүртгэл олдсонгүй');
   var id = 'REQ-' + new Date().getFullYear() + '-' + Date.now().toString(36).toUpperCase();
   var now = new Date().toISOString();
@@ -13766,7 +13788,7 @@ async function reqCreate(data) {
 }
 
 async function reqAct(id, kind, note, extDays) {
-  var me = myEmp();
+  var me = reqMe();
   if (!me) throw new Error('Таны бүртгэл олдсонгүй');
   var done = false;
   var ok = await reqSaveMerge(function (list) {
@@ -13916,7 +13938,7 @@ function reqRowHTML(r, showWho) {
 
 function renderRequestPage(box) {
   if (!box) return;
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   if (!REQ_OK) {
     if (!renderRequestPage._busy) {
       renderRequestPage._busy = true;
@@ -14010,7 +14032,7 @@ function renderRequestPage(box) {
 
 /* ── Шинэ хүсэлт гаргах цонх ── */
 function reqNewModal(pre) {
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   if (!me) { toast('Таны бүртгэл олдсонгүй', 'error'); return; }
   var sys = [];
   try { sys = deptList() || []; } catch (e) {}
@@ -14141,7 +14163,7 @@ function reqNewModal(pre) {
 function reqDetailModal(id) {
   var r = (REQ_ROWS || []).filter(function (x) { return x && x.id === id; })[0];
   if (!r) { toast('Хүсэлт олдсонгүй', 'error'); return; }
-  var me = null; try { me = myEmp(); } catch (e) {}
+  var me = reqMe();
   var s = reqStep(r), over = reqOverdue(r);
   var mine = me && s && s.uid === me.uid && r.status === 'running';
   var S = REQ_ST[r.status] || REQ_ST.running;
