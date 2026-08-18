@@ -6871,7 +6871,25 @@ async function meaAdd(emp, r, mi, text, files) {
     st.updatedAt = rec.at;
     try { await meaSave(dept, st); } catch (e) { continue; }
     var back = await meaLoad(dept, true);
-    if (meaDone(back, rec.key)) return { ok: true, rec: rec };
+    if (meaDone(back, rec.key)) {
+      /* ⭐ УДИРДЛАГАД МЭДЭГДЭНЭ — хянагч + менежер + албаны хариуцагч */
+      try {
+        var who = [];
+        try { who = who.concat(riskMeasureOwners(r).emps || []); } catch (e2) {}
+        try { who = who.concat(ackBossesOf(emp)); } catch (e3) {}
+        who = who.filter(function (x) { return x && x.uid && x.uid !== emp.uid; });
+        if (who.length) {
+          ntfSend(who, {
+            kind: 'mea',
+            title: (emp.name || 'Ажилтан') + ' арга хэмжээ хэрэгжүүллээ',
+            body: String(m.text || '').slice(0, 150) +
+              ' — ' + (files || []).length + ' баримт хавсаргасан',
+            url: '/kpi/?page=hazards', riskId: r.id
+          }).catch(function () {});
+        }
+      } catch (e4) { console.warn('[ntf]', e4 && e4.message); }
+      return { ok: true, rec: rec };
+    }
   }
   return { ok: false, error: 'Хадгалагдсанг баталгаажуулж чадсангүй' };
 }
@@ -8779,8 +8797,14 @@ var RISK_TAB = 'risks';
 function riskTabList(list) {
   var admin = isAdmin() || isDeptHead();
   var tabs = [{ key: 'risks', icon: 'ti-shield-half', label: 'Эрсдэлүүд', n: (list || []).length, tone: '' }];
-  var rq = 0;
+  var rq = 0, nsub = 0;
   try { var me0 = myEmp(); if (me0 && REQ_OK) rq = reqWaitingFor(me0.uid).length; } catch (e) {}
+  /* ⭐ Хариуцах ажилтантай хүнд «Ажилтнуудын байдал» таб — эрсдэлүүдийн ЯГ АРД */
+  try { nsub = ackSubordinates(myEmp()).length; } catch (e) {}
+  if (admin || nsub) {
+    tabs.push({ key: 'ppl', icon: 'ti-users', label: 'Ажилтнуудын байдал',
+      n: nsub || null, tone: '' });
+  }
   if (admin) {
     tabs.push({ key: 'ack', icon: 'ti-signature', label: 'Танилцсан байдал', n: null, tone: '' });
     tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Арга хэмжээний биелэлт', n: null, tone: '' });
@@ -9399,6 +9423,8 @@ function renderHazards() {
     if (RISK_TAB === 'mea') {
       /* Агуулгыг доор renderMeasurePage/renderMeasureAdminPage дүүргэнэ */
       H += '<div id="riskTabMea"></div>';
+    } else if (RISK_TAB === 'ppl') {
+      H += '<div id="riskTabPpl"></div>';
     } else if (RISK_TAB === 'req') {
       H += '<div id="riskTabReq"></div>';
     } else if (RISK_TAB === 'ack' && admin) {
@@ -9415,6 +9441,8 @@ function renderHazards() {
   sec.innerHTML = H;
   riskWire(sec, renderHazards);
 
+  try { ntfWireOnce(); ntfBadgeRefresh(); } catch (e) {}
+
   /* Хүсэлтүүдийг нэг удаа арын талд татна — тоолуур, нүүр хуудсанд хэрэгтэй */
   if (!REQ_OK && !renderHazards._reqBusy) {
     renderHazards._reqBusy = true;
@@ -9425,6 +9453,11 @@ function renderHazards() {
     }).catch(function (e) { renderHazards._reqBusy = false; console.error('[req]', e); });
   }
 
+  /* Ажилтнуудын байдлын таб */
+  if (RISK_TAB === 'ppl') {
+    var pbox = sec.querySelector('#riskTabPpl');
+    if (pbox) renderPeoplePage(pbox);
+  }
   /* Хувцас, ХХХ-ийн хүсэлтийн таб */
   if (RISK_TAB === 'req') {
     var rbox = sec.querySelector('#riskTabReq');
@@ -14486,6 +14519,428 @@ function reqDetailModal(id) {
     });
   });
   buildModal('Хүсэлтийн дэлгэрэнгүй', node, { width: 'min(720px, 96vw)' });
+}
+
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   🔔 МЭДЭГДЭЛ — арга хэмжээ хэрэгжүүлмэгц УДИРДЛАГАД нь очно
+   ----------------------------------------------------------------------
+   Ажилтан арга хэмжээгээ баримтжуулмагц:
+     · «Хэн хяналт тавих» баганын ХЯНАГЧ нарт
+     · тухайн ажилтны МЕНЕЖЕР, АЛБАНЫ ХАРИУЦАГЧ-д
+   мэдэгдэл очно. Хонхон дээр тоолуур гарч, дарвал жагсаалт нээгдэнэ.
+   Push тохируулагдсан бол утсанд нь ч шууд очно.
+   ══════════════════════════════════════════════════════════════════════ */
+var NTF_FILE = 'notify/_all.json';
+var NTF_ROWS = null, NTF_OK = false;
+
+async function ntfLoad(force) {
+  if (NTF_OK && !force) return NTF_ROWS;
+  try {
+    var j = await riskR2GetJson(NTF_FILE);
+    NTF_ROWS = (j && Array.isArray(j.list)) ? j.list : [];
+    NTF_OK = true;
+  } catch (e) { NTF_ROWS = NTF_ROWS || []; }
+  return NTF_ROWS;
+}
+async function ntfSaveMerge(mutate) {
+  for (var k = 0; k < 3; k++) {
+    var cur = [];
+    try { var j = await riskR2GetJson(NTF_FILE); cur = (j && Array.isArray(j.list)) ? j.list : []; } catch (e) {}
+    var next = mutate(cur.slice());
+    if (!next) return true;
+    /* Сүүлийн 400-г л хадгална — файл хэт томрохгүй */
+    next = next.slice(-400);
+    try { await riskR2PutJson(NTF_FILE, { updatedAt: new Date().toISOString(), list: next }); }
+    catch (e) { if (k === 2) return false; continue; }
+    NTF_ROWS = next; NTF_OK = true;
+    return true;
+  }
+  return false;
+}
+
+/* Тухайн ажилтны ШУУД УДИРДЛАГА — менежер ба албаны хариуцагч.
+   ⚠ Танилцалтын дараалалтай ЯГ ижил логик (ackSubordinates)-ыг ашиглана. */
+function ackBossesOf(emp) {
+  var out = [];
+  if (!emp || !emp.uid) return out;
+  try {
+    (DB.employees || []).forEach(function (b) {
+      if (!b.uid || b.uid === emp.uid) return;
+      var role = ackRoleOf(b);
+      if (role !== 'mgr' && role !== 'lead') return;
+      if (!riskSameDept(b.dept, emp.dept)) return;
+      if (ackSubordinates(b).some(function (x) { return x.uid === emp.uid; })) out.push(b);
+    });
+  } catch (e) {}
+  return out;
+}
+
+/* Мэдэгдэл илгээх (R2-д бичих + боломжтой бол push) */
+async function ntfSend(toList, info) {
+  var uids = {}, names = [];
+  (toList || []).forEach(function (e) {
+    if (e && e.uid && !uids[e.uid]) { uids[e.uid] = 1; names.push(e.name || ''); }
+  });
+  var to = Object.keys(uids);
+  if (!to.length) return false;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var rec = {
+    id: 'N-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    at: new Date().toISOString(), to: to,
+    byUid: (me && me.uid) || '', byName: (me && me.name) || '',
+    kind: info.kind || 'mea', title: info.title || '', body: info.body || '',
+    url: info.url || '/kpi/?page=hazards', riskId: info.riskId || '', read: {}
+  };
+  var ok = await ntfSaveMerge(function (list) { return list.concat([rec]); });
+  /* Push — тохируулагдсан бол шууд утсанд нь */
+  try {
+    if (typeof fauth !== 'undefined' && fauth && fauth.currentUser) {
+      var idToken = await fauth.currentUser.getIdToken();
+      fetch('/api/push-now/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: idToken, to: to, title: rec.title, body: rec.body, url: rec.url })
+      }).catch(function () {});
+    }
+  } catch (e) {}
+  return ok;
+}
+
+function ntfMine(uid) {
+  return (NTF_ROWS || []).filter(function (x) { return x && (x.to || []).indexOf(uid) >= 0; })
+    .sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+}
+function ntfUnread(uid) {
+  return ntfMine(uid).filter(function (x) { return !(x.read || {})[uid]; }).length;
+}
+async function ntfMarkRead(uid) {
+  return await ntfSaveMerge(function (list) {
+    var ch = false;
+    list.forEach(function (x) {
+      if (x && (x.to || []).indexOf(uid) >= 0 && !(x.read || {})[uid]) {
+        x.read = x.read || {}; x.read[uid] = new Date().toISOString(); ch = true;
+      }
+    });
+    return ch ? list : null;
+  });
+}
+
+/* Хонхны тоолуур */
+function ntfBadgeRefresh() {
+  try {
+    var me = myEmp(); if (!me || !me.uid) return;
+    var n = ntfUnread(me.uid);
+    var dot = document.querySelector('.icon-btn.notif .notif-dot');
+    if (dot) {
+      dot.textContent = n > 9 ? '9+' : (n || '');
+      dot.style.display = n ? 'flex' : 'none';
+      dot.style.cssText += ';align-items:center;justify-content:center;font-size:9.5px;font-weight:900;color:#fff';
+    }
+  } catch (e) {}
+}
+function ntfWireOnce() {
+  if (ntfWireOnce._done) return;
+  ntfWireOnce._done = true;
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('.icon-btn.notif');
+    if (b) { ntfModal(); return; }
+  });
+  if (!NTF_OK && !ntfWireOnce._busy) {
+    ntfWireOnce._busy = true;
+    ntfLoad().then(function () { ntfWireOnce._busy = false; ntfBadgeRefresh(); })
+      .catch(function () { ntfWireOnce._busy = false; });
+  }
+}
+
+function ntfModal() {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) { toast('Таны бүртгэл олдсонгүй', 'error'); return; }
+  var list = ntfMine(me.uid);
+  var node = elc('div', 'modal-info');
+  node.innerHTML = list.length
+    ? list.slice(0, 60).map(function (x) {
+        var isNew = !(x.read || {})[me.uid];
+        return '<div style="display:flex;gap:11px;padding:11px 12px;border:1px solid ' +
+          (isNew ? '#C7D2FE' : '#F1F5F9') + ';border-radius:12px;margin-bottom:8px;background:' +
+          (isNew ? '#EEF2FF' : '#fff') + '">' +
+          '<span style="flex:0 0 24px;font-size:17px;line-height:1.3">' +
+          (x.kind === 'mea' ? '✅' : x.kind === 'req' ? '📨' : '🔔') + '</span>' +
+          '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:13px;font-weight:700;color:#1E293B;line-height:1.45">' +
+          esc(x.title || '') + '</span>' +
+          (x.body ? '<span style="display:block;font-size:12px;color:#64748B;margin-top:3px;line-height:1.5">' +
+            esc(x.body) + '</span>' : '') +
+          '<span style="display:block;font-size:11px;color:#94A3B8;margin-top:4px">' +
+          ackDateMn(x.at) + (x.byName ? ' · ' + esc(x.byName) : '') + '</span></span>' +
+          (isNew ? '<span style="flex:0 0 8px;height:8px;border-radius:50%;background:#4F46E5;margin-top:6px"></span>' : '') +
+          '</div>';
+      }).join('')
+    : '<div class="empty-state" style="padding:32px"><i class="ti ti-bell-off"></i><div>Мэдэгдэл алга байна</div></div>';
+  buildModal('Мэдэгдэл', node, { width: 'min(560px, 96vw)' });
+  if (list.some(function (x) { return !(x.read || {})[me.uid]; })) {
+    ntfMarkRead(me.uid).then(ntfBadgeRefresh).catch(function () {});
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   👥 «АЖИЛТНУУДЫН БАЙДАЛ» ТАБ — менежер, албаны хариуцагчид
+   ----------------------------------------------------------------------
+   Хариуцах хэсгийн ажилтан бүрийн эрсдэлийн үнэлгээний БҮХ дата:
+   хэдэн эрсдэлтэй, түвшин нь ямар, танилцсан эсэх, ямар санал өгсөн,
+   арга хэмжээ нь хаана байгаа — нэг дор, нэг бүрчлэн.
+   ══════════════════════════════════════════════════════════════════════ */
+var PPL_OPEN = {};        // задалсан ажилтнууд
+var PPL_ACK = null;       // тухайн албаны танилцалтын сан
+
+function pplEmpStat(e) {
+  var seen = { rows: [] };
+  try { seen = riskSeenBy(e); } catch (er) {}
+  var rows = [];
+  try { rows = riskEmpMerged(seen.rows || []); } catch (er) { rows = seen.rows || []; }
+  var lv = { A: 0, B: 0, C: 0, D: 0, un: 0 }, top = 0;
+  rows.forEach(function (r) {
+    if (riskIsUnscored(r)) { lv.un++; return; }
+    var c = riskLevel(r).code;
+    if (lv[c] != null) lv[c]++;
+    var s = riskScore(r); if (s > top) top = s;
+  });
+  var ver = '';
+  try { ver = ackVersionOf(riskCanonDept(e.dept) || e.dept || ''); } catch (er) {}
+  var row = null, prev = null;
+  try {
+    row = ackSignedRow(PPL_ACK, e.uid, ver);
+    prev = ackLatestRow(PPL_ACK, e.uid);
+  } catch (er) {}
+  var rd = { done: 0, total: rows.length, ok: false };
+  try { if (e.uid === (myEmp() || {}).uid) rd = ackReadStat(rows, ver); } catch (er) {}
+  var mst = { total: 0, done: 0, late: 0 }, rules = 0;
+  try { mst = meaMineStats(e); rules = meaMyRules(e).length; } catch (er) {}
+  return { e: e, rows: rows, lv: lv, top: top, ver: ver, row: row, prev: prev, rd: rd,
+    mst: mst, rules: rules, ideas: (row && row.ideas) || (prev && prev.ideas) || [] };
+}
+
+function pplRowHTML(st) {
+  var e = st.e, L = riskLevel(st.top);
+  var open = !!PPL_OPEN[e.uid];
+  var sig = st.row ? 'ok' : (st.prev ? 'old' : 'no');
+  var sigCol = sig === 'ok' ? '#059669' : sig === 'old' ? '#D97706' : '#94A3B8';
+  var sigTxt = sig === 'ok' ? '✓ ' + ackDateMn(st.row.at)
+    : sig === 'old' ? 'Хуучин хувилбарт зурсан' : 'Зураагүй';
+
+  var chip = function (n, c, bg, t) {
+    if (!n) return '';
+    return '<span title="' + t + '" style="display:inline-block;background:' + bg + ';color:' + c +
+      ';border-radius:6px;padding:1px 7px;font-size:10.5px;font-weight:800;margin-right:3px">' + n + '</span>';
+  };
+
+  var H = '<div style="border:1px solid ' + (open ? '#C7D2FE' : '#E2E8F0') + ';border-radius:12px;' +
+    'margin-bottom:8px;background:#fff;overflow:hidden">' +
+    '<div data-ppl-open="' + esc(e.uid) + '" style="display:flex;align-items:center;gap:11px;' +
+    'padding:11px 13px;cursor:pointer">' +
+    '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:#EEF2FF;color:#4F46E5;' +
+    'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">' +
+    esc(String(e.name || '?').charAt(0)) + '</span>' +
+    '<span style="flex:1;min-width:0">' +
+    '<span style="display:block;font-size:13.5px;font-weight:700;color:#1E293B">' + esc(e.name || '—') + '</span>' +
+    '<span style="display:block;font-size:11.5px;color:#94A3B8">' + esc(e.pos || e.role || '—') + '</span></span>' +
+    '<span class="rk-hide-sm" style="flex:0 0 116px;text-align:center">' +
+    chip(st.lv.A, '#fff', '#DC2626', 'Онцгой') + chip(st.lv.B, '#fff', '#EA580C', 'Өндөр') +
+    chip(st.lv.C, '#854D0E', '#FEF9C3', 'Дундаж') + chip(st.lv.D, '#166534', '#DCFCE7', 'Бага') +
+    chip(st.lv.un, '#64748B', '#F1F5F9', 'Үнэлгээгүй') + '</span>' +
+    '<span style="flex:0 0 54px;text-align:center">' +
+    '<span style="font-size:17px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif">' +
+    st.rows.length + '</span>' +
+    '<span style="display:block;font-size:9.5px;color:#94A3B8">эрсдэл</span></span>' +
+    '<span style="flex:0 0 128px;text-align:right;font-size:11.5px;font-weight:700;color:' + sigCol + '">' +
+    sigTxt + '</span>' +
+    '<i class="ti ti-chevron-' + (open ? 'up' : 'down') + '" style="flex:0 0 18px;color:#CBD5E1"></i></div>';
+
+  if (!open) return H + '</div>';
+
+  /* ── Задалсан: нарийвчилсан дата ── */
+  var fact = function (l, v, c) {
+    return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #F8FAFC">' +
+      '<span style="flex:0 0 148px;font-size:11.5px;font-weight:800;color:#94A3B8;letter-spacing:.3px">' + l + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:12.5px;color:' + (c || '#1E293B') + ';line-height:1.55">' + v + '</span></div>';
+  };
+  var mea = st.mst;
+  H += '<div style="padding:2px 15px 14px;border-top:1px solid #F1F5F9;background:#FCFDFF">' +
+    fact('ХАРЬЯА', esc(e.dept || '—') + (function () {
+      var s = ''; try { s = ackSecOf(e); } catch (er) {}
+      return s ? ' · <b>' + esc(s) + '</b>' : '';
+    })()) +
+    fact('ЭРСДЭЛ', st.rows.length + ' ширхэг · хамгийн өндөр <b style="color:' + L.color + '">' +
+      (st.top || '—') + (st.top ? ' (' + L.code + ' · ' + L.name + ')' : '') + '</b>') +
+    fact('ТАНИЛЦСАН', st.row
+      ? '<b style="color:#059669">✓ ' + ackDateMn(st.row.at) + '</b> · ' + st.row.n + ' эрсдэл · гарын үсэг ' +
+        '<b style="font-family:Consolas,monospace;letter-spacing:.12em">' + esc(st.row.code || '') + '</b>' +
+        (st.row.read != null ? ' · нэг бүрчлэн уншсан ' + st.row.read + '/' + st.row.n : '')
+      : (st.prev
+        ? '<span style="color:#B45309">Хуучин хувилбарт зурсан (' + ackDateMn(st.prev.at) + ') — эрсдэл шинэчлэгдсэн тул дахин зурна</span>'
+        : '<span style="color:#B91C1C">Хараахан зураагүй</span>'), '#334155') +
+    fact('АРГА ХЭМЖЭЭ', mea.total
+      ? mea.done + ' / ' + mea.total + ' баримтжуулсан' +
+        (mea.late ? ' · <b style="color:#B91C1C">' + mea.late + ' хугацаа хэтэрсэн</b>' : '') +
+        (mea.soon ? ' · ' + mea.soon + ' удахгүй дуусна' : '')
+      : '<span style="color:#94A3B8">Оногдоогүй</span>') +
+    fact('МӨРДӨХ ДҮРЭМ', st.rules ? st.rules + ' дүрэм (баримт шаардахгүй)' : '<span style="color:#94A3B8">—</span>');
+
+  /* Санал */
+  if ((st.ideas || []).length) {
+    H += '<details style="margin-top:9px"><summary style="cursor:pointer;list-style:none;display:flex;' +
+      'align-items:center;gap:7px;font-size:12px;font-weight:800;color:#4338CA">' +
+      '<i class="ti ti-chevron-right" style="font-size:14px"></i>💡 Өгсөн санал (' + st.ideas.length + ')</summary>' +
+      '<div style="margin-top:7px">' + st.ideas.slice(0, 40).map(function (i) {
+        return '<div style="background:#EEF2FF;border:1px solid #E0E7FF;border-radius:10px;padding:8px 11px;margin-bottom:6px">' +
+          '<div style="font-size:11.5px;color:#4338CA;font-weight:700">' + esc(String(i.hazard || '').slice(0, 90)) + '</div>' +
+          '<div style="font-size:12.5px;color:#1E293B;margin-top:3px;line-height:1.55">' + esc(i.text || '') + '</div></div>';
+      }).join('') + '</div></details>';
+  }
+
+  /* Эрсдэлийн жагсаалт */
+  if (st.rows.length) {
+    H += '<details style="margin-top:8px"><summary style="cursor:pointer;list-style:none;display:flex;' +
+      'align-items:center;gap:7px;font-size:12px;font-weight:800;color:#475569">' +
+      '<i class="ti ti-chevron-right" style="font-size:14px"></i>🛡 Эрсдэлүүд (' + st.rows.length + ')</summary>' +
+      '<div style="margin-top:7px">' + riskCompactRowsHTML(st.rows.slice(0, 60)) +
+      (st.rows.length > 60 ? '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">+' +
+        (st.rows.length - 60) + ' эрсдэл</div>' : '') + '</div></details>';
+  }
+  return H + '</div></div>';
+}
+
+function renderPeoplePage(box) {
+  if (!box) return;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var admin = isAdmin() || isDeptHead();
+  var subs = [];
+  try { subs = admin ? ackDueEmps((me && me.dept) || (SESSION && SESSION.dept) || '') : ackSubordinates(me); } catch (e) {}
+  if (admin && (!subs || !subs.length)) {
+    try { subs = (DB.employees || []).filter(function (x) { return x.uid; }); } catch (e) { subs = []; }
+  }
+
+  var dept = riskCanonDept((me && me.dept) || (SESSION && SESSION.dept) || '') ||
+    ((subs[0] && subs[0].dept) || '');
+  if (!PPL_ACK && dept && !renderPeoplePage._busy) {
+    renderPeoplePage._busy = true;
+    ackLoad(dept).then(function (st) {
+      PPL_ACK = st || { rows: [] };
+      renderPeoplePage._busy = false;
+      renderHazards();
+    }).catch(function () { renderPeoplePage._busy = false; PPL_ACK = { rows: [] }; });
+  }
+
+  if (!subs.length) {
+    box.innerHTML = '<div class="empty-state" style="padding:36px"><i class="ti ti-users"></i>' +
+      '<div>Танд хариуцах ажилтан бүртгэгдээгүй байна</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px;line-height:1.6">' +
+      'Хэсэг оноогоогүй байж магадгүй. ХАБЭА-н албанаас «Танилцсан байдал → Хэсгийн хуваарилалт»-аас тохируулна.</div></div>';
+    return;
+  }
+
+  var stats = subs.map(pplEmpStat).sort(function (a, b) {
+    if (!!a.row !== !!b.row) return a.row ? 1 : -1;      // зураагүй нь дээр
+    return b.top - a.top;
+  });
+  var signed = stats.filter(function (s) { return s.row; }).length;
+  var ideas = stats.reduce(function (a, s) { return a + (s.ideas || []).length; }, 0);
+  var meaLate = stats.reduce(function (a, s) { return a + (s.mst.late || 0); }, 0);
+  var meaTot = stats.reduce(function (a, s) { return a + (s.mst.total || 0); }, 0);
+  var meaDoneN = stats.reduce(function (a, s) { return a + (s.mst.done || 0); }, 0);
+  var pct = stats.length ? Math.round(signed * 100 / stats.length) : 0;
+
+  var card = function (n, label, color) {
+    return '<div style="flex:1;min-width:104px;background:' + color + '0D;border:1.5px solid ' + color +
+      '2E;border-radius:13px;padding:11px 13px">' +
+      '<div style="font-size:24px;font-weight:900;color:' + color + ';line-height:1;font-family:\'Bricolage Grotesque\',sans-serif">' + n + '</div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:' + color + ';margin-top:3px">' + label + '</div></div>';
+  };
+
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:12px">' +
+    '<div><div style="font-size:15px;font-weight:800;color:#0F172A">Миний хариуцах ажилтнууд</div>' +
+    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ажилтан бүрийн эрсдэл, танилцалт, санал, арга хэмжээг нэг бүрчлэн. ' +
+    'Мөр дээр дарж дэлгэрэнгүйг нээнэ.</div></div>' +
+    '<button class="btn btn-secondary btn-sm" data-ppl-xl="1" style="margin-left:auto">' +
+    '<i class="ti ti-file-spreadsheet"></i> Excel татах</button></div>' +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px">' +
+    card(stats.length, 'ажилтан', '#4F46E5') +
+    card(signed + ' / ' + stats.length, 'танилцсан', pct === 100 ? '#059669' : pct >= 50 ? '#D97706' : '#DC2626') +
+    card(ideas, 'ирсэн санал', '#7C3AED') +
+    card(meaDoneN + ' / ' + meaTot, 'арга хэмжээ', '#0891B2') +
+    card(meaLate, 'хугацаа хэтэрсэн', meaLate ? '#DC2626' : '#64748B') +
+    '</div>' +
+    (!PPL_ACK
+      ? '<div style="font-size:12.5px;color:#94A3B8;margin-bottom:9px"><i class="ti ti-loader-2"></i> ' +
+        'Танилцалтын мэдээллийг ачаалж байна…</div>'
+      : '') +
+    '<div class="card" style="padding:14px 16px">' +
+    '<div style="display:flex;align-items:center;gap:10px;padding:0 13px 8px;font-size:10.5px;font-weight:800;' +
+    'color:#94A3B8;letter-spacing:.4px;border-bottom:1px solid #F1F5F9;margin-bottom:9px">' +
+    '<span style="flex:0 0 30px"></span><span style="flex:1">АЖИЛТАН</span>' +
+    '<span class="rk-hide-sm" style="flex:0 0 116px;text-align:center">ТҮВШИН</span>' +
+    '<span style="flex:0 0 54px;text-align:center">ТОО</span>' +
+    '<span style="flex:0 0 128px;text-align:right">ТАНИЛЦСАН</span><span style="flex:0 0 18px"></span></div>' +
+    stats.map(pplRowHTML).join('') + '</div>';
+
+  if (!box._pplWired) {
+    box._pplWired = true;
+    box.addEventListener('click', function (ev) {
+      var o = ev.target.closest('[data-ppl-open]');
+      if (o) {
+        var uid = o.getAttribute('data-ppl-open');
+        PPL_OPEN[uid] = !PPL_OPEN[uid];
+        renderHazards();
+        return;
+      }
+      if (ev.target.closest('[data-ppl-xl]')) { pplExport(stats); return; }
+    });
+  }
+}
+
+/* Excel — ажилтан бүрийн бүрэн дата + саналууд тусдаа хуудсаар */
+function pplExport(stats) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var aoa = [
+    ['МОНОС ХҮНС ХХК'],
+    ['ХАРИУЦАХ АЖИЛТНУУДЫН ЭРСДЭЛИЙН БАЙДАЛ'],
+    [(me ? (me.name || '') + ' · ' + (me.pos || me.role || '') : '') +
+     '   ·   Хэвлэсэн: ' + ackDateMn(new Date().toISOString())],
+    [],
+    ['д/д', 'Овог нэр', 'Албан тушаал', 'Алба', 'Хэсэг', 'Эрсдэл',
+     'Онцгой', 'Өндөр', 'Дундаж', 'Бага', 'Үнэлгээгүй', 'Хамгийн өндөр оноо',
+     'Танилцсан', 'Огноо', 'Гарын үсэг', 'Нэг бүрчлэн уншсан', 'Санал',
+     'Арга хэмжээ', 'Баримтжуулсан', 'Хугацаа хэтэрсэн', 'Мөрдөх дүрэм']
+  ];
+  var ideas = [['д/д', 'Овог нэр', 'Албан тушаал', 'Эрсдэл', 'Өгсөн санал']];
+  var k = 0;
+  stats.forEach(function (s, i) {
+    var sec = ''; try { sec = ackSecOf(s.e); } catch (e) {}
+    aoa.push([i + 1, s.e.name || '', s.e.pos || s.e.role || '', s.e.dept || '', sec,
+      s.rows.length, s.lv.A, s.lv.B, s.lv.C, s.lv.D, s.lv.un, s.top || '',
+      s.row ? 'Тийм' : (s.prev ? 'Хуучин хувилбарт' : 'Үгүй'),
+      s.row ? String(s.row.at).slice(0, 10) : '',
+      s.row ? (s.row.code || '') : '',
+      (s.row && s.row.read != null) ? s.row.read + '/' + s.row.n : '',
+      (s.ideas || []).length, s.mst.total, s.mst.done, s.mst.late, s.rules]);
+    (s.ideas || []).forEach(function (d) {
+      ideas.push([++k, s.e.name || '', s.e.pos || s.e.role || '',
+        String(d.hazard || '').slice(0, 140), d.text || '']);
+    });
+  });
+  if (k === 0) ideas.push(['', '', '', 'Санал ирээгүй байна', '']);
+  try {
+    ackWriteBook([
+      { name: 'Ажилтнууд', aoa: aoa,
+        cols: [{ wch: 5 }, { wch: 24 }, { wch: 26 }, { wch: 24 }, { wch: 16 }, { wch: 9 },
+               { wch: 8 }, { wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 11 }, { wch: 15 },
+               { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 17 }, { wch: 8 },
+               { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 13 }] },
+      { name: 'Санал', aoa: ideas,
+        cols: [{ wch: 5 }, { wch: 24 }, { wch: 26 }, { wch: 46 }, { wch: 70 }] }
+    ], 'Ажилтнуудын-эрсдэлийн-байдал-' + _ymd(new Date()) + '.xlsx');
+  } catch (e) { toast('Excel үүсгэж чадсангүй: ' + ((e && e.message) || e), 'error'); }
 }
 
 
