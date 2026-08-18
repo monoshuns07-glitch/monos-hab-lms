@@ -13560,6 +13560,22 @@ function renderMeasurePage(sec, embed) {
     'Хашлага тавих, сургалт зохион байгуулах зэрэг ажлыг албаны хариуцагч, ХАБЭА, ' +
     'инженер техникийн алба хариуцна. Танаас доорх <b>мөрдөх дүрмийг</b> хүлээж байна.</div></div>';
 
+  /* ⚠ Ажлын байрны үнэлгээ хийгдээгүй бол АЛБАНЫ эрсдлээс дүрэм
+     гаргахгүй (өмнө нь Бэлтгэгчид химийн бодисын дүрэм оногддог байв).
+     Шалтгааныг нь ажилтанд ТОДОРХОЙ хэлнэ. */
+  var ownOk = true;
+  try { ownOk = riskHasOwn(me); } catch (er) {}
+  var noOwnHTML = ownOk ? '' :
+    '<div class="card" style="padding:16px 18px;margin-bottom:13px;border:1.5px solid #FDE68A;background:#FFFBEB">' +
+    '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:5px">' +
+    '⚠ Таны ажлын байрны эрсдэлийн үнэлгээ хийгдээгүй байна</div>' +
+    '<div style="font-size:12.5px;color:#8A6D3B;line-height:1.75">' +
+    '<b>' + esc(me.pos || me.role || '—') + '</b> ажлын байрны үнэлгээ хийгдтэл танд ' +
+    '<b>мөрдөх дүрэм оногдохгүй</b>.<br>' +
+    'Өмнө нь албаны бусад ажлын байрны дүрэм (жишээ нь химийн бодистой ажиллах) ' +
+    'танд буруугаар харагдаж байсныг зассан.<br>' +
+    'Эрсдэлийн үнэлгээ цэсэнд албаны эрсдлүүдийг <b>танилцуулах зорилгоор</b> харуулсаар байна.</div></div>';
+
   /* ── 📌 МӨРДӨХ ДҮРЭМ — баримт шаардахгүй, гарын үсгээр баталгаажна ── */
   var rules = meaMyRules(me);
   var rulesHTML = rules.length
@@ -13591,6 +13607,7 @@ function renderMeasurePage(sec, embed) {
       '<p class="page-subtitle">Эрсдэл бүрээс гарсан арга хэмжээг нэг бүрчлэн гүйцэтгэж, ' +
       '<b>баримтаар</b> баталгаажуулна</p></div></div>') +
     pushCardHTML() +
+    noOwnHTML +
     (st.late
       ? '<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:14px;padding:14px 16px;margin-bottom:13px;' +
         'color:#B91C1C;font-size:13px;line-height:1.6"><b>⚠ Хугацаа хэтэрсэн ' + st.late + ' арга хэмжээ байна.</b><br>' +
