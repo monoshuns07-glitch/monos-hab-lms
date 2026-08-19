@@ -1,4 +1,19 @@
 rules_version = '2';
+
+// ⚠⚠ ЭНЭ ФАЙЛЫГ ГИТЭЭС ДЕПЛОЙ ХИЙДЭГГҮЙ.
+// .github/workflows/deploy.yml нь ЗӨВХӨН Vercel рүү файл байршуулдаг —
+// Firebase рүү огт хүрдэггүй. Амьд дүрмийг Firebase консол дээр
+// (Firestore Database → Rules → Publish) гараар тавьдаг.
+//
+// Тиймээс энэ файл нь амьд дүрмийн ХУУЛБАР бөгөөс бичиг баримт юм.
+// Өөрчлөх бол ХОЁУЛАНГ нь хий — эс бөгөөс дараагийн хүн үнэн гэж
+// эндүүрнэ. (2026-08-19: энэ файл 20 дүрэм дутуу байсан. Хэрэв хэн нэгэн
+// `firebase deploy --only firestore:rules` ажиллуулсан бол эрсдэл,
+// даалгавар, зөрчил зэрэг БҮХ дата тэр дороо хаагдах байв.)
+//
+// ⚠ Шинэ цуглуулга нэмэх бүрд ЭНД мөр нэмээд консол дээр Publish хийнэ.
+// Мартвал апп «N цуглуулга уншигдсангүй» гэж хэлээд дата харагдахгүй.
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,8 +25,8 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == uid;
     }
 
-    // User profiles — any authenticated user can read (admin needs full list),
-    // but only the owner can update their own doc.
+    // Хэрэглэгчийн профайл — нэвтэрсэн хүн бүр уншина (админд бүтэн жагсаалт
+    // хэрэгтэй), гэхдээ зөвхөн эзэн нь өөрийнхөө баримтыг засна.
     match /users/{uid} {
       allow read:   if isAuth();
       allow create: if isAuth();
@@ -19,53 +34,74 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // LMS content — read by all authenticated users, write by any authenticated
-    // user (admin-level access is enforced at the app layer, not here).
+    // Сургалтын контент — нэвтэрсэн бүх хүн уншиж бичнэ
+    // (админы эрхийг апп давхаргад шалгана, дүрэмд биш).
     match /chapters/{docId}  { allow read, write: if isAuth(); }
     match /topics/{docId}    { allow read, write: if isAuth(); }
     match /trainings/{docId} { allow read, write: if isAuth(); }
     match /questions/{docId} { allow read, write: if isAuth(); }
 
-    // Training progress — any authenticated user can read (admin reports),
-    // but writes must carry the caller's own userId.
+    // Сургалтын явц — бичихдээ өөрийн userId-г заавал агуулна.
     match /training_progress/{docId} {
       allow read:   if isAuth();
       allow write:  if isAuth() && request.resource.data.userId == request.auth.uid;
     }
 
-    // Exam results — immutable after creation; any authenticated user can read.
+    // Шалгалтын дүн — үүссэний дараа ӨӨРЧЛӨГДӨХГҮЙ.
     match /exam_results/{docId} {
       allow read:   if isAuth();
       allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
 
-    // Activity logs — append-only; any authenticated user can read (for admin).
+    // Үйлдлийн бүртгэл — зөвхөн нэмнэ, засах/устгах боломжгүй.
     match /activity_logs/{docId} {
       allow read:   if isAuth();
       allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
 
-    // Knowledge base — public read (shown to anonymous visitors on nohon-tulbur),
-    // authenticated write only.
+    // Мэдлэгийн сан — нэвтрээгүй зочинд ч харагдана (nohon-tulbur хуудас).
     match /knowledge_base/{docId} {
       allow read:  if true;
       allow write: if isAuth();
     }
 
-    // Chat daily usage — written by server (admin SDK) only.
-    // Authenticated clients may read their own counter (optional UI display).
+    // Чатын өдрийн хэрэглээ — зөвхөн сервер (admin SDK) бичнэ.
     match /chat_usage/{docId} {
       allow read:  if isAuth();
       allow write: if false;
     }
 
-    // KPI / SafeWork ХАБЭА систем — нэвтэрсэн хэрэглэгч унших/бичих.
-    // (Админ эрхийг апп давхаргад шалгана — энгийн ажилтанд засах UI харагдахгүй.)
-    match /kpi_state/{docId} { allow read, write: if isAuth(); }
+    // ── ХАБЭА / KPI систем ────────────────────────────────────────────────
+    match /kpi_state/{docId}           { allow read, write: if isAuth(); }
+    match /kpi_risk_dashboards/{docId} { allow read, write: if isAuth(); }
+    match /videos/{docId}              { allow read, write: if isAuth(); }
+    match /user_roles/{docId}          { allow read, write: if isAuth(); }
 
-    // Deny everything not explicitly matched above.
+    // Бүртгэлүүд — «Бүтцийг задлах» үйлдлийн дараа тус тусдаа цуглуулгад
+    // очдог (script.js доторх COL_KEYS-тэй нэг мөр нэг цуглуулга).
+    match /kpi_risks/{docId}             { allow read, write: if isAuth(); }
+    match /kpi_tasks/{docId}             { allow read, write: if isAuth(); }
+    match /kpi_reports/{docId}           { allow read, write: if isAuth(); }
+    match /kpi_violations/{docId}        { allow read, write: if isAuth(); }
+    match /kpi_hrorders/{docId}          { allow read, write: if isAuth(); }
+    match /kpi_hazards/{docId}           { allow read, write: if isAuth(); }
+    match /kpi_suggestions/{docId}       { allow read, write: if isAuth(); }
+    match /kpi_incidents/{docId}         { allow read, write: if isAuth(); }
+    match /kpi_notifications/{docId}     { allow read, write: if isAuth(); }
+    match /kpi_videoViews/{docId}        { allow read, write: if isAuth(); }
+    match /kpi_examResults/{docId}       { allow read, write: if isAuth(); }
+    match /kpi_firstAidChecks/{docId}    { allow read, write: if isAuth(); }
+    match /kpi_ppeObservations/{docId}   { allow read, write: if isAuth(); }
+    match /kpi_extTrainings/{docId}      { allow read, write: if isAuth(); }
+    match /kpi_extAttendance/{docId}     { allow read, write: if isAuth(); }
+    match /kpi_externalTrainings/{docId} { allow read, write: if isAuth(); }
+    match /kpi_miskillStats/{docId}      { allow read, write: if isAuth(); }
+    match /kpi_backup/{docId}            { allow read, write: if isAuth(); }
+    match /files/{docId}                 { allow read, write: if isAuth(); }
+
+    // Дээр заагаагүй бүхнийг хориглоно.
     match /{document=**} {
       allow read, write: if false;
     }
