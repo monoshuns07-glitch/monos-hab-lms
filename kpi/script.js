@@ -882,8 +882,23 @@ function migrateDB() {
 /* Ажилтны хувьд зөвхөн өөрийн датаг харуулна. ХАБЭА (admin) бол бүгдийг хэвээр. */
 var _empHazIds = null, _empSugIds = null, _empRepIds = null;
 function _sameEmail(a, b) { return !!(a && b && String(a).toLowerCase() === String(b).toLowerCase()); }
+/* ⭐ БҮТЭН ажилтны жагсаалт. Хэрэглэгчийн эрхээс хамаарч DB.employees нь
+   шүүгддэг ч ГАРЫН ҮСГИЙН ШАТЛАЛ, ХАРИУЦАГЧ, ЗАХИРАЛ тодорхойлоход
+   компанийн бүтэн жагсаалт ЗААВАЛ хэрэгтэй. Өмнө нь албаны дарга нар
+   ганцаараа үлдэж, «Ажилтнуудын байдал» таб огт гардаггүй байв. */
+function empAll() {
+  var all = DB && DB.employeesAll, cur = (DB && DB.employees) || [];
+  return (all && all.length > cur.length) ? all : cur;
+}
+function empKeepAll() {
+  try {
+    var cur = (DB && DB.employees) || [];
+    if (cur.length > ((DB.employeesAll || []).length)) DB.employeesAll = cur.slice();
+  } catch (e) {}
+}
 function scopeDataForEmployee() {
   _empHazIds = null; _empSugIds = null; _empRepIds = null;
+  empKeepAll();                       /* шүүхээс ӨМНӨ бүтнээр нь хадгална */
   if (isAdmin() || !SESSION) return;
   // Албаны дарга — өөрийн албаны бүх ажилтныг харна (доор Phase 5-д тусгайлан зохицуулна)
   if (SESSION.role === 'depthead') { scopeDataForDeptHead(); return; }
@@ -2088,7 +2103,7 @@ function categoryAverages() {
    Ажилтны жагсаалт солигдвол гарын үсэг нь өөрчлөгдөж, кэш өөрөө шинэчлэгдэнэ. */
 var _empSigV = '';
 function _empSig() {
-  var e = (DB && DB.employees) || [];
+  var e = empAll();
   return e.length + '|' + ((e[0] && e[0].uid) || '') + '|' + ((e[e.length - 1] && e[e.length - 1].uid) || '');
 }
 var _dlCache = null, _dlSig = null;
@@ -2528,7 +2543,7 @@ function setStat(scopeSel, idx, value) {
 /* Ажилтны өөрийн ажилтны бүртгэлийг олох (scope хийгдсэн DB дотроос) */
 function myEmployeeRecord() {
   if (!SESSION) return null;
-  var me = (DB.employees || []).filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email) || (SESSION.empId && e.id === SESSION.empId); })[0];
+  var me = empAll().filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email) || (SESSION.empId && e.id === SESSION.empId); })[0];
   return me || (DB.employees || [])[0] || null;
 }
 function kpiLevel(total) {
@@ -6163,7 +6178,7 @@ function ackLeadFor(dept, unit) {
   return v;
 }
 function _ackLeadForRaw(dept, unit) {
-  var emps = DB.employees || [];
+  var emps = empAll();
   for (var j = 0; j < ACK_LEADS.length; j++) {
     var L = ACK_LEADS[j];
     if (!riskSameDept(L.dept, dept)) continue;
@@ -6179,7 +6194,7 @@ function ackDirector(key) {
   var d = null;
   ACK_DIRECTORS.forEach(function (x) { if (x.key === key) d = x; });
   if (!d) return null;
-  var emps = DB.employees || [];
+  var emps = empAll();
   for (var i = 0; i < emps.length; i++) {
     if (d.match.test(String(emps[i].pos || emps[i].role || ''))) return emps[i];
   }
@@ -6306,7 +6321,7 @@ function ackDeptsWithDue() {
    Эрсдлийн датагүйгээр ажилтны жагсаалтаас тодорхойлно — захирлын хуудсан
    дээр ч бүх алба зөв тоологдоно. */
 function ackLeadsAll(depts) {
-  var out = [], seen = {}, emps = DB.employees || [];
+  var out = [], seen = {}, emps = empAll();
   ((depts && depts.length) ? depts : ackDeptsWithDue()).forEach(function (d) {
     var units = {};
     emps.forEach(function (e) { if (riskSameDept(e.dept, d)) units[ackUnitOf(e) || ''] = 1; });
@@ -7545,7 +7560,7 @@ function ackDueEmps(dept) {
   if (_seenSig !== sig) { _seenCache = {}; _dueCache = {}; _seenN = 0; _seenSig = sig; }
   var k = String(dept || '');
   if (_dueCache.hasOwnProperty(k)) return _dueCache[k];
-  var out = (DB.employees || []).filter(function (e) {
+  var out = empAll().filter(function (e) {
     if (dept && !riskSameDept(e.dept, dept)) return false;
     return riskSeenBy(e).rows.length > 0;
   });
@@ -10034,7 +10049,7 @@ function renderHazards() {
          дахин тооцдоггүй байсан тул менежерт «Ажилтнуудын байдал» таб
          ОГТ гардаггүй байв. Жагсаалт ирсний дараа НЭГ удаа бүхэлд нь дахин зурна. */
       var nsub2 = 0;
-      try { nsub2 = ackSubordinates(myEmp()).length; } catch (e2) {}
+      try { nsub2 = pplMyPeople().length; } catch (e2) {}
       var hasTab = !!sec.querySelector('[data-risk-tab="ppl"]');
       if (nsub2 > 0 && !hasTab && !renderHazards._tabRedraw) {
         renderHazards._tabRedraw = true;
@@ -15441,7 +15456,7 @@ function pplMyPeople() {
     /* Захирал — хариуцагч нарыг хянана */
       var want = (dsc === 'prod') ? riskDirDepts() : null;
     var out = [];
-    (DB.employees || []).forEach(function (x) {
+    empAll().forEach(function (x) {
       if (!x.uid || (me && x.uid === me.uid)) return;
       var r = ''; try { r = ackRoleOf(x); } catch (e) { return; }
       if (r !== 'lead') return;
