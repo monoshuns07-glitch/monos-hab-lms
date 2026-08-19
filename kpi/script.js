@@ -76,7 +76,7 @@ function myEmp() {
    - employee (Ажилтан): зөвхөн өөрийн мэдээлэл, эерэг прогресс */
 var ADMIN_ONLY_PAGES = ['employees', 'incidents', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'violations'];
 var DEPTHEAD_HIDDEN_PAGES = ['settings', 'teams', 'dataflow', 'adminpanel', 'examadmin'];
-var EMPLOYEE_HIDDEN_PAGES = ['employees', 'incidents', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe', 'violations'];
+var EMPLOYEE_HIDDEN_PAGES = ['employees', 'structure', 'incidents', 'teams', 'reports', 'dataflow', 'settings', 'adminpanel', 'examadmin', 'kpi', 'inspections', 'suggestions', 'health', 'ppe', 'violations'];
 function blockedPages() {
   if (isAdmin()) return [];
   if (isDeptHead()) return DEPTHEAD_HIDDEN_PAGES;
@@ -91,7 +91,7 @@ var pageLabels = {
   ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
   'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт',
-  hrorder: 'Хүний нөөцийн захиалгын хуудас'
+  hrorder: 'Хүний нөөцийн захиалгын хуудас', structure: 'Байгууллагын бүтэц'
 };
 
 /* Албуудыг ХАТУУ бичихгүй — зөвхөн бүртгэлтэй ажилтнуудаас гарна (deptList) */
@@ -17207,12 +17207,179 @@ function hrStatsHTML(list) {
   return html;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   БАЙГУУЛЛАГЫН БҮТЭЦ
+   ----------------------------------------------------------------------
+   ⚠ Энд ХАТУУ бичсэн алба, нэр, албан тушаал БАЙХГҮЙ. Мөр бүр нь жинхэнэ
+   ажилтны бүртгэлээс (empAll) болон эрсдэлийн шатлалын одоо ажиллаж буй
+   дүрмээс гарна:
+     ackRoleOf  — хүний шат (захирал / хариуцагч / менежер / ажилтан)
+     ackLeadFor — тухайн албаны хариуцагч
+     ackUnitOf  — ИТА-гийн дэд хэсэг (Дэд бүтэц / Тоног төхөөрөмж)
+     ackSecOf   — менежерийн хариуцах шугам (админ оноодог, R2-д хадгалагдана)
+   Хүний нөөц бүртгэлд ажилтан нэмэхэд энэ хуудас өөрөө шинэчлэгдэнэ —
+   код засах шаардлагагүй. Тиймээс жишээ (демо) дата энд орох боломжгүй.
+
+   ⚠ Энэ гурван функцийг УСТГАВАЛ renderAll доторх renderStructure-ийг БАС
+     хас. 2026-08-19-нд яг эсрэгээр нь болж (бүртгэл үлдээд функц нь алга)
+     v244–v246 дээр бүх зураглал чимээгүй зогссон.
+   ══════════════════════════════════════════════════════════════════════ */
+function structTree() {
+  var all = empAll().filter(function (e) { return e && (e.name || e.uid); });
+  var ITA = 'Инженер техникийн алба';
+  var out = [];
+  (deptList() || []).forEach(function (d) {
+    var emps = all.filter(function (e) { return riskSameDept(e.dept, d); });
+    if (!emps.length) return;
+    var node = { dept: d, emps: emps, lead: ackLeadFor(d, ''), units: [], mgrs: [], byPos: [] };
+
+    /* ИТА нь хоёр дэд хэсэгт хуваагддаг — хэсэг бүр өөрийн ахлах инженертэй */
+    if (riskSameDept(ITA, d)) {
+      ['Дэд бүтэц', 'Тоног төхөөрөмж'].forEach(function (u) {
+        var ue = emps.filter(function (e) { return ackUnitOf(e) === u; });
+        if (ue.length) node.units.push({ unit: u, emps: ue, lead: ackLeadFor(d, u) });
+      });
+    }
+
+    node.mgrs = emps.filter(function (e) { return ackRoleOf(e) === 'mgr'; });
+
+    /* Албан тушаалаар бүлэглэнэ — бүртгэл дэх нэрийг өөрчлөхгүй */
+    var m = {}, order = [];
+    emps.forEach(function (e) {
+      var p = String(e.pos || e.role || '').trim() || '— албан тушаал бүртгэгдээгүй —';
+      if (!m[p]) { m[p] = []; order.push(p); }
+      m[p].push(e);
+    });
+    order.sort(function (a, b) { return m[b].length - m[a].length || a.localeCompare(b, 'mn'); });
+    node.byPos = order.map(function (p) { return { pos: p, emps: m[p] }; });
+    out.push(node);
+  });
+  return out;
+}
+
+function structChip(e, tag) {
+  return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;' +
+    'background:#F1F5F9;border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0">' +
+    esc((e && e.name) || '—') +
+    (tag ? '<b style="color:#0F766E;font-weight:600">· ' + esc(tag) + '</b>' : '') + '</span>';
+}
+
+function renderStructure() {
+  var sec = pageEl('structure'); if (!sec) return;
+  var tree = structTree();
+  var all = empAll();
+
+  /* Хэсгийн зураглал хараахан ирээгүй бол татаад ЯГ НЭГ УДАА дахин зурна
+     (мөнхийн давталтад орохгүй). */
+  if (!ACK_SEC_OK && !renderStructure._pending) {
+    renderStructure._pending = true;
+    ackSecLoad(true).then(function () { renderStructure(); }).catch(function () {});
+  }
+
+  var noLead = tree.filter(function (n) { return !n.lead; });
+  var mgrsAll = tree.reduce(function (s, n) { return s + n.mgrs.length; }, 0);
+  var mgrNoSec = tree.reduce(function (s, n) {
+    return s + n.mgrs.filter(function (e) { return !ackSecOf(e); }).length;
+  }, 0);
+
+  var html = '<div class="page-header"><div><h1>Байгууллагын бүтэц</h1>' +
+    '<p class="page-subtitle">Ажилтны бүртгэлээс шууд боддог — гараар бичсэн жагсаалт биш. ' +
+    'Хүний нөөц бүртгэлд өөрчлөлт оруулмагц энд тусна.</p></div></div>';
+
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px">' +
+    [['Бүртгэлтэй ажилтан', all.length, '#0F766E'],
+     ['Алба, нэгж', tree.length, '#0F766E'],
+     ['Менежер', mgrsAll, '#0891B2'],
+     ['Хариуцагч тодорхойгүй алба', noLead.length, noLead.length ? '#DC2626' : '#16A34A']]
+    .map(function (s) {
+      return '<div class="card" style="padding:16px 18px">' +
+        '<div style="font-size:26px;font-weight:800;color:' + s[2] + ';line-height:1">' + s[1] + '</div>' +
+        '<div style="font-size:12px;color:#8A94A6;margin-top:4px">' + s[0] + '</div></div>';
+    }).join('') + '</div>';
+
+  /* ── Удирдлагын шат — бүртгэлээс олдсон хүнээр ── */
+  var ceo = ackDirector('ceo'), prod = ackDirector('prod');
+  html += dashCard(dashH('Удирдлагын шат',
+    'Эрсдэлийн үнэлгээнд доод шат гарын үсэг зураагүй бол дээд шат нээгдэхгүй') +
+    '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+    [[ceo, 'Гүйцэтгэх захирал', 'бүх алба'],
+     [prod, 'Үйлдвэрлэл хариуцсан захирал', 'үйлдвэрлэлийн албад']]
+    .map(function (x) {
+      var who = x[0] ? esc(x[0].name) : '<span style="color:#DC2626">бүртгэлээс олдсонгүй</span>';
+      return '<div style="flex:1 1 240px;border:1px solid #E2E8F0;border-radius:10px;padding:13px 15px">' +
+        '<div style="font-size:15px;font-weight:700">' + who + '</div>' +
+        '<div style="font-size:12.5px;color:#64748B">' + x[1] + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:3px">хамрах хүрээ: ' + x[2] + '</div></div>';
+    }).join('') + '</div>');
+
+  if (noLead.length) {
+    html += '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid #DC2626">' +
+      '<b style="color:#DC2626">Хариуцагч тодорхойгүй ' + noLead.length + ' алба:</b> ' +
+      '<span style="font-size:13px">' + noLead.map(function (n) { return esc(n.dept); }).join(', ') + '</span>' +
+      '<div style="font-size:12px;color:#8A94A6;margin-top:5px">Эдгээр албанд эрсдэлийн гарын үсэг ' +
+      'дээд шат руу дамжихгүй. Албаны даргын албан тушаал бүртгэлд зөв бичигдсэн эсэхийг шалгана уу.</div></div>';
+  }
+
+  if (mgrNoSec) {
+    html += '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid #D97706">' +
+      '<b style="color:#D97706">' + mgrNoSec + ' менежерт шугам/цех оноогоогүй байна.</b> ' +
+      '<span style="font-size:13px">Оноогоогүй менежер албаныхаа БҮХ ажилтныг хардаг.</span>' +
+      (isAdmin() ? '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" data-struct-sec="1">' +
+        '<i class="ti ti-users-group"></i> Хэсгийн хуваарилалт</button></div>' : '') + '</div>';
+  }
+
+  /* ── Алба тус бүр ── */
+  html += tree.map(function (n) {
+    var lead = n.lead
+      ? '<b>' + esc(n.lead.name) + '</b> <span style="color:#8A94A6">· ' + esc(n.lead.pos || n.lead.role || '') + '</span>'
+      : '<span style="color:#DC2626">хариуцагч тодорхойгүй</span>';
+
+    var body = '';
+    if (n.units.length) {
+      body += n.units.map(function (u) {
+        return '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#0F766E;' +
+          'margin:12px 0 4px">' + esc(u.unit) + ' — ' + u.emps.length + ' хүн' +
+          (u.lead ? ' · ' + esc(u.lead.name) : ' · <span style="color:#DC2626">ахлагчгүй</span>') + '</div>';
+      }).join('');
+    }
+    if (n.mgrs.length) {
+      body += '<div style="margin:12px 0 4px;font-size:12.5px;color:#64748B">Менежерүүд ба хариуцах хэсэг</div>' +
+        n.mgrs.map(function (e) { return structChip(e, ackSecOf(e) || 'бүх алба'); }).join('');
+    }
+    body += '<div style="margin:14px 0 4px;font-size:12.5px;color:#64748B">Албан тушаалаар</div>' +
+      n.byPos.map(function (g) {
+        return '<div style="display:flex;gap:12px;padding:7px 0;border-bottom:1px solid #F1F5F9;align-items:baseline;flex-wrap:wrap">' +
+          '<span style="flex:0 0 210px;font-size:13px;font-weight:600;color:#334155">' + esc(g.pos) +
+          (g.emps.length > 1 ? ' <span style="color:#94A3B8;font-weight:400">×' + g.emps.length + '</span>' : '') + '</span>' +
+          '<span style="flex:1;min-width:180px">' + g.emps.map(function (e) { return structChip(e, ''); }).join('') + '</span>' +
+          '</div>';
+      }).join('');
+
+    return '<details class="card" style="padding:0;margin-bottom:10px">' +
+      '<summary style="padding:14px 18px;cursor:pointer;display:flex;gap:14px;align-items:center;flex-wrap:wrap">' +
+      '<span style="flex:1;min-width:180px"><span style="font-size:15px;font-weight:700">' + esc(n.dept) + '</span>' +
+      '<span style="display:block;font-size:12.5px;color:#64748B">' + lead + '</span></span>' +
+      '<span style="font-size:13px;color:#8A94A6"><b style="color:#0F172A;font-size:16px">' + n.emps.length + '</b> хүн</span>' +
+      '</summary><div style="padding:0 18px 16px;border-top:1px solid #F1F5F9">' + body + '</div></details>';
+  }).join('');
+
+  if (!tree.length) {
+    html += '<div class="empty-state" style="padding:40px"><i class="ti ti-sitemap"></i>' +
+      '<div>Ажилтны бүртгэл ачаалагдаагүй байна</div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;margin-top:6px">Бүртгэл ирмэгц бүтэц өөрөө зурагдана.</div></div>';
+  }
+
+  sec.innerHTML = html;
+  var sb = sec.querySelector('[data-struct-sec]');
+  if (sb) sb.addEventListener('click', function () { try { ackSectionModal(); } catch (e) {} });
+}
+
 function renderAll() {
   [renderSidebar, renderDashboard, renderEmployees, renderKpiPage,
    renderHazards, renderIncidents, renderReportflow, renderSuggestions,
    renderSettings, renderNotifBadge, renderPpe, renderInspections,
    renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage,
-   hrApplyNav, renderHrOrders].forEach(function (fn) {
+   hrApplyNav, renderHrOrders, renderStructure].forEach(function (fn) {
     /* ⚠ Массивт БАЙХГҮЙ функцийн нэр бичвэл энэ мөр хүртэл ч хүрэхгүй —
        массив үүсэх үедээ ReferenceError өгч, renderAll БҮХЭЛДЭЭ унана.
        (2026-08-19: устгасан renderStructure үлдсэнээс болж яг ингэж
