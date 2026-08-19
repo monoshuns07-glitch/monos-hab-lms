@@ -948,16 +948,13 @@ var _saveTimer = null;
 /* ⚠ 'risks' ЭНД БАЙХГҮЙ — эрсдэл нь Firestore-оос гарч R2 руу шилжсэн.
    Шалтгаан: Firestore баримт бүрээр уншилт тоолдог тул 1,289 эрсдлийг хүн
    бүрд татахад өдрийн үнэгүй квот хэдхэн зочлолтод дуусдаг байв. */
-/* ⚠ hrorders нь ЭНД ОРОХГҮЙ — санаатай.
-   Тусдаа цуглуулга (kpi_hrorders) болгомогц Firestore дүрэм түүнийг мэдэхгүй
-   тул «1 цуглуулга уншигдсангүй» гээд дата харагдахгүй болно. Дүрэм нь энэ
-   repo-оос деплой ХИЙГДДЭГГҮЙ (GitHub Action зөвхөн Vercel рүү байршуулдаг,
-   амьд дүрмийг Firebase консол дээр гараар тавьсан) тул кодоос засах
-   боломжгүй. kpi_state баримт дүрмээр аль хэдийн нээлттэй учир захиалгыг
-   ҮНДСЭН БАРИМТ дотор хадгална — хүний нөөцийн захиалга цөөн тоотой тул
-   1 МБ-ын хязгаарт нөлөөгүй. Консол дээр kpi_hrorders дүрэм нэмбэл энэ
-   мөрөнд «hrorders» гэж нэмээд тусдаа цуглуулга руу шилжүүлж болно. */
-var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
+/* ⚠ ШИНЭ ТҮЛХҮҮР НЭМЭХЭД: Firebase консол дээр firestore.rules-д
+   `match /kpi_<түлхүүр>/{docId}` мөрийг ЗААВАЛ нэмж Publish хийнэ.
+   Дүрэм нь энэ repo-оос деплой ХИЙГДДЭГГҮЙ (GitHub Action зөвхөн Vercel рүү
+   байршуулдаг) — мартвал апп «N цуглуулга уншигдсангүй» гэж хэлээд дата
+   харагдахгүй болно. hrorders дээр яг ингэж болсон (2026-08-19), дүрмийг
+   нэмсний дараа энд буцаан оруулсан. */
+var COL_KEYS = ['tasks', 'reports', 'violations', 'hrorders', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
   'extTrainings', 'externalTrainings', 'miskillStats'];
 var COL_PREFIX = 'kpi_';
@@ -1058,10 +1055,12 @@ function colQueries(key) {
        тааруулалтыг хөтөч дээр хийнэ (эрсдэл нь хязгаарлагдмал тоотой). */
     if (key === 'risks') return [c];
 
-    /* ⚠ hrorders энд байхгүй — тэр нь COL_KEYS-д ороогүй, үндсэн баримтад
-       хадгалагддаг (шалтгааныг COL_KEYS дээрх тайлбараас үз). Хэрэв ирээдүйд
-       тусдаа цуглуулга болговол эрхийг сервер талд шүүж БОЛОХГҮЙ — хэн харахыг
-       АЛБАН ТУШААЛ шийддэг тул бүгдийг татаад hrCanSee() дотор шийднэ. */
+    /* ⚠ ХҮНИЙ НӨӨЦИЙН ЗАХИАЛГА — сервер талд албаар БҮҮ шүү.
+       Хэн харахыг АЛБАН ТУШААЛ шийддэг (ХН менежер, Санхүүгийн менежер,
+       хариуцсан захирал) — үүнийг Firestore-ийн шүүлтээр илэрхийлэх
+       боломжгүй. Бүгдийг татаад эрхийг hrCanSee() дотор шийднэ.
+       Бичлэгийн тоо цөөн тул уншилтын зардал ялихгүй. */
+    if (key === 'hrorders') return [c];
 
     if (isDeptHead()) {
       if (!dept) return [c];
@@ -16571,12 +16570,28 @@ function hrApplyNav() {
      хангалтгүй — хэсэг нь хаалттай хэвээр үлдэж, цэс хэзээ ч гарахгүй. */
   var sec = nav.closest ? nav.closest('.nav-section') : null;
   if (sec) sec.style.display = on ? '' : 'none';
-  /* Ажилтны жагсаалт хожуу ирвэл албан тушаал мэдэгдэхгүй тул НЭГ УДАА дахин
-     шалгана. Мөнхийн давталт үүсгэхгүйн тулд туг хэзээ ч буцаахгүй. */
-  if (!on && !hrApplyNav._retried) {
-    var few = !DB || !((DB.employees || []).length);
-    if (few) { hrApplyNav._retried = true; setTimeout(hrApplyNav, 2500); }
-  }
+
+  /* ⚠ Ажилтны жагсаалт болон түүн доторх ӨӨРИЙН бичлэг хожуу ирж болно
+     (users цуглуулга хэсэгчлэн ачаалагддаг). Тэр үед албан тушаал мэдэгдэхгүй
+     тул цэс гарахгүй үлдэнэ. Тиймээс шийдвэр «үгүй» гарсан үед хязгаартай
+     хэдэн удаа дахин шалгана — 3 оролдлого, 2.5 сек тутам.
+     ⚠ ЗААВАЛ ХЯЗГААРТАЙ: мөнхийн давталт нь энэ аппыг өмнө нь гацаадаг байсан. */
+  if (!on) {
+    if (hrApplyNav._try == null) hrApplyNav._try = 0;
+    if (hrApplyNav._try < 3) { hrApplyNav._try++; setTimeout(hrApplyNav, 2500); }
+  } else { hrApplyNav._try = 99; }
+
+  /* Оношлогоо — цэс гарахгүй бол ЯАГААД гэдгийг консолоос шууд харна */
+  try {
+    if (!hrApplyNav._logged || on) {
+      hrApplyNav._logged = true;
+      var _m = null; try { _m = myEmp(); } catch (e2) {}
+      console.log('[hrorder] цэс=' + (on ? 'НЭЭЛТТЭЙ' : 'хаалттай') +
+        ' · ажилтан=' + (_m ? (_m.name || '?') + ' / ' + (_m.pos || _m.role || 'тушаалгүй') : 'ОЛДСОНГҮЙ') +
+        ' · бүртгэл=' + ((DB && DB.employees && DB.employees.length) || 0) + ' хүн' +
+        ' · эрх=' + ((typeof SESSION !== 'undefined' && SESSION && SESSION.role) || '—'));
+    }
+  } catch (e3) {}
 }
 
 var HR_TAB = 'list';
