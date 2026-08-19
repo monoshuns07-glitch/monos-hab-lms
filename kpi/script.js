@@ -16548,9 +16548,56 @@ function hrDate(iso) {
   var p = function (x) { return (x < 10 ? '0' : '') + x; };
   return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
 }
+/* ⚠ Мянгатын тусгаарлагч нь ТАСЛАЛ. Өмнө нь апостроф (') байсан нь
+   хэвлэх хуудсанд HTML-ээр &#39; болж хувирдаг байв. */
 function hrMoney(v) {
   var n = _f(v); if (!n) return '';
-  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "'") + '₮';
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '₮';
+}
+
+/* ══ МЭДЭГДЭЛ ══
+   Байгаа ntfSend()-ийг ашиглана — хонхны самбар + утасны push нэг дор.
+   ⚠ ntfSend нь async, R2 руу бичдэг. Мэдэгдэл нурсан ч ЗАХИАЛГЫН УРСГАЛ
+     зогсох ЁСГҮЙ — тиймээс алдааг залгиж, зөвхөн консолд бичнэ. */
+function hrStepPerson(o, i) {
+  var s = HR_STEPS[i];
+  if (!s) return null;
+  if (s.key === 'dir') { var D = hrDirOf(o.dept); return D ? hrFindByPos(D.pos) : null; }
+  if (s.key === 'hr')  return hrFindByPos(HR_POS_SIGN_HR);
+  if (s.key === 'fin') return hrFindByPos(HR_POS_FIN);
+  if (s.key === 'req') return (empAll() || []).filter(function (e) { return e.uid === o.byUid; })[0] || null;
+  return null;
+}
+function hrNotify(o, kind) {
+  try {
+    var to = [], title = '', body = '';
+    var num = o.id + ' · ' + (o.posName || '');
+    var creator = (empAll() || []).filter(function (e) { return e.uid === o.byUid; })[0];
+
+    if (kind === 'new' || kind === 'again') {
+      var d = hrStepPerson(o, 1);
+      if (d) to = [d];
+      title = (kind === 'again') ? 'Засагдсан захиалга дахин ирлээ' : 'Шинэ хүний нөөцийн захиалга';
+      body = num + ' — ' + (o.dept || '') + '. Таны зөвшөөрөл хүлээгдэж байна.';
+    } else if (kind === 'step') {
+      var p = hrStepPerson(o, o.step || 0), s = HR_STEPS[o.step || 0];
+      if (p) to = [p];
+      title = 'Гарын үсэг хүлээгдэж байна';
+      body = num + ' — таны ээлж' + (s ? ' (' + s.label + ')' : '') + '.';
+    } else if (kind === 'done') {
+      to = [creator, hrFindByPos(HR_POS_SIGN_HR)].filter(Boolean);
+      title = 'Захиалга бүрэн батлагдлаа';
+      body = num + ' — 4 гарын үсэг бүрдлээ. Бүрдүүлэлт эхлүүлж болно.';
+    } else if (kind === 'returned') {
+      if (creator) to = [creator];
+      title = 'Захиалга буцаагдлаа';
+      body = num + ' — ' + (o.returnNote || 'шалтгаан бичээгүй') +
+        (o.returnByName ? ' (' + o.returnByName + ')' : '');
+    }
+    if (!to.length) return;
+    ntfSend(to, { kind: 'hrorder', title: title, body: body, url: '/kpi/?page=hrorder' })
+      .catch(function (e) { console.error('[hrorder] мэдэгдэл илгээгдсэнгүй', e); });
+  } catch (e) { console.error('[hrorder] мэдэгдэл', e); }
 }
 
 /* Цэсийг АЛБАН ТУШААЛААР нээнэ.
@@ -16726,6 +16773,13 @@ function hrCard(o) {
         (late ? hrPill('⏰ ' + Math.abs(left) + ' хоног хэтэрсэн', '#DC2626')
               : (o.status === 'running' && left != null ? hrPill('үлдсэн ' + left + ' хоног', left <= 5 ? '#D97706' : '#64748B', false) : '')) +
       '</div>' +
+      /* Буцаагдсан бол шалтгааныг ЖАГСААЛТ дээрээс шууд харуулна — нээж
+         үзэхгүйгээр юуг засахаа мэдэх ёстой */
+      (o.status === 'returned' && o.returnNote
+        ? '<div style="font-size:12px;color:#991B1B;background:#FEF2F2;border-radius:8px;' +
+          'padding:6px 9px;margin-bottom:7px"><i class="ti ti-arrow-back-up"></i> ' +
+          esc(o.returnNote) + '</div>'
+        : '') +
       '<div style="font-size:11.5px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + esc(o.dept || '') + '</span>' +
         '<span><i class="ti ti-user"></i> ' + esc(o.byName || '') + '</span>' +
@@ -16746,10 +16800,14 @@ function hrCard(o) {
 /* ══ ШИНЭ ЗАХИАЛГА ══
    Цаасан маягтын 1-3 дугаар хэсгийг захиалга гаргагч бөглөнө.
    4-р хэсэг (баталгаажилт) нь гарын үсгээр аяндаа бөглөгдөнө. */
-function actionAddHrOrder() {
+/* edit = байгаа захиалга бол ЗАСАХ горим (буцаагдсаныг засаад дахин илгээх).
+   Шинэ маягт бичихийн оронд ЭНЭ маягтыг дахин ашиглана — хоёр өөр маягт
+   байвал талбарууд аажимдаа зөрж эхэлдэг. */
+function actionAddHrOrder(edit) {
   var me = hrMe();
   if (!me) { toast('Таны бүртгэл олдсонгүй. Админд хандана уу.', 'error'); return; }
-  var myDept = riskCanonDept(me.dept) || me.dept || '';
+  /* Засах үед АНХНЫ албыг хэвээр хадгална — гаргасан хүнийх нь мөн адил */
+  var myDept = edit ? (edit.dept || '') : (riskCanonDept(me.dept) || me.dept || '');
   if (!myDept) { toast('Таны алба тодорхойгүй байна.', 'error'); return; }
 
   var D = hrDirOf(myDept);
@@ -16759,8 +16817,12 @@ function actionAddHrOrder() {
   }
   var dirEmp = hrFindByPos(D.pos);
 
-  var pick = { level: 'engiin', reason: '', tur: '', salKind: 'togtmol', unaa: 'ugui', utas: 'olgohgui', disab: '' };
-  var inner = [];
+  var pick = edit
+    ? { level: edit.level || 'engiin', reason: edit.reason || '', tur: edit.tur || '',
+        salKind: edit.salaryKind || 'togtmol', unaa: edit.unaa || 'ugui',
+        utas: edit.utas || 'olgohgui', disab: edit.disability || '' }
+    : { level: 'engiin', reason: '', tur: '', salKind: 'togtmol', unaa: 'ugui', utas: 'olgohgui', disab: '' };
+  var inner = edit ? (edit.inner || []).slice() : [];
   var node = elc('div');
 
   function btnRow(items, cur, attr) {
@@ -16875,6 +16937,17 @@ function actionAddHrOrder() {
   var q = function (s) { return node.querySelector(s); };
   var g = function (id) { var el = q('#' + id); return el ? String(el.value || '').trim() : ''; };
 
+  /* ЗАСАХ горим — бичвэрт талбаруудыг нөхнө (товчнуудыг pick аль хэдийн барьсан) */
+  if (edit) {
+    var setv = function (id, v) { var el = q('#' + id); if (el && v != null && v !== '') el.value = v; };
+    setv('hrPos', edit.posName); setv('hrCnt', edit.headcount);
+    setv('hrGen', edit.reqGeneral); setv('hrSpec', edit.reqSpecial);
+    setv('hrSal', edit.salary || ''); setv('hrHours', edit.workHours);
+    setv('hrNewNeed', edit.newNeed);
+    var sv = q('#hrSave');
+    if (sv) sv.innerHTML = '<i class="ti ti-send"></i> Засаад дахин илгээх';
+  }
+
   q('#hrLv').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-hr-lv]'); if (!b) return;
     pick.level = b.getAttribute('data-hr-lv');
@@ -16954,37 +17027,64 @@ function actionAddHrOrder() {
     if (pick.reason === 'tur' && !pick.tur) { err.textContent = 'Түр орон тооны төрлийг сонгоно уу.'; return; }
     if (pick.reason === 'shine' && !g('hrNewNeed')) { err.textContent = 'Шинэ орон тооны хэрэгцээг тодорхойлно уу.'; return; }
 
-    var n = hrNextNo(), now = new Date().toISOString();
-    var rec = {
-      id: n.id, year: n.year, no: n.no, at: now,
-      byUid: me.uid, byName: me.name || '', byPos: hrPosOf(me), dept: myDept,
-      /* 1 */
+    var now = new Date().toISOString();
+    /* Маягтын талбарууд — шинэ ба засах горимд ИЖИЛ */
+    var fields = {
       posName: posName, headcount: Math.max(1, parseInt(g('hrCnt'), 10) || 1),
       level: pick.level, reason: pick.reason, tur: pick.tur, newNeed: g('hrNewNeed'),
       reqGeneral: g('hrGen'), reqSpecial: g('hrSpec'), disability: pick.disab,
-      acceptedAt: '',
-      /* 2 */
       salary: _f(g('hrSal')), salaryKind: pick.salKind, workHours: g('hrHours'),
       unaa: pick.unaa, utas: pick.utas,
-      /* 3 */
-      inner: inner.slice(),
-      /* 4 — эхний гарын үсэг нь захиалга гаргасан хүн өөрөө */
-      steps: HR_STEPS.map(function (s, i) {
+      inner: inner.slice()
+    };
+    /* ⭐ Эхний гарын үсэг — захиалга гаргасан хүн өөрөө, тэр дор нь зурагдана */
+    var firstStep = function () {
+      return HR_STEPS.map(function (s, i) {
         return i === 0
           ? { key: s.key, uid: me.uid, name: me.name || '', pos: hrPosOf(me), at: now, note: '' }
           : { key: s.key, uid: '', name: '', pos: '', at: '', note: '' };
-      }),
-      step: 1, status: 'running',
-      log: [{ at: now, uid: me.uid, name: me.name || '', what: 'Захиалга үүсгэв' }]
+      });
     };
-    hrAll().push(rec);
+
+    var rec;
+    if (edit) {
+      /* ══ ЗАСААД ДАХИН ИЛГЭЭХ ══
+         ⚠ Дугаар, үүсгэсэн огноо, гаргасан хүн ХЭВЭЭР. Гарын үсгүүд
+           ЦЭВЭРЛЭГДЭЖ ②-р шатнаас дахин эхэлнэ — цалин/орон тоо өөрчлөгдсөн
+           байж болзошгүй тул захирал дахин баталгаажуулах ЁСТОЙ. */
+      rec = edit;
+      Object.keys(fields).forEach(function (k) { rec[k] = fields[k]; });
+      rec.steps = firstStep();
+      rec.step = 1;
+      rec.status = 'running';
+      rec.acceptedAt = '';
+      rec.returns = (_f(rec.returns) || 0);      /* хэдэн удаа буцаагдсаныг хадгална */
+      rec.log = (rec.log || []).concat([{ at: now, uid: me.uid, name: me.name || '',
+        what: 'Засаад дахин илгээв' }]);
+      /* Буцаалтын мэдээллийг цэвэрлэнэ — гэхдээ түүхэнд үлдсэн */
+      rec.returnNote = ''; rec.returnByName = ''; rec.returnAt = '';
+    } else {
+      var n = hrNextNo();
+      rec = {
+        id: n.id, year: n.year, no: n.no, at: now,
+        byUid: me.uid, byName: me.name || '', byPos: hrPosOf(me), dept: myDept,
+        acceptedAt: '', returns: 0,
+        steps: firstStep(), step: 1, status: 'running',
+        log: [{ at: now, uid: me.uid, name: me.name || '', what: 'Захиалга үүсгэв' }]
+      };
+      Object.keys(fields).forEach(function (k) { rec[k] = fields[k]; });
+      hrAll().push(rec);
+    }
     saveDB();
+    hrNotify(rec, edit ? 'again' : 'new');
     closeModal();
     renderHrOrders();
-    toast(rec.id + ' бүртгэгдлээ' + (dirEmp ? ' — ' + dirEmp.name + ' рүү илгээгдсэн' : ''), 'success');
+    toast(rec.id + (edit ? ' дахин илгээгдлээ' : ' бүртгэгдлээ') +
+      (dirEmp ? ' — ' + dirEmp.name + ' рүү' : ''), 'success');
   });
 
-  buildModal('Хүний нөөцийн захиалгын хуудас', node, { width: '660px' });
+  buildModal(edit ? ('Захиалга засах — ' + edit.id) : 'Хүний нөөцийн захиалгын хуудас',
+    node, { width: '660px' });
 }
 
 /* ══ ДЭЛГЭРЭНГҮЙ — 4 гарын үсэг ══ */
@@ -16994,7 +17094,12 @@ function hrDetail(id) {
   var me = hrMe();
   var L = hrLevel(o.level), S = hrSt(o), left = hrDaysLeft(o);
   var canSign = hrMyStep(o);
-  var canCancel = isAdmin() || (me && o.byUid === me.uid && o.status === 'running');
+  /* ⚠ Буцаагдсан захиалгыг ч цуцлах боломжтой байх ЁСТОЙ — өмнө нь зөвхөн
+     «running» үед л цуцалдаг байсан тул буцаагдсан захиалга мөнхөд гацдаг байв. */
+  var mine = !!(me && o.byUid === me.uid);
+  var canCancel = isAdmin() || (mine && (o.status === 'running' || o.status === 'returned'));
+  /* Буцаагдсаныг зөвхөн ГАРГАСАН хүн (эсвэл админ) засаад дахин илгээнэ */
+  var canResubmit = o.status === 'returned' && (isAdmin() || mine);
 
   var row = function (lbl, val) {
     if (!val) return '';
@@ -17011,7 +17116,22 @@ function hrDetail(id) {
       (o.status === 'running' && left != null
         ? hrPill(left < 0 ? '⏰ ' + Math.abs(left) + ' хоног хэтэрсэн' : 'үлдсэн ' + left + ' хоног', left < 0 ? '#DC2626' : '#64748B', false)
         : '') +
+      (_f(o.returns) ? hrPill(_f(o.returns) + ' удаа буцаагдсан', '#D97706', false) : '') +
     '</div>' +
+
+    /* ⭐ Буцаагдсан бол ШАЛТГААНЫГ хамгийн дээр тод харуулна — эс бөгөөс
+       хүн юуг засахаа мэдэхгүй, түүхийг нээж хайх шаардлагатай болно */
+    (o.status === 'returned'
+      ? '<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-left:4px solid #DC2626;' +
+        'border-radius:10px;padding:12px 14px;margin-bottom:14px">' +
+        '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:3px">' +
+        '<i class="ti ti-arrow-back-up"></i> Буцаагдсан шалтгаан</div>' +
+        '<div style="font-size:13px;color:#7F1D1D;white-space:pre-wrap">' +
+        esc(o.returnNote || 'шалтгаан бичээгүй') + '</div>' +
+        (o.returnByName ? '<div style="font-size:11.5px;color:#B91C1C;margin-top:4px">' +
+          esc(o.returnByName) + ' · ' + esc(hrDate(o.returnAt)) + '</div>' : '') +
+        '</div>'
+      : '') +
 
     '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:6px 0 6px">1. Ажилтан авах захиалга</div>' +
     row('Албан тушаал', o.posName) +
@@ -17076,10 +17196,18 @@ function hrDetail(id) {
 
   var node = elc('div', 'modal-info', html);
 
-  if (canSign || canCancel) {
+  {
     var act = elc('div');
     act.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid #F1F5F9';
     act.innerHTML =
+      /* Хэвлэх — ХЭН Ч, ХЭЗЭЭ Ч. Батлагдаагүй бол хуудсан дээр «ТӨСӨЛ» гэж бичигдэнэ */
+      '<button class="btn btn-secondary" id="hrPrint" style="width:100%;margin-bottom:8px">' +
+      '<i class="ti ti-printer"></i> Хэвлэх' +
+      (o.status !== 'done' ? ' (ТӨСӨЛ)' : '') + '</button>' +
+      (canResubmit
+        ? '<button class="btn btn-primary" id="hrRedo" style="width:100%;margin-bottom:8px">' +
+          '<i class="ti ti-edit"></i> Засаад дахин илгээх</button>'
+        : '') +
       (canSign
         ? '<div class="form-group"><label>Нэмэлт санал (заавал биш)</label>' +
           '<textarea id="hrNote" rows="2" placeholder="Тайлбар, нөхцөл"></textarea></div>' +
@@ -17095,6 +17223,8 @@ function hrDetail(id) {
 
     act.addEventListener('click', function (ev) {
       var note = function () { var t = act.querySelector('#hrNote'); return t ? String(t.value || '').trim() : ''; };
+      if (ev.target.closest('#hrPrint')) { hrPrint(o); return; }
+      if (ev.target.closest('#hrRedo')) { closeModal(); actionAddHrOrder(o); return; }
       if (ev.target.closest('#hrOk')) {
         var i = o.step || 0;
         o.steps[i] = { key: HR_STEPS[i].key, uid: me.uid, name: me.name || '', pos: hrPosOf(me),
@@ -17105,7 +17235,9 @@ function hrDetail(id) {
           what: HR_STEPS[i].label + ' — зөвшөөрөв' });
         if (i + 1 >= HR_STEPS.length) { o.status = 'done'; o.step = HR_STEPS.length; }
         else o.step = i + 1;
-        saveDB(); closeModal(); renderHrOrders();
+        saveDB();
+        hrNotify(o, o.status === 'done' ? 'done' : 'step');
+        closeModal(); renderHrOrders();
         toast(o.status === 'done' ? o.id + ' бүрэн батлагдлаа' : 'Гарын үсэг зурагдлаа', 'success');
         return;
       }
@@ -17113,8 +17245,18 @@ function hrDetail(id) {
         var n2 = note();
         if (!n2) { toast('Буцаах шалтгаанаа бичнэ үү', 'warn'); return; }
         o.status = 'returned';
-        o.log.push({ at: new Date().toISOString(), uid: me.uid, name: me.name || '', what: 'Буцаав — ' + n2 });
-        saveDB(); closeModal(); renderHrOrders();
+        /* ⭐ Шалтгааныг ТУСДАА талбарт хадгална — дэлгэц дээр тод харуулах,
+           мэдэгдэлд оруулах хэрэгтэй. Түүхэнд ч бас үлдэнэ. */
+        o.returnNote = n2;
+        o.returnByName = me.name || '';
+        o.returnByPos = hrPosOf(me);
+        o.returnAt = new Date().toISOString();
+        o.returnStep = o.step || 0;
+        o.returns = (_f(o.returns) || 0) + 1;
+        o.log.push({ at: o.returnAt, uid: me.uid, name: me.name || '', what: 'Буцаав — ' + n2 });
+        saveDB();
+        hrNotify(o, 'returned');
+        closeModal(); renderHrOrders();
         toast('Захиалга буцаагдлаа', 'warn');
         return;
       }
@@ -17129,6 +17271,134 @@ function hrDetail(id) {
   }
 
   buildModal(o.id + ' · ' + (o.posName || ''), node, { width: '640px' });
+}
+
+/* ══ ХЭВЛЭХ — цаасан маягтын бүтцээр (Хавсралт 1) ══
+   ⚠ Гарын үсэг ЗУРААГҮЙ хуудсыг ч хэвлүүлнэ (хурал дээр хэлэлцэх хэрэгтэй),
+     гэхдээ дээр нь тод «ТӨСӨЛ» гэж бичнэ — албан ёсны баримттай андуурахгүй.
+   ⚠ Хүний нэрийг ХАТУУ бичихгүй — бүгд албан тушаалаар олдоно. */
+function hrPrint(o) {
+  var L = hrLevel(o.level);
+  var lk = function (arr, k) { var x = arr.filter(function (y) { return y.key === k; })[0]; return x ? x.label : ''; };
+  var mk = function (on) { return on ? '&#9745;' : '&#9744;'; };   /* ☑ / ☐ */
+  var done = o.status === 'done';
+  var ceo = hrFindByPos(/гүйцэтгэх\s*захирал/i);
+
+  var td = 'border:1px solid #333;padding:5px 7px;vertical-align:top';
+  var lbl = td + ';width:210px;background:#F4F4F4';
+  var r = function (a, b) { return '<tr><td style="' + lbl + '">' + a + '</td><td style="' + td + '">' + (b || '') + '</td></tr>'; };
+
+  /* Шалтгаан — цаасан дээрхтэй ижил жагсаалт, тэмдэглэгээтэй */
+  var reasons = HR_REASONS.map(function (x) {
+    var on = o.reason === x.key;
+    return '<div style="padding:1px 0">' + mk(on) + ' ' + esc(x.label) +
+      (on && x.key === 'tur' && o.tur ? ' — <b>' + esc(lk(HR_TUR, o.tur)) + '</b>' : '') + '</div>';
+  }).join('');
+
+  /* 4 гарын үсгийн нүд */
+  var sigs = HR_STEPS.map(function (s, i) {
+    var st = (o.steps || [])[i] || {};
+    var who = hrStepWho(o, i) || {};
+    var nm = st.at ? st.name : ((who && who.name) || '');
+    var ps = st.at ? st.pos : ((who && who.pos) || '');
+    return '<tr>' +
+      '<td style="' + td + ';width:26px;text-align:center">' + (i + 1) + '</td>' +
+      '<td style="' + td + ';width:190px">' + esc(s.label) + '</td>' +
+      '<td style="' + td + '">' +
+        '<div>Албан тушаал: ' + esc(ps || '.....................') + '</div>' +
+        '<div>Нэр: ' + esc(nm || '.....................') + '</div>' +
+        '<div>Гарын үсэг: ' + (st.at
+          ? '<b>&#10003; цахимаар баталсан</b> &nbsp; <span style="color:#555">' + esc(hrDate(st.at)) + '</span>'
+          : '.....................................') + '</div>' +
+        (st.note ? '<div style="color:#444">Нэмэлт санал: ' + esc(st.note) + '</div>' : '') +
+      '</td></tr>';
+  }).join('');
+
+  var innerRows = (o.inner || []).length
+    ? o.inner.map(function (x) {
+        return '<tr><td style="' + td + '">' + esc(o.posName || '') + '</td>' +
+          '<td style="' + td + '">' + esc(x.prof || '') + '</td>' +
+          '<td style="' + td + '">' + esc(x.curPos || '') + '</td>' +
+          '<td style="' + td + '">' + (x.years ? esc(String(x.years)) : '') + '</td>' +
+          '<td style="' + td + '"></td></tr>';
+      }).join('')
+    : '<tr><td style="' + td + ';height:44px"></td><td style="' + td + '"></td><td style="' + td + '"></td>' +
+      '<td style="' + td + '"></td><td style="' + td + '"></td></tr>';
+
+  var doc =
+    '<!DOCTYPE html><html lang="mn"><head><meta charset="utf-8">' +
+    '<title>' + esc(o.id) + ' — Хүний нөөцийн захиалга</title><style>' +
+    '@page{size:A4;margin:14mm}' +
+    'body{font-family:"Times New Roman",Georgia,serif;font-size:12px;color:#000;margin:0}' +
+    'table{border-collapse:collapse;width:100%;margin-bottom:10px}' +
+    'h1{font-size:15px;text-align:center;margin:10px 0 12px}' +
+    '.sec{font-weight:bold;margin:12px 0 5px;font-size:12.5px}' +
+    '.draft{border:2px solid #C00;color:#C00;font-weight:bold;text-align:center;' +
+    'padding:6px;margin-bottom:10px;letter-spacing:.1em}' +
+    '@media print{.noprint{display:none}}' +
+    '</style></head><body>' +
+
+    '<div style="display:flex;justify-content:space-between;font-size:11px">' +
+      '<div>БАТЛАВ. ГҮЙЦЭТГЭХ ЗАХИРАЛ ' + esc((ceo && ceo.name) || '') + '</div>' +
+      '<div style="font-style:italic;text-align:right">Бүрдүүлэлт, сонгон шалгаруулалтын<br>журам Хавсралт 1.</div>' +
+    '</div>' +
+
+    '<h1>ХҮНИЙ НӨӨЦИЙН ЗАХИАЛГЫН ХУУДАС</h1>' +
+    '<div style="text-align:center;font-size:11.5px;margin-bottom:10px">' +
+      'Дугаар: <b>' + esc(o.id) + '</b> &nbsp;·&nbsp; Төлөв: <b>' + esc(hrSt(o).label) + '</b>' +
+      (_f(o.returns) ? ' &nbsp;·&nbsp; ' + _f(o.returns) + ' удаа буцаагдсан' : '') + '</div>' +
+
+    (!done ? '<div class="draft">ТӨСӨЛ — ГАРЫН ҮСЭГ БҮРЭН ЗУРАГДААГҮЙ</div>' : '') +
+
+    '<div class="sec">1. Гадаад эх үүсвэрээс ажилтан авах захиалга</div><table>' +
+    r('Шинээр авах албан тушаал', '<b>' + esc(o.posName || '') + '</b>') +
+    r('Орон тоо', String(_f(o.headcount) || 1)) +
+    r('Захиалгын зэрэглэл', HR_LEVELS.map(function (x) {
+      return mk(o.level === x.key) + ' ' + esc(x.label) + ' ' + x.days + ' хоног';
+    }).join('&nbsp;&nbsp; ')) +
+    r('Захиалга өгсөн огноо', esc(hrDate(o.at))) +
+    r('Захиалга хүлээж авсан огноо', esc(hrDate(o.acceptedAt))) +
+    r('Захиалга гаргасан алба', esc(o.dept || '')) +
+    r('Ажилтан авах болсон шалтгаан', reasons) +
+    (o.newNeed ? r('Шинээр үүсгэж буй орон тооны хэрэгцээ', esc(o.newNeed)) : '') +
+    r('Ерөнхий шаардлага', esc(o.reqGeneral || '')) +
+    r('Тусгай шаардлага', esc(o.reqSpecial || '')) +
+    r('Хөгжлийн бэрхшээлтэй ажилтан ажиллаж болох эсэх',
+      mk(o.disability === 'yes') + ' Тийм &nbsp;&nbsp; ' + mk(o.disability === 'no') + ' Үгүй') +
+    '</table>' +
+
+    '<div class="sec">2. Цалин, хангамж</div><table>' +
+    r('Цалингийн хэмжээ', esc(hrMoney(o.salary))) +
+    r('Цалингийн нөхцөл', HR_SALARY_KIND.map(function (x) {
+      return mk(o.salaryKind === x.key) + ' ' + esc(x.label);
+    }).join('&nbsp;&nbsp; ')) +
+    r('Ажлын цагийн хуваарь', esc(o.workHours || '')) +
+    r('Унаа', HR_UNAA.map(function (x) { return mk(o.unaa === x.key) + ' ' + esc(x.label); }).join('&nbsp;&nbsp; ')) +
+    r('Утас', HR_UTAS.map(function (x) { return mk(o.utas === x.key) + ' ' + esc(x.label); }).join('&nbsp;&nbsp; ')) +
+    '</table>' +
+
+    '<div class="sec">3. Дотоод эх үүсвэрээс ажилтан томилох санал</div><table>' +
+    '<tr>' + ['Ажиллах албан тушаал', 'Мэргэжил', 'Одоо ажиллаж байгаа албан тушаал',
+      'Ажилласан жил', 'Одоогийн шууд удирдлагын зөвшөөрөл'].map(function (h) {
+      return '<td style="' + td + ';background:#F4F4F4;font-weight:bold">' + h + '</td>';
+    }).join('') + '</tr>' + innerRows + '</table>' +
+
+    '<div class="sec">4. Ажлын байрны захиалгын баталгаажилт</div><table>' + sigs + '</table>' +
+
+    '<div style="font-size:10px;color:#555;margin-top:8px">' +
+      'Энэ хуудсыг SafeWork ХАБЭА системээс ' + esc(hrDate(new Date().toISOString())) +
+      '-нд хэвлэв. Гарын үсгийг цахимаар баталгаажуулсан.' +
+    '</div>' +
+
+    '<div class="noprint" style="text-align:center;margin-top:16px">' +
+      '<button onclick="window.print()" style="padding:9px 22px;font-size:14px;cursor:pointer">Хэвлэх</button>' +
+    '</div></body></html>';
+
+  var w = window.open('', '_blank');
+  if (!w) { toast('Хөтөч шинэ цонх хаасан байна — зөвшөөрөл олгоно уу', 'warn'); return; }
+  w.document.open(); w.document.write(doc); w.document.close();
+  /* Агуулга бүрэн буусны дараа хэвлэх цонхыг нээнэ */
+  setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 350);
 }
 
 /* ══ НЭГТГЭЛ — албаны даргад өөрийн алба, захиралд харьяа албадын задаргаа ══ */
