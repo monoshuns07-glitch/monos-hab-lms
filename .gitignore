@@ -1,6 +1,5 @@
 node_modules/
 *.log
-.env
 .DS_Store
 Thumbs.db
 public/
@@ -9,7 +8,36 @@ public/
 .firebase/
 skills-lock.json
 img/video/
+dev.err
 
-# Токен агуулсан локал тохиргоо (хэзээ ч commit хийхгүй)
+# ══════════════════════════════════════════════════════════════════════
+# НУУЦ ТҮЛХҮҮР — ХЭЗЭЭ Ч COMMIT ХИЙХГҮЙ
+# ⚠ Энэ repo НИЙТЭД НЭЭЛТТЭЙ. Түлхүүр нэг л удаа орвол бүх хүн харна.
+# Түлхүүрийг repo-гоос ГАДУУР хадгална: C:\Users\enkhbat.v\.monos-secrets\
+# ══════════════════════════════════════════════════════════════════════
 .env
+.env.*
 *.token
+*.pem
+*.key
+*.p12
+*.p8
+
+# Firebase admin / service account (бүх датаг дүрмээс үл хамааран нээдэг)
+*service-account*.json
+*serviceaccount*.json
+*firebase-adminsdk*.json
+*-adminsdk-*.json
+firebase-admin.json
+serviceAccountKey.json
+
+# Cloudflare / R2
+r2.json
+cloudflare.json
+wrangler.toml
+.wrangler/
+
+# Ерөнхий
+secrets/
+.secrets/
+*credentials*.json
