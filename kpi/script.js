@@ -9992,20 +9992,32 @@ function renderHazards() {
        (албаны нэр давхцах, хоосон алба г.м.) МӨНХИЙН давтагдаж сайт ГАЦДАГ байв.
        Одоо НЭГ УДАА л оролдоно — туг хэзээ ч буцаахгүй. */
     var _dsc = riskDirScope();
-    if (_dsc && !renderHazards._dirOnce) {
+    /* ⚠ RISK_INDEX ирээгүй бол ямар алба байгааг мэдэхгүй тул одоо
+       оролдох нь утгагүй. Өмнө нь энэ үед оролдоод, НЭГ УДААГИЙН эрхээ
+       зарцуулж, захирал өөрийн албаныхаа 38 эрсдлээр мөнхөд гацдаг байв.
+       Одоо индекс ирсний дараа л оролдоно, дээд тал нь 3 удаа —
+       мөнхийн давталт үүсэхгүй. */
+    if (renderHazards._dirTry == null) renderHazards._dirTry = 0;
+    var _idxOk = !!(RISK_INDEX && (RISK_INDEX.depts || []).length);
+    if (_dsc && _idxOk && !renderHazards._dirBusy && renderHazards._dirTry < 3) {
       var _want = riskDirDepts().length;
       var _have = {};
       (DB.risks || []).forEach(function (r) {
         var d = riskCanonDept(r.dept) || r.dept || ''; if (d) _have[d] = 1;
       });
       if (_want > 1 && Object.keys(_have).length < _want) {
-        renderHazards._dirOnce = true;            /* ← ХЭЗЭЭ Ч буцаахгүй */
+        renderHazards._dirTry++;
+        renderHazards._dirBusy = true;
         try { localStorage.removeItem(RISK_CACHE_KEY); } catch (e2) {}
         riskR2Load().then(function (res) {
+          renderHazards._dirBusy = false;
           console.log('[risks] захирлын хамрах хүрээгээр дахин ачааллаа: ' +
-            ((res && res.n) || 0) + ' эрсдэл');
+            ((res && res.n) || 0) + ' эрсдэл (оролдлого ' + renderHazards._dirTry + ')');
           renderHazards();
-        }).catch(function (e3) { console.error('[risks] дахин ачаалал', e3); });
+        }).catch(function (e3) {
+          renderHazards._dirBusy = false;
+          console.error('[risks] дахин ачаалал', e3);
+        });
       }
     }
   } catch (e) {}
