@@ -90,7 +90,8 @@ var pageLabels = {
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
-  'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт'
+  'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт',
+  hrorder: 'Хүний нөөцийн захиалгын хуудас'
 };
 
 /* Албуудыг ХАТУУ бичихгүй — зөвхөн бүртгэлтэй ажилтнуудаас гарна (deptList) */
@@ -327,6 +328,7 @@ function seedDB() {
     extAttendance: {},
     davtanMonths: {},   // { 'YYYY-M': ['Алба1', ...] } — тухайн цалингийн сард давтантай албад
     violations: [],     // [{ id, empId, date, desc, points, by }] — босго онооноос хасагдах зөрчлүүд
+    hrorders: [],       // Хүний нөөцийн захиалгын хуудас (цаасан маягтыг орлоно)
     hazards: [],
     suggestions: [],
     incidents: [],
@@ -946,7 +948,7 @@ var _saveTimer = null;
 /* ⚠ 'risks' ЭНД БАЙХГҮЙ — эрсдэл нь Firestore-оос гарч R2 руу шилжсэн.
    Шалтгаан: Firestore баримт бүрээр уншилт тоолдог тул 1,289 эрсдлийг хүн
    бүрд татахад өдрийн үнэгүй квот хэдхэн зочлолтод дуусдаг байв. */
-var COL_KEYS = ['tasks', 'reports', 'violations', 'hazards', 'suggestions', 'incidents',
+var COL_KEYS = ['tasks', 'reports', 'violations', 'hrorders', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
   'extTrainings', 'externalTrainings', 'miskillStats'];
 var COL_PREFIX = 'kpi_';
@@ -1046,6 +1048,13 @@ function colQueries(key) {
        тааруулалт (riskSameDept) ажиллах боломжгүй болно. Тиймээс бүгдийг татаад
        тааруулалтыг хөтөч дээр хийнэ (эрсдэл нь хязгаарлагдмал тоотой). */
     if (key === 'risks') return [c];
+
+    /* ⚠ ХҮНИЙ НӨӨЦИЙН ЗАХИАЛГА — сервер талд албаар БҮҮ шүү.
+       Хэн харахыг АЛБАН ТУШААЛ шийддэг (ХН менежер, Санхүүгийн менежер,
+       хариуцсан захирал), үүнийг Firestore-ийн шүүлтээр илэрхийлэх
+       боломжгүй. Бүгдийг татаад эрхийг hrCanSee() дотор шийднэ.
+       Бичлэгийн тоо цөөн тул уншилтын зардал ялихгүй. */
+    if (key === 'hrorders') return [c];
 
     if (isDeptHead()) {
       if (!dept) return [c];
@@ -1168,30 +1177,62 @@ function riskSlug(name) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   ЗАХИРЛУУДЫН ХАМРАХ ХҮРЭЭ
-   · Гүйцэтгэх захирал — БҮХ албаны эрсдэл
-   · Үйлдвэрлэл хариуцсан захирал — ХХҮ, ШХҮ, ЧХЛ, ИТА, ЧБА (5 алба)
+   ЗАХИРЛУУДЫН ХАМРАХ ХҮРЭЭ — НЭГ ЭХ СУРВАЛЖ (DIR_SCOPES)
+   · Гүйцэтгэх захирал                        — БҮХ албаны эрсдэл
+   · Үйлдвэрлэл хариуцсан захирал             — ХХҮ, ШХҮ, ЧХЛ, ИТА, ЧБА (5 алба)
+   · Борлуулалт, маркетинг хариуцсан захирал  — Борлуулалт, Маркетинг (2 алба)
    Эдгээр нь албадаар нь хуваагдаж, товч дарж шүүгдэнэ.
+   ⚠ Шинэ захирал нэмэхэд ЗӨВХӨН доорх хүснэгтэд нэг мөр нэмнэ — бусад
+     газар өөрөө дагаж ажиллана (ACK_DIRECTORS-той хос).
+   ⚠ Хүнийг НЭРЭЭР биш АЛБАН ТУШААЛААР таьна — хүн солигдоход код засахгүй.
+   ⚠ 2026.08 — «Үйл ажиллагаа хариуцсан захирал» албан ёсоор
+     «Борлуулалт, маркетинг хариуцсан захирал» болж өөрчлөгдсөн. Ажилтны
+     бүртгэлд хуучин нэршил үлдсэн байж болзошгүй тул ХОЁУЛАНГ нь таьна.
    ⚠ Ажилтны жагсаалт ирээгүй байж болзошгүй тул СЕШНий албан тушаалаар ч
      таньдаг (ackRoleOf нь myEmp() шаарддаг). */
-var RISK_PROD_DEPTS = /хуурай\s*хүнс|шингэн\s*хүнс|чанарын\s*хяналт|инженер\s*техник|чанарын\s*баталгаа/i;
+var RISK_PROD_DEPTS  = /хуурай\s*хүнс|шингэн\s*хүнс|чанарын\s*хяналт|инженер\s*техник|чанарын\s*баталгаа/i;
+var RISK_SALES_DEPTS = /борлуулалт|маркетинг/i;
+/* key: доор харьцуулагддаг түлхүүр · pos: албан тушаалын таних загвар
+   re: харьяа албадын загвар (null = БҮХ алба) */
+var DIR_SCOPES = [
+  { key: 'all',   pos: /гүйцэтгэх\s*захирал/i,             re: null },
+  { key: 'prod',  pos: /үйлдвэрлэл\s*хариуцсан\s*захирал/i, re: RISK_PROD_DEPTS },
+  { key: 'sales', pos: /(борлуулалт.*маркетинг|үйл\s*ажиллагаа)\s*хариуцсан\s*захирал/i, re: RISK_SALES_DEPTS }
+];
+/* Албан тушаалын бичвэрээс хамрах хүрээг олно */
+function dirScopeOf(pos) {
+  var p = String(pos || '');
+  for (var i = 0; i < DIR_SCOPES.length; i++) { if (DIR_SCOPES[i].pos.test(p)) return DIR_SCOPES[i]; }
+  return null;
+}
+function dirScopeRe(sc) {
+  for (var i = 0; i < DIR_SCOPES.length; i++) { if (DIR_SCOPES[i].key === sc) return DIR_SCOPES[i].re; }
+  return null;
+}
 function riskDirScope() {
   var p = '';
   try { var me = myEmp(); if (me) p = me.pos || me.role || ''; } catch (e) {}
   if (!p && typeof SESSION !== 'undefined' && SESSION) p = SESSION.pos || SESSION.role || '';
-  p = String(p || '');
-  if (/гүйцэтгэх\s*захирал/i.test(p)) return 'all';
-  if (/үйлдвэрлэл\s*хариуцсан\s*захирал/i.test(p)) return 'prod';
-  return '';
+  var d = dirScopeOf(p);
+  return d ? d.key : '';
 }
-/* Тухайн захиралд ямар албад хамаарах вэ */
-function riskDirDepts() {
-  var sc = riskDirScope();
+/* Тухайн хамрах хүрээнд ямар албад орох вэ (аль ч захиралд ажиллана) */
+function riskDeptsForScope(sc) {
   if (!sc) return [];
   var ds = ((RISK_INDEX && RISK_INDEX.depts) || []).map(function (d) { return d.name; });
   if (!ds.length) { try { ds = deptList() || []; } catch (e) { ds = []; } }
-  if (sc === 'all') return ds;
-  return ds.filter(function (n) { return RISK_PROD_DEPTS.test(n); });
+  var re = dirScopeRe(sc);
+  if (!re) return ds;                       // Гүйцэтгэх захирал — бүгд
+  return ds.filter(function (n) { return re.test(n); });
+}
+/* Тухайн захиралд ямар албад хамаарах вэ.
+   ⚠ emp дамжуулбал ТЭР ХҮНИЙ хүрээг тооцно (өмнө нь аргументыг үл тоомсорлож,
+      үргэлж нэвтэрсэн хүнийхээр боддог байсан). */
+function riskDirDepts(emp) {
+  var sc = '';
+  if (emp) { var d = dirScopeOf(emp.pos || emp.role || ''); sc = d ? d.key : ''; }
+  else sc = riskDirScope();
+  return riskDeptsForScope(sc);
 }
 /* Эрсдэл нэмэх эрхтэй юу — админ, албаны дарга, ХЭСЭГ ОНООСОН ажилтан */
 function riskCanAdd() {
@@ -1474,12 +1515,15 @@ async function riskR2Load() {
 
   var want = idx.depts;
   var dsc = riskDirScope();
-  if (dsc === 'prod') {
-    /* Үйлдвэрлэлийн захирал — 5 алба */
-    var five = idx.depts.filter(function (d) { return RISK_PROD_DEPTS.test(d.name); });
-    if (five.length) want = five;
-  } else if (dsc === 'all') {
+  if (dsc === 'all') {
     want = idx.depts;                             // Гүйцэтгэх захирал — бүгд
+  } else if (dsc) {
+    /* Хамрах хүрээтэй захирал — зөвхөн харьяа албадынх (DIR_SCOPES-оос) */
+    var _re = dirScopeRe(dsc);
+    if (_re) {
+      var _sel = idx.depts.filter(function (d) { return _re.test(d.name); });
+      if (_sel.length) want = _sel;
+    }
   } else if (!isAdmin() && SESSION && SESSION.dept) {
     var mine = idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
     if (mine.length) want = mine;                 // олдохгүй бол бүгдийг (аюулгүй тал руу)
@@ -2405,6 +2449,8 @@ function openMenu(anchor, items, onSelect) {
 function switchPage(pageId) {
   // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
   if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
+  /* Хүний нөөцийн захиалга нь эрхийн түвшингээр бус АЛБАН ТУШААЛААР нээгддэг */
+  if (pageId === 'hrorder') { var _ok = false; try { _ok = hrCanUse(); } catch (e) {} if (!_ok) pageId = 'dashboard'; }
   /* «Контент удирдлага» (admin.html) дотор шинэ хэрэглэгч нэмсэн байж болзошгүй.
      Тэндээс гарахад ажилтны жагсаалтыг ДАХИН татна — бүтэн reload хийх шаардлагагүй. */
   try {
@@ -2441,6 +2487,7 @@ function switchPage(pageId) {
   else if (pageId === 'hazards') renderHazards();
   else if (pageId === 'tasks') renderTasks();
   else if (pageId === 'myexams') renderMyExams();
+  else if (pageId === 'hrorder') renderHrOrders();
   else if (pageId === 'trn-mod') { try { renderTrainingModule(CURRENT_MOD); } catch (e2) {} }
 }
 
@@ -6101,15 +6148,46 @@ function actionRiskDeptMap() {
    шинэ код авна.
 
    Дараалал (дээд шат зураагүй бол доод шат зурж чадахгүй):
-     ① Гүйцэтгэх захирал            → бүх эрсдэл
-     ② Үйлдвэрлэл хариуцсан захирал → бүх эрсдэл
-     ③ Албаны хариуцагч             → өөрийн алба/дэд хэсэг
-     ④ Ажилтан                      → өөрт харагдаж буй
+     ① Гүйцэтгэх захирал        → бүх эрсдэл
+     ② Хамрах хүрээтэй захирал  → зөвхөн харьяа албадынхаа хариуцагчийг хүлээнэ
+                                  (DIR_SCOPES — Үйлдвэрлэл / Борлуулалт-маркетинг)
+     ③ Албаны хариуцагч         → өөрийн алба/дэд хэсэг
+     ④ Ажилтан                  → өөрт харагдаж буй
    ══════════════════════════════════════════════════════════════════════ */
+/* ⚠ Түлхүүр нь DIR_SCOPES-тэй хосолно: ceo ↔ 'all', бусад нь ижил нэртэй.
+   Шинэ захирал нэмэхдээ ЭНД болон DIR_SCOPES-д ХОЁУЛАНД нь нэмнэ. */
 var ACK_DIRECTORS = [
-  { key: 'ceo',  match: /гүйцэтгэх\s*захирал/i,               label: 'Гүйцэтгэх захирал' },
-  { key: 'prod', match: /үйлдвэрлэл\s*хариуцсан\s*захирал/i,  label: 'Үйлдвэрлэл хариуцсан захирал' }
+  { key: 'ceo',   match: /гүйцэтгэх\s*захирал/i,               label: 'Гүйцэтгэх захирал' },
+  { key: 'prod',  match: /үйлдвэрлэл\s*хариуцсан\s*захирал/i,  label: 'Үйлдвэрлэл хариуцсан захирал' },
+  /* 2026.08 албан ёсны өөрчлөлт — хуучин «Үйл ажиллагаа хариуцсан захирал»
+     нэршлийг бүртгэл шинэчлэгдэх хүртэл зэрэг таьна */
+  { key: 'sales', match: /(борлуулалт.*маркетинг|үйл\s*ажиллагаа)\s*хариуцсан\s*захирал/i,
+    label: 'Борлуулалт, маркетинг хариуцсан захирал' }
 ];
+/* Энэ роль захирлынх уу — шинэ захирал нэмэхэд өөрөө дагана */
+function ackIsDir(role) {
+  for (var i = 0; i < ACK_DIRECTORS.length; i++) { if (ACK_DIRECTORS[i].key === role) return true; }
+  return false;
+}
+/* Захирлын ack түлхүүрийг хамрах хүрээний түлхүүр рүү хөрвүүлнэ */
+function ackScopeKey(role) { return role === 'ceo' ? 'all' : role; }
+/* ⭐ Тухайн албыг ХАРИУЦСАН захирлын түлхүүр.
+   Борлуулалт, Маркетинг → 'sales' · ХХҮ/ШХҮ/ЧХЛ/ИТА/ЧБА → 'prod'
+   ⚠ Аль ч хүрээнд ороогүй алба (Санхүү, Ложистик, Захиргаа г.м.) нь
+     ӨМНӨХ ЗАН ТӨЛӨВӨӨРӨӨ Үйлдвэрлэл хариуцсан захиралд үлдэнэ — эдгээр
+     албанд хариуцсан захирал тодорхойлогдоогүй тул дарааллыг таслахгүй. */
+function ackDirKeyForDept(dept) {
+  var d = String(dept || '');
+  if (d) {
+    for (var i = 0; i < ACK_DIRECTORS.length; i++) {
+      var k = ACK_DIRECTORS[i].key;
+      if (k === 'ceo') continue;
+      var re = dirScopeRe(ackScopeKey(k));
+      if (re && re.test(d)) return k;
+    }
+  }
+  return 'prod';
+}
 /* Алба → хариуцагчийн албан тушаал (нэрээр биш — хүн солигдоход ажиллах ёстой) */
 var ACK_LEADS = [
   { dept: 'Борлуулалтын алба',                            pos: /борлуулалтын\s*албаны\s*дарга/i },
@@ -6366,7 +6444,7 @@ function ackCanSign(emp, signed) {
   /* ⚠ Үйлдвэрлэл хариуцсан захирал зөвхөн ӨӨРИЙН харьяа албадын хариуцагчийг
      хүлээнэ. Өмнө нь компанийн БҮХ 12 хариуцагчийг хүлээж, Санхүү/Ложистик/
      Маркетинг зэрэг огт хамааралгүй албанаас болж мөнхөд гацдаг байв. */
-  var scope = (role === 'prod') ? riskDirDepts(emp) : null;
+  var scope = (ackIsDir(role) && role !== 'ceo') ? riskDirDepts(emp) : null;
   var leads = ackLeadsAll(scope);
   var missL = leads.filter(function (e) { return !has(e.uid); });
   if (missL.length) {
@@ -6374,17 +6452,21 @@ function ackCanSign(emp, signed) {
       why: missL.length + ' хариуцагч хараахан баталгаажуулаагүй байна (' + names(missL) + ')' +
         (scope ? ' — таны харьяа ' + scope.length + ' алба' : '') };
   }
-  if (role === 'prod') return { ok: true, n: leads.length, of: leads.length };
-  /* Гүйцэтгэх захирал — хамгийн сүүлд */
-  var prod = ackDirector('prod');
-  if (prod && !has(prod.uid)) {
-    return { ok: false, n: leads.length, of: leads.length + 1,
-      why: 'Үйлдвэрлэл хариуцсан захирал (' + (prod.name || '') + ') хараахан баталгаажуулаагүй байна' };
+  if (role !== 'ceo') return { ok: true, n: leads.length, of: leads.length };
+  /* Гүйцэтгэх захирал — хамгийн сүүлд: харьяа хүрээтэй БҮХ захирал зурсан байх ёстой */
+  var dirs = ACK_DIRECTORS.filter(function (D) { return D.key !== 'ceo'; })
+    .map(function (D) { return { label: D.label, emp: ackDirector(D.key) }; })
+    .filter(function (x) { return !!x.emp; });
+  var pend = dirs.filter(function (x) { return !has(x.emp.uid); });
+  if (pend.length) {
+    return { ok: false, n: leads.length + (dirs.length - pend.length), of: leads.length + dirs.length,
+      why: pend.map(function (x) { return x.label + ' (' + (x.emp.name || '') + ')'; }).join(', ') +
+        ' хараахан баталгаажуулаагүй байна' };
   }
-  return { ok: true, n: leads.length + 1, of: leads.length + 1 };
+  return { ok: true, n: leads.length + dirs.length, of: leads.length + dirs.length };
 }
 /* Нэг ажилтны баримтад ЯМАР гарын үсгүүд байх ёстой вэ (ЗУРАХ дарааллаараа:
-   ажилтан → хариуцагч → Үйлдвэрлэлийн захирал → Гүйцэтгэх захирал) */
+   ажилтан → менежер → хариуцагч → АЛБЫГ ХАРИУЦСАН захирал → Гүйцэтгэх захирал) */
 function ackChainFor(emp) {
   var out = [], myRole = ackRoleOf(emp);
   if (emp) out.push({ role: myRole, emp: emp });
@@ -6396,8 +6478,13 @@ function ackChainFor(emp) {
   }
   var lead = ackLeadFor(emp && emp.dept, ackUnitOf(emp));
   if (lead && !out.some(function (x) { return x.emp.uid === lead.uid; })) out.push({ role: 'lead', emp: lead });
-  var prod = ackDirector('prod');
-  if (prod && !out.some(function (x) { return x.emp.uid === prod.uid; })) out.push({ role: 'prod', emp: prod });
+  /* ⭐ Захирлын шат — ДАРААЛАЛ ХЭВЭЭР, зөвхөн ХЭН зогсох нь албанаас хамаарна:
+       Борлуулалт, Маркетинг → Борлуулалт, маркетинг хариуцсан захирал
+       ХХҮ/ШХҮ/ЧХЛ/ИТА/ЧБА  → Үйлдвэрлэл хариуцсан захирал
+       бусад алба            → Үйлдвэрлэл хариуцсан захирал (өмнөх хэвээр) */
+  var dKey = ackDirKeyForDept(emp && emp.dept);
+  var dir = ackDirector(dKey);
+  if (dir && !out.some(function (x) { return x.emp.uid === dir.uid; })) out.push({ role: dKey, emp: dir });
   var ceo = ackDirector('ceo');
   if (ceo && !out.some(function (x) { return x.emp.uid === ceo.uid; })) out.push({ role: 'ceo', emp: ceo });
   return out;
@@ -6510,7 +6597,7 @@ function ackSignedRow(store, uid, version) {
    · захирлууд        → БҮХ албаны файл (хариуцагч нар өөр өөр файлд байдаг) */
 async function ackGateFor(emp, force) {
   var role = ackRoleOf(emp);
-  var isDir = (role === 'ceo' || role === 'prod');
+  var isDir = ackIsDir(role);
   var top = await ackTop(force);
   var m = {};
   ((top && top.rows) || []).forEach(function (r) { if (r.uid) m[r.uid] = 1; });
@@ -6617,7 +6704,7 @@ async function ackWrite(key, rec) {
 async function ackSign(emp, code, rows, version) {
   if (!emp || !emp.uid) return { ok: false, error: 'Ажилтны бүртгэл олдсонгүй' };
   var role = ackRoleOf(emp);
-  var isDir = (role === 'ceo' || role === 'prod');
+  var isDir = ackIsDir(role);
   var g = await ackGateFor(emp, true);
   var store = isDir ? g.top : await ackLoad(emp.dept, true);
   var chk = ackCanSign(emp, g.map);
@@ -7152,7 +7239,7 @@ async function ackRefreshMine(force) {
   if (!me || !me.uid) { ACK_ME = { ready: true, none: true }; return ACK_ME; }
   var dept = riskCanonDept(me.dept) || me.dept || '';
   var role = ackRoleOf(me);
-  var isDir = (role === 'ceo' || role === 'prod');
+  var isDir = ackIsDir(role);
   var ver = isDir ? ackCompanyVersion() : ackVersionOf(dept);
   var g = await ackGateFor(me, force);
   var top = g.top;
@@ -7169,15 +7256,16 @@ async function ackRefreshMine(force) {
 /* Гинжин дэх хүн бүрийн гарын үсгийг олно (Excel болон дэлгэцэд) */
 function ackChainRows(emp, deptStore, topStore) {
   return ackChainFor(emp).map(function (c) {
-    var st = (c.role === 'ceo' || c.role === 'prod') ? topStore : deptStore;
+    var st = ackIsDir(c.role) ? topStore : deptStore;
     var row = ackLatestRow(st, c.emp.uid);
     return { role: c.role, emp: c.emp, row: row, code: (row && row.code) || '', at: (row && row.at) || '' };
   });
 }
 function ackRoleLabel(role) {
-  return role === 'ceo' ? 'Гүйцэтгэх захирал'
-    : role === 'prod' ? 'Үйлдвэрлэл хариуцсан захирал'
-    : role === 'lead' ? 'Хариуцагч удирдлага'
+  for (var i = 0; i < ACK_DIRECTORS.length; i++) {
+    if (ACK_DIRECTORS[i].key === role) return ACK_DIRECTORS[i].label;
+  }
+  return role === 'lead' ? 'Хариуцагч удирдлага'
     : role === 'mgr' ? 'Менежер' : 'Ажилтан';
 }
 function ackDateMn(iso) {
@@ -7665,10 +7753,13 @@ async function ackExportDept(dept) {
       var L = ackLeadFor(dept, u) || lead;
       if (L && !tail.some(function (x) { return x.emp.uid === L.uid; })) tail.push({ emp: L, row: ackLatestRow(store, L.uid) });
     });
-    ['prod', 'ceo'].forEach(function (k) {
-      var d = ackDirector(k);
-      if (d && !tail.some(function (x) { return x.emp.uid === d.uid; })) tail.push({ emp: d, row: ackLatestRow(top, d.uid) });
-    });
+    /* Захирлууд хамгийн доор — Гүйцэтгэх захирал үргэлж хамгийн сүүлд */
+    ACK_DIRECTORS.map(function (x) { return x.key; })
+      .sort(function (a, b) { return (a === 'ceo' ? 1 : 0) - (b === 'ceo' ? 1 : 0); })
+      .forEach(function (k) {
+        var d = ackDirector(k);
+        if (d && !tail.some(function (x) { return x.emp.uid === d.uid; })) tail.push({ emp: d, row: ackLatestRow(top, d.uid) });
+      });
     var body = ackDueEmps(dept)
       .filter(function (e) { return !tail.some(function (x) { return x.emp.uid === e.uid; }); })
       .sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); })
@@ -7830,7 +7921,7 @@ async function ackAdminScan(onStep) {
     var done = [], miss = [];
     due.forEach(function (e) {
       var role = ackRoleOf(e);
-      var row = (role === 'ceo' || role === 'prod')
+      var row = ackIsDir(role)
         ? ackSignedRow(top, e.uid, ackCompanyVersion())
         : ackSignedRow(store, e.uid, ver);
       (row ? done : miss).push({ e: e, row: row });
@@ -9299,7 +9390,8 @@ function riskDeptBarHTML(list) {
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px">' +
     '<div style="font-size:13.5px;font-weight:800;color:#1E293B">Албадаар харах</div>' +
     '<div style="font-size:11.5px;color:#94A3B8">' +
-    (sc === 'all' ? 'Гүйцэтгэх захирал — бүх алба' : 'Үйлдвэрлэл хариуцсан захирал — ' + ds.length + ' алба') +
+    (sc === 'all' ? 'Гүйцэтгэх захирал — бүх алба'
+      : esc(ackRoleLabel(sc === 'all' ? 'ceo' : sc)) + ' — ' + ds.length + ' алба') +
     '</div></div>' +
     '<div style="display:flex;gap:7px;flex-wrap:wrap">' +
     btn('', 'Бүгд', tot, !RISK_FILTER.dept) +
@@ -9319,6 +9411,9 @@ function riskDeptShort(name) {
   if (/захиргаа|хүний нөөц/i.test(n)) return 'ЗХНА';
   if (/санхүү/i.test(n)) return 'Санхүү';
   if (/маркетинг/i.test(n)) return 'Маркетинг';
+  if (/борлуулалт/i.test(n)) return 'Борлуулалт';
+  if (/экспорт|бизнес\s*хөгж/i.test(n)) return 'Бизнес хөгжил';
+  if (/туз|аудит/i.test(n)) return 'ТУЗ аудит';
   if (/хөдөлмөрийн аюулгүй/i.test(n)) return 'ХАБЭА';
   return n.length > 16 ? n.slice(0, 15) + '…' : n;
 }
@@ -15457,7 +15552,7 @@ function pplRowsOf(e) {
    тооцдог тул 267 ажилтанд зэрэг ажиллуулбал хөтөч ХӨЛДӨНӨ. */
 /* ⭐ МИНИЙ ХЯНАХ ХҮМҮҮС — таб ба хуудас ХОЁУЛАН үүнийг ашиглана.
    · менежер/хариуцагч → өөрийн ажилтнууд
-   · Үйлдвэрлэл хариуцсан захирал → 5 албаны ХАРИУЦАГЧ нар
+   · хамрах хүрээтэй захирал → өөрийн харьяа албадын ХАРИУЦАГЧ нар (DIR_SCOPES)
    · Гүйцэтгэх захирал → БҮХ хариуцагч нар
    · админ → бүх ажилтан */
 function pplMyPeople() {
@@ -15466,7 +15561,7 @@ function pplMyPeople() {
   try { dsc = riskDirScope(); } catch (e) {}
   if (dsc) {
     /* Захирал — хариуцагч нарыг хянана */
-      var want = (dsc === 'prod') ? riskDirDepts() : null;
+      var want = (dsc && dsc !== 'all') ? riskDirDepts() : null;
     var out = [];
     empAll().forEach(function (x) {
       if (!x.uid || (me && x.uid === me.uid)) return;
@@ -16200,11 +16295,902 @@ function actionAddTask() {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ХҮНИЙ НӨӨЦИЙН ЗАХИАЛГЫН ХУУДАС — цаасан маягтыг орлоно
+   («Бүрдүүлэлт, сонгон шалгаруулалтын журам» Хавсралт 1)
+   ----------------------------------------------------------------------
+   Цаасан маягтын 4 хэсэг · 4 ГАРЫН ҮСЭГ:
+     ① Захиалга гаргасан      — албаны дарга; алба нь даргагүй бол ахлах
+     ② Алба хариуцсан захирал — гаргасан албанаас хамаарна (HR_DIRECTORS)
+     ③ Хүний нөөц             — Хүний нөөцийн ахлах менежер
+     ④ Санхүү                 — Санхүүгийн менежер
+
+   ⚠ ХЭНИЙГ Ч НЭРЭЭР бичихгүй — зөвхөн АЛБАН ТУШААЛААР олно. Цаасан маягт
+     дээр «О.Эрдэнэтуяа», «П.Энхбаяр» гэж бэлдсэн байдаг ч хүн солигдоход
+     урсгал тасрах тул систем албан тушаалаар нь хайна (ACK_LEADS-ийн зарчим).
+   ⚠ Энэ модулийн захирлын хуваарилалт нь ЭРСДЭЛИЙН модулийн хамрах хүрээнээс
+     ӨӨР. Эрсдэлд Гүйцэтгэх захирал БҮХ албыг хардаг (ХАБЭА-гийн хариуцлага),
+     энд харин зөвхөн шууд харьяалагдах 4 албаны захиалгыг баталдаг.
+     Хоёуланг нь хольж БОЛОХГҮЙ — тиймээс тусдаа хүснэгттэй.
+   ⚠ Дотор нь ЦАЛИНГИЙН ДҮН явдаг тул R2 биш Firestore-т хадгална.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Захиалгын зэрэглэл — цаасан дээрх 30/21/14 хоног нь ХУГАЦААНЫ АМЛАЛТ.
+   Цаас дээр үүнийг хэн ч хэмждэггүй; систем үлдсэн хоногийг тоолно. */
+var HR_LEVELS = [
+  { key: 'engiin',   label: 'Энгийн',       days: 30, color: '#0891B2' },
+  { key: 'yaraltai', label: 'Яаралтай',     days: 21, color: '#D97706' },
+  { key: 'onts',     label: 'Онц яаралтай', days: 14, color: '#DC2626' }
+];
+/* Уг ажлын байранд ажилтан авах болсон шалтгаан (маягтын 5-р мөр) */
+var HR_REASONS = [
+  { key: 'shiljilt',  label: 'Ажилтны шилжих хөдөлгөөнөөс шалтгаалсан орон тоо' },
+  { key: 'tuluvlugut', label: 'Батлагдсан төлөвлөгөөт орон тоо' },
+  { key: 'shine',     label: 'Бүтэц орон тоонд батлагдаагүй, шинээр үүсгэж буй орон тоо' },
+  { key: 'tur',       label: 'Түр орон тоо' },
+  { key: 'busad',     label: 'Бусад' }
+];
+var HR_TUR = [
+  { key: 'orond', label: 'Ажил албан тушаалыг хэвээр хадгалж байгаа ажилтны оронд' },
+  { key: 'tusul', label: 'Төсөл хөтөлбөр хэрэгжих хугацаанд' },
+  { key: 'tsag',  label: 'Цагийн ажилтан' }
+];
+var HR_SALARY_KIND = [
+  { key: 'hiisneer', label: 'Хийснээр' },
+  { key: 'togtmol',  label: 'Тогтмол + Хувьсах' }
+];
+var HR_UNAA = [
+  { key: 'shatahuun', label: 'Шатахууны хөнгөлөлт' },
+  { key: 'unaa',      label: 'Унааны хөнгөлөлт' },
+  { key: 'ugui',      label: 'Олгохгүй' }
+];
+var HR_UTAS = [
+  { key: 'olgono',  label: 'Хөнгөлөлт олгоно' },
+  { key: 'olgohgui', label: 'Хөнгөлөлт олгохгүй' }
+];
+
+/* ⭐ АЛБА → ХАРИУЦСАН ЗАХИРАЛ. Захиалга ЭНЭ дарааллаар дээшилнэ.
+   ⚠ «ТУЗ-н дэргэдэх аудит эрсдэлийн хороо» ЗОРИУДААР ороогүй —
+     тэр нэгж хүний нөөцийн захиалга гаргахгүй (хэрэглэгчийн шийдвэр). */
+var HR_DIRECTORS = [
+  { key: 'ceo',   label: 'Гүйцэтгэх захирал',
+    pos:   /гүйцэтгэх\s*захирал/i,
+    depts: /захиргаа|хүний\s*нөөц|хөдөлмөрийн\s*аюулгүй|хангамж|экспорт|бизнес\s*хөгж/i },
+  { key: 'prod',  label: 'Үйлдвэрлэл хариуцсан захирал',
+    pos:   /үйлдвэрлэл\s*хариуцсан\s*захирал/i,
+    depts: /хуурай\s*хүнс|шингэн\s*хүнс|инженер\s*техник|чанарын\s*баталгаа|чанарын\s*хяналт/i },
+  /* 2026.08 албан ёсны өөрчлөлт — бүртгэлд хуучин «Үйл ажиллагаа хариуцсан
+     захирал» нэршил үлдсэн тул ХОЁУЛАНГ нь таьна */
+  { key: 'sales', label: 'Борлуулалт, маркетинг хариуцсан захирал',
+    pos:   /(борлуулалт.*маркетинг|үйл\s*ажиллагаа)\s*хариуцсан\s*захирал/i,
+    depts: /борлуулалт|маркетинг/i },
+  { key: 'fin',   label: 'Санхүү хариуцсан захирал',
+    pos:   /санхүү\s*хариуцсан\s*захирал/i,
+    depts: /санхүү|ложистик/i }
+];
+/* ③ ба ④ гарын үсэг — албан тушаалаар.
+   ⚠ Цаасан маягтад ③-ыг «Хүний нөөцийн ахлах менежер» зурдаг тул зөвхөн
+     тэр албан тушаал ГАРЫН ҮСЭГ зурна. Бусад ХН-ийн ажилтнууд ХАРНА. */
+var HR_POS_SIGN_HR = /хүний\s*нөөцийн\s*ахлах\s*менежер/i;
+var HR_POS_FIN     = /санхүүгийн\s*менежер/i;
+/* Бүх захиалгыг ХАРАХ эрхтэй ХН-ийн албан тушаалууд.
+   ⚠ «Бүрдүүлэлт, сонгон шалгаруулалт хариуцсан менежер» нь 2026.08-ны
+     байдлаар бүртгэлд БАЙХГҮЙ. Тэр орон тоог үүсгэж, ажилтныг бүртгэмэгц
+     код засахгүйгээр энэ цэс өөрөө нээгдэнэ. */
+var HR_POS_VIEW = /хүний\s*нөөцийн\s*(ахлах\s*)?менежер|бүрдүүлэлт|сонгон\s*шалгаруулалт/i;
+
+/* Албаны дарга/ахлах — ЭНЭ МОДУЛИЙН хувьд, ①-р гарын үсэг зурах хүн.
+   Үндсэндээ эрсдэлийн модулийн ackRoleOf('lead')-ийг ашиглана, ХОЁР залруулгатай:
+     ① Бүртгэлд албан тушаал нь өөрөөр бичигдсэн даргыг нэмж таьна —
+        Санхүүгийн албаны дарга Г.Буяндэлгэр нь «Ерөнхий нягтлан бодогч»
+        гэж бүртгэгдсэн байна (2026.08). Бүртгэл засагдвал энэ мөр илүүдэнэ
+        ч хор хөнөөлгүй.
+     ② ЗАХИРЛЫГ албаны дарга гэж ТООЦОХГҮЙ. Эрсдэлийн модульд Санхүүгийн
+        албаны «хариуцагч» нь Санхүү хариуцсан захирал гэж тэмдэглэгдсэн
+        байдаг ч энд тэр хүн ②-р гарын үсгийг зурдаг — нэг хүн хоёр шатанд
+        зурвал батлагаа утгагүй болно. */
+var HR_LEAD_EXTRA = [
+  { dept: /санхүү/i, pos: /ерөнхий\s*нягтлан\s*бодогч/i }
+];
+
+var HR_STEPS = [
+  { key: 'req', label: 'Захиалга гаргасан',       icon: 'ti-user-edit' },
+  { key: 'dir', label: 'Алба хариуцсан захирал',  icon: 'ti-user-shield' },
+  { key: 'hr',  label: 'Хүний нөөцийн зөвшөөрөл', icon: 'ti-users' },
+  { key: 'fin', label: 'Санхүүгийн зөвшөөрөл',    icon: 'ti-coin' }
+];
+var HR_ST = {
+  running:   { label: 'Гарын үсэг хүлээж буй', color: '#2563EB', icon: 'ti-progress' },
+  done:      { label: 'Бүрэн батлагдсан',      color: '#16A34A', icon: 'ti-rosette-discount-check' },
+  returned:  { label: 'Буцаагдсан',            color: '#DC2626', icon: 'ti-arrow-back-up' },
+  cancelled: { label: 'Цуцалсан',              color: '#64748B', icon: 'ti-ban' }
+};
+
+function hrAll() { DB.hrorders = DB.hrorders || []; return DB.hrorders; }
+function hrLevel(k) { return HR_LEVELS.filter(function (x) { return x.key === k; })[0] || HR_LEVELS[0]; }
+function hrSt(o) { return HR_ST[o && o.status] || HR_ST.running; }
+
+/* Дугаар: ХНЗ-2026-0001 */
+function hrNextNo() {
+  var y = new Date().getFullYear(), mx = 0;
+  hrAll().forEach(function (o) { if (o.year === y && _f(o.no) > mx) mx = _f(o.no); });
+  return { year: y, no: mx + 1, id: 'ХНЗ-' + y + '-' + ('000' + (mx + 1)).slice(-4) };
+}
+
+/* Нэвтэрсэн хүн — ХАБЭА/админ ажилтны бүртгэлд байхгүй байж болно */
+function hrMe() {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (me && me.uid) return me;
+  try {
+    if (SESSION && (isAdmin() || isDeptHead())) {
+      var uid = SESSION.uid || (SESSION.email ? 'u:' + String(SESSION.email).toLowerCase() : '');
+      return { uid: uid, name: SESSION.name || SESSION.email || 'Админ',
+        pos: SESSION.pos || 'Админ', dept: SESSION.dept || '' };
+    }
+  } catch (e) {}
+  return null;
+}
+function hrPosOf(e) { return String((e && (e.pos || e.role)) || ''); }
+function hrCanSignHR(e) { return HR_POS_SIGN_HR.test(hrPosOf(e)); }   // ③ зурна
+function hrIsHRView(e)  { return HR_POS_VIEW.test(hrPosOf(e)); }      // бүгдийг харна
+function hrIsFin(e)     { return HR_POS_FIN.test(hrPosOf(e)); }       // ④ зурна
+/* Тухайн албыг хариуцсан захирлын мөр (олдохгүй бол null = захиалга гаргахгүй алба) */
+function hrDirOf(dept) {
+  var d = String(dept || ''); if (!d) return null;
+  for (var i = 0; i < HR_DIRECTORS.length; i++) { if (HR_DIRECTORS[i].depts.test(d)) return HR_DIRECTORS[i]; }
+  return null;
+}
+/* Албан тушаалын загвараар ажилтныг олно — НЭРЭЭР БИШ */
+function hrFindByPos(re) {
+  var list = [];
+  try { list = empAll() || []; } catch (e) { list = DB.employees || []; }
+  for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i]))) return list[i]; }
+  return null;
+}
+function hrIsDirector(e) {
+  var p = hrPosOf(e); if (!p) return null;
+  for (var i = 0; i < HR_DIRECTORS.length; i++) { if (HR_DIRECTORS[i].pos.test(p)) return HR_DIRECTORS[i]; }
+  return null;
+}
+
+/* ①-р гарын үсгийг зурах хүн мөн үү (албаны дарга; даргагүй бол ахлах) */
+function hrIsLead(e) {
+  if (!e) return false;
+  if (hrIsDirector(e)) return false;                 // захирал ①-д зурахгүй
+  var p = hrPosOf(e), d = String(e.dept || '');
+  for (var i = 0; i < HR_LEAD_EXTRA.length; i++) {
+    if (HR_LEAD_EXTRA[i].dept.test(d) && HR_LEAD_EXTRA[i].pos.test(p)) return true;
+  }
+  try { return ackRoleOf(e) === 'lead'; } catch (err) { return false; }
+}
+/* Захиалга ҮҮСГЭХ эрх — албаны дарга, даргагүй бол ахлах.
+   ИТА-д дарга бүртгэгдээгүй тул хоёр ахлах инженер тус бүр эрхтэй. */
+function hrCanAdd() {
+  if (isAdmin()) return true;
+  return hrIsLead(hrMe());
+}
+/* Цэс хэнд харагдах вэ */
+function hrCanUse() {
+  if (isAdmin() || isDeptHead()) return true;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) return false;
+  if (hrIsHRView(me) || hrIsFin(me) || hrIsDirector(me)) return true;
+  return hrIsLead(me);
+}
+/* Нэг захиалгыг хэн харах вэ */
+function hrCanSee(o) {
+  if (!o) return false;
+  if (isAdmin()) return true;
+  var me = hrMe(); if (!me) return false;
+  if (o.byUid && o.byUid === me.uid) return true;          // өөрийн гаргасан
+  if (hrIsHRView(me) || hrIsFin(me)) return true;          // ХН, Санхүү — бүгд
+  var D = hrIsDirector(me);                                 // захирал — харьяа албадынх
+  if (D && D.depts.test(String(o.dept || ''))) return true;
+  if (hrIsLead(me) && riskSameDept(me.dept, o.dept)) return true;   // албаны дарга — өөрийн алба
+  if (isDeptHead() && SESSION && riskSameDept(SESSION.dept, o.dept)) return true;
+  return false;
+}
+function hrVisible() { return hrAll().filter(hrCanSee); }
+
+/* Тухайн шатыг би зурах ёстой юу */
+function hrMyStep(o) {
+  if (!o || o.status !== 'running') return false;
+  var me = hrMe(); if (!me) return false;
+  var s = HR_STEPS[o.step || 0]; if (!s) return false;
+  if (s.key === 'dir') { var D = hrDirOf(o.dept); return !!(D && D.pos.test(hrPosOf(me))); }
+  if (s.key === 'hr')  return hrCanSignHR(me);
+  if (s.key === 'fin') return hrIsFin(me);
+  return false;
+}
+/* Тухайн шатанд гарын үсэг зурах ёстой хүн (харуулахад) */
+function hrStepWho(o, i) {
+  var s = HR_STEPS[i];
+  if (!s) return null;
+  if (s.key === 'req') return { name: o.byName, pos: o.byPos };
+  if (s.key === 'dir') {
+    var D = hrDirOf(o.dept);
+    if (!D) return { name: '', pos: 'хариуцсан захирал тодорхойгүй', missing: true };
+    var e = hrFindByPos(D.pos);
+    return { name: (e && e.name) || '', pos: D.label, missing: !e };
+  }
+  if (s.key === 'hr')  { var h = hrFindByPos(HR_POS_SIGN_HR); return { name: (h && h.name) || '', pos: 'Хүний нөөцийн ахлах менежер', missing: !h }; }
+  if (s.key === 'fin') { var f = hrFindByPos(HR_POS_FIN); return { name: (f && f.name) || '', pos: 'Санхүүгийн менежер', missing: !f }; }
+  return null;
+}
+
+/* Хугацааны тооцоо — зэрэглэлээс. Цаас дээр байдаг ч хэмждэггүй зүйл. */
+function hrDueAt(o) {
+  if (!o || !o.at) return null;
+  var base = o.acceptedAt ? new Date(o.acceptedAt) : new Date(o.at);
+  if (isNaN(base)) return null;
+  var d = new Date(base.getTime());
+  d.setDate(d.getDate() + hrLevel(o.level).days);
+  return d;
+}
+function hrDaysLeft(o) {
+  if (!o || o.status === 'cancelled') return null;
+  var d = hrDueAt(o); if (!d) return null;
+  return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+function hrPill(txt, color, bold) {
+  return '<span style="background:' + color + '18;color:' + color + ';border-radius:100px;padding:3px 10px;' +
+    'font-size:11.5px;font-weight:' + (bold === false ? '600' : '800') + '">' + txt + '</span>';
+}
+function hrDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso); if (isNaN(d)) return '';
+  var p = function (x) { return (x < 10 ? '0' : '') + x; };
+  return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
+}
+function hrMoney(v) {
+  var n = _f(v); if (!n) return '';
+  return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "'") + '₮';
+}
+
+/* Цэсийг АЛБАН ТУШААЛААР нээнэ.
+   ⚠ Эрхийн 3 түвшин (админ/туслах админ/ажилтан) хүрэлцэхгүй — албаны дарга
+     нар системд «ажилтан» эрхтэй байдаг. Албан тушаал нь ажилтны жагсаалт
+     ирсний ДАРАА л мэдэгддэг тул renderAll бүрд дахин шалгана, эс бөгөөс
+     цэс хэзээ ч гарч ирэхгүй. */
+function hrApplyNav() {
+  var nav = document.querySelector('.nav-item[data-page="hrorder"]');
+  if (!nav) return;
+  var on = false; try { on = hrCanUse(); } catch (e) {}
+  nav.style.display = on ? '' : 'none';
+  /* ⚠⚠ ЭЦЭГ ХЭСГИЙГ НЬ БАС НЭЭНЭ. applyRole() нь ажилтны хувьд «доторх бүх
+     зүйл нь нуугдсан» nav-section-ыг бүхэлд нь нууна. Манай цэс анхнаасаа
+     нуугдмал (display:none) тул тэр шалгуурт УРУУ орж, хэсэг нь хаагдана.
+     applyRole нь renderAll-аас ӨМНӨ ажилладаг тул зөвхөн холбоосыг нээхэд
+     хангалтгүй — хэсэг нь хаалттай хэвээр үлдэж, цэс хэзээ ч гарахгүй. */
+  var sec = nav.closest ? nav.closest('.nav-section') : null;
+  if (sec) sec.style.display = on ? '' : 'none';
+  /* Ажилтны жагсаалт хожуу ирвэл албан тушаал мэдэгдэхгүй тул НЭГ УДАА дахин
+     шалгана. Мөнхийн давталт үүсгэхгүйн тулд туг хэзээ ч буцаахгүй. */
+  if (!on && !hrApplyNav._retried) {
+    var few = !DB || !((DB.employees || []).length);
+    if (few) { hrApplyNav._retried = true; setTimeout(hrApplyNav, 2500); }
+  }
+}
+
+var HR_TAB = 'list';
+var HR_FILTER = { dept: '', status: '' };
+
+function renderHrOrders() {
+  var sec = pageEl('hrorder'); if (!sec) return;
+  hrApplyNav();
+  var list = hrVisible();
+
+  var shown = list.filter(function (o) {
+    if (HR_FILTER.dept && !riskSameDept(HR_FILTER.dept, o.dept)) return false;
+    if (HR_FILTER.status && o.status !== HR_FILTER.status) return false;
+    return true;
+  }).sort(function (a, b) {
+    var open = { running: 0, returned: 0 };
+    var ao = open[a.status] === undefined ? 1 : 0, bo = open[b.status] === undefined ? 1 : 0;
+    if (ao !== bo) return ao - bo;                                   // дууссан нь доош
+    var al = hrDaysLeft(a), bl = hrDaysLeft(b);
+    if (al != null && bl != null && al !== bl) return al - bl;       // хугацаа дуусах дөхсөн нь дээш
+    return String(b.at || '').localeCompare(String(a.at || ''));
+  });
+
+  var nRun  = list.filter(function (o) { return o.status === 'running'; }).length;
+  var nDone = list.filter(function (o) { return o.status === 'done'; }).length;
+  var nBack = list.filter(function (o) { return o.status === 'returned'; }).length;
+  var nLate = list.filter(function (o) { var d = hrDaysLeft(o); return o.status === 'running' && d != null && d < 0; }).length;
+  var nMine = list.filter(hrMyStep).length;
+  var heads = list.reduce(function (s, o) { return s + (_f(o.headcount) || 1); }, 0);
+
+  var badge = document.getElementById('hrBadge');
+  if (badge) { badge.textContent = nMine; badge.style.display = nMine ? 'inline-block' : 'none'; }
+
+  var html = '<div class="page-header"><div><h1>Хүний нөөцийн захиалгын хуудас</h1>' +
+    '<p class="page-subtitle">Албаны дарга захиалга үүсгэнэ → алба хариуцсан захирал → Хүний нөөц → Санхүү</p></div>' +
+    (hrCanAdd() ? '<div class="page-actions"><button class="btn btn-primary" id="hrAdd"><i class="ti ti-plus"></i> Шинэ захиалга</button></div>' : '') +
+    '</div>';
+
+  if (nMine) {
+    html += '<div class="card" style="padding:12px 15px;margin-bottom:12px;border-left:3px solid #2563EB;background:#EFF6FF">' +
+      '<b style="color:#1D4ED8">Таны гарын үсэг хүлээж буй ' + nMine + ' захиалга байна.</b></div>';
+  }
+
+  html += '<div style="display:flex;gap:6px;border-bottom:1.5px solid #E2E8F0;margin-bottom:16px">' +
+    [['list', 'ti-list-details', 'Жагсаалт'], ['stats', 'ti-chart-histogram', 'Нэгтгэл']].map(function (t) {
+      var on = HR_TAB === t[0];
+      return '<button data-hr-tab="' + t[0] + '" style="cursor:pointer;font-family:inherit;background:none;border:none;' +
+        'border-bottom:2.5px solid ' + (on ? '#4F46E5' : 'transparent') + ';color:' + (on ? '#4F46E5' : '#64748B') +
+        ';font-size:13.5px;font-weight:' + (on ? '800' : '600') + ';padding:9px 15px;margin-bottom:-1.5px">' +
+        '<i class="ti ' + t[1] + '"></i> ' + t[2] + '</button>';
+    }).join('') + '</div>';
+
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' +
+    statCard('Нийт захиалга', list.length, 'ti-file-text', '#3730A3') +
+    statCard('Хүсэлт хийсэн орон тоо', heads, 'ti-users-plus', '#0891B2') +
+    statCard('Явагдаж буй', nRun, 'ti-progress', '#2563EB') +
+    statCard('Хугацаа хэтэрсэн', nLate, 'ti-alarm', '#DC2626') +
+    statCard('Батлагдсан', nDone, 'ti-circle-check', '#16A34A') +
+    (nBack ? statCard('Буцаагдсан', nBack, 'ti-arrow-back-up', '#DC2626') : '') +
+    '</div>';
+
+  if (HR_TAB === 'stats') {
+    sec.innerHTML = html + hrStatsHTML(list);
+    hrWire(sec);
+    return;
+  }
+
+  /* Албадаар задлах — захирал, ХН, админд */
+  var dd = {};
+  list.forEach(function (o) { if (o.dept) dd[o.dept] = (dd[o.dept] || 0) + 1; });
+  var dNames = Object.keys(dd);
+  if (dNames.length > 1) {
+    var dBtn = function (name, label, n, on) {
+      return '<button data-hr-dept="' + esc(name) + '" style="cursor:pointer;font-family:inherit;' +
+        'border:1.5px solid ' + (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+        ';color:' + (on ? '#fff' : '#334155') + ';border-radius:11px;padding:8px 13px;text-align:left;' +
+        'font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + esc(label) +
+        '<span style="display:block;font-size:16px;font-weight:900;line-height:1.15;font-family:\'Bricolage Grotesque\',sans-serif">' + n + '</span></button>';
+    };
+    html += '<div class="card" style="padding:13px 15px;margin-bottom:12px">' +
+      '<div style="font-size:13.5px;font-weight:800;color:#1E293B;margin-bottom:9px">Албадаар харах</div>' +
+      '<div style="display:flex;gap:7px;flex-wrap:wrap">' +
+      dBtn('', 'Бүгд', list.length, !HR_FILTER.dept) +
+      dNames.sort().map(function (n) {
+        return dBtn(n, riskDeptShort(n), dd[n], HR_FILTER.dept === n);
+      }).join('') + '</div></div>';
+  }
+
+  html += shown.length ? shown.map(hrCard).join('')
+    : emptyBox(list.length ? 'Энэ шүүлтэд тохирох захиалга алга'
+      : 'Одоогоор хүний нөөцийн захиалга бүртгэгдээгүй байна');
+
+  sec.innerHTML = html;
+  hrWire(sec);
+}
+
+function hrWire(sec) {
+  if (sec._hrWired) return;
+  sec._hrWired = true;
+  sec.addEventListener('click', function (ev) {
+    if (ev.target.closest('#hrAdd')) { actionAddHrOrder(); return; }
+    var tb = ev.target.closest('[data-hr-tab]');
+    if (tb) { HR_TAB = tb.getAttribute('data-hr-tab'); renderHrOrders(); return; }
+    var fd = ev.target.closest('[data-hr-dept]');
+    if (fd) { HR_FILTER.dept = fd.getAttribute('data-hr-dept'); renderHrOrders(); return; }
+    var op = ev.target.closest('[data-hr-open]');
+    if (op) { hrDetail(op.getAttribute('data-hr-open')); return; }
+  });
+}
+
+function hrCard(o) {
+  var S = hrSt(o), L = hrLevel(o.level);
+  var left = hrDaysLeft(o);
+  var late = o.status === 'running' && left != null && left < 0;
+  var step = HR_STEPS[o.step || 0];
+  var who = hrStepWho(o, o.step || 0);
+
+  return '<div data-hr-open="' + esc(o.id) + '" style="background:#fff;border:1px solid ' + (late ? '#FECACA' : '#EEF1F4') +
+    ';border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:flex-start;gap:12px">' +
+    '<div style="width:38px;height:38px;border-radius:10px;background:' + L.color + '15;color:' + L.color +
+    ';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:19px"><i class="ti ti-user-plus"></i></div>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px">' +
+        '<span style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:12px;font-weight:800;color:#94A3B8">' + esc(o.id) + '</span>' +
+        '<span style="font-weight:700;font-size:14.5px;color:#1E293B">' + esc(o.posName || '') + '</span>' +
+        '<span style="font-size:12.5px;color:#64748B">' + (_f(o.headcount) || 1) + ' орон тоо</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px">' +
+        hrPill(esc(L.label) + ' · ' + L.days + ' хоног', L.color) +
+        hrPill('<i class="ti ' + S.icon + '"></i> ' + esc(S.label), S.color) +
+        (o.status === 'running' && step ? hrPill('⏳ ' + esc(step.label) + (who && who.name ? ' · ' + esc(who.name) : ''), '#2563EB', false) : '') +
+        (late ? hrPill('⏰ ' + Math.abs(left) + ' хоног хэтэрсэн', '#DC2626')
+              : (o.status === 'running' && left != null ? hrPill('үлдсэн ' + left + ' хоног', left <= 5 ? '#D97706' : '#64748B', false) : '')) +
+      '</div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
+        '<span><i class="ti ti-building"></i> ' + esc(o.dept || '') + '</span>' +
+        '<span><i class="ti ti-user"></i> ' + esc(o.byName || '') + '</span>' +
+        (o.salary ? '<span><i class="ti ti-coin"></i> ' + esc(hrMoney(o.salary)) + '</span>' : '') +
+        '<span><i class="ti ti-calendar-plus"></i> ' + esc(hrDate(o.at)) + '</span>' +
+      '</div>' +
+      /* 4 гарын үсгийн явц */
+      '<div style="display:flex;gap:4px;margin-top:9px">' +
+      HR_STEPS.map(function (s, i) {
+        var done = (o.steps || [])[i] && (o.steps || [])[i].at;
+        var cur = o.status === 'running' && i === (o.step || 0);
+        return '<div title="' + esc(s.label) + '" style="flex:1;height:5px;border-radius:3px;background:' +
+          (done ? '#16A34A' : cur ? '#2563EB' : '#E2E8F0') + '"></div>';
+      }).join('') + '</div>' +
+    '</div></div>';
+}
+
+/* ══ ШИНЭ ЗАХИАЛГА ══
+   Цаасан маягтын 1-3 дугаар хэсгийг захиалга гаргагч бөглөнө.
+   4-р хэсэг (баталгаажилт) нь гарын үсгээр аяндаа бөглөгдөнө. */
+function actionAddHrOrder() {
+  var me = hrMe();
+  if (!me) { toast('Таны бүртгэл олдсонгүй. Админд хандана уу.', 'error'); return; }
+  var myDept = riskCanonDept(me.dept) || me.dept || '';
+  if (!myDept) { toast('Таны алба тодорхойгүй байна.', 'error'); return; }
+
+  var D = hrDirOf(myDept);
+  if (!D) {
+    toast(myDept + ' нь хүний нөөцийн захиалга гаргах бүртгэлд ороогүй байна.', 'error');
+    return;
+  }
+  var dirEmp = hrFindByPos(D.pos);
+
+  var pick = { level: 'engiin', reason: '', tur: '', salKind: 'togtmol', unaa: 'ugui', utas: 'olgohgui', disab: '' };
+  var inner = [];
+  var node = elc('div');
+
+  function btnRow(items, cur, attr) {
+    return items.map(function (x) {
+      var on = cur === x.key;
+      var c = x.color || '#4F46E5';
+      return '<button type="button" ' + attr + '="' + x.key + '" style="flex:1;min-width:110px;cursor:pointer;font-family:inherit;' +
+        'border:2px solid ' + (on ? c : '#E2E8F0') + ';background:' + (on ? c + '12' : '#fff') +
+        ';border-radius:11px;padding:9px 10px;text-align:center">' +
+        '<div style="font-size:13px;font-weight:800;color:' + (on ? c : '#475569') + '">' + esc(x.label) + '</div>' +
+        (x.days ? '<div style="font-size:10.5px;color:#94A3B8;margin-top:1px">' + x.days + ' хоног</div>' : '') +
+        '</button>';
+    }).join('');
+  }
+  function reasonRow() {
+    return HR_REASONS.map(function (x) {
+      var on = pick.reason === x.key;
+      return '<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 11px;border:1.5px solid ' +
+        (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') + ';border-radius:10px;margin-bottom:6px;cursor:pointer">' +
+        '<input type="radio" name="hrReason" data-hr-reason="' + x.key + '"' + (on ? ' checked' : '') + ' style="margin-top:2px;flex-shrink:0">' +
+        '<span style="font-size:12.5px;color:#334155;line-height:1.45">' + esc(x.label) + '</span></label>';
+    }).join('') +
+    (pick.reason === 'tur'
+      ? '<div style="margin:2px 0 8px 26px">' + HR_TUR.map(function (x) {
+          var on = pick.tur === x.key;
+          return '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1.5px solid ' +
+            (on ? '#4F46E5' : '#E2E8F0') + ';border-radius:9px;margin-bottom:5px;cursor:pointer">' +
+            '<input type="radio" name="hrTur" data-hr-tur="' + x.key + '"' + (on ? ' checked' : '') + '>' +
+            '<span style="font-size:12px;color:#475569">' + esc(x.label) + '</span></label>';
+        }).join('') + '</div>'
+      : '') +
+    (pick.reason === 'shine'
+      ? '<div class="form-group" style="margin-left:26px"><label>Шинээр үүсгэж буй орон тооны хэрэгцээг тодорхойлно уу <span style="color:#DC2626">*</span></label>' +
+        '<textarea id="hrNewNeed" rows="2" placeholder="Яагаад энэ орон тоо шаардлагатай вэ"></textarea></div>'
+      : '');
+  }
+  function innerRows() {
+    if (!inner.length) return '<div style="font-size:12px;color:#94A3B8;padding:6px 0">Дотоод нэр дэвшигч санал болгоогүй</div>';
+    return inner.map(function (x, i) {
+      return '<div style="display:flex;gap:8px;align-items:center;padding:7px 10px;background:#F8FAFC;border-radius:9px;margin-bottom:5px">' +
+        '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(x.name) + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8">' + esc(x.curPos) + ' · ' + esc(x.dept) + ' · ' + x.years + ' жил</div></div>' +
+        '<button type="button" data-hr-innerdel="' + i + '" class="icon-btn-sm"><i class="ti ti-x"></i></button></div>';
+    }).join('');
+  }
+
+  node.innerHTML =
+    '<div style="font-size:12.5px;color:#64748B;margin-bottom:6px">' +
+      '<b>' + esc(me.name) + '</b> · ' + esc(hrPosOf(me)) + ' · ' + esc(myDept) + ' нэрээр бүртгэгдэнэ</div>' +
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:12.5px">' +
+      '<i class="ti ti-arrow-right" style="color:#4F46E5"></i> Батлах дараалал: <b>' + esc(D.label) + '</b>' +
+      (dirEmp ? ' (' + esc(dirEmp.name) + ')' : ' <span style="color:#DC2626">— бүртгэлээс олдсонгүй</span>') +
+      ' → Хүний нөөц → Санхүү</div>' +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:4px 0 8px">1. Ажилтан авах захиалга</div>' +
+
+    '<div class="form-row">' +
+      '<div class="form-group flex-grow"><label>Шинээр авах албан тушаалын нэр <span style="color:#DC2626">*</span></label>' +
+      '<input type="text" id="hrPos" placeholder="Жишээ: Хангамжийн менежер" maxlength="120"></div>' +
+      '<div class="form-group" style="max-width:130px"><label>Орон тоо</label>' +
+      '<input type="number" id="hrCnt" value="1" min="1" max="99"></div>' +
+    '</div>' +
+
+    '<div class="form-group"><label>Захиалгын зэрэглэл</label>' +
+    '<div id="hrLv" style="display:flex;gap:8px;flex-wrap:wrap">' + btnRow(HR_LEVELS, pick.level, 'data-hr-lv') + '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">Сонгосон хугацаанаас хойш үлдсэн хоног системд тоологдож, хэтэрвэл улаанаар харагдана</div></div>' +
+
+    '<div class="form-group"><label>Ажилтан авах болсон шалтгаан <span style="color:#DC2626">*</span></label>' +
+    '<div id="hrRs">' + reasonRow() + '</div></div>' +
+
+    '<div class="form-group"><label>Ерөнхий шаардлага</label>' +
+    '<textarea id="hrGen" rows="3" placeholder="Боловсрол, туршлага, ур чадвар"></textarea></div>' +
+
+    '<div class="form-group"><label>Тусгай шаардлага</label>' +
+    '<textarea id="hrSpec" rows="2" placeholder="Тухайн ажлын байранд тавигдах онцгой шаардлага"></textarea></div>' +
+
+    '<div class="form-group"><label>Хөгжлийн бэрхшээлтэй ажилтан ажиллаж болох эсэх</label>' +
+    '<div id="hrDis" style="display:flex;gap:8px">' +
+      btnRow([{ key: 'yes', label: 'Тийм' }, { key: 'no', label: 'Үгүй' }], pick.disab, 'data-hr-dis') +
+    '</div></div>' +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:18px 0 8px;padding-top:12px;border-top:1px solid #F1F5F9">2. Цалин, хангамж</div>' +
+
+    '<div class="form-row">' +
+      '<div class="form-group flex-grow"><label>Цалингийн хэмжээ (₮)</label>' +
+      '<input type="number" id="hrSal" placeholder="Жишээ: 2500000"></div>' +
+      '<div class="form-group flex-grow"><label>Ажлын цагийн хуваарь</label>' +
+      '<input type="text" id="hrHours" placeholder="Жишээ: 09:00-18:00, 5 өдөр"></div>' +
+    '</div>' +
+
+    '<div class="form-group"><label>Цалингийн нөхцөл</label>' +
+    '<div id="hrSk" style="display:flex;gap:8px;flex-wrap:wrap">' + btnRow(HR_SALARY_KIND, pick.salKind, 'data-hr-sk') + '</div></div>' +
+
+    '<div class="form-group"><label>Унаа</label>' +
+    '<div id="hrUn" style="display:flex;gap:8px;flex-wrap:wrap">' + btnRow(HR_UNAA, pick.unaa, 'data-hr-un') + '</div></div>' +
+
+    '<div class="form-group"><label>Утас</label>' +
+    '<div id="hrUt" style="display:flex;gap:8px;flex-wrap:wrap">' + btnRow(HR_UTAS, pick.utas, 'data-hr-ut') + '</div></div>' +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:18px 0 8px;padding-top:12px;border-top:1px solid #F1F5F9">3. Дотоод эх үүсвэрээс томилох санал</div>' +
+    '<div style="font-size:12px;color:#94A3B8;margin-bottom:8px">Ажилтны бүртгэлээс сонгоход мэргэжил, одоогийн албан тушаал, ажилласан жил өөрөө бөглөгдөнө</div>' +
+    '<div class="form-row" style="align-items:flex-end">' +
+      '<div class="form-group flex-grow" style="margin-bottom:0"><label>Ажилтан хайх</label>' +
+      '<input type="text" id="hrInnerQ" placeholder="Нэрээр хайна уу" autocomplete="off"></div>' +
+    '</div>' +
+    '<div id="hrInnerHits" style="margin:6px 0"></div>' +
+    '<div id="hrInnerList" style="margin-bottom:6px">' + innerRows() + '</div>' +
+
+    '<div id="hrErr" style="font-size:12.5px;color:#DC2626;margin:10px 0 8px"></div>' +
+    '<button class="btn btn-primary" id="hrSave" style="width:100%"><i class="ti ti-send"></i> Захиалга илгээх</button>';
+
+  var q = function (s) { return node.querySelector(s); };
+  var g = function (id) { var el = q('#' + id); return el ? String(el.value || '').trim() : ''; };
+
+  q('#hrLv').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-lv]'); if (!b) return;
+    pick.level = b.getAttribute('data-hr-lv');
+    q('#hrLv').innerHTML = btnRow(HR_LEVELS, pick.level, 'data-hr-lv');
+  });
+  q('#hrSk').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-sk]'); if (!b) return;
+    pick.salKind = b.getAttribute('data-hr-sk');
+    q('#hrSk').innerHTML = btnRow(HR_SALARY_KIND, pick.salKind, 'data-hr-sk');
+  });
+  q('#hrUn').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-un]'); if (!b) return;
+    pick.unaa = b.getAttribute('data-hr-un');
+    q('#hrUn').innerHTML = btnRow(HR_UNAA, pick.unaa, 'data-hr-un');
+  });
+  q('#hrUt').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-ut]'); if (!b) return;
+    pick.utas = b.getAttribute('data-hr-ut');
+    q('#hrUt').innerHTML = btnRow(HR_UTAS, pick.utas, 'data-hr-ut');
+  });
+  q('#hrDis').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-dis]'); if (!b) return;
+    pick.disab = b.getAttribute('data-hr-dis');
+    q('#hrDis').innerHTML = btnRow([{ key: 'yes', label: 'Тийм' }, { key: 'no', label: 'Үгүй' }], pick.disab, 'data-hr-dis');
+  });
+  q('#hrRs').addEventListener('click', function (ev) {
+    var r = ev.target.closest('[data-hr-reason]');
+    if (r) {
+      var keep = g('hrNewNeed');
+      pick.reason = r.getAttribute('data-hr-reason');
+      if (pick.reason !== 'tur') pick.tur = '';
+      q('#hrRs').innerHTML = reasonRow();
+      var nn = q('#hrNewNeed'); if (nn && keep) nn.value = keep;
+      return;
+    }
+    var t = ev.target.closest('[data-hr-tur]');
+    if (t) { pick.tur = t.getAttribute('data-hr-tur'); q('#hrRs').innerHTML = reasonRow(); }
+  });
+
+  /* Дотоод нэр дэвшигч — бүртгэлээс хайж сонгоно */
+  q('#hrInnerQ').addEventListener('input', function () {
+    var s = String(this.value || '').trim().toLowerCase();
+    var box = q('#hrInnerHits');
+    if (s.length < 2) { box.innerHTML = ''; return; }
+    var hits = (empAll() || []).filter(function (e) {
+      return String(e.name || '').toLowerCase().indexOf(s) > -1;
+    }).slice(0, 6);
+    box.innerHTML = hits.length ? hits.map(function (e) {
+      return '<div data-hr-pick="' + esc(e.uid || '') + '" style="padding:7px 11px;border:1px solid #E2E8F0;border-radius:9px;' +
+        'margin-bottom:4px;cursor:pointer;font-size:12.5px"><b>' + esc(e.name) + '</b> ' +
+        '<span style="color:#94A3B8">· ' + esc(hrPosOf(e)) + ' · ' + esc(e.dept || '') + '</span></div>';
+    }).join('') : '<div style="font-size:12px;color:#94A3B8">олдсонгүй</div>';
+  });
+  q('#hrInnerHits').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-pick]'); if (!b) return;
+    var uid = b.getAttribute('data-hr-pick');
+    var e = (empAll() || []).filter(function (x) { return x.uid === uid; })[0];
+    if (!e) return;
+    if (inner.some(function (x) { return x.uid === uid; })) return;
+    inner.push({ uid: uid, name: e.name || '', curPos: hrPosOf(e), dept: e.dept || '',
+      years: _f(e.years) || _f(e.workYears) || 0, prof: e.profession || '' });
+    q('#hrInnerList').innerHTML = innerRows();
+    q('#hrInnerHits').innerHTML = '';
+    q('#hrInnerQ').value = '';
+  });
+  q('#hrInnerList').addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hr-innerdel]'); if (!b) return;
+    inner.splice(parseInt(b.getAttribute('data-hr-innerdel'), 10), 1);
+    q('#hrInnerList').innerHTML = innerRows();
+  });
+
+  q('#hrSave').addEventListener('click', function () {
+    var err = q('#hrErr');
+    var posName = g('hrPos');
+    if (!posName) { err.textContent = 'Албан тушаалын нэрийг бичнэ үү.'; return; }
+    if (!pick.reason) { err.textContent = 'Ажилтан авах болсон шалтгааныг сонгоно уу.'; return; }
+    if (pick.reason === 'tur' && !pick.tur) { err.textContent = 'Түр орон тооны төрлийг сонгоно уу.'; return; }
+    if (pick.reason === 'shine' && !g('hrNewNeed')) { err.textContent = 'Шинэ орон тооны хэрэгцээг тодорхойлно уу.'; return; }
+
+    var n = hrNextNo(), now = new Date().toISOString();
+    var rec = {
+      id: n.id, year: n.year, no: n.no, at: now,
+      byUid: me.uid, byName: me.name || '', byPos: hrPosOf(me), dept: myDept,
+      /* 1 */
+      posName: posName, headcount: Math.max(1, parseInt(g('hrCnt'), 10) || 1),
+      level: pick.level, reason: pick.reason, tur: pick.tur, newNeed: g('hrNewNeed'),
+      reqGeneral: g('hrGen'), reqSpecial: g('hrSpec'), disability: pick.disab,
+      acceptedAt: '',
+      /* 2 */
+      salary: _f(g('hrSal')), salaryKind: pick.salKind, workHours: g('hrHours'),
+      unaa: pick.unaa, utas: pick.utas,
+      /* 3 */
+      inner: inner.slice(),
+      /* 4 — эхний гарын үсэг нь захиалга гаргасан хүн өөрөө */
+      steps: HR_STEPS.map(function (s, i) {
+        return i === 0
+          ? { key: s.key, uid: me.uid, name: me.name || '', pos: hrPosOf(me), at: now, note: '' }
+          : { key: s.key, uid: '', name: '', pos: '', at: '', note: '' };
+      }),
+      step: 1, status: 'running',
+      log: [{ at: now, uid: me.uid, name: me.name || '', what: 'Захиалга үүсгэв' }]
+    };
+    hrAll().push(rec);
+    saveDB();
+    closeModal();
+    renderHrOrders();
+    toast(rec.id + ' бүртгэгдлээ' + (dirEmp ? ' — ' + dirEmp.name + ' рүү илгээгдсэн' : ''), 'success');
+  });
+
+  buildModal('Хүний нөөцийн захиалгын хуудас', node, { width: '660px' });
+}
+
+/* ══ ДЭЛГЭРЭНГҮЙ — 4 гарын үсэг ══ */
+function hrDetail(id) {
+  var o = hrAll().filter(function (x) { return x.id === id; })[0];
+  if (!o) return;
+  var me = hrMe();
+  var L = hrLevel(o.level), S = hrSt(o), left = hrDaysLeft(o);
+  var canSign = hrMyStep(o);
+  var canCancel = isAdmin() || (me && o.byUid === me.uid && o.status === 'running');
+
+  var row = function (lbl, val) {
+    if (!val) return '';
+    return '<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid #F5F7FA;align-items:baseline">' +
+      '<span style="flex:0 0 168px;font-size:12px;color:#94A3B8">' + esc(lbl) + '</span>' +
+      '<span style="flex:1;font-size:13px;color:#1E293B;white-space:pre-wrap">' + esc(val) + '</span></div>';
+  };
+  var lookup = function (arr, k) { var x = arr.filter(function (y) { return y.key === k; })[0]; return x ? x.label : ''; };
+
+  var html =
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">' +
+      hrPill(esc(L.label) + ' · ' + L.days + ' хоног', L.color) +
+      hrPill('<i class="ti ' + S.icon + '"></i> ' + esc(S.label), S.color) +
+      (o.status === 'running' && left != null
+        ? hrPill(left < 0 ? '⏰ ' + Math.abs(left) + ' хоног хэтэрсэн' : 'үлдсэн ' + left + ' хоног', left < 0 ? '#DC2626' : '#64748B', false)
+        : '') +
+    '</div>' +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:6px 0 6px">1. Ажилтан авах захиалга</div>' +
+    row('Албан тушаал', o.posName) +
+    row('Орон тоо', String(_f(o.headcount) || 1)) +
+    row('Захиалга гаргасан алба', o.dept) +
+    row('Захиалга өгсөн огноо', hrDate(o.at)) +
+    row('Захиалга хүлээж авсан', hrDate(o.acceptedAt)) +
+    row('Шалтгаан', lookup(HR_REASONS, o.reason) + (o.tur ? ' — ' + lookup(HR_TUR, o.tur) : '')) +
+    row('Шинэ орон тооны хэрэгцээ', o.newNeed) +
+    row('Ерөнхий шаардлага', o.reqGeneral) +
+    row('Тусгай шаардлага', o.reqSpecial) +
+    row('Хөгжлийн бэрхшээлтэй ажиллаж болох', o.disability === 'yes' ? 'Тийм' : o.disability === 'no' ? 'Үгүй' : '') +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 6px">2. Цалин, хангамж</div>' +
+    row('Цалингийн хэмжээ', hrMoney(o.salary)) +
+    row('Цалингийн нөхцөл', lookup(HR_SALARY_KIND, o.salaryKind)) +
+    row('Ажлын цагийн хуваарь', o.workHours) +
+    row('Унаа', lookup(HR_UNAA, o.unaa)) +
+    row('Утас', lookup(HR_UTAS, o.utas)) +
+
+    ((o.inner || []).length
+      ? '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 6px">3. Дотоод эх үүсвэрээс томилох санал</div>' +
+        o.inner.map(function (x) {
+          return '<div style="padding:7px 10px;background:#F8FAFC;border-radius:9px;margin-bottom:5px">' +
+            '<div style="font-size:13px;font-weight:600">' + esc(x.name) + '</div>' +
+            '<div style="font-size:11.5px;color:#94A3B8">' + esc(x.curPos) + ' · ' + esc(x.dept) +
+            (x.years ? ' · ' + x.years + ' жил' : '') + '</div></div>';
+        }).join('')
+      : '') +
+
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 8px">4. Баталгаажилт</div>' +
+    HR_STEPS.map(function (s, i) {
+      var st = (o.steps || [])[i] || {};
+      var who = hrStepWho(o, i);
+      var done = !!st.at;
+      var cur = o.status === 'running' && i === (o.step || 0);
+      var col = done ? '#16A34A' : cur ? '#2563EB' : '#CBD5E1';
+      return '<div style="display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border:1.5px solid ' +
+        (cur ? '#BFDBFE' : '#EEF1F4') + ';background:' + (cur ? '#EFF6FF' : '#fff') + ';border-radius:10px;margin-bottom:6px">' +
+        '<div style="width:26px;height:26px;border-radius:50%;background:' + col + ';color:#fff;display:flex;' +
+        'align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0">' +
+        (done ? '<i class="ti ti-check"></i>' : (i + 1)) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:12.5px;font-weight:700;color:#1E293B">' + esc(s.label) + '</div>' +
+          '<div style="font-size:12px;color:#64748B">' +
+            (done ? esc(st.name) + ' · ' + esc(st.pos) : (who && who.missing
+              ? '<span style="color:#DC2626">' + esc(who.pos) + ' — бүртгэлээс олдсонгүй</span>'
+              : esc((who && who.name) || '') + (who && who.pos ? ' · ' + esc(who.pos) : ''))) +
+          '</div>' +
+          (done ? '<div style="font-size:11.5px;color:#16A34A;margin-top:2px">✓ ' + esc(hrDate(st.at)) + ' — цахимаар баталсан</div>' : '') +
+          (st.note ? '<div style="font-size:12px;color:#475569;margin-top:3px;white-space:pre-wrap">' + esc(st.note) + '</div>' : '') +
+        '</div></div>';
+    }).join('') +
+
+    ((o.log || []).length
+      ? '<details style="margin-top:12px"><summary style="cursor:pointer;font-size:12.5px;color:#64748B">Түүх (' + o.log.length + ')</summary>' +
+        '<div style="padding-top:8px">' + o.log.map(function (l) {
+          return '<div style="font-size:12px;color:#64748B;padding:3px 0">' + esc(hrDate(l.at)) + ' · ' +
+            esc(l.name) + ' — ' + esc(l.what) + '</div>';
+        }).join('') + '</div></details>'
+      : '');
+
+  var node = elc('div', 'modal-info', html);
+
+  if (canSign || canCancel) {
+    var act = elc('div');
+    act.style.cssText = 'margin-top:14px;padding-top:12px;border-top:1px solid #F1F5F9';
+    act.innerHTML =
+      (canSign
+        ? '<div class="form-group"><label>Нэмэлт санал (заавал биш)</label>' +
+          '<textarea id="hrNote" rows="2" placeholder="Тайлбар, нөхцөл"></textarea></div>' +
+          (HR_STEPS[o.step || 0].key === 'hr' && !o.acceptedAt
+            ? '<div class="form-group"><label>Захиалга хүлээж авсан огноо</label><input type="date" id="hrAccept"></div>'
+            : '') +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button class="btn btn-primary" id="hrOk" style="flex:1"><i class="ti ti-signature"></i> Зөвшөөрч гарын үсэг зурах</button>' +
+          '<button class="btn btn-secondary" id="hrBack"><i class="ti ti-arrow-back-up"></i> Буцаах</button></div>'
+        : '') +
+      (canCancel ? '<button class="btn btn-secondary" id="hrCancel" style="width:100%;margin-top:8px;color:#DC2626">Захиалгыг цуцлах</button>' : '');
+    node.appendChild(act);
+
+    act.addEventListener('click', function (ev) {
+      var note = function () { var t = act.querySelector('#hrNote'); return t ? String(t.value || '').trim() : ''; };
+      if (ev.target.closest('#hrOk')) {
+        var i = o.step || 0;
+        o.steps[i] = { key: HR_STEPS[i].key, uid: me.uid, name: me.name || '', pos: hrPosOf(me),
+          at: new Date().toISOString(), note: note() };
+        var ac = act.querySelector('#hrAccept');
+        if (ac && ac.value) o.acceptedAt = ac.value;
+        o.log.push({ at: new Date().toISOString(), uid: me.uid, name: me.name || '',
+          what: HR_STEPS[i].label + ' — зөвшөөрөв' });
+        if (i + 1 >= HR_STEPS.length) { o.status = 'done'; o.step = HR_STEPS.length; }
+        else o.step = i + 1;
+        saveDB(); closeModal(); renderHrOrders();
+        toast(o.status === 'done' ? o.id + ' бүрэн батлагдлаа' : 'Гарын үсэг зурагдлаа', 'success');
+        return;
+      }
+      if (ev.target.closest('#hrBack')) {
+        var n2 = note();
+        if (!n2) { toast('Буцаах шалтгаанаа бичнэ үү', 'warn'); return; }
+        o.status = 'returned';
+        o.log.push({ at: new Date().toISOString(), uid: me.uid, name: me.name || '', what: 'Буцаав — ' + n2 });
+        saveDB(); closeModal(); renderHrOrders();
+        toast('Захиалга буцаагдлаа', 'warn');
+        return;
+      }
+      if (ev.target.closest('#hrCancel')) {
+        if (!confirm('Энэ захиалгыг цуцлах уу?')) return;
+        o.status = 'cancelled';
+        o.log.push({ at: new Date().toISOString(), uid: (me && me.uid) || '', name: (me && me.name) || '', what: 'Цуцлав' });
+        saveDB(); closeModal(); renderHrOrders();
+        toast('Захиалга цуцлагдлаа', 'warn');
+      }
+    });
+  }
+
+  buildModal(o.id + ' · ' + (o.posName || ''), node, { width: '640px' });
+}
+
+/* ══ НЭГТГЭЛ — албаны даргад өөрийн алба, захиралд харьяа албадын задаргаа ══ */
+function hrStatsHTML(list) {
+  if (!list.length) return emptyBox('Тоо мэдээлэл гарахад захиалга шаардлагатай');
+
+  var byDept = {};
+  list.forEach(function (o) {
+    var d = o.dept || '—';
+    byDept[d] = byDept[d] || { n: 0, heads: 0, run: 0, done: 0, late: 0 };
+    var x = byDept[d];
+    x.n++; x.heads += (_f(o.headcount) || 1);
+    if (o.status === 'running') x.run++;
+    if (o.status === 'done') x.done++;
+    var l = hrDaysLeft(o);
+    if (o.status === 'running' && l != null && l < 0) x.late++;
+  });
+
+  var html = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:13px 16px;border-bottom:1px solid #F1F5F9;font-size:13.5px;font-weight:800">Албадаар</div>' +
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+    '<thead><tr style="background:#F8FAFC;color:#64748B;font-size:11.5px">' +
+    ['Алба', 'Захиалга', 'Орон тоо', 'Явагдаж буй', 'Батлагдсан', 'Хугацаа хэтэрсэн'].map(function (h, i) {
+      return '<th style="padding:9px 12px;text-align:' + (i ? 'center' : 'left') + ';font-weight:600;white-space:nowrap">' + h + '</th>';
+    }).join('') + '</tr></thead><tbody>' +
+    Object.keys(byDept).sort(function (a, b) { return byDept[b].n - byDept[a].n; }).map(function (d) {
+      var x = byDept[d];
+      return '<tr style="border-top:1px solid #F1F5F9">' +
+        '<td style="padding:9px 12px;font-weight:600">' + esc(d) + '</td>' +
+        '<td style="padding:9px 12px;text-align:center">' + x.n + '</td>' +
+        '<td style="padding:9px 12px;text-align:center">' + x.heads + '</td>' +
+        '<td style="padding:9px 12px;text-align:center;color:#2563EB">' + x.run + '</td>' +
+        '<td style="padding:9px 12px;text-align:center;color:#16A34A">' + x.done + '</td>' +
+        '<td style="padding:9px 12px;text-align:center;color:' + (x.late ? '#DC2626' : '#CBD5E1') + ';font-weight:' + (x.late ? '800' : '400') + '">' + (x.late || '—') + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody></table></div></div>';
+
+  /* Аль шатанд хэдэн захиалга гацсан бэ — цаасан дээр огт харагддаггүй мэдээлэл */
+  var byStep = HR_STEPS.map(function (s, i) {
+    return { label: s.label, n: list.filter(function (o) { return o.status === 'running' && (o.step || 0) === i; }).length };
+  });
+  html += '<div class="card" style="padding:14px 16px;margin-bottom:14px">' +
+    '<div style="font-size:13.5px;font-weight:800;margin-bottom:10px">Аль шатанд хүлээгдэж байна</div>' +
+    byStep.map(function (s) {
+      var mx = Math.max.apply(null, byStep.map(function (x) { return x.n; })) || 1;
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">' +
+        '<span style="flex:0 0 190px;font-size:12.5px;color:#475569">' + esc(s.label) + '</span>' +
+        '<div style="flex:1;height:9px;background:#F1F5F9;border-radius:5px;overflow:hidden">' +
+        '<div style="height:100%;width:' + Math.round(s.n / mx * 100) + '%;background:#2563EB"></div></div>' +
+        '<span style="flex:0 0 30px;text-align:right;font-size:13px;font-weight:800">' + s.n + '</span></div>';
+    }).join('') + '</div>';
+
+  /* Зэрэглэл ба шалтгааны бүтэц */
+  var mk = function (title, rows) {
+    var tot = rows.reduce(function (s, r) { return s + r.n; }, 0) || 1;
+    return '<div class="card" style="padding:14px 16px;flex:1 1 300px">' +
+      '<div style="font-size:13.5px;font-weight:800;margin-bottom:10px">' + title + '</div>' +
+      rows.map(function (r) {
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+          '<span style="flex:1;font-size:12.5px;color:#475569">' + esc(r.label) + '</span>' +
+          '<div style="flex:0 0 90px;height:8px;background:#F1F5F9;border-radius:4px;overflow:hidden">' +
+          '<div style="height:100%;width:' + Math.round(r.n / tot * 100) + '%;background:' + (r.color || '#4F46E5') + '"></div></div>' +
+          '<span style="flex:0 0 26px;text-align:right;font-size:12.5px;font-weight:700">' + r.n + '</span></div>';
+      }).join('') + '</div>';
+  };
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+    mk('Зэрэглэлээр', HR_LEVELS.map(function (l) {
+      return { label: l.label, color: l.color, n: list.filter(function (o) { return (o.level || 'engiin') === l.key; }).length };
+    })) +
+    mk('Шалтгаанаар', HR_REASONS.map(function (r) {
+      return { label: r.label.length > 34 ? r.label.slice(0, 33) + '…' : r.label,
+        n: list.filter(function (o) { return o.reason === r.key; }).length };
+    })) +
+    '</div>';
+
+  return html;
+}
+
 function renderAll() {
   [renderSidebar, renderDashboard, renderEmployees, renderKpiPage,
    renderHazards, renderIncidents, renderReportflow, renderSuggestions,
    renderSettings, renderNotifBadge, renderPpe, renderInspections,
-   renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage].forEach(function (fn) {
+   renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage,
+   renderStructure, hrApplyNav, renderHrOrders].forEach(function (fn) {
     try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
   });
   // renderDashboard унасан ч дашбоардын харагдац цэвэрхэн үлдэнэ
