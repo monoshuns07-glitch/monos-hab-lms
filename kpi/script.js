@@ -2192,9 +2192,13 @@ function deptPpe(dept) {
 }
 /* Албаны KPI = тухайн албаны идэвхтэй ажилтнуудын KPI-ийн дундаж (ажилтны онооны логиктой тохирно).
    ХХХ/анхны тусламж/coverage нь тусдаа дэлгэрэнгүй үзүүлэлт болж KPI хуудсанд харагдана. */
+/* ⚠ NaN хамгаалалт: нэг ажилтны оноо NaN болбол дундаж нь бүхэлдээ NaN болж,
+   тэр алба эрэмбэлэлтээс чимээгүй унадаг байв. */
 function deptScore(dept) {
   var m = deptMembers(dept);
-  return m.length ? Math.round(avg(m.map(empTotal))) : 0;
+  if (!m.length) return 0;
+  var v = Math.round(avg(m.map(function (e) { return _f(empTotal(e)); })));
+  return isNaN(v) ? 0 : v;
 }
 function dayCounter() {
   var acc = DB.incidents.filter(function (i) { return i.type !== 'near-miss'; });
@@ -3400,8 +3404,17 @@ function renderEmployeeDashboard() {
   var aheadOverall = rankAhead(allEmps, e, empTotal);
   var aheadDept = rankAhead(deptEmps, e, empTotal);
 
+  /* ⚠⚠ АЛБУУДЫН ЭРЭМБЭ — оноогоор БҮҮ ШҮҮ.
+     Өмнө нь `score > 0 || dept === өөрийнх` гэж шүүдэг байсан. Оноо нь 0
+     (эсвэл дата дутуугаас NaN) гарсан алба жагсаалтаас УНАЖ, ажилтан бүрт
+     «1-р байр / 1-ээс — хамгийн түрүүнд явж байна» гэсэн ХУДАЛ магтаал
+     харагддаг байв. Одоо гишүүнтэй БҮХ албыг эрэмбэлнэ; бүгд ижил оноотой
+     бол rankBox өөрөө «Бүгд ижил оноотой байна» гэж үнэнээр хэлнэ. */
   var depts = deptList();
-  var deptScores = depts.map(function (d) { return { dept: d, score: deptScore(d) }; }).filter(function (r) { return r.score > 0 || r.dept === e.dept; }).sort(function (a, b) { return b.score - a.score; });
+  var deptScores = depts
+    .filter(function (d) { return deptMembers(d).length > 0; })
+    .map(function (d) { return { dept: d, score: deptScore(d) }; })
+    .sort(function (a, b) { return b.score - a.score; });
   var myDeptRow = { dept: e.dept, score: deptScore(e.dept) };
   var rkDeptAll = rankTie(deptScores, myDeptRow, function (x) { return x.score; });
   var deptRankAmongAll = rkDeptAll.rank, deptCountAll = rkDeptAll.total, deptSameAll = rkDeptAll.same;
