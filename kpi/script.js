@@ -17212,8 +17212,13 @@ function renderAll() {
    renderHazards, renderIncidents, renderReportflow, renderSuggestions,
    renderSettings, renderNotifBadge, renderPpe, renderInspections,
    renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage,
-   renderStructure, hrApplyNav, renderHrOrders].forEach(function (fn) {
-    try { fn(); } catch (err) { console.error('[renderAll] ' + fn.name + ':', err); }
+   hrApplyNav, renderHrOrders].forEach(function (fn) {
+    /* ⚠ Массивт БАЙХГҮЙ функцийн нэр бичвэл энэ мөр хүртэл ч хүрэхгүй —
+       массив үүсэх үедээ ReferenceError өгч, renderAll БҮХЭЛДЭЭ унана.
+       (2026-08-19: устгасан renderStructure үлдсэнээс болж яг ингэж
+        бүх зураглал чимээгүй зогссон.) Функц устгавал ЭНД БАС ХАС. */
+    try { if (typeof fn === 'function') fn(); }
+    catch (err) { console.error('[renderAll] ' + (fn && fn.name) + ':', err); }
   });
   // renderDashboard унасан ч дашбоардын харагдац цэвэрхэн үлдэнэ
 }
