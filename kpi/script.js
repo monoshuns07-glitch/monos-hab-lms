@@ -11962,7 +11962,15 @@ function currentReporter() {
     if (me) return { id: me.id, uid: me.uid || SESSION.uid || '', name: me.name,
       fullName: empFullName(me), pos: me.pos || me.role || '',
       dept: me.dept || '', email: me.email || SESSION.email || '' };
-    return { id: '', uid: SESSION.uid || '', name: USER.name, dept: '', email: SESSION.email || '' };
+    /* ⚠ Ажилтны жагсаалтад байхгүй (админ, шинэ бүртгэл). Өмнө нь
+       и-мэйлийн эхний хэсэг («buynt666») нэр болж гардаг байв. */
+    var em = SESSION.email || '';
+    var nm = String(SESSION.name || USER.name || '').trim();
+    if (!nm || /^[a-z0-9._-]+$/i.test(nm)) nm = '';       // и-мэйл маягийн нэр — нэр биш
+    return { id: '', uid: SESSION.uid || '',
+      name: nm || em.split('@')[0] || 'Хэрэглэгч', fullName: nm,
+      pos: SESSION.pos || (isAdmin() ? 'ХАБЭА-н алба (админ)' : ''),
+      dept: SESSION.dept || '', email: em, unlisted: !nm };
   }
   var e0 = (DB.employees || [])[0];
   return e0 ? { id: e0.id, uid: e0.uid || '', name: e0.name, dept: e0.dept || '', email: e0.email || '' } : { id: '', uid: '', name: USER.name, dept: '', email: '' };
@@ -11999,6 +12007,12 @@ function reportCard(r, withActions) {
   /* ⭐ Аюул → засвар нь НЭГ урсгал. Мөр бүр дээр засварын төлөв харагдана,
      байхгүй бол засварлуулах зам шууд нээгдэнэ. */
   var woLink = woForReport(r.id);
+  /* Ажилтан «засвар хэрэгтэй» гэсэн ч захиалга хараахан үүсээгүй бол
+     тодруулна — ХАБ/ИТА үүнийг хараад үүсгэнэ. */
+  if (r.needFix && !woLink && r.status !== 'rejected') {
+    urgentTag += '<span style="background:#CCFBF1;color:#115E59;border-radius:6px;padding:1px 8px;' +
+      'font-size:10.5px;font-weight:800;margin-right:5px">🔧 ЗАСВАР ХҮЛЭЭГДЭЖ БУЙ</span>';
+  }
   if (r.status !== 'rejected') {
     actions += '<div style="margin-top:8px">' + (woLink
       ? '<span data-wo-open="' + esc(woLink.id) + '" style="display:inline-flex;align-items:center;gap:5px;' +
@@ -12030,6 +12044,11 @@ function actionReportNew(presetType) {
   var _rfMePos = _me.pos || '';
   var _rfMeDept = _me.dept || '';
   var _rfMeMail = _me.email || '';
+  var _rfMiss = [];
+  if (!_me.fullName) _rfMiss.push('овог нэр');
+  if (!_rfMePos) _rfMiss.push('албан тушаал');
+  if (!_rfMeDept) _rfMiss.push('алба');
+  var _rfMeWarn = _rfMiss.length ? _rfMiss.join(', ') : '';
   var node = elc('div', 'report-form');
   function chips(items, cur, key) {
     return '<div class="rf-chips" data-chipgroup="' + key + '">' + items.map(function (it) {
@@ -12050,6 +12069,14 @@ function actionReportNew(presetType) {
        асуух шаардлагагүй болно. */
     '<div class="rf-field"><label>6. Тоног төхөөрөмж <span style="font-weight:400;color:#94A3B8">(байвал)</span></label>' +
     '<input type="text" id="rfEquip" class="rf-input" placeholder="ж: Савлагааны машин №3, Дамжуулах туузан"></div>' +
+    /* ⭐ Ажилтан ЯГ ЭНЭ АГШИНД засвар хэрэгтэй эсэхийг мэднэ. Дараа нь
+       буцаж ороод дарах нь илүүц алхам бөгөөд мартагддаг. */
+    '<label class="rf-field" style="display:flex;align-items:center;gap:10px;background:#F0FDFA;' +
+    'border:1.5px solid #99F6E4;border-radius:11px;padding:11px 13px;cursor:pointer">' +
+    '<input type="checkbox" id="rfNeedFix" style="width:18px;height:18px;flex-shrink:0">' +
+    '<span><span style="font-size:13px;font-weight:800;color:#115E59">🔧 ИТА-аар засварлуулах шаардлагатай</span>' +
+    '<span style="display:block;font-size:11.5px;color:#0F766E;margin-top:2px">' +
+    'Илгээмэгц ажлын захиалгын маягт нээгдэнэ — байршил, тоног төхөөрөмж нь бөглөгдсөн байна</span></span></label>' +
     /* ⭐ Яаралтай — амь насанд аюултай зүйлийг ХАБ, албаны даргад ТЭР ДОР НЬ */
     '<label class="rf-field" style="display:flex;align-items:center;gap:10px;background:#FEF2F2;' +
     'border:1.5px solid #FECACA;border-radius:11px;padding:11px 13px;cursor:pointer">' +
@@ -12066,7 +12093,15 @@ function actionReportNew(presetType) {
     '<div style="font-size:14px;font-weight:800;color:#14532D;margin-top:5px">' + esc(_rfMeName) + '</div>' +
     (_rfMePos ? '<div style="font-size:12.5px;color:#166534">' + esc(_rfMePos) + '</div>' : '') +
     (_rfMeDept ? '<div style="font-size:12px;color:#4D7C0F">' + esc(_rfMeDept) + '</div>' : '') +
-    '<div style="font-size:11.5px;color:#65A30D;margin-top:4px">' + esc(_rfMeMail) + '</div></div>' +
+    '<div style="font-size:11.5px;color:#65A30D;margin-top:4px">' + esc(_rfMeMail) + '</div>' +
+    /* ⚠ Овог нэр, албан тушаал дутуу бол ЧИМЭЭГҮЙ өнгөрөхгүй — албан ёсны
+       баримтад и-мэйлийн хэсэг нэр болж орох нь буруу. */
+    (_rfMeWarn
+      ? '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 10px;' +
+        'margin-top:8px;font-size:11.5px;color:#92400E;line-height:1.6">' +
+        '⚠ Таны бүртгэлд <b>' + esc(_rfMeWarn) + '</b> байхгүй байна. Мэдээлэл илгээгдэх боловч ' +
+        'албан ёсны баримтад дутуу гарна — Хүний нөөцөөр нөхүүлнэ үү.</div>'
+      : '') + '</div>' +
     '<div class="rf-hint"><i class="ti ti-clock"></i> 1 минутын дотор. ХАБ ажилтан баталгаажуулсны дараа бонус оноо автоматаар нэмэгдэнэ.</div>' +
     '<button class="btn btn-primary btn-block" id="rfSubmit"><i class="ti ti-send"></i> Илгээх</button>';
 
@@ -12086,12 +12121,18 @@ function actionReportNew(presetType) {
       /* ⚠ Гарын үсэг ЗААВАЛ биш — утсан дээр зурах төвөгтэй тул хүн хагас
          дундаас нь орхидог байв. Хэрэглэгч нэвтэрсэн тул хэн илгээсэн нь
          аль хэдийн бүртгэгддэг. */
-      var eqEl = $('#rfEquip', node), urEl = $('#rfUrgent', node);
-      createReport(sel.type, sel.risk, locVal, desc, sel.photo, sel.signature || '', {
+      var eqEl = $('#rfEquip', node), urEl = $('#rfUrgent', node), nfEl = $('#rfNeedFix', node);
+      var needFix = !!(nfEl && nfEl.checked);
+      var made = createReport(sel.type, sel.risk, locVal, desc, sel.photo, sel.signature || '', {
         equipment: eqEl ? (eqEl.value || '').trim() : '',
-        urgent: !!(urEl && urEl.checked)
+        urgent: !!(urEl && urEl.checked),
+        needFix: needFix
       });
       closeModal();
+      /* ⭐ Засвар хэрэгтэй гэсэн бол захиалгын маягтыг ШУУД нээнэ */
+      if (needFix && made && made.id) {
+        setTimeout(function () { woNewModal(made.id); }, 450);
+      }
     }
   });
   $('#rfPhoto', node).addEventListener('change', function () {
@@ -12124,6 +12165,7 @@ function createReport(type, risk, location, desc, photo, signature, extra) {
   if (extra) {
     if (extra.equipment) r.equipment = extra.equipment;
     if (extra.urgent) r.urgent = true;
+    if (extra.needFix) r.needFix = true;
   }
   DB.reports.unshift(r);
   addNotification((type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + ' мэдээлэл ирлээ — ' + location + ' (' + who.name + ')', 'reportflow');
@@ -12132,6 +12174,7 @@ function createReport(type, risk, location, desc, photo, signature, extra) {
   renderReportflow(); renderNotifBadge(); renderDashboard();
   toast(r.urgent ? '🚨 Яаралтай мэдээлэл илгээгдлээ — ХАБ-д шууд мэдэгдлээ'
                  : 'Мэдээлэл илгээгдлээ. Баталгаажсаны дараа бонус нэмэгдэнэ.', 'success');
+  return r;
 }
 
 /* ══ МЭДЭЭЛЛИЙГ СЕРВЕР РҮҮ ХҮРГЭХ ══
@@ -12297,7 +12340,9 @@ function reportRepairHTML(r) {
   /* ⭐ Аюулаас засвар руу явах ГОЛ ЗАМ */
   return '<div style="background:#F0FDFA;border:1.5px solid #99F6E4;border-radius:12px;padding:13px 15px;margin:13px 0">' +
     '<div style="font-size:12.5px;color:#115E59;line-height:1.65">' +
-    '<b>Энэ аюулыг арилгахад засвар шаардлагатай юу?</b><br>' +
+    (r.needFix
+      ? '<b>🔧 Мэдээлсэн хүн «засвар шаардлагатай» гэж тэмдэглэсэн.</b><br>Ажлын захиалга хараахан үүсээгүй байна.<br>'
+      : '<b>Энэ аюулыг арилгахад засвар шаардлагатай юу?</b><br>') +
     'ИТА-д ажлын захиалга үүсгэвэл хэн, хэзээ засахыг бүртгэж, ' +
     '72 цагийн дараа дахин шалгана.</div>' +
     '<button class="btn" data-wo-from="' + esc(r.id) + '" style="margin-top:10px;width:100%;' +
