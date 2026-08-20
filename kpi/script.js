@@ -567,6 +567,10 @@ async function buildEmployeesFromRealData() {
       if (u.role === 'admin' && !(u.firstName || u.lastName)) return; // нэргүй админ системийн бүртгэл алгасна
       var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
       var name = (ln + (u.firstName || '')).trim() || (u.email || '').split('@')[0] || 'Ажилтан';
+      /* ⭐ Овог, нэрийг БҮТНЭЭР хадгална. Өмнө нь зөвхөн «С.» товчлол
+         үлддэг байсан тул албан ёсны маягтад бүтэн овог бичих боломжгүй байв. */
+      var lastFull = String(u.lastName || '').trim();
+      var firstFull = String(u.firstName || '').trim();
       var exams = examByUser[uid] || [], progs = progByUser[uid] || [];
       var examAvg = exams.length ? avg(exams.map(function (e) { return num(e.score); })) : null;
       var progAvg = progs.length ? avg(progs.map(function (p) { return num(p.watchProgress); })) : null;
@@ -600,6 +604,7 @@ async function buildEmployeesFromRealData() {
       }
       out.push({
         id: uid, uid: uid, initials: makeInitials(name), name: name,
+        lastName: lastFull, firstName: firstFull,
         /* ⚠ Албан тушаалыг ХОЁУЛАНД нь бичнэ. Дэлгэцийн зарим хэсэг e.role,
            зарим нь e.pos-ыг уншдаг. Зөвхөн role бичдэг байсан тул ажилтны
            профайл, хяналтын самбар, хайлтад албан тушаал ХООСОН харагддаг байв. */
@@ -11934,10 +11939,29 @@ function downscaleImage(file, maxDim, quality, cb) {
   } catch (e) { cb(''); }
 }
 
+/* ⭐ «Овог Нэр» БҮТНЭЭР. Бүртгэлд овог байхгүй бол хуучин хэлбэрээр
+   («С. Цэрэнпил») буцаана — хаана ч хоосон гарахгүй.
+   ⚠ employees/all.json-д овог нэмэгдэх нь админ жагсаалтыг дахин
+   нийтэлсний дараа. Түүнээс өмнө fallback ажиллана. */
+function empFullName(e) {
+  if (!e) return '';
+  var ln = String(e.lastName || '').trim(), fn = String(e.firstName || '').trim();
+  if (ln && fn) return ln + ' ' + fn;
+  return String(e.name || '').trim();
+}
+/* Хүнийг НЭГ мөрөөр бүрэн танилцуулна: Овог Нэр · Албан тушаал */
+function empIdentity(e) {
+  if (!e) return '';
+  var n = empFullName(e), p = String(e.pos || e.role || '').trim();
+  return n + (p ? ' · ' + p : '');
+}
+
 function currentReporter() {
   if (SESSION && (SESSION.uid || SESSION.email)) {
     var me = (DB.employees || []).filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email); })[0];
-    if (me) return { id: me.id, uid: me.uid || SESSION.uid || '', name: me.name, dept: me.dept || '', email: me.email || SESSION.email || '' };
+    if (me) return { id: me.id, uid: me.uid || SESSION.uid || '', name: me.name,
+      fullName: empFullName(me), pos: me.pos || me.role || '',
+      dept: me.dept || '', email: me.email || SESSION.email || '' };
     return { id: '', uid: SESSION.uid || '', name: USER.name, dept: '', email: SESSION.email || '' };
   }
   var e0 = (DB.employees || [])[0];
@@ -12000,6 +12024,12 @@ function reportCard(r, withActions) {
 
 function actionReportNew(presetType) {
   var sel = { type: presetType || 'near_miss', risk: 'mid', photo: '' };
+  /* Бүртгэлээс шууд — дахин асуухгүй */
+  var _me = currentReporter();
+  var _rfMeName = _me.fullName || _me.name || '—';
+  var _rfMePos = _me.pos || '';
+  var _rfMeDept = _me.dept || '';
+  var _rfMeMail = _me.email || '';
   var node = elc('div', 'report-form');
   function chips(items, cur, key) {
     return '<div class="rf-chips" data-chipgroup="' + key + '">' + items.map(function (it) {
@@ -12027,12 +12057,16 @@ function actionReportNew(presetType) {
     '<span><span style="font-size:13px;font-weight:800;color:#B91C1C">🚨 Яаралтай — одоо ч аюултай хэвээр</span>' +
     '<span style="display:block;font-size:11.5px;color:#7F1D1D;margin-top:2px">' +
     'ХАБЭА-н алба болон албаны даргад шууд мэдэгдэнэ</span></span></label>' +
-    '<div class="rf-field"><label>7. Баталгааны гарын үсэг <span style="font-weight:400;color:#94A3B8">(заавал биш)</span></label>' +
-    '<div style="border:1.5px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#fff;cursor:crosshair">' +
-    '<canvas id="rfSigCanvas" width="380" height="100" style="display:block;width:100%;height:100px;touch-action:none"></canvas></div>' +
-    '<button type="button" id="rfSigClear" style="margin-top:5px;font-size:12px;background:none;border:1px solid #E2E8F0;border-radius:7px;padding:4px 10px;cursor:pointer;color:#64748B">Арилгах</button>' +
-    '<div style="font-size:11px;color:#94A3B8;margin-top:3px"><i class="ti ti-lock"></i> ' +
-    'Та нэвтэрсэн байгаа тул хэн илгээсэн нь аль хэдийн тодорхой. Гарын үсэг нэмэлт баталгаа.</div></div>' +
+    /* ⭐ ГАРЫН ҮСГИЙН САМБАР АВАГДСАН. Хэрэглэгч нэвтэрсэн байгаа тул
+       овог, нэр, албан тушаал нь бүртгэлээс нь АВТОМАТААР бичигдэнэ —
+       утсан дээр зурах шаардлагагүй, орхигдох ч эрсдэлгүй. */
+    '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;padding:12px 14px;margin:4px 0 2px">' +
+    '<div style="font-size:11px;font-weight:800;color:#15803D;letter-spacing:.3px">' +
+    '<i class="ti ti-user-check"></i> МЭДЭЭЛЖ БУЙ ХҮН — БҮРТГЭЛЭЭС АВТОМАТААР</div>' +
+    '<div style="font-size:14px;font-weight:800;color:#14532D;margin-top:5px">' + esc(_rfMeName) + '</div>' +
+    (_rfMePos ? '<div style="font-size:12.5px;color:#166534">' + esc(_rfMePos) + '</div>' : '') +
+    (_rfMeDept ? '<div style="font-size:12px;color:#4D7C0F">' + esc(_rfMeDept) + '</div>' : '') +
+    '<div style="font-size:11.5px;color:#65A30D;margin-top:4px">' + esc(_rfMeMail) + '</div></div>' +
     '<div class="rf-hint"><i class="ti ti-clock"></i> 1 минутын дотор. ХАБ ажилтан баталгаажуулсны дараа бонус оноо автоматаар нэмэгдэнэ.</div>' +
     '<button class="btn btn-primary btn-block" id="rfSubmit"><i class="ti ti-send"></i> Илгээх</button>';
 
@@ -12070,35 +12104,9 @@ function actionReportNew(presetType) {
       if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
     });
   });
-  // Гарын үсгийн canvas — touch + mouse зурах
+  /* ⭐ Гарын үсгийн самбар АВАГДСАН — хэн мэдээлснийг бүртгэлээс нь
+     автоматаар авдаг болсон тул утсан дээр зурах шаардлагагүй. */
   setTimeout(function () {
-    var cv = $('#rfSigCanvas', node); if (!cv) return;
-    var ctx = cv.getContext('2d');
-    var drawing = false, lastX = 0, lastY = 0;
-    function getPos(e) {
-      var r = cv.getBoundingClientRect();
-      var src = e.touches ? e.touches[0] : e;
-      return { x: (src.clientX - r.left) * (cv.width / r.width), y: (src.clientY - r.top) * (cv.height / r.height) };
-    }
-    function startDraw(e) { e.preventDefault(); drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; }
-    function moveDraw(e) {
-      if (!drawing) return; e.preventDefault();
-      var p = getPos(e);
-      ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.stroke();
-      lastX = p.x; lastY = p.y;
-      sel.signature = cv.toDataURL('image/png');
-    }
-    function endDraw() { drawing = false; }
-    cv.addEventListener('mousedown', startDraw); cv.addEventListener('mousemove', moveDraw);
-    cv.addEventListener('mouseup', endDraw); cv.addEventListener('mouseleave', endDraw);
-    cv.addEventListener('touchstart', startDraw, { passive: false });
-    cv.addEventListener('touchmove', moveDraw, { passive: false });
-    cv.addEventListener('touchend', endDraw);
-    var clrBtn = $('#rfSigClear', node);
-    if (clrBtn) clrBtn.addEventListener('click', function () {
-      ctx.clearRect(0, 0, cv.width, cv.height); sel.signature = '';
-    });
   }, 80);
   buildModal(presetType === 'hazard' ? 'Аюул / эрсдэл мэдээлэх' : 'Осолд дөхсөн мэдээлэх', node, { width: '440px' });
 }
@@ -12108,7 +12116,9 @@ function createReport(type, risk, location, desc, photo, signature, extra) {
   var r = {
     id: newId('RP'), type: type, risk_level: risk, status: 'reported',
     desc: desc, location: location, dept: who.dept || '',
-    reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '', reporterEmail: who.email || '',
+    reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '',
+    reporterFull: who.fullName || who.name || '', reporterPos: who.pos || '',
+    reporterEmail: who.email || '',
     photo: photo || '', signature: signature || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
   };
   if (extra) {
@@ -12307,7 +12317,9 @@ function openReportDetail(id) {
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
     (r.equipment ? '<div class="detail-row"><span>Тоног төхөөрөмж</span><b>' + esc(r.equipment) + '</b></div>' : '') +
     (r.urgent ? '<div class="detail-row"><span>Яаралтай</span><b style="color:#DC2626">🚨 Тийм</b></div>' : '') +
-    '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(r.reporterName || '—') + '</b></div>' +
+    '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(r.reporterFull || r.reporterName || '—') + '</b></div>' +
+    (r.reporterPos ? '<div class="detail-row"><span>Албан тушаал</span><b>' + esc(r.reporterPos) + '</b></div>' : '') +
+    (r.dept ? '<div class="detail-row"><span>Алба</span><b>' + esc(r.dept) + '</b></div>' : '') +
     '<div class="detail-row"><span>Огноо</span><b>' + new Date(r.createdAt).toLocaleString('mn-MN') + '</b></div>' +
     '<div class="detail-row"><span>Төлөв</span><b>' + reportStatusTag(r.status) + '</b></div>' +
     (r.verifiedBy ? '<div class="detail-row"><span>Шийдвэрлэсэн</span><b>' + esc(r.verifiedBy) + '</b></div>' : '') + '</div>' +
@@ -12574,7 +12586,8 @@ function woNewModal(fromReport) {
 
     '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;margin-bottom:12px;' +
     'font-size:12.5px;color:#475569;line-height:1.7">' +
-    '<b>Хүсэлт гаргасан:</b> ' + esc(me.name || '') + '<br>' +
+    '<b>Хүсэлт гаргасан:</b> ' + esc(empFullName(me) || me.name || '') + '<br>' +
+    '<b>Албан тушаал:</b> ' + esc(me.pos || me.role || '—') + '<br>' +
     '<b>Алба:</b> ' + esc(myDept || '—') + '<br>' +
     '<b>Хүсэлтийн огноо:</b> ' + today + '</div>' +
 
@@ -12652,7 +12665,7 @@ function woNewModal(fromReport) {
         id: '', createdAt: new Date().toISOString(),
         kind: sel.kind, unit: sel.unit,
         hazardous: !!node.querySelector('#woHaz').checked,
-        reqUid: me.uid, reqName: me.name || '', reqEmail: me.email || '',
+        reqUid: me.uid, reqName: empFullName(me) || me.name || '', reqEmail: me.email || '',
         reqPos: me.pos || me.role || '', dept: myDept, reqDate: today,
         plant: plant, equipment: equip,
         tagNo: (node.querySelector('#woTag').value || '').trim(),
@@ -12842,8 +12855,11 @@ async function woApplySign(id, key, who, code, f) {
         if (list[i].id !== id) continue;
         var w = list[i];
         w.sig = w.sig || {};
+        /* ⭐ Овог нэр, албан тушаал нь БҮРТГЭЛЭЭС автоматаар — гараар
+           бичих ч, зурах ч шаардлагагүй. */
         w.sig[key] = {
-          uid: who.uid, name: who.name || '', pos: who.pos || who.role || '',
+          uid: who.uid, name: empFullName(who) || who.name || '',
+          pos: who.pos || who.role || '', dept: who.dept || '',
           at: new Date().toISOString(), code: String(code || '').slice(-6)
         };
         if (f) {
@@ -12996,8 +13012,11 @@ function woListHTML(onlyMine) {
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
     '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Ажлын захиалга</div>' +
     '<div style="font-size:12.5px;color:#64748B">Work order — засварын хүсэлт, гүйцэтгэл, хүлээлгэн өгөлт</div></div>' +
-    '<button class="btn btn-primary" data-wo-new="1" style="margin-left:auto">' +
-    '<i class="ti ti-plus"></i> Шинэ захиалга</button>' +
+    /* ⚠ ГОЛ зам нь аюулын мэдээллээс эхэлдэг тул энэ товч ХОЁРДОГЧ.
+       Төлөвлөгөөт засвар (PM), аюултай холбоогүй ажилд л хэрэглэнэ. */
+    '<button class="btn btn-secondary btn-sm" data-wo-new="1" style="margin-left:auto"' +
+    ' title="Аюултай холбоогүй, төлөвлөгөөт засварт">' +
+    '<i class="ti ti-plus"></i> Захиалга гараар</button>' +
     (WO_ROWS && WO_ROWS.length ? '<button class="btn btn-secondary btn-sm" data-wo-xl="1">' +
       '<i class="ti ti-file-spreadsheet"></i> Excel</button>' : '') +
     '</div>' +
@@ -13008,8 +13027,18 @@ function woListHTML(onlyMine) {
     chip('done', 'Дууссан', done.length, '#16A34A') +
     '</div></div>' +
     (rows.length ? rows.map(function (w) { return woRowHTML(w, me); }).join('')
-      : '<div class="empty-state" style="padding:34px"><i class="ti ti-clipboard-list"></i>' +
-        '<div>Захиалга алга. «Шинэ захиалга»-аар эхлүүлнэ үү.</div></div>');
+      : '<div class="card" style="padding:22px 24px;text-align:center">' +
+        '<div style="font-size:30px">🔧</div>' +
+        '<div style="font-size:15px;font-weight:800;color:#1E293B;margin-top:6px">Захиалга алга</div>' +
+        '<div style="font-size:13px;color:#64748B;line-height:1.7;margin-top:7px;max-width:520px;' +
+        'margin-left:auto;margin-right:auto">' +
+        'Ажлын захиалга ихэвчлэн <b>аюулын мэдээллээс</b> үүсдэг:<br>' +
+        '<span style="color:#334155">🚩 Аюул мэдээлнэ → мэдээллээ нээнэ → ' +
+        '<b style="color:#0F766E">«ИТА-аар засварлуулах»</b> дарна</span><br><br>' +
+        'Ингэснээр байршил, тоног төхөөрөмж, зураг нь өөрөө бөглөгдөж, ' +
+        'аль аюулыг засаж байгаа нь бүртгэгдэнэ.</div>' +
+        '<button class="btn btn-primary" data-rf-tab="rep" style="margin-top:14px">' +
+        '<i class="ti ti-flag-2"></i> Мэдээллүүд рүү очих</button></div>');
 }
 
 /* ── ДЭЛГЭРЭНГҮЙ ── */
@@ -13039,10 +13068,13 @@ function woDetailModal(id) {
       esc(WO_SIG_LABEL[key] || key).toUpperCase() + '</div>' +
       (g
         ? '<div style="font-size:12.5px;font-weight:700;color:#15803D;margin-top:3px">✓ ' + esc(g.name || '') + '</div>' +
+          (g.pos ? '<div style="font-size:11px;color:#15803D">' + esc(g.pos) + '</div>' : '') +
           '<div style="font-size:11px;color:#64748B">' + esc(String(g.at || '').slice(0, 16).replace('T', ' ')) +
           (g.code ? ' · код ' + esc(g.code) : '') + '</div>'
         : '<div style="font-size:12.5px;font-weight:600;color:#64748B;margin-top:3px">' +
-          esc((who && who.name) || 'тодорхойгүй') + '</div>' +
+          esc((who && (empFullName(who) || who.name)) || 'тодорхойгүй') + '</div>' +
+          (who && (who.pos || who.role) ? '<div style="font-size:11px;color:#94A3B8">' +
+            esc(who.pos || who.role) + '</div>' : '') +
           (canSign
             ? '<button class="btn btn-primary btn-sm" data-wo-sign="' + esc(wo.id) + '|' + key +
               '" style="margin-top:6px;width:100%"><i class="ti ti-writing-sign"></i> Гарын үсэг зурах</button>'
@@ -13068,7 +13100,8 @@ function woDetailModal(id) {
   /* SECTION 1 */
   body += '<div style="font-size:11.5px;font-weight:800;color:#fff;background:#334155;border-radius:7px;' +
     'padding:4px 10px;display:inline-block;margin:6px 0 8px">ХЭСЭГ 1 · ХҮСЭЛТ / SECTION 1: REQUEST</div>' +
-    line('Хүсэлт гаргасан', 'Requested by', wo.reqName) +
+    line('Хүсэлт гаргасан', 'Requested by',
+      (wo.reqName || '') + (wo.reqPos ? ' · ' + wo.reqPos : '')) +
     line('Алба', 'Department', wo.dept) +
     line('Хүсэлтийн огноо', 'Requested date', wo.reqDate) +
     line('Тоноглол', 'Plant / Building', wo.plant) +
@@ -13147,10 +13180,12 @@ function woLoadExcelJS(cb) {
 /* Маягтын аль нүдэнд юу бичихийг ЭХ ФАЙЛААС хэмжиж тогтоосон зураглал.
    (нэгтгэсэн мужийн зүүн дээд нүд рүү бичнэ) */
 function woFormCells(wo) {
+  /* Гарын үсгийн нүдэнд: Овог Нэр / Албан тушаал / огноо / код */
   var sg = function (key) {
     var g = wo.sig && wo.sig[key];
     if (!g) return '';
-    return (g.name || '') + '\n' + String(g.at || '').slice(0, 16).replace('T', ' ') +
+    return (g.name || '') + (g.pos ? '\n' + g.pos : '') +
+      '\n' + String(g.at || '').slice(0, 16).replace('T', ' ') +
       (g.code ? '  [' + g.code + ']' : '');
   };
   var perf = woEmpByUid(wo.perfUid);
@@ -13160,7 +13195,7 @@ function woFormCells(wo) {
     /* Толгой */
     N1: 'WO number:  ' + (wo.id || ''),
     /* ХЭСЭГ 1 — Хүсэлт */
-    D5: wo.reqName || '',
+    D5: (wo.reqName || '') + (wo.reqPos ? '\n' + wo.reqPos : ''),
     M5: wo.plant || '',
     T5: tick('bm'),
     D7: wo.dept || '',
@@ -13385,9 +13420,10 @@ function renderReportflow() {
 
   var woMineN = 0; try { woMineN = woMine().length; } catch (e) {}
   var html = '<div class="page-header"><div><h1>Аюул / Near-miss мэдээлэл</h1>' +
-    '<p class="page-subtitle">Зураг → байршил → нэг өгүүлбэр → эрсдэл. Баталгаажсаны дараа бонус нэмэгдэнэ.</p></div>' +
-    '<div class="page-actions">' +
-    '<button class="btn btn-primary" data-newreport="hazard"><i class="ti ti-flag-2"></i> Аюул мэдээлэх</button></div></div>';
+    '<p class="page-subtitle">Аюул мэдээл → баталгаажуул → ИТА-аар засварлуул → 72 цагийн дараа шалга.</p></div>' +
+    /* ⚠ Толгойн «Аюул мэдээлэх» товчийг АВСАН — улаан хөвөгч товч бүх
+       хуудсанд байдаг тул энэ хуудсанд яг ижил товч ХОЁР удаа гарч байв. */
+    '</div>';
 
   /* ⭐ ТАБ — мэдээлэл нь аюулыг ОЛОХ, ажлын захиалга нь ЗАСАХ хэсэг.
      Хоёулаа нэг цэсэнд байж «олсон → зассан» гэсэн бүтэн гогцоо болно. */
