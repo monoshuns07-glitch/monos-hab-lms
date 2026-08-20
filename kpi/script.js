@@ -13392,6 +13392,13 @@ function wkRowHTML(r) {
       (t.done ? '#0ca30c' : t.late ? '#C81E3A' : t.near ? '#E9A100' : '#64748B') + '">' +
       (t.late ? '⏰ ' : '') + esc(t.text) + '</span>' : '') +
     '</div>' +
+    /* ⚠ «Бүгдэд харагдана» гэдэг практикт «хэн ч хариуцахгүй» болдог —
+       тиймээс аваагүй зүйлийг УЛААНААР тодруулна. */
+    (st === 'new' && wkUnclaimedHours(r) >= 1
+      ? '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:5px 9px;' +
+        'font-size:11.5px;font-weight:800;color:#B91C1C;margin-bottom:6px">' +
+        '🙋 Хэн ч аваагүй — ' + esc(wkHoursText(Math.round(wkUnclaimedHours(r)))) + ' болж байна</div>'
+      : '') +
     '<div style="font-size:13.5px;font-weight:600;color:#1E293B;line-height:1.45">' +
     esc(String(r.desc || '').slice(0, 130)) + '</div>' +
     '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
@@ -13445,7 +13452,7 @@ function wkListHTML(all) {
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
     '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Work order</div>' +
-    '<div style="font-size:12px;color:#94A3B8">Осолд дөхсөн · Аюул · Ажлын захиалга — бүгд эндээс</div></div>' +
+    '<div style="font-size:12px;color:#94A3B8">Мэдээл → хүлээн ав → гүйцэтгэ → батал</div></div>' +
     '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
     '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button>' +
     ((isAdmin() || isDeptHead()) ? '<button class="btn btn-secondary btn-sm" data-wk-admin="1" ' +
@@ -13627,6 +13634,97 @@ function wkAdminModal() {
   }).catch(function (e) {
     node.innerHTML = '<div style="padding:20px;color:#DC2626">Ачаалж чадсангүй: ' + esc(e.message || e) + '</div>';
   });
+}
+
+/* ── Хаалтын дарга нар ── */
+function wkGateLeads(gate) {
+  var out = [];
+  try {
+    if (gate === 'hab') {
+      out = [ackLeadFor('Хөдөлмөрийн аюулгүй байдал эрүүл ахуйн алба', '')];
+    } else {
+      /* ИТА хоёр хэсэгтэй — хоёуланд нь */
+      out = [ackLeadFor('Инженер техникийн алба', 'Тоног төхөөрөмж'),
+             ackLeadFor('Инженер техникийн алба', 'Дэд бүтэц')];
+    }
+  } catch (e) {}
+  var seen = {};
+  return out.filter(function (e) {
+    if (!e || !e.uid || seen[e.uid]) return false; seen[e.uid] = 1; return true;
+  });
+}
+
+/* Хэдэн хувь өнгөрсөн бэ (0..∞) */
+function wkElapsedPct(r) {
+  if (!r || !r.createdAt) return 0;
+  var total = wkUrgHours(wkUrg(r)) * 3600000;
+  if (!total) return 0;
+  return (Date.now() - new Date(r.createdAt).getTime()) / total;
+}
+/* Хэн ч аваагүй хэдэн цаг болов */
+function wkUnclaimedHours(r) {
+  if (!r || !r.createdAt) return 0;
+  if (r.wkClaimBy && r.wkClaimBy.uid) return 0;
+  return Math.max(0, (Date.now() - new Date(r.createdAt).getTime()) / 3600000);
+}
+
+/* ══ ШАТЛАН СЭРЭМЖЛҮҮЛЭХ ══
+   ⚠ Сервер талын cron байхгүй тул ХАБЭА/ИТА/админы хөтөч хуудсаа нээхэд
+   шалгаж явуулна. Бичлэг дээр тэмдэг үлдээх тул НЭГ УДАА л явна. */
+function wkEscalate(all) {
+  if (wkEscalate._busy) return;
+  if (!rfSeeAll()) return;                 /* зөвхөн хариуцах хүмүүсийн хөтөч */
+  var jobs = [];
+  (all || []).forEach(function (r) {
+    if (!r || !r.wkKind) return;
+    if (wkStatus(r) === 'closed') return;
+    var pct = wkElapsedPct(r);
+    var claimed = !!(r.wkClaimBy && r.wkClaimBy.uid);
+    if (!claimed && pct >= 0.25 && !r.wkEscNoClaim) jobs.push({ r: r, k: 'noclaim' });
+    if (claimed && pct >= 0.5 && pct < 1 && !r.wkEsc50) jobs.push({ r: r, k: 'half' });
+    if (pct >= 1 && !r.wkEsc100) jobs.push({ r: r, k: 'due' });
+    if (pct >= 2 && !r.wkEsc200) jobs.push({ r: r, k: 'late2' });
+  });
+  if (!jobs.length) return;
+  wkEscalate._busy = true;
+
+  jobs.slice(0, 12).forEach(function (j) {
+    var r = j.r, k = wkKind(r.wkKind), g = wkGate(r.wkGate);
+    var where = wkLocLabel(r);
+    var body = k.ab + ' · ' + where + ' — ' + String(r.desc || '').slice(0, 90);
+    var to = [], title = '';
+
+    if (j.k === 'noclaim') {
+      to = wkGateLeads(r.wkGate);
+      title = '⚠ ХЭН Ч АВААГҮЙ ' + wkHoursText(Math.round(wkUnclaimedHours(r))) +
+        ' — ' + g.ab + ' (зэрэг ' + wkUrg(r) + ')';
+      r.wkEscNoClaim = new Date().toISOString();
+    } else if (j.k === 'half') {
+      var cl = woEmpByUid(r.wkClaimBy && r.wkClaimBy.uid);
+      to = cl ? [cl] : [];
+      title = '⏳ Хугацааны тал өнгөрлөө — ' + (wkTime(r) || {}).text;
+      r.wkEsc50 = new Date().toISOString();
+    } else if (j.k === 'due') {
+      to = wkGateLeads(r.wkGate);
+      var cn = (r.wkClaimBy && r.wkClaimBy.name) || 'хэн ч аваагүй';
+      title = '🔴 ХУГАЦАА ДУУСЛАА — ' + g.ab + ' (' + cn + ')';
+      r.wkEsc100 = new Date().toISOString();
+    } else if (j.k === 'late2') {
+      var dir = null;
+      try { dir = ackDirector('prod') || ackDirector('ceo'); } catch (e) {}
+      to = dir ? [dir] : [];
+      title = '🚨 ХУГАЦАА 2 ДАХИН ХЭТЭРЛЭЭ — ' + g.ab;
+      r.wkEsc200 = new Date().toISOString();
+    }
+    if (to.length) {
+      try { ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow', title: title, body: body }); }
+      catch (e) { console.error('[wk] эскалац', e); }
+    }
+    /* Тэмдгийг серверт бичнэ — дахин явуулахгүй */
+    try { reportPushToServer(r); } catch (e) {}
+  });
+  try { console.log('[wk] сэрэмжлүүлэг: ' + jobs.length); } catch (e) {}
+  setTimeout(function () { wkEscalate._busy = false; }, 60000);
 }
 
 function rfSeeAll() {
@@ -14831,7 +14929,7 @@ function renderReportflow() {
 
   var woMineN = 0; try { woMineN = woMine().length; } catch (e) {}
   var html = '<div class="page-header"><div><h1>Work order</h1>' +
-    '<p class="page-subtitle">Осолд дөхсөн · Аюул · Ажлын захиалга — мэдээл → хүлээн ав → гүйцэтгэ → батал.</p></div>' +
+    '<p class="page-subtitle">Осол, аюул, ажлын захиалга — бүгд эндээс</p></div>' +
     /* ⚠ Толгойн «Аюул мэдээлэх» товчийг АВСАН — улаан хөвөгч товч бүх
        хуудсанд байдаг тул энэ хуудсанд яг ижил товч ХОЁР удаа гарч байв. */
     '</div>';
@@ -14913,6 +15011,10 @@ function rfTabsHTML(woN) {
 
 /* Хуудас зурсны дараах нийтлэг хэсэг */
 function rfAfter(sec, admin, pending) {
+  /* ⚠ Хугацааны сэрэмжлүүлгийг АЛЬ Ч таб дээр шалгана — зөвхөн Work order
+     таб нээсэн үед ажиллуулбал хэн ч тэр таб руу ороогүй өдөр эскалац
+     явахгүй өнгөрнө. */
+  try { wkEscalate(DB.reports || []); } catch (e) { console.error('[wk] esc', e); }
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
   /* Work order-ийн тохиргоог нэг удаа татна */
