@@ -13447,7 +13447,10 @@ function wkListHTML(all) {
     '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Work order</div>' +
     '<div style="font-size:12px;color:#94A3B8">Осолд дөхсөн · Аюул · Ажлын захиалга — бүгд эндээс</div></div>' +
     '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
-    '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button></div>' +
+    '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button>' +
+    ((isAdmin() || isDeptHead()) ? '<button class="btn btn-secondary btn-sm" data-wk-admin="1" ' +
+      'title="Байршил ба хугацааны тохиргоо"><i class="ti ti-settings"></i> Тохиргоо</button>' : '') +
+    '</div>' +
     '<div style="display:flex;gap:7px;flex-wrap:wrap">' + tabs.map(function (t) {
       var on = WK_TAB === t.k;
       return '<button data-wk-tab="' + t.k + '" style="border:1.5px solid ' +
@@ -13470,6 +13473,160 @@ function wkListHTML(all) {
         'Дээрх «Шинэ мэдээлэл» товчоор эхэлнэ үү.</div>' : '') + '</div>';
   }
   return H + list.map(wkRowHTML).join('');
+}
+
+/* ══ АДМИНЫ ТОХИРГОО — байршил ба хугацаа ══ */
+function wkAdminModal() {
+  if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ тохируулна', 'error'); return; }
+  var node = elc('div', 'modal-info', '<div style="padding:20px;color:#94A3B8">Ачаалж байна…</div>');
+  buildModal('Work order — тохиргоо', node, { width: 'min(760px, 96vw)' });
+
+  Promise.all([wkLocLoad(true), wkUrgLoad(true)]).then(function () {
+    var groups = JSON.parse(JSON.stringify(wkLocGroups()));
+    var urg = JSON.parse(JSON.stringify(WK_URG || WK_URG_DEF));
+    var tab = 'loc';
+
+    var draw = function () {
+      var H = '<div style="display:flex;gap:7px;margin-bottom:14px">' +
+        [['loc', '📍 Байршил'], ['urg', '⏱ Хугацаа']].map(function (t) {
+          var on = tab === t[0];
+          return '<button data-wa-tab="' + t[0] + '" style="border:1.5px solid ' +
+            (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+            ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:7px 14px;cursor:pointer;' +
+            'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + t[1] + '</button>';
+        }).join('') + '</div>';
+
+      if (tab === 'urg') {
+        H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
+          'Ажилтан <b>5</b> дарвал хэдэн цагийн дотор шийдвэрлэх ёстой вэ? ' +
+          'Энэ хугацаанаас хойш «хугацаа хэтэрсэн» гэж тооцогдоно.</div>';
+        H += [5, 4, 3, 2, 1].map(function (n) {
+          var col = wkUrgColor(n);
+          return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;' +
+            'border-bottom:1px solid #F1F5F9">' +
+            '<span style="width:34px;height:34px;border-radius:9px;background:' + col + ';color:#fff;' +
+            'font-size:16px;font-weight:900;display:flex;align-items:center;justify-content:center;' +
+            'flex-shrink:0">' + n + '</span>' +
+            '<input type="number" min="1" max="8760" data-wa-urg="' + n + '" value="' + (urg[n] || 24) + '" ' +
+            'style="width:92px;border:1.5px solid #E2E8F0;border-radius:9px;padding:7px 10px;' +
+            'font-family:inherit;font-size:13px;text-align:right">' +
+            '<span style="font-size:12.5px;color:#64748B">цаг</span>' +
+            '<span style="margin-left:auto;font-size:12.5px;font-weight:700;color:#334155">' +
+            wkHoursText(urg[n] || 24) + '</span></div>';
+        }).join('');
+      } else {
+        H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
+          'Ажилтан мэдээлэхдээ эхлээд <b>бүлэг</b>, дараа нь <b>дэд байршил</b> сонгоно. ' +
+          'Дэд байршилгүй бүлэг ч байж болно.</div>';
+        H += groups.map(function (g, gi) {
+          return '<div style="border:1.5px solid #E2E8F0;border-radius:12px;padding:11px 13px;margin-bottom:9px">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<input type="text" data-wa-gn="' + gi + '" value="' + esc(g.name) + '" ' +
+            'style="flex:1;min-width:150px;border:1.5px solid #E2E8F0;border-radius:8px;padding:6px 9px;' +
+            'font-family:inherit;font-size:13px;font-weight:700">' +
+            '<input type="text" data-wa-gs="' + gi + '" value="' + esc(g.short || '') + '" placeholder="товчлол" ' +
+            'style="width:88px;border:1.5px solid #E2E8F0;border-radius:8px;padding:6px 9px;' +
+            'font-family:inherit;font-size:12.5px">' +
+            '<button data-wa-gdel="' + gi + '" title="Бүлгийг устгах" style="border:1.5px solid #FECACA;' +
+            'background:#FEF2F2;color:#B91C1C;border-radius:8px;padding:6px 10px;cursor:pointer;' +
+            'font-family:inherit;font-size:12px">✕</button></div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding-left:11px;' +
+            'border-left:2.5px solid #E2E8F0">' +
+            (g.subs || []).map(function (sb, si) {
+              return '<span style="display:inline-flex;align-items:center;gap:6px;background:#F1F5F9;' +
+                'border-radius:8px;padding:4px 8px;font-size:12px;color:#334155">' + esc(sb) +
+                '<button data-wa-sdel="' + gi + '|' + si + '" style="border:0;background:none;cursor:pointer;' +
+                'color:#94A3B8;font-size:13px;padding:0 2px">✕</button></span>';
+            }).join('') +
+            '<span style="display:inline-flex;gap:5px">' +
+            '<input type="text" data-wa-snew="' + gi + '" placeholder="дэд байршил нэмэх" ' +
+            'style="width:160px;border:1.5px dashed #CBD5E1;border-radius:8px;padding:4px 9px;' +
+            'font-family:inherit;font-size:12px">' +
+            '<button data-wa-sadd="' + gi + '" style="border:1.5px solid #C7D2FE;background:#EEF2FF;' +
+            'color:#4338CA;border-radius:8px;padding:4px 10px;cursor:pointer;font-family:inherit;' +
+            'font-size:12px;font-weight:700">＋</button></span>' +
+            '</div></div>';
+        }).join('');
+        H += '<div style="display:flex;gap:7px;margin-top:11px">' +
+          '<input type="text" id="waNewG" placeholder="Шинэ бүлгийн нэр (ж: Зогсоол)" ' +
+          'style="flex:1;border:1.5px dashed #CBD5E1;border-radius:9px;padding:8px 11px;' +
+          'font-family:inherit;font-size:13px">' +
+          '<button id="waAddG" class="btn btn-secondary btn-sm">＋ Бүлэг нэмэх</button></div>';
+      }
+
+      H += '<button class="btn btn-primary btn-block" id="waSave" style="margin-top:16px">' +
+        '<i class="ti ti-device-floppy"></i> Хадгалах</button>';
+      node.innerHTML = H;
+    };
+
+    /* Талбарын утгыг санах ойд авна (дахин зурахад алдагдахгүй) */
+    var grab = function () {
+      Array.prototype.forEach.call(node.querySelectorAll('[data-wa-gn]'), function (el) {
+        groups[+el.getAttribute('data-wa-gn')].name = el.value.trim();
+      });
+      Array.prototype.forEach.call(node.querySelectorAll('[data-wa-gs]'), function (el) {
+        groups[+el.getAttribute('data-wa-gs')].short = el.value.trim();
+      });
+      Array.prototype.forEach.call(node.querySelectorAll('[data-wa-urg]'), function (el) {
+        var v = parseInt(el.value, 10); if (v > 0) urg[+el.getAttribute('data-wa-urg')] = v;
+      });
+    };
+
+    node.addEventListener('input', function (ev) {
+      if (ev.target.closest('[data-wa-urg]')) { grab(); draw(); }
+    });
+    node.addEventListener('click', function (ev) {
+      var b;
+      if ((b = ev.target.closest('[data-wa-tab]'))) { grab(); tab = b.getAttribute('data-wa-tab'); draw(); return; }
+      if ((b = ev.target.closest('[data-wa-gdel]'))) {
+        grab();
+        var gi = +b.getAttribute('data-wa-gdel');
+        if (!confirm('«' + groups[gi].name + '» бүлгийг устгах уу?')) return;
+        groups.splice(gi, 1); draw(); return;
+      }
+      if ((b = ev.target.closest('[data-wa-sdel]'))) {
+        grab();
+        var p = b.getAttribute('data-wa-sdel').split('|');
+        groups[+p[0]].subs.splice(+p[1], 1); draw(); return;
+      }
+      if ((b = ev.target.closest('[data-wa-sadd]'))) {
+        grab();
+        var gi2 = +b.getAttribute('data-wa-sadd');
+        var inp = node.querySelector('[data-wa-snew="' + gi2 + '"]');
+        var v = inp ? inp.value.trim() : '';
+        if (!v) { toast('Нэрийг бичнэ үү', 'warn'); return; }
+        groups[gi2].subs = (groups[gi2].subs || []).concat([v]);
+        draw(); return;
+      }
+      if (ev.target.closest('#waAddG')) {
+        grab();
+        var el = node.querySelector('#waNewG');
+        var nm = el ? el.value.trim() : '';
+        if (!nm) { toast('Бүлгийн нэрийг бичнэ үү', 'warn'); return; }
+        groups.push({ id: 'g' + Date.now().toString(36), name: nm, short: '', subs: [] });
+        draw(); return;
+      }
+      if (ev.target.closest('#waSave')) {
+        grab();
+        var bad = groups.filter(function (g) { return !g.name; });
+        if (bad.length) { toast('Нэргүй бүлэг байна', 'warn'); return; }
+        var btn = node.querySelector('#waSave');
+        btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+        Promise.all([wkLocSave(groups), wkUrgSave(urg)]).then(function () {
+          closeModal();
+          toast('✓ Тохиргоо хадгалагдлаа', 'success');
+          try { renderReportflow(); } catch (e) {}
+        }).catch(function (e) {
+          btn.disabled = false; btn.innerHTML = 'Дахин оролдох';
+          toast('Хадгалж чадсангүй: ' + ((e && e.message) || e), 'error');
+        });
+        return;
+      }
+    });
+    draw();
+  }).catch(function (e) {
+    node.innerHTML = '<div style="padding:20px;color:#DC2626">Ачаалж чадсангүй: ' + esc(e.message || e) + '</div>';
+  });
 }
 
 function rfSeeAll() {
@@ -14785,6 +14942,7 @@ function rfAfter(sec, admin, pending) {
     if (tb) { RF_TAB = tb.getAttribute('data-rf-tab'); renderReportflow(); return; }
     /* ── Work order ── */
     if (ev.target.closest('[data-wk-new]')) { wkNewModal(); return; }
+    if (ev.target.closest('[data-wk-admin]')) { wkAdminModal(); return; }
     var wt = ev.target.closest('[data-wk-tab]');
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     var wc = ev.target.closest('[data-wk-claim]');
