@@ -1069,6 +1069,7 @@ function colQueries(key) {
 
     if (isDeptHead()) {
       if (!dept) return [c];
+      if (key === 'reports' && rfNeedAllRows()) return [c];
       if (['reports', 'suggestions', 'firstAidChecks', 'ppeObservations', 'violations', 'tasks'].indexOf(key) >= 0) {
         return [c.where('dept', '==', dept)];
       }
@@ -1086,7 +1087,10 @@ function colQueries(key) {
     switch (key) {
       case 'hazards':       return [c.where('reporterUid', '==', uid)];
       case 'suggestions':   return [c.where('authorUid', '==', uid)];
-      case 'reports':       return [c.where('reporterUid', '==', uid)];
+      /* ⚠ ХАБЭА ба ИТА-д БҮХ мэдээлэл хэрэгтэй — тэд баталгаажуулж, засдаг.
+         SESSION-д албан тушаал байдаггүй тул албаар нь шийдээд, нарийн
+         эрхийг хөтөч дээр rfSeeAll() шалгана. */
+      case 'reports':       return rfNeedAllRows() ? [c] : [c.where('reporterUid', '==', uid)];
       case 'notifications': return [c.where('uid', '==', uid)];
       case 'incidents':     return [c.where('uid', '==', uid)];
       case 'violations':    return [c.where('empId', '==', uid)];
@@ -12238,6 +12242,10 @@ function verifyReport(id, decision, newRisk) {
     toast('Татгалзлаа', 'info');
   }
   saveDB();
+  /* ⚠ saveDB() нь ЗӨВХӨН админ байхад Firestore руу бичдэг. ХАБЭА-н
+     менежерүүд (эрхийн хувьд «employee») баталгаажуулахад хадгалагдахгүй
+     байх байсан — createReport дээрхтэй ижил алдаа. Шууд бичнэ. */
+  reportPushToServer(r);
   renderReportflow(); renderKpiPage(); renderEmployees(); renderDashboard(); renderNotifBadge();
 }
 
@@ -12289,6 +12297,440 @@ function woWireNode(node) {
 }
 
 /* Энэ аюулд ажлын захиалга гарсан уу */
+/* ⭐ АЮУЛЫН БҮХ МЭДЭЭЛЛИЙГ ХАРАХ ЭРХ
+   Админ · ХАБЭА-н албаны БҮХ ажилтан (баталгаажуулдаг) ·
+   ИТА-гийн ахлах инженерүүд (засдаг).
+   Бусад ажилтан зөвхөн ӨӨРИЙНХӨӨ мэдээллийг харна. */
+/* ══════════════════════════════════════════════════════════════════════
+   АЮУЛ / NEAR-MISS ДАШБОАРД
+   ----------------------------------------------------------------------
+   ⚠ Өнгө нь ТААМАГЛАЛ БИШ — палитр шалгагчаар баталсан (light, #FFFFFF):
+     RF_C.a/#4F46E5 · RF_C.b/#EA580C   → бүх шалгуур давсан
+     RF_RISK  #0ca30c · #E9A100 · #C81E3A → давсан, гэхдээ CVD 6.0 ба
+       шар 2.2:1 тул ШУУД ШОШГО заавал (нөхөн төлбөр).
+     RF_STEP  4 шаттай нэг өнгийн ordinal ramp → давсан.
+   Дүрэм: тэнхлэг НЭГ (хос тэнхлэг хэзээ ч үгүй), нэрлэсэн ангилалд
+   өнгөний шат тавихгүй, тоо бүр дээр шошго бичихгүй, хүснэгт харагдац
+   ЗААВАЛ байна.
+   ══════════════════════════════════════════════════════════════════════ */
+var RF_C = { a: '#4F46E5', b: '#EA580C' };
+var RF_RISK = { low: '#0ca30c', mid: '#E9A100', high: '#C81E3A' };
+var RF_STEP = ['#93A9FB', '#818CF8', '#4F46E5', '#3730A3'];
+var RF_INK = { p: '#1E293B', s: '#64748B', m: '#94A3B8', grid: '#E2E8F0', surf: '#FFFFFF' };
+
+/* Шүүлтүүрийн төлөв — БҮХ график нэг зүсмэлээр зурагдана */
+var RF_DASH = { days: 90, dept: '', table: false };
+
+function rfMonthKey(d) { return String(d).slice(0, 7); }
+function rfDaysAgo(n) { return new Date(Date.now() - n * 86400000); }
+
+/* ── Дата бэлдэх ── */
+function rfDashData(all) {
+  var from = RF_DASH.days ? rfDaysAgo(RF_DASH.days) : null;
+  var rows = (all || []).filter(function (r) {
+    if (!r || !r.createdAt) return false;
+    if (from && new Date(r.createdAt) < from) return false;
+    if (RF_DASH.dept && String(r.dept || '') !== RF_DASH.dept) return false;
+    return true;
+  });
+
+  var d = {
+    rows: rows, n: rows.length,
+    pending: 0, verified: 0, rejected: 0,
+    urgent: 0, needFix: 0, inRepair: 0, closed: 0,
+    risk: { low: 0, mid: 0, high: 0 },
+    type: { hazard: 0, near_miss: 0 },
+    byDept: {}, byPlace: {}, byMonth: {},
+    slowest: null, avgVerifyH: null
+  };
+  var vSum = 0, vN = 0;
+
+  rows.forEach(function (r) {
+    if (r.status === 'reported') d.pending++;
+    else if (r.status === 'verified') d.verified++;
+    else if (r.status === 'rejected') d.rejected++;
+    if (r.urgent) d.urgent++;
+    if (r.needFix) d.needFix++;
+    var wo = woForReport(r.id);
+    if (wo) { if (woIsDone(wo)) d.closed++; else d.inRepair++; }
+    if (d.risk[r.risk_level] != null) d.risk[r.risk_level]++;
+    if (d.type[r.type] != null) d.type[r.type]++;
+
+    var dp = String(r.dept || 'Тодорхойгүй');
+    d.byDept[dp] = (d.byDept[dp] || 0) + 1;
+    var pl = String(r.location || 'Тодорхойгүй').trim() || 'Тодорхойгүй';
+    d.byPlace[pl] = (d.byPlace[pl] || 0) + 1;
+
+    var mk = rfMonthKey(r.createdAt);
+    if (!d.byMonth[mk]) d.byMonth[mk] = { hazard: 0, near_miss: 0 };
+    if (d.byMonth[mk][r.type] != null) d.byMonth[mk][r.type]++;
+
+    if (r.verifiedAt) {
+      var hrs = (new Date(r.verifiedAt) - new Date(r.createdAt)) / 3600000;
+      if (hrs >= 0 && hrs < 24 * 365) { vSum += hrs; vN++; }
+    }
+    if (r.status === 'reported') {
+      var age = (Date.now() - new Date(r.createdAt)) / 86400000;
+      if (!d.slowest || age > d.slowest.age) d.slowest = { r: r, age: age };
+    }
+  });
+  if (vN) d.avgVerifyH = vSum / vN;
+  d.open = d.pending + d.inRepair;      /* шийдвэрлэгдээгүй */
+  return d;
+}
+
+/* Эрэмбэлсэн жагсаалт болгоно */
+function rfTop(map, n) {
+  return Object.keys(map).map(function (k) { return { k: k, v: map[k] }; })
+    .sort(function (a, b) { return b.v - a.v; }).slice(0, n || 8);
+}
+/* Сүүлийн N сарын түлхүүр */
+function rfMonths(n) {
+  var out = [], now = new Date();
+  for (var i = n - 1; i >= 0; i--) {
+    var dd = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(dd.getFullYear() + '-' + ('0' + (dd.getMonth() + 1)).slice(-2));
+  }
+  return out;
+}
+var RF_MON = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
+function rfMonLabel(k) { return RF_MON[+String(k).slice(5, 7) - 1] + ' сар'; }
+
+/* Картын хальс */
+function rfCard(title, sub, body, extra) {
+  return '<div class="card" style="padding:16px 18px;' + (extra || '') + '">' +
+    '<div style="font-size:13.5px;font-weight:800;color:' + RF_INK.p + '">' + esc(title) + '</div>' +
+    (sub ? '<div style="font-size:11.5px;color:' + RF_INK.m + ';margin-top:2px">' + esc(sub) + '</div>' : '') +
+    '<div style="margin-top:11px">' + body + '</div></div>';
+}
+/* Хулганы тайлбар — бүх тэмдэглэгээнд */
+function rfTip(txt) { return ' data-rftip="' + esc(txt) + '" tabindex="0" '; }
+
+/* ── ГОЛ ТОО (нэг л удаа, ≥48px, ижил sans, пропорциональ цифр) ── */
+function rfHeroHTML(d) {
+  var pct = d.n ? Math.round((d.closed / d.n) * 100) : 0;
+  return '<div class="card" style="padding:20px 22px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">' +
+    '<div>' +
+    '<div style="font-size:12px;font-weight:700;color:' + RF_INK.m + ';letter-spacing:.3px">ШИЙДВЭРЛЭГДЭЭГҮЙ АЮУЛ</div>' +
+    '<div style="font-size:52px;line-height:1.05;font-weight:800;color:' +
+    (d.open ? '#C81E3A' : '#0ca30c') + ';font-family:inherit">' + d.open + '</div>' +
+    '<div style="font-size:12.5px;color:' + RF_INK.s + ';margin-top:2px">' +
+    d.pending + ' баталгаажаагүй · ' + d.inRepair + ' засварт</div></div>' +
+    '<div style="width:1px;align-self:stretch;background:' + RF_INK.grid + '"></div>' +
+    '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
+    ['<div><div style="font-size:11.5px;color:' + RF_INK.m + '">Нийт мэдээлэл</div>' +
+      '<div style="font-size:22px;font-weight:800;color:' + RF_INK.p + '">' + d.n + '</div></div>',
+     '<div><div style="font-size:11.5px;color:' + RF_INK.m + '">Хаагдсан</div>' +
+      '<div style="font-size:22px;font-weight:800;color:#0ca30c">' + d.closed +
+      '<span style="font-size:12.5px;font-weight:600;color:' + RF_INK.m + '"> · ' + pct + '%</span></div></div>',
+     '<div><div style="font-size:11.5px;color:' + RF_INK.m + '">Яаралтай</div>' +
+      '<div style="font-size:22px;font-weight:800;color:' + (d.urgent ? '#C81E3A' : RF_INK.m) + '">' + d.urgent + '</div></div>',
+     '<div><div style="font-size:11.5px;color:' + RF_INK.m + '">Батлах дундаж хугацаа</div>' +
+      '<div style="font-size:22px;font-weight:800;color:' + RF_INK.p + '">' +
+      (d.avgVerifyH == null ? '—' : (d.avgVerifyH < 48 ? Math.round(d.avgVerifyH) + ' ц'
+        : Math.round(d.avgVerifyH / 24) + ' хоног')) + '</div></div>'
+    ].join('') + '</div></div>';
+}
+
+/* ── ЮҮЛҮҮР — дараалсан шат тул ordinal ramp (нэг өнгө, гэрлээс бараан) ── */
+function rfFunnelHTML(d) {
+  var st = [
+    { l: 'Мэдээлэгдсэн', v: d.n },
+    { l: 'Баталгаажсан', v: d.verified },
+    { l: 'Засварт орсон', v: d.inRepair + d.closed },
+    { l: 'Хаагдсан', v: d.closed }
+  ];
+  var max = Math.max(1, st[0].v);
+  var body = st.map(function (x, i) {
+    var w = Math.max(x.v ? 2 : 0, (x.v / max) * 100);
+    var drop = i > 0 && st[i - 1].v ? Math.round((1 - x.v / st[i - 1].v) * 100) : 0;
+    return '<div style="margin-bottom:9px">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">' +
+      '<span style="font-size:12.5px;font-weight:700;color:' + RF_INK.p + '">' + esc(x.l) + '</span>' +
+      '<span style="font-size:12.5px;font-weight:800;color:' + RF_INK.p + '">' + x.v + '</span>' +
+      (i > 0 && drop > 0 ? '<span style="font-size:11px;color:' + RF_INK.m + ';margin-left:auto">' +
+        '↓ ' + drop + '% энэ шатанд гацсан</span>' : '') + '</div>' +
+      '<div style="height:14px;background:#F1F5F9;border-radius:7px;overflow:hidden">' +
+      '<div' + rfTip(x.l + ': ' + x.v) + 'style="width:' + w + '%;height:100%;background:' + RF_STEP[i] +
+      ';border-radius:0 7px 7px 0"></div></div></div>';
+  }).join('');
+  return rfCard('Аюулаас хаалт хүртэл', 'Хаана хэдэн хувь нь зогсож байна',
+    body + '<div style="font-size:11px;color:' + RF_INK.m + ';margin-top:4px">' +
+    'Нэг өнгөний шаталсан хувилбар — шат бүр гүнзгийрнэ.</div>');
+}
+
+/* ── ЧИГ ХАНДЛАГА — 2 цуврал, 2px шугам, ≥8px цэг + 2px цагираг ── */
+function rfTrendHTML(d) {
+  var ms = rfMonths(6);
+  var A = ms.map(function (k) { return (d.byMonth[k] || {}).hazard || 0; });
+  var B = ms.map(function (k) { return (d.byMonth[k] || {}).near_miss || 0; });
+  var max = Math.max(1, Math.max.apply(null, A.concat(B)));
+  var W = 560, H = 190, L = 34, R = 92, T = 14, Bm = 26;
+  var pw = W - L - R, ph = H - T - Bm;
+  var X = function (i) { return L + (ms.length < 2 ? pw / 2 : (i / (ms.length - 1)) * pw); };
+  var Y = function (v) { return T + ph - (v / max) * ph; };
+
+  var grid = '', ticks = [0, Math.ceil(max / 2), max];
+  ticks.forEach(function (t) {
+    grid += '<line x1="' + L + '" y1="' + Y(t) + '" x2="' + (L + pw) + '" y2="' + Y(t) +
+      '" stroke="' + RF_INK.grid + '" stroke-width="1"/>' +
+      '<text x="' + (L - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-size="10.5" ' +
+      'fill="' + RF_INK.m + '" style="font-variant-numeric:tabular-nums">' + t + '</text>';
+  });
+  var xlab = ms.map(function (k, i) {
+    return '<text x="' + X(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10.5" fill="' +
+      RF_INK.m + '">' + esc(rfMonLabel(k)) + '</text>';
+  }).join('');
+  var path = function (arr) {
+    return arr.map(function (v, i) { return (i ? 'L' : 'M') + X(i) + ' ' + Y(v); }).join(' ');
+  };
+  var dots = function (arr, col) {
+    return arr.map(function (v, i) {
+      return '<circle cx="' + X(i) + '" cy="' + Y(v) + '" r="4" fill="' + col +
+        '" stroke="' + RF_INK.surf + '" stroke-width="2"' +
+        rfTip(rfMonLabel(ms[i]) + ' · ' + v) + '/>';
+    }).join('');
+  };
+  /* Шууд шошго — ЗӨВХӨН төгсгөлд (тоо бүр дээр биш) */
+  var endLab = function (arr, col, name) {
+    var i = arr.length - 1;
+    return '<text x="' + (X(i) + 9) + '" y="' + (Y(arr[i]) + 4) + '" font-size="11.5" font-weight="700" fill="' +
+      RF_INK.p + '">' + arr[i] + '</text>' +
+      '<text x="' + (X(i) + 9) + '" y="' + (Y(arr[i]) + 17) + '" font-size="10" fill="' + RF_INK.m + '">' +
+      esc(name) + '</text>';
+  };
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;overflow:visible">' +
+    grid + xlab +
+    '<path d="' + path(A) + '" fill="none" stroke="' + RF_C.a + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="' + path(B) + '" fill="none" stroke="' + RF_C.b + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    dots(A, RF_C.a) + dots(B, RF_C.b) +
+    endLab(A, RF_C.a, 'Аюул') + endLab(B, RF_C.b, 'Осолд дөхсөн') +
+    '</svg>';
+  /* Хоёр цуврал тул ТАЙЛБАР ЗААВАЛ */
+  var leg = '<div style="display:flex;gap:15px;margin-top:6px;font-size:11.5px;color:' + RF_INK.s + '">' +
+    '<span style="display:inline-flex;align-items:center;gap:6px">' +
+    '<span style="width:14px;height:2.5px;border-radius:2px;background:' + RF_C.a + '"></span>Аюул / эрсдэл</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:6px">' +
+    '<span style="width:14px;height:2.5px;border-radius:2px;background:' + RF_C.b + '"></span>Осолд дөхсөн</span></div>';
+  return rfCard('Сарын хандлага', 'Сүүлийн 6 сар', svg + leg);
+}
+
+/* ── АЛБАДААР — нэг хэмжигдэхүүн тул НЭГ өнгө (нэрлэсэн ангилалд шат тавихгүй) ── */
+function rfRankHTML(title, sub, map, col) {
+  var top = rfTop(map, 7);
+  if (!top.length) return rfCard(title, sub, '<div style="font-size:12.5px;color:' + RF_INK.m + '">Дата алга</div>');
+  var max = Math.max.apply(null, top.map(function (x) { return x.v; }));
+  var body = top.map(function (x) {
+    var w = Math.max(3, (x.v / max) * 100);
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">' +
+      '<span style="flex:0 0 128px;font-size:11.5px;color:' + RF_INK.s + ';overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap" title="' + esc(x.k) + '">' + esc(x.k) + '</span>' +
+      '<span style="flex:1;height:14px;background:#F8FAFC;border-radius:0 7px 7px 0;position:relative">' +
+      '<span' + rfTip(x.k + ': ' + x.v) + 'style="position:absolute;left:0;top:0;height:100%;width:' + w +
+      '%;background:' + col + ';border-radius:0 7px 7px 0"></span></span>' +
+      '<span style="flex:0 0 30px;text-align:right;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span></div>';
+  }).join('');
+  return rfCard(title, sub, body);
+}
+
+/* ── ЭРСДЭЛИЙН ЗЭРЭГ — хэсэг-бүхэлд, 2px гадаргуун завсар, ШУУД ШОШГО ЗААВАЛ ──
+   ⚠ Палитр шалгагч: шар↔ногооны CVD ΔE 6.0 (6–8 зурваст) ба шар 2.2:1
+   контрасттай тул шошго нь заавал — өнгө дангаараа утга дамжуулахгүй. */
+function rfRiskHTML(d) {
+  var tot = d.risk.low + d.risk.mid + d.risk.high;
+  if (!tot) return rfCard('Эрсдэлийн зэрэг', '', '<div style="font-size:12.5px;color:' + RF_INK.m + '">Дата алга</div>');
+  var seg = [
+    { l: 'Өндөр', v: d.risk.high, c: RF_RISK.high, i: '⬤' },
+    { l: 'Дунд', v: d.risk.mid, c: RF_RISK.mid, i: '◆' },
+    { l: 'Бага', v: d.risk.low, c: RF_RISK.low, i: '▲' }
+  ];
+  var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
+    seg.filter(function (x) { return x.v; }).map(function (x) {
+      return '<div' + rfTip(x.l + ': ' + x.v) + 'style="flex:' + x.v + ';background:' + x.c +
+        ';border-radius:4px"></div>';
+    }).join('') + '</div>';
+  var list = seg.map(function (x) {
+    var pct = Math.round((x.v / tot) * 100);
+    return '<div style="display:flex;align-items:center;gap:9px;padding:4px 0">' +
+      '<span style="width:11px;height:11px;border-radius:3px;background:' + x.c + ';flex-shrink:0"></span>' +
+      '<span style="font-size:12.5px;color:' + RF_INK.s + '">' + x.i + ' ' + esc(x.l) + '</span>' +
+      '<span style="margin-left:auto;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span>' +
+      '<span style="font-size:11.5px;color:' + RF_INK.m + ';width:34px;text-align:right;' +
+      'font-variant-numeric:tabular-nums">' + pct + '%</span></div>';
+  }).join('');
+  return rfCard('Эрсдэлийн зэрэг', 'Мэдээлсэн хүний үнэлгээ · ХАБ баталгаажуулахдаа өөрчилж болно',
+    bar + list);
+}
+
+/* ── ШҮҮЛТҮҮР: БҮХ график дээр НЭГ мөр (карт дотор биш) ── */
+function rfFilterHTML(all) {
+  var depts = {};
+  (all || []).forEach(function (r) { if (r && r.dept) depts[r.dept] = 1; });
+  var dl = Object.keys(depts).sort();
+  var pill = function (k, label, on) {
+    return '<button data-rf-days="' + k + '" style="border:1.5px solid ' + (on ? RF_C.a : RF_INK.grid) +
+      ';background:' + (on ? RF_C.a : '#fff') + ';color:' + (on ? '#fff' : RF_INK.p) +
+      ';border-radius:9px;padding:6px 12px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
+      'font-weight:' + (on ? '800' : '600') + '">' + label + '</button>';
+  };
+  return '<div class="card" style="padding:12px 15px;margin-bottom:12px;display:flex;' +
+    'align-items:center;gap:9px;flex-wrap:wrap">' +
+    '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + '">ХУГАЦАА</span>' +
+    pill(30, '30 хоног', RF_DASH.days === 30) +
+    pill(90, '90 хоног', RF_DASH.days === 90) +
+    pill(365, '1 жил', RF_DASH.days === 365) +
+    pill(0, 'Бүгд', RF_DASH.days === 0) +
+    '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + ';margin-left:9px">АЛБА</span>' +
+    '<select data-rf-dept="1" style="border:1.5px solid ' + RF_INK.grid + ';border-radius:9px;' +
+    'padding:6px 10px;font-family:inherit;font-size:12.5px;background:#fff;color:' + RF_INK.p + '">' +
+    '<option value="">Бүх алба</option>' +
+    dl.map(function (d) {
+      return '<option value="' + esc(d) + '"' + (RF_DASH.dept === d ? ' selected' : '') + '>' + esc(d) + '</option>';
+    }).join('') + '</select>' +
+    '<button data-rf-table="1" style="margin-left:auto;border:1.5px solid ' +
+    (RF_DASH.table ? RF_C.a : RF_INK.grid) + ';background:' + (RF_DASH.table ? RF_C.a : '#fff') +
+    ';color:' + (RF_DASH.table ? '#fff' : RF_INK.p) + ';border-radius:9px;padding:6px 12px;' +
+    'cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700">' +
+    '<i class="ti ti-table"></i> ' + (RF_DASH.table ? 'График харах' : 'Хүснэгтээр харах') + '</button>' +
+    '</div>';
+}
+
+/* ── ХҮСНЭГТ ХАРАГДАЦ — өнгөнөөс хамаарахгүй, бүх утга уншигдана ── */
+function rfTableHTML(d) {
+  var rows = d.rows.slice().sort(function (a, b) {
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+  var risk = { low: 'Бага', mid: 'Дунд', high: 'Өндөр' };
+  var stat = { reported: 'Хүлээгдэж буй', verified: 'Баталгаажсан', rejected: 'Татгалзсан' };
+  var body = rows.slice(0, 300).map(function (r) {
+    var wo = woForReport(r.id);
+    return '<tr data-report="' + esc(r.id) + '" style="cursor:pointer">' +
+      '<td style="white-space:nowrap">' + esc(String(r.createdAt || '').slice(0, 10)) + '</td>' +
+      '<td>' + (r.type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + '</td>' +
+      '<td>' + esc(risk[r.risk_level] || '—') + '</td>' +
+      '<td>' + esc(r.dept || '—') + '</td>' +
+      '<td>' + esc(r.location || '—') + '</td>' +
+      '<td>' + esc(r.equipment || '—') + '</td>' +
+      '<td>' + esc(r.reporterFull || r.reporterName || '—') + '</td>' +
+      '<td>' + esc(stat[r.status] || r.status) + '</td>' +
+      '<td>' + (r.urgent ? 'Тийм' : '') + '</td>' +
+      '<td>' + (wo ? esc(wo.id) + (woIsDone(wo) ? ' (хаагдсан)' : ' (явцад)') : '—') + '</td></tr>';
+  }).join('');
+  return '<div class="card" style="padding:16px 18px">' +
+    '<div style="font-size:13.5px;font-weight:800;color:' + RF_INK.p + '">Бүх мэдээлэл — хүснэгтээр</div>' +
+    '<div style="font-size:11.5px;color:' + RF_INK.m + ';margin:2px 0 11px">' + rows.length +
+    ' мөр' + (rows.length > 300 ? ' (эхний 300 харуулав)' : '') + ' · мөр дээр дарж дэлгэрэнгүйг нээнэ</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="min-width:940px;font-size:12.5px;' +
+    'font-variant-numeric:tabular-nums"><thead><tr>' +
+    ['Огноо', 'Төрөл', 'Эрсдэл', 'Алба', 'Байршил', 'Тоног төхөөрөмж', 'Мэдээлсэн', 'Төлөв', 'Яаралтай', 'Ажлын захиалга']
+      .map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + (body || '<tr><td colspan="10">Дата алга</td></tr>') + '</tbody></table></div></div>';
+}
+
+/* ── БҮТЭН ДАШБОАРД ── */
+function rfDashHTML(all) {
+  var d = rfDashData(all);
+  var H = rfFilterHTML(all);
+  if (!d.n) {
+    return H + '<div class="card" style="padding:34px;text-align:center">' +
+      '<div style="font-size:30px">📊</div>' +
+      '<div style="font-size:14px;font-weight:700;color:' + RF_INK.p + ';margin-top:6px">' +
+      'Сонгосон хугацаанд мэдээлэл алга</div>' +
+      '<div style="font-size:12.5px;color:' + RF_INK.m + ';margin-top:4px">Хугацааны хүрээг өргөтгөж үзнэ үү.</div></div>';
+  }
+  if (RF_DASH.table) return H + rfTableHTML(d);
+
+  H += rfHeroHTML(d) + '<div style="height:12px"></div>';
+  H += '<div class="dash-2col" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">' +
+    rfFunnelHTML(d) + rfTrendHTML(d) +
+    rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй', d.byDept, RF_C.a) +
+    rfRiskHTML(d) +
+    rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна', d.byPlace, RF_C.a) +
+    rfAttentionHTML(d) +
+    '</div>';
+  return H;
+}
+
+/* ── АНХААРАЛ ШААРДСАН — тоо биш, ҮЙЛДЭЛ ── */
+function rfAttentionHTML(d) {
+  var items = [];
+  if (d.pending) items.push({ i: '⏳', c: '#E9A100',
+    t: d.pending + ' мэдээлэл баталгаажаагүй', s: 'ХАБ баталгаажуулах хүртэл бонус тооцогдохгүй' });
+  if (d.needFix - d.inRepair - d.closed > 0) items.push({ i: '🔧', c: '#C81E3A',
+    t: (d.needFix - d.inRepair - d.closed) + ' аюулд засвар хүсэгдсэн ч захиалга үүсээгүй',
+    s: 'ИТА-д ажлын захиалга үүсгэх шаардлагатай' });
+  if (d.urgent) items.push({ i: '🚨', c: '#C81E3A',
+    t: d.urgent + ' яаралтай мэдээлэл', s: 'Одоо ч аюултай гэж тэмдэглэгдсэн' });
+  if (d.slowest && d.slowest.age > 3) items.push({ i: '🕐', c: '#E9A100',
+    t: 'Хамгийн удаан хүлээж буй: ' + Math.round(d.slowest.age) + ' хоног',
+    s: String(d.slowest.r.location || '') + ' — ' + String(d.slowest.r.desc || '').slice(0, 60) });
+  if (!items.length) items.push({ i: '✅', c: '#0ca30c', t: 'Гацсан зүйл алга', s: 'Бүх мэдээлэл хөдөлж байна' });
+  return rfCard('Анхаарал шаардсан', 'Юуг эхлээд барих вэ',
+    items.map(function (x) {
+      return '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #F1F5F9">' +
+        '<span style="font-size:16px;flex-shrink:0">' + x.i + '</span>' +
+        '<span><span style="display:block;font-size:12.5px;font-weight:700;color:' + x.c + '">' + esc(x.t) + '</span>' +
+        '<span style="display:block;font-size:11.5px;color:' + RF_INK.m + '">' + esc(x.s) + '</span></span></div>';
+    }).join(''));
+}
+
+/* ── Хулганы тайлбарын давхарга (нэг л удаа) ── */
+function rfTipWire() {
+  if (document._rfTipWired) return;
+  document._rfTipWired = true;
+  var box = document.createElement('div');
+  box.style.cssText = 'position:fixed;z-index:99999;pointer-events:none;display:none;' +
+    'background:#1E293B;color:#fff;font-size:12px;font-weight:600;padding:5px 9px;' +
+    'border-radius:7px;box-shadow:0 3px 12px rgba(0,0,0,.22);max-width:260px';
+  document.body.appendChild(box);
+  var show = function (el) {
+    var t = el.getAttribute('data-rftip'); if (!t) return;
+    box.textContent = t; box.style.display = 'block';
+    var r = el.getBoundingClientRect();
+    box.style.left = Math.min(window.innerWidth - box.offsetWidth - 10,
+      Math.max(6, r.left + r.width / 2 - box.offsetWidth / 2)) + 'px';
+    box.style.top = Math.max(6, r.top - box.offsetHeight - 8) + 'px';
+  };
+  var hide = function () { box.style.display = 'none'; };
+  document.addEventListener('mouseover', function (e) {
+    var el = e.target.closest && e.target.closest('[data-rftip]'); if (el) show(el);
+  });
+  document.addEventListener('mouseout', function (e) {
+    if (e.target.closest && e.target.closest('[data-rftip]')) hide();
+  });
+  /* Гараас ч ижил — хулганагүй хүн ч утгыг харна */
+  document.addEventListener('focusin', function (e) {
+    var el = e.target.closest && e.target.closest('[data-rftip]'); if (el) show(el);
+  });
+  document.addEventListener('focusout', hide);
+  window.addEventListener('scroll', hide, true);
+}
+
+function rfSeeAll() {
+  try {
+    if (isAdmin()) return true;
+    var dept = '', pos = '';
+    var me = null; try { me = myEmp(); } catch (e) {}
+    if (me) { dept = me.dept || ''; pos = me.pos || me.role || ''; }
+    if (!dept && SESSION) dept = SESSION.dept || '';
+    if (/Хөдөлмөрийн\s*аюулгүй/i.test(dept)) return true;       /* ХАБЭА — бүх ажилтан */
+    if (riskSameDept(dept, 'Инженер техникийн алба') &&
+        /ахлах\s*инженер/i.test(pos)) return true;              /* ИТА — ахлах инженерүүд */
+    return false;
+  } catch (e) { return false; }
+}
+/* Сервер талаас БҮХ бичлэгийг татах шаардлагатай эсэх (SESSION-оор шийднэ —
+   ажилтны жагсаалт ирээгүй байж болзошгүй). */
+function rfNeedAllRows() {
+  try {
+    if (isAdmin()) return true;
+    var d = (SESSION && SESSION.dept) || '';
+    return /Хөдөлмөрийн\s*аюулгүй/i.test(d) || /нженер\s*техник/i.test(d);
+  } catch (e) { return false; }
+}
+
 function woForReport(reportId) {
   if (!reportId) return null;
   var f = (WO_ROWS || []).filter(function (w) { return w && w.reportId === reportId; });
@@ -13455,11 +13897,14 @@ function renderReportflow() {
   var sec = pageEl('reportflow');
   if (!sec) return;
   var reports = DB.reports || [];
+  var seeAll = rfSeeAll();
   var pending = reports.filter(function (r) { return r.status === 'reported'; });
   var verified = reports.filter(function (r) { return r.status === 'verified'; });
   var rejected = reports.filter(function (r) { return r.status === 'rejected'; });
   var thisMonth = verified.filter(function (r) { return monthKey(r.verifiedAt || r.createdAt) === monthKey(); }).length;
-  var admin = isAdmin();
+  /* ⭐ ХАБЭА-н ажилтан ба ИТА-гийн ахлах инженерүүд админтай ЯГ ИЖИЛ
+     харагдац авна — баталгаажуулах дараалал, бүх түүх. */
+  var admin = seeAll;
   var myBonus = 0;
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
@@ -13473,6 +13918,10 @@ function renderReportflow() {
   /* ⭐ ТАБ — мэдээлэл нь аюулыг ОЛОХ, ажлын захиалга нь ЗАСАХ хэсэг.
      Хоёулаа нэг цэсэнд байж «олсон → зассан» гэсэн бүтэн гогцоо болно. */
   html += rfTabsHTML(woMineN);
+  if (RF_TAB === 'dash') {
+    if (!rfSeeAll()) RF_TAB = 'rep';
+    else { sec.innerHTML = html + rfDashHTML(reports); rfAfter(sec, admin, pending); rfTipWire(); return; }
+  }
   if (RF_TAB === 'wo') { sec.innerHTML = html + woListHTML(false); rfAfter(sec, admin, pending); return; }
   if (RF_TAB === 'womine') { sec.innerHTML = html + woListHTML(true); rfAfter(sec, admin, pending); return; }
 
@@ -13504,11 +13953,14 @@ function renderReportflow() {
 /* Табын мөр */
 var RF_TAB = 'rep';
 function rfTabsHTML(woN) {
-  var t = [
+  var t = [];
+  /* ⭐ Дашбоард — бүх мэдээллийг харах эрхтэй хүнд (ХАБЭА, ИТА, админ) */
+  if (rfSeeAll()) t.push({ k: 'dash', ic: 'ti-chart-histogram', l: 'Дашбоард', n: null });
+  t = t.concat([
     { k: 'rep',    ic: 'ti-flag-2',        l: 'Мэдээллүүд',      n: null },
     { k: 'wo',     ic: 'ti-clipboard-list', l: 'Ажлын захиалга',  n: (WO_ROWS || []).length || null },
     { k: 'womine', ic: 'ti-writing-sign',  l: 'Миний гарын үсэг', n: woN || null, tone: woN ? '#DC2626' : '' }
-  ];
+  ]);
   return '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:15px">' +
     t.map(function (x) {
       var on = RF_TAB === x.k;
@@ -13537,10 +13989,19 @@ function rfAfter(sec, admin, pending) {
      буцдаг тул хуудасны төгсгөлд байвал огт ажиллахгүй. */
   if (sec._wired) return;
   sec._wired = true;
+  /* ⚠ <select> нь click биш CHANGE үйлдэл өгдөг — тусад нь холбоно */
+  sec.addEventListener('change', function (ev) {
+    var ds = ev.target.closest && ev.target.closest('[data-rf-dept]');
+    if (ds) { RF_DASH.dept = ds.value || ''; renderReportflow(); }
+  });
   sec.addEventListener('click', function (ev) {
     /* ── таб ── */
     var tb = ev.target.closest('[data-rf-tab]');
     if (tb) { RF_TAB = tb.getAttribute('data-rf-tab'); renderReportflow(); return; }
+    /* ── дашбоардын шүүлтүүр — БҮХ график нэг зүсмэлээр дахин зурагдана ── */
+    var fd = ev.target.closest('[data-rf-days]');
+    if (fd) { RF_DASH.days = +fd.getAttribute('data-rf-days'); renderReportflow(); return; }
+    if (ev.target.closest('[data-rf-table]')) { RF_DASH.table = !RF_DASH.table; renderReportflow(); return; }
 
     /* ── ажлын захиалга ── */
     if (ev.target.closest('[data-wo-new]')) { woNewModal(''); return; }
