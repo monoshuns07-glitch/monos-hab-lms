@@ -11966,6 +11966,12 @@ function reportCard(r, withActions) {
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
     '<div style="width:54px;height:54px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#94A3B8;flex-shrink:0"><i class="ti ti-photo"></i></div>';
   var pts = reportPoints(r), actions = '';
+  var urgentTag = r.urgent
+    ? '<span style="background:#DC2626;color:#fff;border-radius:6px;padding:1px 8px;font-size:10.5px;' +
+      'font-weight:800;margin-right:5px">🚨 ЯАРАЛТАЙ</span>' : '';
+  var equipTag = r.equipment
+    ? '<span style="background:#F1F5F9;color:#475569;border-radius:6px;padding:1px 8px;font-size:10.5px;' +
+      'font-weight:700;margin-right:5px">🔧 ' + esc(r.equipment) + '</span>' : '';
   /* ⭐ Баталгаажсан аюулыг ЗАСАХ алхам руу шилжүүлэх гүүр.
      Захиалга аль хэдийн үүссэн бол давхардуулахгүй. */
   if (r.status === 'verified') {
@@ -11982,8 +11988,8 @@ function reportCard(r, withActions) {
   }
   return '<div class="report-card" data-report="' + r.id + '">' + photo +
     '<div style="flex:1;min-width:0">' +
-    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + reportStatusTag(r.status) +
-    '<span class="tag">' + reportTypeLabel(r.type) + '</span>' + riskTag(r.risk_level) +
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + urgentTag + reportStatusTag(r.status) +
+    '<span class="tag">' + reportTypeLabel(r.type) + '</span>' + riskTag(r.risk_level) + equipTag +
     (r.status === 'verified' ? '<span class="tag tag-emerald">+' + pts + ' бонус</span>' : '') + '</div>' +
     '<div style="font-weight:600;margin-top:5px">' + esc(r.desc) + '</div>' +
     '<div style="font-size:12px;color:#8A94A6;margin-top:2px">' + esc(r.location) + ' · ' + esc(r.reporterName || '—') + ' · ' + timeAgo(r.createdAt) + '</div>' +
@@ -12008,11 +12014,23 @@ function actionReportNew(presetType) {
     '<div class="rf-field"><label>3. Эрсдэлийн зэрэг</label>' + chips(REPORT_RISK, sel.risk, 'risk') + '</div>' +
     '<div class="rf-field"><label>4. Байршил</label><input type="text" id="rfLoc" class="rf-input" placeholder="Байршлаа гараар бичнэ үү (ж: Цех №2, 3-р машины ард)"></div>' +
     '<div class="rf-field"><label>5. Нэг өгүүлбэрээр тайлбарла</label><textarea id="rfDesc" class="rf-input" rows="2" placeholder="Юу болсон / болж болзошгүй вэ?"></textarea></div>' +
-    '<div class="rf-field"><label>6. Баталгааны гарын үсэг</label>' +
+    /* ⭐ Тоног төхөөрөмж — эндээс ажлын захиалга руу шууд дамжина, дахин
+       асуух шаардлагагүй болно. */
+    '<div class="rf-field"><label>6. Тоног төхөөрөмж <span style="font-weight:400;color:#94A3B8">(байвал)</span></label>' +
+    '<input type="text" id="rfEquip" class="rf-input" placeholder="ж: Савлагааны машин №3, Дамжуулах туузан"></div>' +
+    /* ⭐ Яаралтай — амь насанд аюултай зүйлийг ХАБ, албаны даргад ТЭР ДОР НЬ */
+    '<label class="rf-field" style="display:flex;align-items:center;gap:10px;background:#FEF2F2;' +
+    'border:1.5px solid #FECACA;border-radius:11px;padding:11px 13px;cursor:pointer">' +
+    '<input type="checkbox" id="rfUrgent" style="width:18px;height:18px;flex-shrink:0">' +
+    '<span><span style="font-size:13px;font-weight:800;color:#B91C1C">🚨 Яаралтай — одоо ч аюултай хэвээр</span>' +
+    '<span style="display:block;font-size:11.5px;color:#7F1D1D;margin-top:2px">' +
+    'ХАБЭА-н алба болон албаны даргад шууд мэдэгдэнэ</span></span></label>' +
+    '<div class="rf-field"><label>7. Баталгааны гарын үсэг <span style="font-weight:400;color:#94A3B8">(заавал биш)</span></label>' +
     '<div style="border:1.5px solid #E2E8F0;border-radius:10px;overflow:hidden;background:#fff;cursor:crosshair">' +
     '<canvas id="rfSigCanvas" width="380" height="100" style="display:block;width:100%;height:100px;touch-action:none"></canvas></div>' +
     '<button type="button" id="rfSigClear" style="margin-top:5px;font-size:12px;background:none;border:1px solid #E2E8F0;border-radius:7px;padding:4px 10px;cursor:pointer;color:#64748B">Арилгах</button>' +
-    '<div style="font-size:11px;color:#94A3B8;margin-top:3px"><i class="ti ti-lock"></i> Гарын үсэг зурж мэдээлэлээ баталгаажуулна</div></div>' +
+    '<div style="font-size:11px;color:#94A3B8;margin-top:3px"><i class="ti ti-lock"></i> ' +
+    'Та нэвтэрсэн байгаа тул хэн илгээсэн нь аль хэдийн тодорхой. Гарын үсэг нэмэлт баталгаа.</div></div>' +
     '<div class="rf-hint"><i class="ti ti-clock"></i> 1 минутын дотор. ХАБ ажилтан баталгаажуулсны дараа бонус оноо автоматаар нэмэгдэнэ.</div>' +
     '<button class="btn btn-primary btn-block" id="rfSubmit"><i class="ti ti-send"></i> Илгээх</button>';
 
@@ -12029,14 +12047,23 @@ function actionReportNew(presetType) {
       var desc = $('#rfDesc', node).value.trim();
       if (!desc) { toast('Тайлбар оруулна уу', 'warn'); return; }
       var locVal = ($('#rfLoc', node).value || '').trim() || 'Тодорхойгүй';
-      if (!sel.signature) { toast('Гарын үсэг зурна уу', 'warn'); return; }
-      createReport(sel.type, sel.risk, locVal, desc, sel.photo, sel.signature);
+      /* ⚠ Гарын үсэг ЗААВАЛ биш — утсан дээр зурах төвөгтэй тул хүн хагас
+         дундаас нь орхидог байв. Хэрэглэгч нэвтэрсэн тул хэн илгээсэн нь
+         аль хэдийн бүртгэгддэг. */
+      var eqEl = $('#rfEquip', node), urEl = $('#rfUrgent', node);
+      createReport(sel.type, sel.risk, locVal, desc, sel.photo, sel.signature || '', {
+        equipment: eqEl ? (eqEl.value || '').trim() : '',
+        urgent: !!(urEl && urEl.checked)
+      });
       closeModal();
     }
   });
   $('#rfPhoto', node).addEventListener('change', function () {
     var f = this.files && this.files[0]; if (!f) return;
-    downscaleImage(f, 240, 0.45, function (durl) {
+    /* ⚠ Өмнө нь 240px / 45% болгож шахдаг байсан нь эвдэрсэн хамгаалалт,
+       гоожсон хоолойг таних боломжгүй жижиг байв. 1000px / 72% нь ойролцоогоор
+       120–200 КБ — Firestore-ийн 1 МБ хязгаараас хамаагүй бага. */
+    downscaleImage(f, 1000, 0.72, function (durl) {
       sel.photo = durl || '';
       if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
     });
@@ -12074,7 +12101,7 @@ function actionReportNew(presetType) {
   buildModal(presetType === 'hazard' ? 'Аюул / эрсдэл мэдээлэх' : 'Осолд дөхсөн мэдээлэх', node, { width: '440px' });
 }
 
-function createReport(type, risk, location, desc, photo, signature) {
+function createReport(type, risk, location, desc, photo, signature, extra) {
   var who = currentReporter();
   var r = {
     id: newId('RP'), type: type, risk_level: risk, status: 'reported',
@@ -12082,11 +12109,60 @@ function createReport(type, risk, location, desc, photo, signature) {
     reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '', reporterEmail: who.email || '',
     photo: photo || '', signature: signature || '', verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
   };
+  if (extra) {
+    if (extra.equipment) r.equipment = extra.equipment;
+    if (extra.urgent) r.urgent = true;
+  }
   DB.reports.unshift(r);
   addNotification((type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + ' мэдээлэл ирлээ — ' + location + ' (' + who.name + ')', 'reportflow');
   saveDB();
+  reportPushToServer(r);
   renderReportflow(); renderNotifBadge(); renderDashboard();
-  toast('Мэдээлэл илгээгдлээ. Баталгаажсаны дараа бонус нэмэгдэнэ.', 'success');
+  toast(r.urgent ? '🚨 Яаралтай мэдээлэл илгээгдлээ — ХАБ-д шууд мэдэгдлээ'
+                 : 'Мэдээлэл илгээгдлээ. Баталгаажсаны дараа бонус нэмэгдэнэ.', 'success');
+}
+
+/* ══ МЭДЭЭЛЛИЙГ СЕРВЕР РҮҮ ХҮРГЭХ ══
+   ⚠⚠ saveDB() нь `if (isAdmin())` дотор л Firestore руу бичдэг тул
+   ЖИРИЙН АЖИЛТНЫ мэдээлэл зөвхөн браузарт нь үлдэж, ХАБ хэзээ ч
+   хардаггүй байв (kpi_reports цуглуулга бүрэн хоосон байсан).
+   Одоо мэдээллийг ӨӨРИЙНХ НЬ баримт болгон шууд бичнэ — Firestore-ийн
+   дүрэм үүнийг аль хэдийн зөвшөөрдөг. */
+function reportPushToServer(r) {
+  if (!r || !r.id) return;
+  var done = function (ok, why) {
+    if (ok) { try { console.log('[report] серверт хадгаллаа: ' + r.id); } catch (e) {} return; }
+    console.error('[report] серверт хүрсэнгүй', why);
+    toast('⚠ Мэдээлэл серверт хүрсэнгүй. Интернэтээ шалгаад дахин илгээнэ үү.', 'error');
+  };
+  try {
+    if (!fbReady || typeof fdb === 'undefined' || !fdb) { done(false, 'firebase бэлэн биш'); return; }
+    colRef('reports').doc(String(r.id)).set(r)
+      .then(function () { done(true); reportNotifyHab(r); })
+      .catch(function (e) { done(false, e); });
+  } catch (e) { done(false, e); }
+}
+
+/* Яаралтай мэдээлэл — ХАБ болон албаны даргад ТЭР ДОР НЬ */
+function reportNotifyHab(r) {
+  try {
+    var to = [];
+    var hab = null, lead = null;
+    try { hab = ackLeadFor('Хөдөлмөрийн аюулгүй байдал эрүүл ахуйн алба', ''); } catch (e) {}
+    try { lead = ackLeadFor(r.dept, ''); } catch (e) {}
+    if (hab) to.push(hab);
+    if (lead && (!hab || lead.uid !== hab.uid)) to.push(lead);
+    if (!to.length) return;
+    ntfSend(to, {
+      kind: 'report', url: '/kpi/?page=reportflow',
+      title: (r.urgent ? '🚨 ЯАРАЛТАЙ — ' : '🚩 ') +
+        (r.type === 'near_miss' ? 'Осолд дөхсөн' : 'Аюул') + ' мэдээлэл',
+      body: (r.location || '') + ' · ' + String(r.desc || '').slice(0, 110) +
+        ' · ' + (r.reporterName || '')
+    });
+    /* ⚠ Push-ыг ntfSend ӨӨРӨӨ зөв гарын үсэгтэйгээр (idToken + to) илгээдэг —
+       энд дахин дуудах шаардлагагүй. */
+  } catch (e) { console.error('[report] мэдэгдэл', e); }
 }
 
 function verifyReport(id, decision, newRisk) {
@@ -12402,7 +12478,8 @@ function woNewModal(fromReport) {
     '<div id="woRoute" style="font-size:11.5px;color:#059669;margin:-4px 0 12px"></div>' +
 
     woField('Тоноглол', 'Plant / Building', 'woPlant', { ph: 'ж: 2-р цех, Пет шугам' }) +
-    woField('Тоног төхөөрөмж', 'Equipment', 'woEquip', { ph: 'ж: Савлагааны машин №3' }) +
+    woField('Тоног төхөөрөмж', 'Equipment', 'woEquip',
+      { val: (rep && rep.equipment) || '', ph: 'ж: Савлагааны машин №3' }) +
     woField('Бүртгэлийн дугаар', 'Tag No', 'woTag', { ph: 'байвал' }) +
     woField('Ажлын ба саатлын тодорхойлолт', 'Description of Problem and Work Requested',
       'woProblem', { area: true, rows: 4, req: true,
