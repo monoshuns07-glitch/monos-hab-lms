@@ -2584,7 +2584,31 @@ function renderMyExams() {
     '</div>';
 }
 
+/* ⭐ ХУВИЛБАРЫН ДУГААР — хажуугийн цэсний доор жижигхэн харуулна.
+   ⚠ Яагаад хэрэгтэй вэ: хөтөч/суулгасан апп хуучин script.js-ээ хадгалж
+     үлдээд, засвар «ороогүй» мэт харагддаг. Тэр үед хэрэглэгч ч, би ч
+     таамаглаж цаг алддаг байв (2026-08-19). Одоо дэлгэц дээрх дугаарыг
+     амьд сайтынхтай харьцуулахад л хангалттай. */
+function showAppVersion() {
+  try {
+    var foot = document.querySelector('.sidebar-footer');
+    if (!foot) return;
+    var el = document.getElementById('appVer');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'appVer';
+      el.style.cssText = 'text-align:center;font-size:10.5px;color:#B6BECA;padding:6px 0 2px;' +
+        'letter-spacing:.03em;user-select:text';
+      foot.appendChild(el);
+    }
+    var s = document.querySelector('script[src*="script.js"]');
+    var m = s && String(s.getAttribute('src') || '').match(/v=(\d+)/);
+    el.textContent = 'хувилбар ' + (m ? m[1] : '?');
+  } catch (e) {}
+}
+
 function renderSidebar() {
+  showAppVersion();
   var pending = DB.hazards.filter(function (h) { return h.status !== 'resolved'; }).length;
   var hb = $('.nav-item[data-page="hazards"] .nav-badge');
   if (hb) hb.textContent = pending;
