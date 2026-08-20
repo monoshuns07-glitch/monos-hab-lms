@@ -13688,7 +13688,29 @@ function wkEscalate(all) {
   if (!jobs.length) return;
   wkEscalate._busy = true;
 
-  jobs.slice(0, 12).forEach(function (j) {
+  /* ⚠ Мэдэгдлүүд НЭГ R2 файл руу бичигддэг тул зэрэг илгээвэл бие биенээ
+     дарж, сэрэмжлүүлэг АЛГА болно (4 явуулахад 2 нь л үлдсэн). Тиймээс
+     ДАРААЛУУЛЖ, нэг нь дуустал дараагийнхыг эхлүүлэхгүй. */
+  var queue = jobs.slice(0, 12);
+  var step = function (i) {
+    if (i >= queue.length) {
+      try { console.log('[wk] сэрэмжлүүлэг илгээв: ' + queue.length); } catch (e) {}
+      setTimeout(function () { wkEscalate._busy = false; }, 60000);
+      return;
+    }
+    var one = queue[i];
+    var p = null;
+    try { p = wkEscOne(one); } catch (e) { console.error('[wk] эскалац', e); }
+    Promise.resolve(p).catch(function () {}).then(function () { step(i + 1); });
+  };
+  step(0);
+}
+
+/* Нэг сэрэмжлүүлэг — Promise буцаана (дараалуулахын тулд) */
+function wkEscOne(j) {
+  return (function (arr) {
+    var out = null;
+    arr.forEach(function (j) {
     var r = j.r, k = wkKind(r.wkKind), g = wkGate(r.wkGate);
     var where = wkLocLabel(r);
     var body = k.ab + ' · ' + where + ' — ' + String(r.desc || '').slice(0, 90);
@@ -13717,14 +13739,14 @@ function wkEscalate(all) {
       r.wkEsc200 = new Date().toISOString();
     }
     if (to.length) {
-      try { ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow', title: title, body: body }); }
+      try { out = ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow', title: title, body: body }); }
       catch (e) { console.error('[wk] эскалац', e); }
     }
     /* Тэмдгийг серверт бичнэ — дахин явуулахгүй */
     try { reportPushToServer(r); } catch (e) {}
-  });
-  try { console.log('[wk] сэрэмжлүүлэг: ' + jobs.length); } catch (e) {}
-  setTimeout(function () { wkEscalate._busy = false; }, 60000);
+    });
+    return out;
+  })([j]);
 }
 
 function rfSeeAll() {
