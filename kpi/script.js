@@ -911,10 +911,17 @@ function scopeDataForEmployee() {
   if (SESSION.role === 'depthead') { scopeDataForDeptHead(); return; }
   var uid = SESSION.uid, email = SESSION.email, eid = SESSION.empId;
   DB.employees = (DB.employees || []).filter(function (e) { return e.uid === uid || _sameEmail(e.email, email) || (eid && e.id === eid); });
+  /* ⚠ ХАБЭА ба ИТА-гийн ажилтанд мэдээллийг ШҮҮХГҮЙ — тэд бүх Work order-ыг
+     хараад хүлээж авах ёстой. Өмнө нь энд шүүгдэж, албаны ажилтны «Ирсэн»
+     хайрцаг үргэлж ХООСОН харагддаг байв (сервер талаас ирсэн ч энд хаягдана). */
+  if (!rfNeedAllRows()) {
+    DB.reports = (DB.reports || []).filter(function (r) {
+      return r.reporterUid === uid || _sameEmail(r.reporterEmail, email) || (eid && r.reporterId === eid);
+    });
+  }
   DB.hazards = (DB.hazards || []).filter(function (h) { return h.reporterUid === uid; });
   DB.suggestions = (DB.suggestions || []).filter(function (s) { return s.authorUid === uid; });
   DB.incidents = (DB.incidents || []).filter(function (n) { return n.uid === uid || _sameEmail(n.email, email); });
-  DB.reports = (DB.reports || []).filter(function (r) { return r.reporterUid === uid || _sameEmail(r.reporterEmail, email) || (eid && r.reporterId === eid); });
   DB.notifications = (DB.notifications || []).filter(function (n) { return n.uid === uid; });
   _empHazIds = {}; DB.hazards.forEach(function (h) { _empHazIds[h.id] = 1; });
   _empSugIds = {}; DB.suggestions.forEach(function (s) { _empSugIds[s.id] = 1; });
@@ -14666,8 +14673,8 @@ function renderReportflow() {
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
   var woMineN = 0; try { woMineN = woMine().length; } catch (e) {}
-  var html = '<div class="page-header"><div><h1>Аюул / Near-miss мэдээлэл</h1>' +
-    '<p class="page-subtitle">Аюул мэдээл → баталгаажуул → ИТА-аар засварлуул → 72 цагийн дараа шалга.</p></div>' +
+  var html = '<div class="page-header"><div><h1>Work order</h1>' +
+    '<p class="page-subtitle">Осолд дөхсөн · Аюул · Ажлын захиалга — мэдээл → хүлээн ав → гүйцэтгэ → батал.</p></div>' +
     /* ⚠ Толгойн «Аюул мэдээлэх» товчийг АВСАН — улаан хөвөгч товч бүх
        хуудсанд байдаг тул энэ хуудсанд яг ижил товч ХОЁР удаа гарч байв. */
     '</div>';
