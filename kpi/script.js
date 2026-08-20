@@ -12465,7 +12465,7 @@ function rfTrendHTML(d) {
   var A = ms.map(function (k) { return (d.byMonth[k] || {}).hazard || 0; });
   var B = ms.map(function (k) { return (d.byMonth[k] || {}).near_miss || 0; });
   var max = Math.max(1, Math.max.apply(null, A.concat(B)));
-  var W = 560, H = 190, L = 34, R = 92, T = 14, Bm = 26;
+  var W = 720, H = 210, L = 36, R = 118, T = 16, Bm = 28;
   var pw = W - L - R, ph = H - T - Bm;
   var X = function (i) { return L + (ms.length < 2 ? pw / 2 : (i / (ms.length - 1)) * pw); };
   var Y = function (v) { return T + ph - (v / max) * ph; };
@@ -12473,12 +12473,15 @@ function rfTrendHTML(d) {
   var grid = '', ticks = [0, Math.ceil(max / 2), max];
   ticks.forEach(function (t) {
     grid += '<line x1="' + L + '" y1="' + Y(t) + '" x2="' + (L + pw) + '" y2="' + Y(t) +
-      '" stroke="' + RF_INK.grid + '" stroke-width="1"/>' +
-      '<text x="' + (L - 7) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-size="10.5" ' +
+      '" stroke="' + (t === 0 ? '#CBD5E1' : RF_INK.grid) + '" stroke-width="1"/>' +
+      '<text x="' + (L - 8) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-size="11" ' +
       'fill="' + RF_INK.m + '" style="font-variant-numeric:tabular-nums">' + t + '</text>';
   });
+  /* Шошго шахагдвал нэгийг алгасана — давхцахаас сэргийлнэ */
+  var step = ms.length > 6 ? 2 : 1;
   var xlab = ms.map(function (k, i) {
-    return '<text x="' + X(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10.5" fill="' +
+    if (i % step !== 0 && i !== ms.length - 1) return '';
+    return '<text x="' + X(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="' +
       RF_INK.m + '">' + esc(rfMonLabel(k)) + '</text>';
   }).join('');
   var path = function (arr) {
@@ -12494,9 +12497,9 @@ function rfTrendHTML(d) {
   /* Шууд шошго — ЗӨВХӨН төгсгөлд (тоо бүр дээр биш) */
   var endLab = function (arr, col, name) {
     var i = arr.length - 1;
-    return '<text x="' + (X(i) + 9) + '" y="' + (Y(arr[i]) + 4) + '" font-size="11.5" font-weight="700" fill="' +
+    return '<text x="' + (X(i) + 10) + '" y="' + (Y(arr[i]) + 4) + '" font-size="13" font-weight="800" fill="' +
       RF_INK.p + '">' + arr[i] + '</text>' +
-      '<text x="' + (X(i) + 9) + '" y="' + (Y(arr[i]) + 17) + '" font-size="10" fill="' + RF_INK.m + '">' +
+      '<text x="' + (X(i) + 10) + '" y="' + (Y(arr[i]) + 18) + '" font-size="11" fill="' + RF_INK.m + '">' +
       esc(name) + '</text>';
   };
   var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;overflow:visible">' +
@@ -12512,7 +12515,10 @@ function rfTrendHTML(d) {
     '<span style="width:14px;height:2.5px;border-radius:2px;background:' + RF_C.a + '"></span>Аюул / эрсдэл</span>' +
     '<span style="display:inline-flex;align-items:center;gap:6px">' +
     '<span style="width:14px;height:2.5px;border-radius:2px;background:' + RF_C.b + '"></span>Осолд дөхсөн</span></div>';
-  return rfCard('Сарын хандлага', 'Сүүлийн 6 сар', svg + leg);
+  /* ⚠ 1/3 өргөнтэй нүдэнд өргөн viewBox багтахад бичвэр бүр жижгэрч,
+     сарын шошго шахагдаж, баруун талын шошго тасардаг байв.
+     Тиймээс энэ карт ХОЁР баганыг эзэлнэ. */
+  return rfCard('Сарын хандлага', 'Сүүлийн 6 сар', svg + leg, 'grid-column:span 2');
 }
 
 /* ── АЛБАДААР — нэг хэмжигдэхүүн тул НЭГ өнгө (нэрлэсэн ангилалд шат тавихгүй) ── */
@@ -12584,7 +12590,8 @@ function rfFilterHTML(all) {
     pill(0, 'Бүгд', RF_DASH.days === 0) +
     '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + ';margin-left:9px">АЛБА</span>' +
     '<select data-rf-dept="1" style="border:1.5px solid ' + RF_INK.grid + ';border-radius:9px;' +
-    'padding:6px 10px;font-family:inherit;font-size:12.5px;background:#fff;color:' + RF_INK.p + '">' +
+    'padding:6px 10px;font-family:inherit;font-size:12.5px;background:#fff;color:' + RF_INK.p +
+    ';max-width:230px;flex:0 1 auto">' +
     '<option value="">Бүх алба</option>' +
     dl.map(function (d) {
       return '<option value="' + esc(d) + '"' + (RF_DASH.dept === d ? ' selected' : '') + '>' + esc(d) + '</option>';
