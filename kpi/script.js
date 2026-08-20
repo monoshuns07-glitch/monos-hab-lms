@@ -8449,6 +8449,22 @@ function riskSeenBy(emp) {
   if (ck) { var rr = _cachePut(_seenCache, _seenN, ck, out, 2000); _seenN = rr.n; }
   return out;
 }
+/* ⭐ Эрсдэл ИТА-гийн аль хэсгийнх вэ — ЭХ ФАЙЛЫН ЗАМААС уншина.
+   Жинхэнэ бүтэц (2026-08):
+     …/2. ИТА 11/Дэд бүтэц/1. Сантехникийн инженер, сантехникч…      →  52 эрсдэл
+     …/2. ИТА 11/ИТА Үйлдвэрлэлийн тоног төхөөрөмж/2. Механик…       → 141 эрсдэл
+     …/Автокранаар ачаа өргөх…, Өндөрт гагнуур…  (хэсэггүй, onDemand) →  28 эрсдэл
+   Зам нь тодорхойгүй бол ажлын байрны нэрээр нөхнө. */
+function riskUnitOf(r) {
+  var s = String((r && r.src) || '');
+  if (/дэд\s*бүтэц/i.test(s)) return 'Дэд бүтэц';
+  if (/тоног\s*төхөөрөмж/i.test(s)) return 'Тоног төхөөрөмж';
+  var p = String((r && r.position) || '') + ' ' + String((r && r.positions) || '');
+  if (/сантехник|цахилгаан/i.test(p)) return 'Дэд бүтэц';
+  if (/механик|автоматик|ээлжийн/i.test(p)) return 'Тоног төхөөрөмж';
+  return '';
+}
+
 function _riskSeenByRaw(emp) {
   var all = DB.risks || [];
   /* ⭐ Админ энэ хүнд ХЭСЭГ оноосон бол (менежер эсэхээс үл хамааран)
@@ -8479,25 +8495,21 @@ function _riskSeenByRaw(emp) {
     });
 
     /* ⭐ ИТА нь ХОЁР ХЭСЭГТ хуваагддаг — хэсгийнхээ эрсдлийг л харна.
-       Хоёр ахлах инженер өмнө нь албаны бүх 221 эрсдлийг ижилхэн хардаг
-       байсан. Одоо хэсгийнхээ хүмүүст хамаарах эрсдлээр хязгаарлана:
-         Дэд бүтэц      → сантехник, цахилгаан, барилга
-         Тоног төхөөрөмж → механик, автоматик, ээлжийн инженер
-       ⚠ Шүүлтийн дараа ХООСОН болвол хязгаарлахгүй — хоосон дэлгэц нь
-         хэт өргөн жагсаалтаас дор. */
+       ⚠ Эрсдэл АЛЬ ХЭСГИЙНХ болохыг ажилтнаар таамаглахгүй — эрсдэл өөрөө
+         хэлдэг: src зам нь «…/ИТА 11/Дэд бүтэц/1. Сантехникийн инженер…»
+         гэсэн бүтэцтэй (riskUnitOf). Өмнө нь «энэ хэсгийн хэн нэгэнд
+         хамаарах эрсдэл» гэж шүүдэг байсан тул сантехникийн «Ууранд
+         түлэгдэх» нь Даваа-Очирт харагдсаар байв.
+       ⚠ Хэсэггүй эрсдэл (нэг удаагийн автокран, өндөрт гагнуур) хязгаарлагдахгүй —
+         тэднийг onDemand дүрэм тусад нь хянана.
+       ⚠ Шүүлтийн дараа ХООСОН болвол хязгаарлахгүй. */
     var unit = ''; try { unit = ackUnitOf(emp); } catch (e) {}
     if (unit && deptAll.length) {
-      var mates = (DB.employees || []).filter(function (x) {
-        if (!riskSameDept(x.dept, emp.dept)) return false;
-        var u = ''; try { u = ackUnitOf(x); } catch (e2) {}
-        return u === unit;
+      var unitRows = deptAll.filter(function (r) {
+        var u = riskUnitOf(r);
+        return !u || u === unit;
       });
-      if (mates.length) {
-        var unitRows = deptAll.filter(function (r) {
-          return mates.some(function (x) { return riskAppliesTo(r, x); });
-        });
-        if (unitRows.length) return { rows: unitRows, scope: sec ? 'section' : 'unit' };
-      }
+      if (unitRows.length) return { rows: unitRows, scope: sec ? 'section' : 'unit' };
     }
 
     if (deptAll.length) return { rows: deptAll, scope: sec ? 'section' : 'dept' };
