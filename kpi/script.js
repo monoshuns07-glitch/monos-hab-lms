@@ -86,7 +86,7 @@ function rand4() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
 var pageLabels = {
   dashboard: 'Хяналтын самбар', employees: 'Ажилтнууд', kpi: 'KPI үнэлгээ',
-  reportflow: 'Аюул/Near-miss мэдээлэл', hazards: 'Эрсдэлийн үнэлгээ', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
+  reportflow: 'Work order', hazards: 'Эрсдэлийн үнэлгээ', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
@@ -12720,6 +12720,751 @@ function rfTipWire() {
   window.addEventListener('scroll', hide, true);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   WORK ORDER — нэгдсэн урсгал
+   ----------------------------------------------------------------------
+   Ажилтан НЭГ товчоор дараах гурвын аль нэгийг мэдээлнэ:
+     ОДТ (осолд дөхсөн тохиолдол) · Аюул · Ажил (захиалга)
+   ⚠ Үйлдвэрийн осол (ҮО) энд БАЙХГҮЙ — хэрэглэгчийн шийдвэрээр хасагдсан.
+     Осол нь «Осол/зөрчлийн бүртгэл» цэсээрээ тусдаа явна.
+
+   Урсгал: Төрөл → Яаралтай (1–5) → Байршил → Тайлбар → Зураг → Алба
+           → албаны бүх ажилтанд → нэг нь хүлээж авна → гүйцэтгэнэ
+           → мэдээлсэн хүн батална (эсвэл буцаана)
+   ══════════════════════════════════════════════════════════════════════ */
+var WK_KINDS = [
+  { k: 'odt',    ab: 'ОДТ',  name: 'Осолд дөхсөн тохиолдол',
+    hint: 'Осол болох шахсан — азаар зүгээр өнгөрсөн', c: '#EA580C', bg: '#FFF7ED' },
+  { k: 'hazard', ab: 'Аюул', name: 'Аюул',
+    hint: 'Осол болж болзошгүй нөхцөл байсаар байна', c: '#C81E3A', bg: '#FEF2F2' },
+  { k: 'job',    ab: 'Ажил', name: 'Ажлын захиалга',
+    hint: 'Засварлах, солих, хийж өгөх ажил', c: '#0F766E', bg: '#F0FDFA' }
+];
+function wkKind(k) {
+  for (var i = 0; i < WK_KINDS.length; i++) if (WK_KINDS[i].k === k) return WK_KINDS[i];
+  return WK_KINDS[1];
+}
+
+/* ── ЯАРАЛТАЙ ЗЭРЭГ 1–5 ── админаас цагийг тохируулна ── */
+var WK_URG_FILE = 'workflow/_urgency.json';
+var WK_URG_DEF = { 5: 12, 4: 24, 3: 72, 2: 168, 1: 720 };   /* цагаар */
+var WK_URG = null, WK_URG_OK = false;
+async function wkUrgLoad(force) {
+  if (WK_URG_OK && !force) return WK_URG;
+  try {
+    var j = await riskR2GetJson(WK_URG_FILE);
+    WK_URG = (j && j.map) ? j.map : null;
+  } catch (e) { WK_URG = null; }
+  if (!WK_URG) WK_URG = JSON.parse(JSON.stringify(WK_URG_DEF));
+  WK_URG_OK = true;
+  return WK_URG;
+}
+async function wkUrgSave(map) {
+  WK_URG = map; WK_URG_OK = true;
+  return await riskR2PutJson(WK_URG_FILE, { updatedAt: new Date().toISOString(), map: map });
+}
+function wkUrgHours(n) {
+  var m = WK_URG || WK_URG_DEF;
+  var v = m[String(n)] != null ? m[String(n)] : WK_URG_DEF[n];
+  return Number(v) || 24;
+}
+/* Цагийг хүн уншихаар */
+function wkHoursText(h) {
+  h = Number(h) || 0;
+  if (h < 24) return h + ' цаг';
+  var d = Math.round(h / 24);
+  if (d < 7) return d + ' хоног';
+  if (d % 7 === 0 && d <= 28) return (d / 7) + ' долоо хоног';
+  if (d >= 28) return Math.round(d / 30) + ' сар';
+  return d + ' хоног';
+}
+function wkUrgColor(n) {
+  return n >= 5 ? '#C81E3A' : n === 4 ? '#EA580C' : n === 3 ? '#E9A100' : n === 2 ? '#4F46E5' : '#64748B';
+}
+
+/* ── БАЙРШЛЫН МОД ── админаас бүлэг ба дэд байршил нэмнэ ── */
+var WK_LOC_FILE = 'workflow/_locations.json';
+var WK_LOC = null, WK_LOC_OK = false;
+/* Хэрэглэгчийн заасан анхны бүтэц */
+var WK_LOC_DEF = [
+  { id: 'shx', name: 'Шингэн хүнсний үйлдвэр', short: 'ШХҮ',
+    subs: ['Шинэ үйлдвэр', 'Хуучин үйлдвэр', 'БиБ'] },
+  { id: 'xxu', name: 'Хуурай хүнсний үйлдвэр', short: 'ХХҮ',
+    subs: ['Үрэл цех', 'Цай цех'] },
+  { id: 'agu', name: 'Агуулах', short: '', subs: [] },
+  { id: 'ofs', name: 'Оффис', short: '', subs: ['2-р давхар', '3-р давхар'] },
+  { id: 'gad', name: 'Гадна талбай', short: '', subs: [] },
+  { id: 'tex', name: 'Техникийн өрөө', short: '', subs: [] }
+];
+async function wkLocLoad(force) {
+  if (WK_LOC_OK && !force) return WK_LOC;
+  try {
+    var j = await riskR2GetJson(WK_LOC_FILE);
+    WK_LOC = (j && Array.isArray(j.groups)) ? j.groups : null;
+  } catch (e) { WK_LOC = null; }
+  if (!WK_LOC || !WK_LOC.length) WK_LOC = JSON.parse(JSON.stringify(WK_LOC_DEF));
+  WK_LOC_OK = true;
+  return WK_LOC;
+}
+async function wkLocSave(groups) {
+  WK_LOC = groups; WK_LOC_OK = true;
+  return await riskR2PutJson(WK_LOC_FILE, { updatedAt: new Date().toISOString(), groups: groups });
+}
+function wkLocGroups() { return WK_LOC || WK_LOC_DEF; }
+function wkLocGroup(id) {
+  var g = wkLocGroups();
+  for (var i = 0; i < g.length; i++) if (g[i].id === id) return g[i];
+  return null;
+}
+/* Бүтэн байршлын нэр: «ШХҮ · Шинэ үйлдвэр» */
+function wkLocLabel(rec) {
+  if (!rec) return '';
+  var g = rec.locGroup || '', sub = rec.locSub || '';
+  if (!g) return rec.location || '';
+  return g + (sub ? ' · ' + sub : '');
+}
+
+/* ── ХААЛТ (алба) ── */
+var WK_GATES = [
+  { g: 'hab', name: 'Хөдөлмөрийн аюулгүй байдал эрүүл ахуйн алба', ab: 'ХАБЭА',
+    hint: 'Аюулгүй байдал, зааварчилгаа, хамгаалах хэрэгсэл', c: '#4F46E5' },
+  { g: 'ita', name: 'Инженер техникийн алба', ab: 'ИТА',
+    hint: 'Засвар, тоног төхөөрөмж, дэд бүтэц', c: '#0F766E' }
+];
+function wkGate(g) { return g === 'ita' ? WK_GATES[1] : WK_GATES[0]; }
+/* Тухайн хүн аль хаалтад харьяалагдах вэ ('' = аль нь ч биш) */
+function wkMyGate() {
+  var dept = '';
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (me) dept = me.dept || '';
+  if (!dept && SESSION) dept = SESSION.dept || '';
+  if (/Хөдөлмөрийн\s*аюулгүй/i.test(dept)) return 'hab';
+  try { if (riskSameDept(dept, 'Инженер техникийн алба')) return 'ita'; } catch (e) {}
+  return '';
+}
+
+/* Алхмын толгой */
+function wkStep(n, title, done) {
+  return '<div style="display:flex;align-items:center;gap:9px;margin:16px 0 8px">' +
+    '<span style="width:22px;height:22px;border-radius:50%;background:' + (done ? '#0ca30c' : '#4F46E5') +
+    ';color:#fff;font-size:11.5px;font-weight:900;display:flex;align-items:center;justify-content:center;' +
+    'flex-shrink:0">' + (done ? '✓' : n) + '</span>' +
+    '<span style="font-size:13px;font-weight:800;color:#1E293B">' + esc(title) + '</span></div>';
+}
+
+/* ══ ШИНЭ WORK ORDER — 6 алхам ══ */
+function wkNewModal() {
+  var me = reqMe();
+  if (!me || !me.uid) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', photo: '', gate: '' };
+  var node = elc('div', 'modal-info');
+  var meName = '', mePos = '', meDept = '';
+  try {
+    var r0 = currentReporter();
+    meName = r0.fullName || r0.name || ''; mePos = r0.pos || ''; meDept = r0.dept || '';
+  } catch (e) {}
+
+  var draw = function () {
+    var H = '';
+
+    /* ── ① ТӨРӨЛ ── */
+    H += wkStep(1, 'Юуны тухай вэ?', !!sel.kind);
+    H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_KINDS.map(function (k) {
+      var on = sel.kind === k.k;
+      return '<button type="button" data-wk-kind="' + k.k + '" style="flex:1;min-width:104px;' +
+        'border:2px solid ' + (on ? k.c : '#E2E8F0') + ';background:' + (on ? k.bg : '#fff') +
+        ';border-radius:12px;padding:11px 9px;cursor:pointer;font-family:inherit;text-align:center">' +
+        '<span style="display:block;font-size:16px;font-weight:900;color:' + k.c + '">' + k.ab + '</span>' +
+        '<span style="display:block;font-size:11px;color:#64748B;margin-top:3px;line-height:1.35">' +
+        esc(k.name) + '</span></button>';
+    }).join('') + '</div>';
+    if (sel.kind) H += '<div style="font-size:11.5px;color:#64748B;margin-top:6px">' +
+      esc(wkKind(sel.kind).hint) + '</div>';
+
+    /* ── ② ЯАРАЛТАЙ ── */
+    if (sel.kind) {
+      H += wkStep(2, 'Хэр яаралтай вэ?', !!sel.urg);
+      H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + [5, 4, 3, 2, 1].map(function (n) {
+        var on = sel.urg === n, col = wkUrgColor(n);
+        return '<button type="button" data-wk-urg="' + n + '" style="flex:1;min-width:78px;' +
+          'border:2px solid ' + (on ? col : '#E2E8F0') + ';background:' + (on ? col : '#fff') +
+          ';border-radius:12px;padding:10px 6px;cursor:pointer;font-family:inherit;text-align:center">' +
+          '<span style="display:block;font-size:19px;font-weight:900;color:' + (on ? '#fff' : col) + '">' + n + '</span>' +
+          '<span style="display:block;font-size:10.5px;color:' + (on ? '#fff' : '#64748B') + ';margin-top:1px">' +
+          wkHoursText(wkUrgHours(n)) + '</span></button>';
+      }).join('') + '</div>';
+      H += '<div style="font-size:11.5px;color:#64748B;margin-top:6px">' +
+        (sel.urg ? '<b>' + wkHoursText(wkUrgHours(sel.urg)) + '</b>-ийн дотор шийдвэрлэх ёстой. '
+                 : '') +
+        'Таны сонголтыг хүлээж авсан алба баталгаажуулна.</div>';
+    }
+
+    /* ── ③ БАЙРШИЛ ── */
+    if (sel.urg) {
+      H += wkStep(3, 'Хаана вэ?', !!sel.locGroup);
+      var gs = wkLocGroups();
+      H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + gs.map(function (g) {
+        var on = sel.locGroup === g.id;
+        return '<button type="button" data-wk-lg="' + esc(g.id) + '" style="border:2px solid ' +
+          (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') +
+          ';border-radius:11px;padding:9px 13px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
+          'font-weight:' + (on ? '800' : '600') + ';color:#1E293B">' + esc(g.short || g.name) +
+          (g.short ? '<span style="font-weight:400;color:#94A3B8"> ' + esc(g.name) + '</span>' : '') +
+          '</button>';
+      }).join('') + '</div>';
+      var grp = wkLocGroup(sel.locGroup);
+      if (grp) {
+        if ((grp.subs || []).length) {
+          H += '<div style="margin-top:9px;padding-left:13px;border-left:2.5px solid #C7D2FE">' +
+            '<div style="font-size:11.5px;color:#64748B;margin-bottom:6px">' + esc(grp.name) + ' — аль хэсэг вэ?</div>' +
+            '<div style="display:flex;gap:7px;flex-wrap:wrap">' + grp.subs.map(function (sb) {
+              var on = sel.locSub === sb;
+              return '<button type="button" data-wk-ls="' + esc(sb) + '" style="border:2px solid ' +
+                (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+                ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:7px 12px;cursor:pointer;' +
+                'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
+                esc(sb) + '</button>';
+            }).join('') + '</div></div>';
+        } else {
+          H += '<div style="font-size:11.5px;color:#94A3B8;margin-top:7px">' +
+            esc(grp.name) + ' — дэд байршил тохируулагдаагүй. Тайлбартаа нарийн бичнэ үү.</div>';
+        }
+      }
+    }
+
+    /* ── ④ ТАЙЛБАР ── */
+    var locOk = sel.locGroup && (!(wkLocGroup(sel.locGroup) || {}).subs ||
+      !(wkLocGroup(sel.locGroup) || {}).subs.length || sel.locSub);
+    if (locOk) {
+      H += wkStep(4, 'Юу болсныг дэлгэрэнгүй бичнэ үү', false);
+      H += '<textarea id="wkDesc" class="rf-input" rows="4" placeholder="' +
+        (sel.kind === 'job' ? 'Ямар ажил хийлгэх вэ? Юу эвдэрсэн, юу дутуу вэ?'
+          : 'Юу болсон / болж болзошгүй вэ? Хэн, юу, хэзээ?') +
+        '" style="width:100%">' + esc(sel.desc || '') + '</textarea>';
+
+      /* ── ⑤ ЗУРАГ ── */
+      H += wkStep(5, 'Зураг (заавал биш, гэхдээ маш тустай)', !!sel.photo);
+      H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:13px;' +
+        'text-align:center;cursor:pointer;background:#F8FAFC">' +
+        '<input type="file" accept="image/*" id="wkFile" hidden>' +
+        '<i class="ti ti-photo"></i> <span style="font-size:12.5px;color:#475569">Файлаас сонгох</span></label>' +
+        '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:13px;' +
+        'text-align:center;cursor:pointer;background:#F8FAFC">' +
+        '<input type="file" accept="image/*" capture="environment" id="wkCam" hidden>' +
+        '<i class="ti ti-camera"></i> <span style="font-size:12.5px;color:#475569">Камераар авах</span></label>' +
+        '</div>' +
+        (sel.photo ? '<img src="' + sel.photo + '" style="max-width:100%;border-radius:11px;margin-top:9px">' : '');
+
+      /* ── ⑥ АЛБА ── */
+      H += wkStep(6, 'Хэн рүү илгээх вэ?', !!sel.gate);
+      H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_GATES.map(function (g) {
+        var on = sel.gate === g.g;
+        return '<button type="button" data-wk-gate="' + g.g + '" style="flex:1;min-width:170px;' +
+          'border:2px solid ' + (on ? g.c : '#E2E8F0') + ';background:' + (on ? g.c : '#fff') +
+          ';border-radius:12px;padding:12px 11px;cursor:pointer;font-family:inherit;text-align:left">' +
+          '<span style="display:block;font-size:14px;font-weight:900;color:' + (on ? '#fff' : g.c) + '">' +
+          g.ab + '</span>' +
+          '<span style="display:block;font-size:11px;color:' + (on ? 'rgba(255,255,255,.9)' : '#64748B') +
+          ';margin-top:2px;line-height:1.4">' + esc(g.hint) + '</span></button>';
+      }).join('') + '</div>' +
+        '<div style="font-size:11.5px;color:#64748B;margin-top:6px">' +
+        'Алдаа гарвал зүгээр — хүлээж авсан алба нөгөө рүү нь шилжүүлж чадна.</div>';
+    }
+
+    /* ── Хэн илгээж байна ── */
+    H += '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;padding:11px 13px;margin-top:16px">' +
+      '<div style="font-size:11px;font-weight:800;color:#15803D">ИЛГЭЭЖ БУЙ ХҮН — БҮРТГЭЛЭЭС АВТОМАТААР</div>' +
+      '<div style="font-size:13.5px;font-weight:800;color:#14532D;margin-top:4px">' + esc(meName || '—') + '</div>' +
+      (mePos ? '<div style="font-size:12px;color:#166534">' + esc(mePos) + '</div>' : '') +
+      (meDept ? '<div style="font-size:11.5px;color:#4D7C0F">' + esc(meDept) + '</div>' : '') + '</div>';
+
+    var ready = sel.kind && sel.urg && locOk && sel.gate;
+    H += '<button class="btn btn-primary btn-block" id="wkSend" style="margin-top:13px' +
+      (ready ? '' : ';opacity:.45;pointer-events:none') + '">' +
+      '<i class="ti ti-send"></i> ' + (ready ? 'Илгээх' : 'Дээрх алхмуудыг бөглөнө үү') + '</button>';
+    node.innerHTML = H;
+    var ta = node.querySelector('#wkDesc');
+    if (ta) ta.addEventListener('input', function () { sel.desc = this.value; });
+    ['#wkFile', '#wkCam'].forEach(function (id) {
+      var el = node.querySelector(id);
+      if (el) el.addEventListener('change', function () {
+        var f = this.files && this.files[0]; if (!f) return;
+        downscaleImage(f, 1000, 0.72, function (durl) { sel.photo = durl || ''; draw(); });
+      });
+    });
+  };
+
+  node.addEventListener('click', function (ev) {
+    var b;
+    if ((b = ev.target.closest('[data-wk-kind]'))) { sel.kind = b.getAttribute('data-wk-kind'); draw(); return; }
+    if ((b = ev.target.closest('[data-wk-urg]'))) { sel.urg = +b.getAttribute('data-wk-urg'); draw(); return; }
+    if ((b = ev.target.closest('[data-wk-lg]'))) {
+      sel.locGroup = b.getAttribute('data-wk-lg'); sel.locSub = ''; draw(); return;
+    }
+    if ((b = ev.target.closest('[data-wk-ls]'))) { sel.locSub = b.getAttribute('data-wk-ls'); draw(); return; }
+    if ((b = ev.target.closest('[data-wk-gate]'))) { sel.gate = b.getAttribute('data-wk-gate'); draw(); return; }
+    if (ev.target.closest('#wkSend')) {
+      var ta = node.querySelector('#wkDesc');
+      var desc = ta ? String(ta.value || '').trim() : '';
+      if (!desc) { toast('Тайлбараа бичнэ үү', 'warn'); if (ta) ta.focus(); return; }
+      sel.desc = desc;
+      closeModal();
+      wkCreate(sel);
+      return;
+    }
+  });
+
+  buildModal('Work order — шинэ мэдээлэл', node, { width: 'min(680px, 96vw)' });
+  /* Тохиргоо ирээгүй бол татаад дахин зурна */
+  if (!WK_LOC_OK || !WK_URG_OK) {
+    Promise.all([wkLocLoad(), wkUrgLoad()]).then(draw).catch(function () { draw(); });
+  }
+  draw();
+}
+
+/* ── Төлөв ба хугацаа ── */
+function wkStatus(r) {
+  if (!r) return 'new';
+  if (r.wkAccept === 'done') return 'closed';
+  if (r.wkExecAt) return 'executed';
+  if (r.wkClaimBy && r.wkClaimBy.uid) return 'claimed';
+  return 'new';
+}
+var WK_STATUS = {
+  new: { l: 'Хүлээж аваагүй', c: '#C81E3A', bg: '#FEF2F2' },
+  claimed: { l: 'Хийгдэж байна', c: '#E9A100', bg: '#FFFBEB' },
+  executed: { l: 'Батлахыг хүлээж буй', c: '#4F46E5', bg: '#EEF2FF' },
+  closed: { l: 'Дууссан', c: '#0ca30c', bg: '#F0FDF4' }
+};
+/* Эцсийн зэрэг (алба өөрчилсөн бол тэр нь) */
+function wkUrg(r) { return Number((r && (r.wkUrgFinal || r.wkUrg)) || 3); }
+/* Хугацаа дуусах мөч */
+function wkDueAt(r) {
+  if (!r || !r.createdAt) return null;
+  return new Date(new Date(r.createdAt).getTime() + wkUrgHours(wkUrg(r)) * 3600000);
+}
+/* Үлдсэн/хэтэрсэн — {left: цаг, late: bool, text} */
+function wkTime(r) {
+  var due = wkDueAt(r);
+  if (!due) return null;
+  if (wkStatus(r) === 'closed') return { done: true, text: 'Дууссан' };
+  var ms = due - Date.now(), h = ms / 3600000;
+  if (h < 0) {
+    var lateH = -h;
+    return { late: true, text: 'Хугацаа хэтэрсэн ' + wkHoursText(Math.round(lateH)) };
+  }
+  return { late: false, near: h <= wkUrgHours(wkUrg(r)) * 0.5,
+    text: wkHoursText(Math.max(1, Math.round(h))) + ' үлдсэн' };
+}
+
+/* ── ҮҮСГЭХ ── */
+async function wkCreate(sel) {
+  var who = currentReporter();
+  var grp = wkLocGroup(sel.locGroup) || {};
+  var r = {
+    id: newId('RP'), status: 'reported',
+    /* Work order талбарууд */
+    wkKind: sel.kind, wkUrg: sel.urg, wkUrgFinal: sel.urg,
+    wkGate: sel.gate, wkGateLog: [],
+    locGroup: grp.name || '', locSub: sel.locSub || '',
+    /* Хуучин талбартай нийцтэй */
+    type: sel.kind === 'odt' ? 'near_miss' : 'hazard',
+    risk_level: sel.urg >= 5 ? 'high' : sel.urg >= 3 ? 'mid' : 'low',
+    desc: sel.desc || '', location: (grp.name || '') + (sel.locSub ? ' · ' + sel.locSub : ''),
+    dept: who.dept || '',
+    reporterId: who.id || '', reporterUid: who.uid || '', reporterName: who.name || '',
+    reporterFull: who.fullName || who.name || '', reporterPos: who.pos || '',
+    reporterEmail: who.email || '',
+    photo: sel.photo || '', signature: '',
+    verifiedBy: '', verifiedAt: '', createdAt: new Date().toISOString()
+  };
+  DB.reports = DB.reports || [];
+  DB.reports.unshift(r);
+  saveDB();
+  reportPushToServer(r);
+  wkNotifyGate(r, 'new');
+  try { renderReportflow(); renderNotifBadge(); } catch (e) {}
+  toast('✓ Илгээгдлээ — ' + wkGate(r.wkGate).ab + '-д мэдэгдлээ', 'success');
+}
+
+/* Албаны БҮХ ажилтанд мэдэгдэнэ */
+function wkGateStaff(gate) {
+  var want = wkGate(gate).name;
+  return empAll().filter(function (e) {
+    if (!e || !e.uid) return false;
+    if (gate === 'hab') return /Хөдөлмөрийн\s*аюулгүй/i.test(e.dept || '');
+    try { return riskSameDept(e.dept, want); } catch (x) { return false; }
+  });
+}
+function wkNotifyGate(r, why) {
+  try {
+    var to = wkGateStaff(r.wkGate);
+    if (!to.length) return;
+    var k = wkKind(r.wkKind);
+    ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow',
+      title: (why === 'moved' ? '↪ Шилжиж ирлээ · ' : '') + k.ab + ' · ' +
+        wkHoursText(wkUrgHours(wkUrg(r))) + ' дотор',
+      body: wkLocLabel(r) + ' — ' + String(r.desc || '').slice(0, 100) +
+        ' · ' + (r.reporterFull || r.reporterName || '') });
+  } catch (e) { console.error('[wk] мэдэгдэл', e); }
+}
+
+/* ── Нэг бичлэгийг сервер рүү шинэчлэх ── */
+function wkPatch(id, fn, msg) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) { toast('Олдсонгүй', 'error'); return null; }
+  fn(r);
+  saveDB();
+  reportPushToServer(r);
+  try { renderReportflow(); renderNotifBadge(); } catch (e) {}
+  if (msg) toast(msg, 'success');
+  return r;
+}
+
+/* ── ХҮЛЭЭЖ АВАХ ── */
+function wkClaim(id) {
+  var me = reqMe(); if (!me) return;
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (r && r.wkClaimBy && r.wkClaimBy.uid && r.wkClaimBy.uid !== me.uid) {
+    toast(r.wkClaimBy.name + ' аль хэдийн хүлээж авсан байна', 'warn'); return;
+  }
+  var emp = woEmpByUid(me.uid) || me;
+  wkPatch(id, function (x) {
+    x.wkClaimBy = { uid: me.uid, name: empFullName(emp) || me.name || '',
+      pos: emp.pos || emp.role || '', at: new Date().toISOString() };
+  }, '✓ Та энэ ажлыг хүлээж авлаа');
+  try {
+    var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+    var rep = woEmpByUid(rr.reporterUid);
+    if (rep) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
+      title: '👷 Таны мэдээллийг хүлээж авлаа',
+      body: rr.wkClaimBy.name + ' — ' + String(rr.desc || '').slice(0, 90) });
+  } catch (e) {}
+}
+
+/* ── ШИЛЖҮҮЛЭХ (буруу алба руу ирсэн бол) ── */
+function wkMoveModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var to = r.wkGate === 'hab' ? 'ita' : 'hab';
+  var g = wkGate(to);
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
+    'Энэ мэдээллийг <b>' + esc(g.ab) + '</b> руу шилжүүлэх гэж байна.<br>' +
+    'Тэр албаны бүх ажилтанд мэдэгдэнэ.</div>' +
+    '<div class="rf-field"><label style="font-weight:700;font-size:12.5px">Яагаад шилжүүлж байна вэ?</label>' +
+    '<textarea id="wkWhy" class="rf-input" rows="2" placeholder="ж: Энэ бол тоног төхөөрөмжийн засвар"></textarea></div>' +
+    '<button class="btn btn-primary btn-block" id="wkMoveGo" style="margin-top:11px">' +
+    '<i class="ti ti-arrow-right"></i> ' + esc(g.ab) + ' руу шилжүүлэх</button>');
+  node.addEventListener('click', function (ev) {
+    if (!ev.target.closest('#wkMoveGo')) return;
+    var why = (node.querySelector('#wkWhy').value || '').trim();
+    var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
+    closeModal();
+    var rr = wkPatch(id, function (x) {
+      x.wkGateLog = (x.wkGateLog || []).concat([{
+        from: x.wkGate, to: to, why: why,
+        byUid: me && me.uid, byName: empFullName(emp) || (me && me.name) || '',
+        at: new Date().toISOString()
+      }]);
+      x.wkGate = to;
+      x.wkClaimBy = null;              /* шинэ алба дахин хүлээж авна */
+    }, '↪ ' + g.ab + ' руу шилжүүллээ');
+    if (rr) wkNotifyGate(rr, 'moved');
+  });
+  buildModal('Өөр алба руу шилжүүлэх', node, { width: 'min(520px, 96vw)' });
+}
+
+/* ── ЗЭРГИЙГ БАТАЛГААЖУУЛАХ / ӨӨРЧЛӨХ ── */
+function wkUrgModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var cur = wkUrg(r);
+  var node = elc('div', 'modal-info');
+  var draw = function () {
+    node.innerHTML =
+      '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
+      'Мэдээлсэн хүн <b>' + r.wkUrg + '</b> гэж санал болгосон. Албаны хувьд зөв эсэхийг ' +
+      'баталгаажуулна уу — хугацаа үүнээс тооцогдоно.</div>' +
+      '<div style="display:flex;gap:7px;flex-wrap:wrap">' + [5, 4, 3, 2, 1].map(function (n) {
+        var on = cur === n, col = wkUrgColor(n);
+        return '<button type="button" data-u="' + n + '" style="flex:1;min-width:76px;border:2px solid ' +
+          (on ? col : '#E2E8F0') + ';background:' + (on ? col : '#fff') + ';border-radius:11px;' +
+          'padding:10px 6px;cursor:pointer;font-family:inherit;text-align:center">' +
+          '<span style="display:block;font-size:18px;font-weight:900;color:' + (on ? '#fff' : col) + '">' + n + '</span>' +
+          '<span style="display:block;font-size:10.5px;color:' + (on ? '#fff' : '#64748B') + '">' +
+          wkHoursText(wkUrgHours(n)) + '</span></button>';
+      }).join('') + '</div>' +
+      '<button class="btn btn-primary btn-block" id="wkUrgGo" style="margin-top:13px">' +
+      '<i class="ti ti-check"></i> Баталгаажуулах</button>';
+  };
+  node.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-u]');
+    if (b) { cur = +b.getAttribute('data-u'); draw(); return; }
+    if (ev.target.closest('#wkUrgGo')) {
+      var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
+      closeModal();
+      wkPatch(id, function (x) {
+        x.wkUrgFinal = cur;
+        x.wkUrgBy = { uid: me && me.uid, name: empFullName(emp) || (me && me.name) || '',
+          at: new Date().toISOString() };
+        x.risk_level = cur >= 5 ? 'high' : cur >= 3 ? 'mid' : 'low';
+      }, '✓ Зэрэг баталгаажлаа: ' + cur);
+    }
+  });
+  draw();
+  buildModal('Яаралтай зэргийг баталгаажуулах', node, { width: 'min(560px, 96vw)' });
+}
+
+/* ── ГҮЙЦЭТГЭСЭН ГЭЖ ИЛГЭЭХ ── */
+function wkExecModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var photo = '';
+  var node = elc('div', 'modal-info');
+  var draw = function () {
+    node.innerHTML =
+      '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;' +
+      'margin-bottom:12px;font-size:12.5px;color:#475569;line-height:1.6">' +
+      '<b>' + esc(wkLocLabel(r)) + '</b><br>' + esc(String(r.desc || '').slice(0, 160)) + '</div>' +
+      '<div class="rf-field"><label style="font-weight:700;font-size:12.5px;color:#334155">' +
+      'Юу хийснээ бичнэ үү <span style="color:#DC2626">*</span></label>' +
+      '<textarea id="wkExNote" class="rf-input" rows="4" placeholder="Ямар ажил хийсэн, юу сольсон, ямар материал зарцуулсан"></textarea></div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:#334155;margin:11px 0 6px">' +
+      'Баталгааны зураг <span style="color:#DC2626">*</span></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:12px;' +
+      'text-align:center;cursor:pointer;background:#F8FAFC">' +
+      '<input type="file" accept="image/*" id="wkExFile" hidden>' +
+      '<i class="ti ti-photo"></i> <span style="font-size:12.5px;color:#475569">Файлаас</span></label>' +
+      '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:12px;' +
+      'text-align:center;cursor:pointer;background:#F8FAFC">' +
+      '<input type="file" accept="image/*" capture="environment" id="wkExCam" hidden>' +
+      '<i class="ti ti-camera"></i> <span style="font-size:12.5px;color:#475569">Камераар</span></label></div>' +
+      (photo ? '<img src="' + photo + '" style="max-width:100%;border-radius:11px;margin-top:9px">' : '') +
+      '<div style="font-size:11.5px;color:#64748B;margin-top:9px">' +
+      'Илгээсний дараа мэдээлсэн хүн шалгаж <b>батална</b>. Дутуу бол буцаана.</div>' +
+      '<button class="btn btn-primary btn-block" id="wkExGo" style="margin-top:12px">' +
+      '<i class="ti ti-checkbox"></i> Гүйцэтгэсэн гэж илгээх</button>';
+    ['#wkExFile', '#wkExCam'].forEach(function (q) {
+      var el = node.querySelector(q);
+      if (el) el.addEventListener('change', function () {
+        var f = this.files && this.files[0]; if (!f) return;
+        downscaleImage(f, 1000, 0.72, function (d) { photo = d || ''; draw(); });
+      });
+    });
+  };
+  node.addEventListener('click', function (ev) {
+    if (!ev.target.closest('#wkExGo')) return;
+    var note = (node.querySelector('#wkExNote').value || '').trim();
+    if (!note) { toast('Юу хийснээ бичнэ үү', 'warn'); return; }
+    if (!photo) { toast('Баталгааны зураг оруулна уу', 'warn'); return; }
+    var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
+    closeModal();
+    var rr = wkPatch(id, function (x) {
+      x.wkExecNote = note; x.wkExecPhoto = photo;
+      x.wkExecAt = new Date().toISOString();
+      x.wkExecBy = { uid: me && me.uid, name: empFullName(emp) || (me && me.name) || '',
+        pos: emp.pos || emp.role || '' };
+      x.wkAccept = 'pending';
+    }, '✓ Илгээгдлээ — мэдээлсэн хүн батална');
+    try {
+      var rep = woEmpByUid(rr.reporterUid);
+      if (rep) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
+        title: '✅ Таны мэдээлэлд ажил хийгдлээ — батлана уу',
+        body: rr.wkExecBy.name + ' — ' + String(note).slice(0, 90) });
+    } catch (e) {}
+  });
+  draw();
+  buildModal('Гүйцэтгэсэн ажлаа илгээх', node, { width: 'min(620px, 96vw)' });
+}
+
+/* ── МЭДЭЭЛСЭН ХҮН БАТЛАХ / БУЦААХ ── */
+function wkAcceptModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var node = elc('div', 'modal-info',
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;' +
+    'margin-bottom:12px;font-size:12.5px;color:#475569;line-height:1.65">' +
+    '<b>' + esc((r.wkExecBy && r.wkExecBy.name) || '') + '</b>' +
+    ((r.wkExecBy && r.wkExecBy.pos) ? ' · ' + esc(r.wkExecBy.pos) : '') + '<br>' +
+    esc(r.wkExecNote || '') + '</div>' +
+    (r.wkExecPhoto ? '<img src="' + r.wkExecPhoto + '" style="max-width:100%;border-radius:11px;margin-bottom:12px">' : '') +
+    '<div style="font-size:12.5px;color:#334155;font-weight:700;margin-bottom:9px">' +
+    'Ажил бүрэн хийгдсэн үү?</div>' +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap">' +
+    '<button class="btn" id="wkOk" style="flex:1;min-width:150px;background:#0ca30c;color:#fff;border-color:#0ca30c">' +
+    '<i class="ti ti-check"></i> Дууссан</button>' +
+    '<button class="btn btn-secondary" id="wkNo" style="flex:1;min-width:150px">' +
+    '<i class="ti ti-rotate"></i> Дуусаагүй — буцаах</button></div>' +
+    '<div id="wkNoWrap" style="display:none;margin-top:11px">' +
+    '<label style="font-weight:700;font-size:12.5px">Юу дутуу вэ?</label>' +
+    '<textarea id="wkNoWhy" class="rf-input" rows="2" placeholder="Юуг дахин хийх шаардлагатай вэ?"></textarea>' +
+    '<button class="btn btn-primary btn-block" id="wkNoGo" style="margin-top:9px">Буцаах</button></div>');
+  node.addEventListener('click', function (ev) {
+    var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
+    if (ev.target.closest('#wkOk')) {
+      closeModal();
+      var rr = wkPatch(id, function (x) {
+        x.wkAccept = 'done';
+        x.wkAcceptBy = { uid: me && me.uid, name: empFullName(emp) || (me && me.name) || '',
+          at: new Date().toISOString() };
+        x.status = 'verified';                    /* бонус тооцоонд */
+        x.verifiedAt = new Date().toISOString();
+        x.verifiedBy = (me && me.email) || '';
+        if (x.points_awarded == null && x.wkKind !== 'job') x.points_awarded = reportPoints(x);
+      }, '✓ Ажил дууссан гэж баталлаа');
+      try {
+        var ex = woEmpByUid(rr.wkExecBy && rr.wkExecBy.uid);
+        if (ex) ntfSend([ex], { kind: 'wk', url: '/kpi/?page=reportflow',
+          title: '🎉 Таны ажлыг баталлаа', body: String(rr.desc || '').slice(0, 100) });
+      } catch (e) {}
+      return;
+    }
+    if (ev.target.closest('#wkNo')) { node.querySelector('#wkNoWrap').style.display = 'block'; return; }
+    if (ev.target.closest('#wkNoGo')) {
+      var why = (node.querySelector('#wkNoWhy').value || '').trim();
+      if (!why) { toast('Юу дутуу байгааг бичнэ үү', 'warn'); return; }
+      closeModal();
+      var r2 = wkPatch(id, function (x) {
+        x.wkAccept = 'reject'; x.wkRejectWhy = why;
+        x.wkRejectAt = new Date().toISOString();
+        /* Гүйцэтгэлийг цуцалж, албандаа буцаана */
+        x.wkExecAt = ''; x.wkExecNote = ''; x.wkExecPhoto = '';
+      }, '↩ Ажил буцаагдлаа');
+      try {
+        var ex2 = woEmpByUid(r2.wkClaimBy && r2.wkClaimBy.uid);
+        if (ex2) ntfSend([ex2], { kind: 'wk', url: '/kpi/?page=reportflow',
+          title: '↩ Ажил буцаагдлаа — дахин хийх шаардлагатай', body: why.slice(0, 110) });
+      } catch (e) {}
+      return;
+    }
+  });
+  buildModal('Хийгдсэн ажлыг батлах', node, { width: 'min(620px, 96vw)' });
+}
+
+/* ── НЭГ МӨР ── */
+function wkRowHTML(r) {
+  var me = reqMe() || {};
+  var k = wkKind(r.wkKind), st = wkStatus(r), S = WK_STATUS[st];
+  var t = wkTime(r), u = wkUrg(r);
+  var mine = r.reporterUid === me.uid;
+  var myGate = wkMyGate();
+  var inMyGate = myGate && myGate === r.wkGate;
+  var claimedByMe = r.wkClaimBy && r.wkClaimBy.uid === me.uid;
+
+  /* Товчлуурууд — тухайн хүн ЮУ ХИЙЖ ЧАДАХ вэ */
+  var acts = [];
+  if (inMyGate && st === 'new')
+    acts.push(['wk-claim', 'Хүлээж авах', '#4F46E5', 'ti-hand-grab']);
+  if (inMyGate && st === 'new')
+    acts.push(['wk-move', 'Өөр алба руу', '#64748B', 'ti-arrow-right']);
+  if (inMyGate && (st === 'new' || st === 'claimed') && !r.wkUrgBy)
+    acts.push(['wk-urg', 'Зэрэг батлах', '#E9A100', 'ti-flag']);
+  if (claimedByMe && st === 'claimed')
+    acts.push(['wk-exec', 'Гүйцэтгэсэн', '#0ca30c', 'ti-checkbox']);
+  if (mine && st === 'executed')
+    acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
+
+  return '<div data-wk-open="' + esc(r.id) + '" style="border:1.5px solid ' +
+    (t && t.late ? '#FECACA' : inMyGate && st === 'new' ? '#C7D2FE' : '#E2E8F0') +
+    ';border-left:4px solid ' + k.c + ';border-radius:12px;padding:12px 14px;margin-bottom:9px;' +
+    'cursor:pointer;background:' + (t && t.late ? '#FFFBFB' : '#fff') + '">' +
+    '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
+    '<span style="background:' + k.bg + ';color:' + k.c + ';border-radius:6px;padding:2px 8px;' +
+    'font-size:11px;font-weight:900">' + k.ab + '</span>' +
+    '<span style="width:20px;height:20px;border-radius:6px;background:' + wkUrgColor(u) +
+    ';color:#fff;font-size:11.5px;font-weight:900;display:inline-flex;align-items:center;' +
+    'justify-content:center" title="Яаралтай зэрэг">' + u + '</span>' +
+    '<span style="background:' + S.bg + ';color:' + S.c + ';border-radius:6px;padding:2px 8px;' +
+    'font-size:11px;font-weight:800">' + S.l + '</span>' +
+    '<span style="background:#F1F5F9;color:#475569;border-radius:6px;padding:2px 8px;font-size:11px;' +
+    'font-weight:700">' + wkGate(r.wkGate).ab + '</span>' +
+    (t ? '<span style="margin-left:auto;font-size:11.5px;font-weight:800;color:' +
+      (t.done ? '#0ca30c' : t.late ? '#C81E3A' : t.near ? '#E9A100' : '#64748B') + '">' +
+      (t.late ? '⏰ ' : '') + esc(t.text) + '</span>' : '') +
+    '</div>' +
+    '<div style="font-size:13.5px;font-weight:600;color:#1E293B;line-height:1.45">' +
+    esc(String(r.desc || '').slice(0, 130)) + '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
+    ' · 👤 ' + esc(r.reporterFull || r.reporterName || '') +
+    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(r.wkClaimBy.name) : '') + '</div>' +
+    (acts.length ? '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">' +
+      acts.map(function (a) {
+        return '<button class="btn btn-sm" data-' + a[0] + '="' + esc(r.id) + '" style="background:' +
+          a[2] + ';color:#fff;border-color:' + a[2] + '"><i class="ti ' + a[3] + '"></i> ' + a[1] + '</button>';
+      }).join('') + '</div>' : '') +
+    (r.wkAccept === 'reject' && r.wkRejectWhy
+      ? '<div style="margin-top:8px;background:#FEF2F2;border:1px solid #FECACA;border-radius:9px;' +
+        'padding:7px 10px;font-size:11.5px;color:#B91C1C">↩ Буцаагдсан: ' + esc(r.wkRejectWhy) + '</div>' : '') +
+    '</div>';
+}
+
+/* ── ЖАГСААЛТ ── */
+var WK_TAB = 'in';
+function wkListHTML(all) {
+  var me = reqMe() || {};
+  var myGate = wkMyGate();
+  var rows = (all || []).filter(function (r) { return r && r.wkKind; })
+    .sort(function (a, b) {
+      var ta = wkTime(a), tb = wkTime(b);
+      var la = ta && ta.late ? 0 : 1, lb = tb && tb.late ? 0 : 1;
+      if (la !== lb) return la - lb;
+      return wkUrg(b) - wkUrg(a) || (new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    });
+
+  var inbox = rows.filter(function (r) {
+    return myGate && r.wkGate === myGate && wkStatus(r) !== 'closed';
+  });
+  var mineClaim = rows.filter(function (r) {
+    return r.wkClaimBy && r.wkClaimBy.uid === me.uid && wkStatus(r) !== 'closed';
+  });
+  var mineRep = rows.filter(function (r) { return r.reporterUid === me.uid; });
+  var toAccept = mineRep.filter(function (r) { return wkStatus(r) === 'executed'; });
+  var done = rows.filter(function (r) { return wkStatus(r) === 'closed'; });
+
+  var tabs = [];
+  if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
+  if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
+  tabs.push({ k: 'rep', l: 'Миний мэдээлсэн', n: toAccept.length, tone: toAccept.length ? '#4F46E5' : '' });
+  tabs.push({ k: 'done', l: 'Дууссан', n: done.length });
+  if (!myGate && WK_TAB === 'in') WK_TAB = 'rep';
+  if (!myGate && WK_TAB === 'my') WK_TAB = 'rep';
+
+  var list = WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
+    : WK_TAB === 'done' ? done : mineRep;
+
+  var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
+    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Work order</div>' +
+    '<div style="font-size:12px;color:#94A3B8">Осолд дөхсөн · Аюул · Ажлын захиалга — бүгд эндээс</div></div>' +
+    '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
+    '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button></div>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap">' + tabs.map(function (t) {
+      var on = WK_TAB === t.k;
+      return '<button data-wk-tab="' + t.k + '" style="border:1.5px solid ' +
+        (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+        ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:7px 13px;cursor:pointer;' +
+        'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + t.l +
+        (t.n ? '<span style="margin-left:6px;background:' + (on ? 'rgba(255,255,255,.25)' : (t.tone || '#EEF2FF')) +
+          ';color:' + (on ? '#fff' : (t.tone ? '#fff' : '#4F46E5')) + ';border-radius:6px;padding:1px 6px;' +
+          'font-size:11px;font-weight:800">' + t.n + '</span>' : '') + '</button>';
+    }).join('') + '</div></div>';
+
+  if (!list.length) {
+    return H + '<div class="card" style="padding:30px;text-align:center">' +
+      '<div style="font-size:28px">📋</div>' +
+      '<div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:6px">' +
+      (WK_TAB === 'in' ? 'Танай албанд шинэ зүйл алга'
+        : WK_TAB === 'my' ? 'Та ажил хүлээж аваагүй байна'
+          : WK_TAB === 'done' ? 'Дууссан зүйл алга' : 'Та мэдээлэл илгээгээгүй байна') + '</div>' +
+      (WK_TAB === 'rep' ? '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px">' +
+        'Дээрх «Шинэ мэдээлэл» товчоор эхэлнэ үү.</div>' : '') + '</div>';
+  }
+  return H + list.map(wkRowHTML).join('');
+}
+
 function rfSeeAll() {
   try {
     if (isAdmin()) return true;
@@ -13934,6 +14679,7 @@ function renderReportflow() {
     if (!rfSeeAll()) RF_TAB = 'rep';
     else { sec.innerHTML = html + rfDashHTML(reports); rfAfter(sec, admin, pending); rfTipWire(); return; }
   }
+  if (RF_TAB === 'wk') { sec.innerHTML = html + wkListHTML(reports); rfAfter(sec, admin, pending); return; }
   if (RF_TAB === 'wo') { sec.innerHTML = html + woListHTML(false); rfAfter(sec, admin, pending); return; }
   if (RF_TAB === 'womine') { sec.innerHTML = html + woListHTML(true); rfAfter(sec, admin, pending); return; }
 
@@ -13963,13 +14709,27 @@ function renderReportflow() {
 }
 
 /* Табын мөр */
-var RF_TAB = 'rep';
+var RF_TAB = 'wk';
 function rfTabsHTML(woN) {
   var t = [];
   /* ⭐ Дашбоард — бүх мэдээллийг харах эрхтэй хүнд (ХАБЭА, ИТА, админ) */
   if (rfSeeAll()) t.push({ k: 'dash', ic: 'ti-chart-histogram', l: 'Дашбоард', n: null });
+  var wkN = 0;
+  try {
+    var _mg = wkMyGate(), _me = reqMe() || {};
+    wkN = (DB.reports || []).filter(function (r) {
+      if (!r || !r.wkKind) return false;
+      var st = wkStatus(r);
+      if (_mg && r.wkGate === _mg && st === 'new') return true;
+      if (r.reporterUid === _me.uid && st === 'executed') return true;
+      if (r.wkClaimBy && r.wkClaimBy.uid === _me.uid && st === 'claimed') return true;
+      return false;
+    }).length;
+  } catch (e) {}
   t = t.concat([
-    { k: 'rep',    ic: 'ti-flag-2',        l: 'Мэдээллүүд',      n: null },
+    { k: 'wk',     ic: 'ti-clipboard-plus', l: 'Work order',     n: wkN || null,
+      tone: wkN ? '#DC2626' : '' },
+    { k: 'rep',    ic: 'ti-flag-2',        l: 'Хуучин мэдээлэл', n: null },
     { k: 'wo',     ic: 'ti-clipboard-list', l: 'Ажлын захиалга',  n: (WO_ROWS || []).length || null },
     { k: 'womine', ic: 'ti-writing-sign',  l: 'Миний гарын үсэг', n: woN || null, tone: woN ? '#DC2626' : '' }
   ]);
@@ -13991,6 +14751,12 @@ function rfTabsHTML(woN) {
 function rfAfter(sec, admin, pending) {
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
+  /* Work order-ийн тохиргоог нэг удаа татна */
+  if ((!WK_LOC_OK || !WK_URG_OK) && !renderReportflow._wkOnce) {
+    renderReportflow._wkOnce = true;
+    Promise.all([wkLocLoad(), wkUrgLoad()]).then(function () { renderReportflow(); })
+      .catch(function (e) { console.error('[wk] тохиргоо', e); });
+  }
   /* Ажлын захиалгыг нэг удаа арын талд татна */
   if (!WO_OK && !renderReportflow._woOnce) {
     renderReportflow._woOnce = true;
@@ -14010,6 +14776,23 @@ function rfAfter(sec, admin, pending) {
     /* ── таб ── */
     var tb = ev.target.closest('[data-rf-tab]');
     if (tb) { RF_TAB = tb.getAttribute('data-rf-tab'); renderReportflow(); return; }
+    /* ── Work order ── */
+    if (ev.target.closest('[data-wk-new]')) { wkNewModal(); return; }
+    var wt = ev.target.closest('[data-wk-tab]');
+    if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
+    var wc = ev.target.closest('[data-wk-claim]');
+    if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
+    var wm = ev.target.closest('[data-wk-move]');
+    if (wm) { ev.stopPropagation(); wkMoveModal(wm.getAttribute('data-wk-move')); return; }
+    var wu = ev.target.closest('[data-wk-urg]');
+    if (wu) { ev.stopPropagation(); wkUrgModal(wu.getAttribute('data-wk-urg')); return; }
+    var we = ev.target.closest('[data-wk-exec]');
+    if (we) { ev.stopPropagation(); wkExecModal(we.getAttribute('data-wk-exec')); return; }
+    var wa = ev.target.closest('[data-wk-accept]');
+    if (wa) { ev.stopPropagation(); wkAcceptModal(wa.getAttribute('data-wk-accept')); return; }
+    var wop = ev.target.closest('[data-wk-open]');
+    if (wop) { openReportDetail(wop.getAttribute('data-wk-open')); return; }
+
     /* ── дашбоардын шүүлтүүр — БҮХ график нэг зүсмэлээр дахин зурагдана ── */
     var fd = ev.target.closest('[data-rf-days]');
     if (fd) { RF_DASH.days = +fd.getAttribute('data-rf-days'); renderReportflow(); return; }
@@ -20326,7 +21109,7 @@ function tourSteps() {
       'Урьдчилсан болон дараах шалгалтаа энд өгнө. Сүүлийн дүн тооцогдоно.');
     add('.nav-item[data-page="tasks"]', 'Даалгавар',
       'ХАБЭА ажилтнаас өгсөн даалгавар. Биелүүлээд тэмдэглэнэ.');
-    add('#hazardFab', 'Аюул мэдээлэх',
+    add('#hazardFab', 'Work order',
       'Аюултай зүйл харвал энд дарж мэдээлнэ. Батлагдсан бүрт БОНУС оноо нэмэгдэнэ — хэзээ ч хасагдахгүй.');
     add('.nav-item[data-page="hazards"]', 'Эрсдэлийн үнэлгээ',
       'Таны албаны эрсдэлийн үнэлгээний дашбоард.');
@@ -20529,13 +21312,13 @@ function hintCandidates() {
           list.push({ sel: '.nav-item[data-page="tasks"]', txt: 'Даалгавраа гүйцээнэ үү' });
       } catch (err) {}
     }
-    list.push({ sel: '#hazardFab', txt: 'Аюул харвал энд дар' });
+    list.push({ sel: '#hazardFab', txt: 'Аюул, ажил — энд дар' });
   } else {
     try {
       var pend = (DB.reports || []).filter(function (r) { return r.status !== 'verified' && r.status !== 'rejected'; }).length;
       if (pend) list.push({ sel: '.nav-item[data-page="reportflow"]', txt: pend + ' мэдээлэл хүлээгдэж байна' });
     } catch (err) {}
-    list.push({ sel: '#hazardFab', txt: 'Аюул мэдээлэх' });
+    list.push({ sel: '#hazardFab', txt: 'Work order' });
   }
   return list;
 }
@@ -21461,10 +22244,12 @@ function injectHazardFab() {
   var b = document.createElement('button');
   b.id = 'hazardFab';
   b.type = 'button';
-  b.title = 'Аюул мэдээлэх';
-  b.innerHTML = '<i class="ti ti-flag-2"></i><span>Аюул мэдээлэх</span>';
+  b.title = 'Work order — осолд дөхсөн, аюул, ажлын захиалга';
+  b.innerHTML = '<i class="ti ti-clipboard-plus"></i><span>Work order</span>';
   b.addEventListener('click', function () {
-    try { actionReportNew('hazard'); } catch (e) { try { switchPage('reportflow'); } catch (e2) {} }
+    /* ⭐ Ажилтан ЯМАР Ч хуудаснаас нэг товчоор эхэлнэ */
+    try { wkNewModal(); }
+    catch (e) { try { switchPage('reportflow'); } catch (e2) {} }
   });
   document.body.appendChild(b);
 }
