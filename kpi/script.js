@@ -12507,7 +12507,12 @@ function rfTrendHTML(d) {
     '<path d="' + path(A) + '" fill="none" stroke="' + RF_C.a + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<path d="' + path(B) + '" fill="none" stroke="' + RF_C.b + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
     dots(A, RF_C.a) + dots(B, RF_C.b) +
-    endLab(A, RF_C.a, 'Аюул') + endLab(B, RF_C.b, 'Осолд дөхсөн') +
+    /* ⚠ Хоёр цуврал баруун зах дээр ойртвол шошго нь давхцаж, аль шугамых
+       болох нь ойлгогдохоо болино. Тийм үед шошгыг ОГТ бичихгүй — доорх
+       тайлбар ба хулганы тайлбар таниулна. */
+    (Math.abs(Y(A[A.length - 1]) - Y(B[B.length - 1])) >= 24
+      ? endLab(A, RF_C.a, 'Аюул') + endLab(B, RF_C.b, 'Осолд дөхсөн')
+      : '') +
     '</svg>';
   /* Хоёр цуврал тул ТАЙЛБАР ЗААВАЛ */
   var leg = '<div style="display:flex;gap:15px;margin-top:6px;font-size:11.5px;color:' + RF_INK.s + '">' +
