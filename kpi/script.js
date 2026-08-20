@@ -11966,6 +11966,15 @@ function reportCard(r, withActions) {
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
     '<div style="width:54px;height:54px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#94A3B8;flex-shrink:0"><i class="ti ti-photo"></i></div>';
   var pts = reportPoints(r), actions = '';
+  /* ⭐ Баталгаажсан аюулыг ЗАСАХ алхам руу шилжүүлэх гүүр.
+     Захиалга аль хэдийн үүссэн бол давхардуулахгүй. */
+  if (r.status === 'verified') {
+    var has = (WO_ROWS || []).some(function (w) { return w.reportId === r.id; });
+    actions += '<div style="margin-top:8px">' + (has
+      ? '<span style="font-size:11.5px;color:#15803D;font-weight:700">🔧 Ажлын захиалга үүссэн</span>'
+      : '<button class="btn btn-sm" data-wo-from="' + r.id + '" style="background:#0F766E;color:#fff;' +
+        'border-color:#0F766E"><i class="ti ti-tool"></i> Ажлын захиалга үүсгэх</button>') + '</div>';
+  }
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
       '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();window.verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
@@ -12135,7 +12144,1043 @@ function openReportDetail(id) {
   buildModal('Мэдээллийн дэлгэрэнгүй', node, { width: '460px' });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   АЖЛЫН ЗАХИАЛГА — Work order / Ажлын захиалгын хуудас
+   ----------------------------------------------------------------------
+   Эх сурвалж: Монос компанийн цаасан маягт (3 хэсэг, 8 гарын үсэг).
+   ⭐ ЯАГААД ЭНЭ ЦЭСЭНД: аюул мэдээлэгдэж, баталгаажиж, бонус авдаг ч
+      «хэн, хэзээ засав» гэдэг хаана ч бүртгэгддэггүй байв. Ажлын захиалга
+      нь яг тэр дутуу гогцоо — аюулыг ХААХ баримт.
+   ⚠ Маягт дотроо «Hazardous / Хорт нөхцөл» чагт, «Урьдчилан сэргийлэх
+      алхмууд (Аюулгүйн зааварчилгаа…)» талбартай — өөрөө ХАБЭА-тай
+      холбогдохоор зохиогдсон.
+   ══════════════════════════════════════════════════════════════════════ */
+var WO_FILE = 'workorders/_all.json';
+var WO_ROWS = [], WO_OK = false;
+
+/* Ажлын төрөл — маягтын баруун дээд булангийн чагтууд */
+var WO_KINDS = [
+  { k: 'bm',  en: 'BM',  mn: 'Эвдрэл',     c: '#DC2626', bg: '#FEF2F2' },
+  { k: 'im',  en: 'IM',  mn: 'Саатал',     c: '#EA580C', bg: '#FFF7ED' },
+  { k: 'pm',  en: 'PM',  mn: 'Төлөвлөсөн', c: '#0891B2', bg: '#ECFEFF' },
+  { k: 'new', en: 'New', mn: 'Шинэ',       c: '#7C3AED', bg: '#F5F3FF' }
+];
+function woKind(k) {
+  for (var i = 0; i < WO_KINDS.length; i++) if (WO_KINDS[i].k === k) return WO_KINDS[i];
+  return WO_KINDS[0];
+}
+
+/* Дөрвөн үе шат — цаасан маягтын SECTION 1/2/3-тай яг тохирно.
+   SECTION 3 нь хоёр баганатай (хүлээн авалт · 72 цагийн дараа) тул
+   энд хоёр тусдаа шат болов. */
+var WO_STEPS = [
+  { key: 'req',  no: '1', mn: 'Хүсэлт',           en: 'REQUEST',
+    sigs: [['req', 'Хүсэлт гаргагч'], ['mgrReq', 'Менежер']] },
+  { key: 'perf', no: '2', mn: 'Гүйцэтгэл',        en: 'PERFORMANCE',
+    sigs: [['perf', 'Гүйцэтгэсэн'], ['sup', 'Хянасан']] },
+  { key: 'comm', no: '3', mn: 'Хүлээн авалт',     en: 'COMMISSIONING',
+    sigs: [['commReq', 'Хүсэлт гаргагч'], ['commMgr', 'Менежер']] },
+  { key: 'h72',  no: '4', mn: '72 цагийн дараа',  en: 'AFTER 72 HOURS RUN',
+    sigs: [['h72Req', 'Хүсэлт гаргагч'], ['h72Mgr', 'Менежер']] }
+];
+var WO_SIG_LABEL = {
+  req: 'Хүсэлт гаргагчийн гарын үсэг', mgrReq: 'Менежерийн гарын үсэг (хүсэлт)',
+  perf: 'Гүйцэтгэсэн', sup: 'Хянасан',
+  commReq: 'Хүсэлт гаргагч — шалгаж хүлээн авсны дараа', commMgr: 'Менежер — хүлээн авалт',
+  h72Req: 'Хүсэлт гаргагч — 72 цагийн дараа', h72Mgr: 'Менежер — 72 цагийн дараа'
+};
+
+/* ── Хадгалалт. ⚠ workorders/_all.json нь R2_CACHEABLE-д ОРОХГҮЙ —
+   бичихийн өмнө уншиж нэгтгэдэг тул кэшлэвэл бусдын бичлэг дарагдана. ── */
+async function woLoad(force) {
+  if (WO_OK && !force) return WO_ROWS;
+  try {
+    var j = await riskR2GetJson(WO_FILE);
+    WO_ROWS = (j && Array.isArray(j.list)) ? j.list : [];
+    WO_OK = true;
+  } catch (e) { WO_ROWS = WO_ROWS || []; }
+  return WO_ROWS;
+}
+async function woSaveMerge(mutate, verifyId) {
+  for (var k = 0; k < 3; k++) {
+    var cur = [];
+    try { var j = await riskR2GetJson(WO_FILE, { fresh: true }); cur = (j && Array.isArray(j.list)) ? j.list : []; } catch (e) {}
+    var next = mutate(cur.slice());
+    if (!next) return true;
+    await riskR2PutJson(WO_FILE, { updatedAt: new Date().toISOString(), list: next });
+    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 400)); });
+    var back = [];
+    try { var j2 = await riskR2GetJson(WO_FILE, { fresh: true }); back = (j2 && Array.isArray(j2.list)) ? j2.list : []; } catch (e) {}
+    WO_ROWS = back; WO_OK = true;
+    if (!verifyId) return true;
+    if (back.some(function (x) { return x && x.id === verifyId; })) return true;
+  }
+  return false;
+}
+/* WO-2026-0001 — жил бүр дахин 1-ээс эхэлнэ */
+function woNextNo(list) {
+  var y = new Date().getFullYear(), max = 0;
+  (list || []).forEach(function (w) {
+    var m = String(w && w.id || '').match(/^WO-(\d{4})-(\d+)$/);
+    if (m && +m[1] === y && +m[2] > max) max = +m[2];
+  });
+  return 'WO-' + y + '-' + ('000' + (max + 1)).slice(-4);
+}
+
+/* ── ЧИГЛҮҮЛЭЛТ ────────────────────────────────────────────────────────
+   ⭐ ИТА нь ACK_LEADS дотор «Дэд бүтэц» ба «Тоног төхөөрөмж» гэсэн ХОЁР
+   хэсэгтэй бөгөөд энэ нь маягтын «Тоноглол (Plant/Building)» ба «Тоног
+   төхөөрөмж (Equipment)» талбартай ЯГ тохирно. Тиймээс захиалга зөв
+   ахлах инженерт өөрөө очно. */
+function woUnitOf(wo) {
+  return (wo && wo.unit === 'Дэд бүтэц') ? 'Дэд бүтэц' : 'Тоног төхөөрөмж';
+}
+function woEmpByUid(uid) {
+  if (!uid) return null;
+  var list = empAll();
+  for (var i = 0; i < list.length; i++) if (list[i].uid === uid) return list[i];
+  return null;
+}
+/* Гарын үсгийн байр бүрд ХЭН зурах ёстой вэ */
+function woSignerFor(wo, key) {
+  if (!wo) return null;
+  if (key === 'req' || key === 'commReq' || key === 'h72Req') {
+    return woEmpByUid(wo.reqUid) || { uid: wo.reqUid, name: wo.reqName || '', email: wo.reqEmail || '' };
+  }
+  if (key === 'mgrReq' || key === 'commMgr' || key === 'h72Mgr') {
+    var L = null; try { L = ackLeadFor(wo.dept, ''); } catch (e) {}
+    return L;
+  }
+  if (key === 'perf') {
+    if (wo.perfUid) return woEmpByUid(wo.perfUid);
+    try { return ackLeadFor('Инженер техникийн алба', woUnitOf(wo)); } catch (e) { return null; }
+  }
+  if (key === 'sup') {
+    try { return ackLeadFor('Инженер техникийн алба', woUnitOf(wo)); } catch (e) { return null; }
+  }
+  return null;
+}
+/* ИТА-гийн ажилтнууд — гүйцэтгэгч сонгоход */
+function woItaStaff() {
+  return empAll().filter(function (e) {
+    return riskSameDept(e.dept, 'Инженер техникийн алба');
+  });
+}
+
+/* ── ТӨЛӨВ ── */
+function woSigned(wo, key) { return !!(wo && wo.sig && wo.sig[key] && wo.sig[key].at); }
+/* Одоо аль шат дээр байна вэ (бүх гарын үсэг бүрдээгүй ЭХНИЙ шат) */
+function woStep(wo) {
+  for (var i = 0; i < WO_STEPS.length; i++) {
+    var st = WO_STEPS[i], done = true;
+    for (var j = 0; j < st.sigs.length; j++) if (!woSigned(wo, st.sigs[j][0])) { done = false; break; }
+    if (!done) return st;
+  }
+  return null;                       // бүгд зурсан = дууссан
+}
+function woIsDone(wo) { return !woStep(wo) && !(wo && wo.cancelled); }
+/* Дараагийн зурах ёстой гарын үсэг ба хүн */
+function woNextSig(wo) {
+  var st = woStep(wo);
+  if (!st) return null;
+  for (var j = 0; j < st.sigs.length; j++) {
+    var k = st.sigs[j][0];
+    if (!woSigned(wo, k)) return { step: st, key: k, label: st.sigs[j][1], who: woSignerFor(wo, k) };
+  }
+  return null;
+}
+function woWaitingText(wo) {
+  if (wo && wo.cancelled) return 'Цуцлагдсан';
+  var n = woNextSig(wo);
+  if (!n) return 'Дууссан';
+  var w = n.who;
+  return n.step.mn + ' — ' + ((w && w.name) || 'хариуцагч тодорхойгүй') + ' хүлээж байна';
+}
+/* Надад оногдсон эсэх */
+function woIsMine(wo, me) {
+  var n = woNextSig(wo);
+  return !!(n && n.who && me && n.who.uid === me.uid);
+}
+function woMine() {
+  var me = reqMe();
+  if (!me) return [];
+  return (WO_ROWS || []).filter(function (w) { return !w.cancelled && woIsMine(w, me); });
+}
+/* Хэдэн хоног болсон бэ */
+function woAgeDays(wo) {
+  if (!wo || !wo.createdAt) return 0;
+  return Math.floor((Date.now() - new Date(wo.createdAt).getTime()) / 86400000);
+}
+/* 72 цагийн шалгалт болох цаг болсон уу */
+function woH72Ready(wo) {
+  if (!wo || !wo.sig || !wo.sig.commMgr || !wo.sig.commMgr.at) return false;
+  return (Date.now() - new Date(wo.sig.commMgr.at).getTime()) >= 72 * 3600000;
+}
+
+/* ── OTP-ЭЭР ГАРЫН ҮСЭГ ────────────────────────────────────────────────
+   ⚠ Нэг маягтад 8 гарын үсэг бий. Хүн бүр 1–3 удаа зурна. Нэг хүн 10
+   минутын дотор дараалан зурвал кодыг ДАХИН ИЛГЭЭХГҮЙ — сүүлд
+   баталгаажсан кодыг нь хүчинтэй гэж үзнэ. */
+var WO_OTP_OK = {};                  /* uid → баталгаажсан цаг (мс) */
+function woOtpFresh(uid) {
+  var t = WO_OTP_OK[uid];
+  return !!(t && (Date.now() - t) < 10 * 60 * 1000);
+}
+function woOtpMark(uid) { WO_OTP_OK[uid] = Date.now(); }
+
+/* ── Нэг мөр талбар ── */
+function woField(label, en, id, opts) {
+  opts = opts || {};
+  var inp = opts.area
+    ? '<textarea id="' + id + '" class="rf-input" rows="' + (opts.rows || 3) + '" placeholder="' +
+      esc(opts.ph || '') + '">' + esc(opts.val || '') + '</textarea>'
+    : '<input type="' + (opts.type || 'text') + '" id="' + id + '" class="rf-input" value="' +
+      esc(opts.val || '') + '" placeholder="' + esc(opts.ph || '') + '">';
+  return '<div class="rf-field" style="margin-bottom:11px">' +
+    '<label style="font-weight:700;font-size:12.5px;color:#334155">' + esc(label) +
+    (en ? '<span style="font-weight:500;color:#94A3B8"> / ' + esc(en) + '</span>' : '') +
+    (opts.req ? '<span style="color:#DC2626"> *</span>' : '') + '</label>' + inp + '</div>';
+}
+
+/* ══ ШИНЭ АЖЛЫН ЗАХИАЛГА ══
+   fromReport — аюулын мэдээллээс үүсгэж байвал түүний id. Тэр үед
+   байршил, тайлбар, зураг, алба нь АВТОМАТААР бөглөгдөнө. */
+function woNewModal(fromReport) {
+  var me = reqMe();
+  if (!me || !me.uid) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  var rep = null;
+  if (fromReport) {
+    rep = (DB.reports || []).filter(function (r) { return r.id === fromReport; })[0] || null;
+  }
+  var myDept = riskCanonDept(me.dept) || me.dept || '';
+  var today = todayISO();
+  var sel = { kind: rep ? 'bm' : 'bm', unit: 'Тоног төхөөрөмж', hazardous: !!rep };
+
+  var kindBtns = WO_KINDS.map(function (k) {
+    return '<button type="button" class="wo-kind" data-wok="' + k.k + '" style="flex:1;min-width:92px;' +
+      'border:1.5px solid #E2E8F0;background:#fff;border-radius:10px;padding:8px 6px;cursor:pointer;' +
+      'font-family:inherit;text-align:center">' +
+      '<span style="display:block;font-size:12px;font-weight:900;color:' + k.c + '">' + k.en + '</span>' +
+      '<span style="display:block;font-size:11.5px;color:#64748B">' + k.mn + '</span></button>';
+  }).join('');
+
+  var node = elc('div', 'modal-info');
+  node.innerHTML =
+    (rep ? '<div style="background:#FEF2F2;border:1.5px solid #FECACA;border-radius:11px;padding:11px 13px;margin-bottom:13px">' +
+      '<div style="font-size:12px;font-weight:800;color:#B91C1C">🚩 АЮУЛЫН МЭДЭЭЛЛЭЭС ҮҮСГЭЖ БАЙНА</div>' +
+      '<div style="font-size:12.5px;color:#7F1D1D;margin-top:3px">' + esc(rep.location || '') + ' — ' +
+      esc(String(rep.desc || '').slice(0, 110)) + '</div></div>' : '') +
+
+    '<div style="font-size:12px;font-weight:800;color:#94A3B8;letter-spacing:.4px;margin-bottom:7px">' +
+    'АЖЛЫН ТӨРӨЛ / TYPE</div>' +
+    '<div id="woKinds" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">' + kindBtns + '</div>' +
+
+    '<label style="display:flex;align-items:center;gap:9px;background:#FFF7ED;border:1.5px solid #FED7AA;' +
+    'border-radius:10px;padding:10px 12px;margin-bottom:14px;cursor:pointer">' +
+    '<input type="checkbox" id="woHaz"' + (sel.hazardous ? ' checked' : '') + ' style="width:17px;height:17px">' +
+    '<span style="font-size:12.5px;font-weight:700;color:#9A3412">Хорт нөхцөл / Hazardous</span>' +
+    '<span style="font-size:11.5px;color:#B45309;margin-left:auto">аюулгүй байдалд нөлөөтэй</span></label>' +
+
+    '<div style="font-size:12px;font-weight:800;color:#94A3B8;letter-spacing:.4px;margin-bottom:7px">' +
+    'ХЭСЭГ 1 — ХҮСЭЛТ / SECTION 1: REQUEST</div>' +
+
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;margin-bottom:12px;' +
+    'font-size:12.5px;color:#475569;line-height:1.7">' +
+    '<b>Хүсэлт гаргасан:</b> ' + esc(me.name || '') + '<br>' +
+    '<b>Алба:</b> ' + esc(myDept || '—') + '<br>' +
+    '<b>Хүсэлтийн огноо:</b> ' + today + '</div>' +
+
+    '<div style="font-size:12px;font-weight:800;color:#94A3B8;margin-bottom:6px">ЯМАР ЗҮЙЛД ХАМААРАХ ВЭ</div>' +
+    '<div id="woUnit" style="display:flex;gap:7px;margin-bottom:11px">' +
+    '<button type="button" class="wo-unit" data-wou="Тоног төхөөрөмж" style="flex:1;border:1.5px solid #4F46E5;' +
+    'background:#4F46E5;color:#fff;border-radius:10px;padding:9px;cursor:pointer;font-family:inherit;' +
+    'font-size:12.5px;font-weight:700">Тоног төхөөрөмж<br><span style="font-weight:400;font-size:11px">Equipment</span></button>' +
+    '<button type="button" class="wo-unit" data-wou="Дэд бүтэц" style="flex:1;border:1.5px solid #E2E8F0;' +
+    'background:#fff;color:#334155;border-radius:10px;padding:9px;cursor:pointer;font-family:inherit;' +
+    'font-size:12.5px;font-weight:700">Тоноглол, барилга<br><span style="font-weight:400;font-size:11px">Plant / Building</span></button>' +
+    '</div>' +
+    '<div id="woRoute" style="font-size:11.5px;color:#059669;margin:-4px 0 12px"></div>' +
+
+    woField('Тоноглол', 'Plant / Building', 'woPlant', { ph: 'ж: 2-р цех, Пет шугам' }) +
+    woField('Тоног төхөөрөмж', 'Equipment', 'woEquip', { ph: 'ж: Савлагааны машин №3' }) +
+    woField('Бүртгэлийн дугаар', 'Tag No', 'woTag', { ph: 'байвал' }) +
+    woField('Ажлын ба саатлын тодорхойлолт', 'Description of Problem and Work Requested',
+      'woProblem', { area: true, rows: 4, req: true,
+        val: rep ? ((rep.location ? rep.location + ' — ' : '') + (rep.desc || '')) : '',
+        ph: 'Юу эвдэрсэн / юу хийлгэх вэ?' }) +
+
+    '<div style="display:flex;gap:9px">' +
+    '<div style="flex:1">' + woField('Зогсох боломжтой — эхлэх', 'from', 'woFrom', { type: 'date' }) + '</div>' +
+    '<div style="flex:1">' + woField('Дуусах', 'to', 'woTo', { type: 'date' }) + '</div></div>' +
+
+    '<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:11px;padding:11px 13px;' +
+    'font-size:12.5px;color:#3730A3;line-height:1.7;margin:4px 0 14px">' +
+    '<b>Дараа нь юу болох вэ:</b><br>' +
+    '① Та и-мэйлээр ирэх кодоор гарын үсэг зурна<br>' +
+    '② Албаны менежер батална<br>' +
+    '③ ИТА гүйцэтгэнэ → хянагч шалгана<br>' +
+    '④ Та хүлээн авна → <b>72 цагийн дараа</b> дахин шалгана</div>' +
+
+    '<button class="btn btn-primary btn-block" id="woSubmit">' +
+    '<i class="ti ti-send"></i> Захиалга үүсгэж гарын үсэг зурах</button>';
+
+  var showRoute = function () {
+    var el = node.querySelector('#woRoute'); if (!el) return;
+    var L = null; try { L = ackLeadFor('Инженер техникийн алба', sel.unit); } catch (e) {}
+    el.innerHTML = L ? ('→ ' + esc(L.name || '') + ' (' + esc(L.pos || L.role || '') + ')-д очно')
+      : '<span style="color:#B45309">→ ИТА-гийн хариуцагч олдсонгүй</span>';
+  };
+  var paintKind = function () {
+    Array.prototype.forEach.call(node.querySelectorAll('.wo-kind'), function (b) {
+      var on = b.getAttribute('data-wok') === sel.kind, k = woKind(sel.kind);
+      b.style.borderColor = on ? k.c : '#E2E8F0';
+      b.style.background = on ? k.bg : '#fff';
+      b.style.boxShadow = on ? ('inset 0 0 0 1px ' + k.c) : 'none';
+    });
+  };
+  var paintUnit = function () {
+    Array.prototype.forEach.call(node.querySelectorAll('.wo-unit'), function (b) {
+      var on = b.getAttribute('data-wou') === sel.unit;
+      b.style.background = on ? '#4F46E5' : '#fff';
+      b.style.color = on ? '#fff' : '#334155';
+      b.style.borderColor = on ? '#4F46E5' : '#E2E8F0';
+    });
+    showRoute();
+  };
+
+  node.addEventListener('click', function (ev) {
+    var kb = ev.target.closest('.wo-kind');
+    if (kb) { sel.kind = kb.getAttribute('data-wok'); paintKind(); return; }
+    var ub = ev.target.closest('.wo-unit');
+    if (ub) { sel.unit = ub.getAttribute('data-wou'); paintUnit(); return; }
+    if (ev.target.closest('#woSubmit')) {
+      var problem = (node.querySelector('#woProblem').value || '').trim();
+      if (!problem) { toast('Ажлын тодорхойлолтыг бичнэ үү', 'warn'); return; }
+      var plant = (node.querySelector('#woPlant').value || '').trim();
+      var equip = (node.querySelector('#woEquip').value || '').trim();
+      if (!plant && !equip) { toast('Тоноглол эсвэл тоног төхөөрөмжийг бичнэ үү', 'warn'); return; }
+      var wo = {
+        id: '', createdAt: new Date().toISOString(),
+        kind: sel.kind, unit: sel.unit,
+        hazardous: !!node.querySelector('#woHaz').checked,
+        reqUid: me.uid, reqName: me.name || '', reqEmail: me.email || '',
+        reqPos: me.pos || me.role || '', dept: myDept, reqDate: today,
+        plant: plant, equipment: equip,
+        tagNo: (node.querySelector('#woTag').value || '').trim(),
+        problem: problem,
+        availFrom: node.querySelector('#woFrom').value || '',
+        availTo: node.querySelector('#woTo').value || '',
+        reportId: rep ? rep.id : '', photo: (rep && rep.photo) || '',
+        riskLevel: (rep && rep.risk_level) || '',
+        perfUid: '', hours: '', materials: '', perfNotes: '', supNotes: '',
+        commNotes: '', h72Notes: '', preventive: '', completedAt: '',
+        sig: {}, cancelled: false
+      };
+      closeModal();
+      woCreate(wo);
+      return;
+    }
+  });
+  buildModal('Шинэ ажлын захиалга — Work order', node, { width: 'min(720px, 96vw)' });
+  paintKind(); paintUnit();
+}
+
+/* ── Захиалга үүсгэх: дугаар авч, хадгалаад, шууд гарын үсэг рүү ── */
+async function woCreate(wo) {
+  var t = toast('Захиалга үүсгэж байна…', 'info');
+  try {
+    await woLoad(true);
+    var newId = '';
+    await woSaveMerge(function (list) {
+      newId = woNextNo(list);
+      wo.id = newId;
+      list.unshift(wo);
+      return list;
+    }, null);
+    try { if (t && t.remove) t.remove(); } catch (e) {}
+    toast('✓ ' + newId + ' үүслээ. Одоо гарын үсгээ зурна уу.', 'success');
+    try { renderReportflow(); } catch (e) {}
+    woSignModal(newId, 'req');
+  } catch (e) {
+    console.error('[wo] create', e);
+    toast('Үүсгэж чадсангүй: ' + ((e && e.message) || e), 'error');
+  }
+}
+
+/* ══ ГАРЫН ҮСЭГ ЗУРАХ (OTP) ══
+   Шат бүрд тухайн хүнээс шаардагдах НЭМЭЛТ талбарыг эндээс бөглүүлнэ:
+     perf  → гүйцэтгэгч, цаг, материал, тэмдэглэл
+     sup   → хянасны тэмдэглэл
+     comm  → хүлээн авалтын тэмдэглэл
+     h72   → 72 цагийн тэмдэглэл + УРЬДЧИЛАН СЭРГИЙЛЭХ АЛХАМ */
+function woSignModal(id, key) {
+  var wo = (WO_ROWS || []).filter(function (w) { return w.id === id; })[0];
+  if (!wo) { toast('Захиалга олдсонгүй', 'error'); return; }
+  var who = woSignerFor(wo, key);
+  var me = reqMe();
+  if (!who || !who.uid) { toast('Гарын үсэг зурах хүн тодорхойгүй байна', 'error'); return; }
+  if (!me || me.uid !== who.uid) {
+    toast('Энэ гарын үсгийг ' + ((who && who.name) || '?') + ' зурна', 'warn'); return;
+  }
+  var email = String(who.email || '').trim();
+  if (!email) { toast('Таны и-мэйл бүртгэгдээгүй тул код илгээх боломжгүй', 'error'); return; }
+
+  var extra = '';
+  if (key === 'perf') {
+    var staff = woItaStaff();
+    var opts = '<option value="">— өөрөө гүйцэтгэсэн —</option>' + staff.map(function (e) {
+      return '<option value="' + esc(e.uid) + '"' + (wo.perfUid === e.uid ? ' selected' : '') + '>' +
+        esc(e.name || '') + ' · ' + esc(e.pos || e.role || '') + '</option>';
+    }).join('');
+    extra =
+      '<div class="rf-field" style="margin-bottom:11px"><label style="font-weight:700;font-size:12.5px;color:#334155">' +
+      'Гүйцэтгэгч <span style="font-weight:500;color:#94A3B8">/ Performer</span></label>' +
+      '<select id="woPerf" class="rf-input" style="height:auto;padding:9px 12px">' + opts + '</select></div>' +
+      '<div style="display:flex;gap:9px">' +
+      '<div style="flex:1">' + woField('Цаг', 'Hours', 'woHours', { val: wo.hours || '', ph: 'ж: 3.5' }) + '</div>' +
+      '<div style="flex:2">' + woField('Материал', 'Materials', 'woMat', { val: wo.materials || '', ph: 'юу зарцуулсан' }) + '</div>' +
+      '</div>' +
+      woField('Тэмдэглэл', 'Notes', 'woNote', { area: true, rows: 3, val: wo.perfNotes || '', ph: 'Юу хийсэн бэ?' });
+  } else if (key === 'sup') {
+    extra = woField('Хяналтын тэмдэглэл', 'Notes', 'woNote', { area: true, rows: 3, val: wo.supNotes || '',
+      ph: 'Ажил чанартай хийгдсэн эсэх' });
+  } else if (key === 'commReq' || key === 'commMgr') {
+    extra = woField('Хүлээн авалтын тэмдэглэл', 'Notes', 'woNote', { area: true, rows: 3, val: wo.commNotes || '',
+      ph: 'Шалгаж хүлээн авсны дараах тэмдэглэл' });
+  } else if (key === 'h72Req' || key === 'h72Mgr') {
+    extra = woField('72 цагийн дараах тэмдэглэл', 'Notes', 'woNote', { area: true, rows: 2, val: wo.h72Notes || '',
+      ph: 'Тогтвортой ажиллаж байгаа эсэх' }) +
+      '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:11px 13px;margin-bottom:11px">' +
+      '<div style="font-size:12px;font-weight:800;color:#15803D;margin-bottom:5px">🛡 УРЬДЧИЛАН СЭРГИЙЛЭХ АЛХМУУД</div>' +
+      '<div style="font-size:11.5px;color:#166534;line-height:1.6;margin-bottom:7px">' +
+      'Аюулгүйн ба ажиллагааны зааварчилгаа, төлөвлөгөөт засвар эсвэл төслөөр сайжруулах, сургалт гэх мэт.<br>' +
+      '<b>Энэ нь дахин давтагдахаас сэргийлэх гол хэсэг.</b></div>' +
+      '<textarea id="woPrev" class="rf-input" rows="3" placeholder="Дахин ийм зүйл гарахгүйн тулд юу хийх вэ?">' +
+      esc(wo.preventive || '') + '</textarea></div>';
+  }
+
+  var node = elc('div', 'modal-info');
+  var fresh = woOtpFresh(me.uid);
+  node.innerHTML =
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:11px 13px;margin-bottom:13px;' +
+    'font-size:12.5px;color:#475569;line-height:1.6">' +
+    '<b style="color:#1E293B">' + esc(wo.id) + '</b> · ' + esc(WO_SIG_LABEL[key] || key) + '<br>' +
+    esc(String(wo.problem || '').slice(0, 140)) + '</div>' +
+    extra +
+    '<div id="woOtpBox">' +
+    (fresh
+      ? '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;' +
+        'font-size:12.5px;color:#166534"><b>✓ Та саяхан баталгаажсан байна.</b><br>' +
+        'Шинэ код авах шаардлагагүй — доорх товчоор гарын үсгээ зурна уу.</div>'
+      : '<div style="background:#EEF2FF;border:1.5px solid #C7D2FE;border-radius:11px;padding:12px 14px;' +
+        'font-size:12.5px;color:#3730A3;line-height:1.6">' +
+        '<b>' + esc(email) + '</b> хаяг руу 6 оронтой код илгээнэ.<br>' +
+        'Тэр код нь таны <b>гарын үсэг</b> болно.</div>') +
+    '</div>' +
+    '<div id="woCodeWrap" style="display:' + (fresh ? 'none' : 'none') + ';margin-top:11px">' +
+    '<label style="font-weight:700;font-size:12.5px;color:#334155">И-мэйлээр ирсэн код</label>' +
+    '<input type="text" id="woCode" class="rf-input" inputmode="numeric" maxlength="8" ' +
+    'placeholder="000000" style="letter-spacing:5px;font-size:19px;text-align:center;font-weight:800">' +
+    '</div>' +
+    '<button class="btn btn-primary btn-block" id="woGo" style="margin-top:13px">' +
+    (fresh ? '<i class="ti ti-writing-sign"></i> Гарын үсэг зурах'
+           : '<i class="ti ti-mail"></i> Код илгээх') + '</button>';
+
+  var state = { otpId: '', sent: fresh };
+
+  var collect = function () {
+    var g = function (sel) { var el = node.querySelector(sel); return el ? String(el.value || '').trim() : null; };
+    return { perf: g('#woPerf'), hours: g('#woHours'), mat: g('#woMat'), note: g('#woNote'), prev: g('#woPrev') };
+  };
+
+  node.addEventListener('click', async function (ev) {
+    if (!ev.target.closest('#woGo')) return;
+    var btn = node.querySelector('#woGo');
+    if (btn.disabled) return;
+
+    if (!state.sent) {
+      btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Илгээж байна…';
+      var r = await ackSendOtp(who);
+      btn.disabled = false;
+      if (!r.ok) {
+        btn.innerHTML = '<i class="ti ti-mail"></i> Дахин илгээх';
+        toast(r.error || 'Илгээж чадсангүй', 'error'); return;
+      }
+      state.otpId = r.id; state.sent = true;
+      node.querySelector('#woCodeWrap').style.display = 'block';
+      node.querySelector('#woOtpBox').innerHTML =
+        '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;' +
+        'font-size:12.5px;color:#166534"><b>✓ Код илгээгдлээ:</b> ' + esc(email) + '<br>' +
+        'Ирсэн 6 оронтой кодоо доор бичнэ үү (' + (r.ttl || 10) + ' минут хүчинтэй).</div>';
+      btn.innerHTML = '<i class="ti ti-writing-sign"></i> Баталгаажуулж гарын үсэг зурах';
+      try { node.querySelector('#woCode').focus(); } catch (e) {}
+      return;
+    }
+
+    /* Баталгаажуулах */
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Шалгаж байна…';
+    var code = '';
+    if (!woOtpFresh(me.uid)) {
+      code = (node.querySelector('#woCode') || {}).value || '';
+      var v = await ackVerifyOtp(state.otpId, code, email);
+      if (!v.ok) {
+        btn.disabled = false; btn.innerHTML = '<i class="ti ti-writing-sign"></i> Дахин оролдох';
+        toast(v.error || 'Код буруу', 'error'); return;
+      }
+      woOtpMark(me.uid);
+    }
+    var f = collect();
+    var okSave = await woApplySign(wo.id, key, who, code, f);
+    btn.disabled = false;
+    if (okSave) {
+      closeModal();
+      toast('✓ Гарын үсэг бүртгэгдлээ', 'success');
+    } else {
+      btn.innerHTML = '<i class="ti ti-writing-sign"></i> Дахин оролдох';
+      toast('Хадгалж чадсангүй — дахин оролдоно уу', 'error');
+    }
+  });
+
+  buildModal('Гарын үсэг зурах', node, { width: 'min(620px, 96vw)' });
+}
+
+/* ── Гарын үсэг + талбаруудыг бичих ── */
+async function woApplySign(id, key, who, code, f) {
+  var ok = false;
+  try {
+    await woSaveMerge(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id !== id) continue;
+        var w = list[i];
+        w.sig = w.sig || {};
+        w.sig[key] = {
+          uid: who.uid, name: who.name || '', pos: who.pos || who.role || '',
+          at: new Date().toISOString(), code: String(code || '').slice(-6)
+        };
+        if (f) {
+          if (f.perf !== null && f.perf !== undefined && key === 'perf') w.perfUid = f.perf || who.uid;
+          if (f.hours !== null && f.hours !== undefined) w.hours = f.hours;
+          if (f.mat !== null && f.mat !== undefined) w.materials = f.mat;
+          if (f.note !== null && f.note !== undefined) {
+            if (key === 'perf') w.perfNotes = f.note;
+            else if (key === 'sup') w.supNotes = f.note;
+            else if (key === 'commReq' || key === 'commMgr') w.commNotes = f.note;
+            else if (key === 'h72Req' || key === 'h72Mgr') w.h72Notes = f.note;
+          }
+          if (f.prev !== null && f.prev !== undefined) w.preventive = f.prev;
+        }
+        if (!woStep(w)) w.completedAt = new Date().toISOString();
+        ok = true;
+        break;
+      }
+      return list;
+    }, id);
+  } catch (e) { console.error('[wo] sign', e); return false; }
+  if (!ok) return false;
+  try { woNotifyNext(id); } catch (e) {}
+  try { renderReportflow(); } catch (e) {}
+  return true;
+}
+
+/* ── Дараагийн хүнд мэдэгдэл ── */
+function woNotifyNext(id) {
+  var wo = (WO_ROWS || []).filter(function (w) { return w.id === id; })[0];
+  if (!wo) return;
+  var n = woNextSig(wo);
+  var url = '/kpi/?page=reportflow';
+  if (!n) {
+    /* Дууслаа — хүсэлт гаргагч ба менежерт мэдэгдэнэ */
+    var done = [woEmpByUid(wo.reqUid), woSignerFor(wo, 'mgrReq')].filter(Boolean);
+    try {
+      ntfSend(done, { kind: 'wo', url: url,
+        title: '✅ ' + wo.id + ' — ажлын захиалга хаагдлаа',
+        body: String(wo.problem || '').slice(0, 120) +
+          (wo.preventive ? ' · Урьдчилан сэргийлэх: ' + String(wo.preventive).slice(0, 90) : '') });
+    } catch (e) {}
+    return;
+  }
+  if (n.who && n.who.uid) {
+    try {
+      ntfSend([n.who], { kind: 'wo', url: url,
+        title: '🔧 ' + wo.id + ' — таны гарын үсэг хүлээгдэж байна',
+        body: n.step.mn + ' · ' + String(wo.problem || '').slice(0, 110) });
+    } catch (e) {}
+  }
+}
+
+/* ── Шатны зураглал: ①──②──③──④ ── */
+function woStepBarHTML(wo) {
+  var cur = woStep(wo);
+  return '<div style="display:flex;align-items:flex-start;gap:0;margin:4px 0 2px">' +
+    WO_STEPS.map(function (st, i) {
+      var done = true;
+      st.sigs.forEach(function (sg) { if (!woSigned(wo, sg[0])) done = false; });
+      var active = cur && cur.key === st.key;
+      var col = done ? '#16A34A' : active ? '#4F46E5' : '#CBD5E1';
+      var n = st.sigs.filter(function (sg) { return woSigned(wo, sg[0]); }).length;
+      return '<div style="flex:1;text-align:center;position:relative">' +
+        (i > 0 ? '<div style="position:absolute;left:-50%;top:11px;width:100%;height:2.5px;background:' +
+          (done || active ? '#A5B4FC' : '#E2E8F0') + '"></div>' : '') +
+        '<div style="position:relative;width:23px;height:23px;margin:0 auto;border-radius:50%;background:' + col +
+        ';color:#fff;font-size:11.5px;font-weight:900;display:flex;align-items:center;justify-content:center">' +
+        (done ? '✓' : st.no) + '</div>' +
+        '<div style="font-size:10.5px;font-weight:' + (active ? '800' : '600') + ';color:' +
+        (active ? '#4F46E5' : '#94A3B8') + ';margin-top:3px;line-height:1.25">' + esc(st.mn) +
+        '<br><span style="font-weight:500;color:#CBD5E1">' + n + '/' + st.sigs.length + '</span></div></div>';
+    }).join('') + '</div>';
+}
+
+/* ── Нэг мөр ── */
+function woRowHTML(wo, me) {
+  var k = woKind(wo.kind);
+  var mine = woIsMine(wo, me);
+  var done = woIsDone(wo);
+  var age = woAgeDays(wo);
+  var late = !done && !wo.cancelled && age >= 7;
+  return '<div data-wo-open="' + esc(wo.id) + '" style="border:1.5px solid ' +
+    (mine ? '#C7D2FE' : late ? '#FECACA' : '#E2E8F0') + ';border-left:4px solid ' +
+    (wo.cancelled ? '#94A3B8' : done ? '#16A34A' : k.c) + ';border-radius:12px;padding:12px 14px;' +
+    'margin-bottom:9px;cursor:pointer;background:' + (mine ? '#F5F7FF' : '#fff') + '">' +
+    '<div style="display:flex;align-items:flex-start;gap:11px;flex-wrap:wrap">' +
+    '<div style="flex:1;min-width:220px">' +
+    '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">' +
+    '<span style="font-size:12.5px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif">' +
+    esc(wo.id) + '</span>' +
+    '<span style="background:' + k.bg + ';color:' + k.c + ';border-radius:6px;padding:1px 7px;' +
+    'font-size:10.5px;font-weight:800">' + k.en + ' · ' + k.mn + '</span>' +
+    (wo.hazardous ? '<span style="background:#FEF2F2;color:#B91C1C;border-radius:6px;padding:1px 7px;' +
+      'font-size:10.5px;font-weight:800">⚠ Хорт нөхцөл</span>' : '') +
+    (wo.reportId ? '<span style="background:#FFF7ED;color:#9A3412;border-radius:6px;padding:1px 7px;' +
+      'font-size:10.5px;font-weight:700">🚩 аюулаас</span>' : '') +
+    (mine ? '<span style="background:#4F46E5;color:#fff;border-radius:6px;padding:1px 8px;' +
+      'font-size:10.5px;font-weight:800">ТАНЫ ЭЭЛЖ</span>' : '') +
+    '</div>' +
+    '<div style="font-size:13.5px;font-weight:600;color:#1E293B;margin-top:4px;line-height:1.45">' +
+    esc(String(wo.problem || '').slice(0, 130)) + '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">' +
+    (wo.equipment ? '🔧 ' + esc(wo.equipment) + ' · ' : '') +
+    (wo.plant ? '📍 ' + esc(wo.plant) + ' · ' : '') +
+    '👤 ' + esc(wo.reqName || '') + ' · ' + esc(String(wo.createdAt || '').slice(0, 10)) +
+    (late ? ' · <b style="color:#DC2626">' + age + ' хоног болсон</b>' : '') + '</div>' +
+    '</div>' +
+    '<div style="flex:0 0 190px;min-width:170px">' + woStepBarHTML(wo) + '</div>' +
+    '</div>' +
+    '<div style="font-size:11.5px;margin-top:7px;color:' +
+    (done ? '#16A34A' : wo.cancelled ? '#94A3B8' : '#B45309') + ';font-weight:700">' +
+    (done ? '✓ Дууссан' : wo.cancelled ? 'Цуцлагдсан' : '⏳ ' + esc(woWaitingText(wo))) + '</div>' +
+    '</div>';
+}
+
+/* ── ЖАГСААЛТЫН ХУУДАС ── */
+var WO_FILTER = 'all';
+function woListHTML(onlyMine) {
+  var me = reqMe();
+  var all = (WO_ROWS || []).slice().sort(function (a, b) {
+    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
+  var mine = all.filter(function (w) { return !w.cancelled && woIsMine(w, me); });
+  var open = all.filter(function (w) { return !w.cancelled && !woIsDone(w); });
+  var done = all.filter(function (w) { return woIsDone(w); });
+
+  if (onlyMine) {
+    return '<div class="card" style="padding:17px 19px">' +
+      '<div style="font-size:15px;font-weight:800;color:#1E293B">Миний гарын үсэг хүлээгдэж байна</div>' +
+      '<div style="font-size:12.5px;color:#64748B;margin:3px 0 13px">Танаас хамааралтай ажлын захиалгууд. ' +
+      'Мөр дээр дарж гарын үсгээ зурна уу.</div>' +
+      (mine.length ? mine.map(function (w) { return woRowHTML(w, me); }).join('')
+        : '<div class="empty-state" style="padding:28px"><i class="ti ti-circle-check"></i>' +
+          '<div>Танаас хүлээгдэж буй зүйл алга</div></div>') + '</div>';
+  }
+
+  var rows = WO_FILTER === 'mine' ? mine : WO_FILTER === 'done' ? done
+    : WO_FILTER === 'open' ? open : all;
+  var chip = function (k, label, n, col) {
+    var on = WO_FILTER === k;
+    return '<button data-wo-f="' + k + '" style="border:1.5px solid ' + (on ? (col || '#4F46E5') : '#E2E8F0') +
+      ';background:' + (on ? (col || '#4F46E5') : '#fff') + ';color:' + (on ? '#fff' : '#334155') +
+      ';border-radius:10px;padding:7px 13px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
+      'font-weight:' + (on ? '800' : '600') + '">' + label +
+      '<span style="margin-left:6px;opacity:.75">' + n + '</span></button>';
+  };
+  return '<div class="card" style="padding:17px 19px;margin-bottom:13px">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Ажлын захиалга</div>' +
+    '<div style="font-size:12.5px;color:#64748B">Work order — засварын хүсэлт, гүйцэтгэл, хүлээлгэн өгөлт</div></div>' +
+    '<button class="btn btn-primary" data-wo-new="1" style="margin-left:auto">' +
+    '<i class="ti ti-plus"></i> Шинэ захиалга</button>' +
+    (WO_ROWS && WO_ROWS.length ? '<button class="btn btn-secondary btn-sm" data-wo-xl="1">' +
+      '<i class="ti ti-file-spreadsheet"></i> Excel</button>' : '') +
+    '</div>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap">' +
+    chip('all', 'Бүгд', all.length) +
+    chip('mine', 'Миний ээлж', mine.length, '#DC2626') +
+    chip('open', 'Хийгдэж буй', open.length, '#EA580C') +
+    chip('done', 'Дууссан', done.length, '#16A34A') +
+    '</div></div>' +
+    (rows.length ? rows.map(function (w) { return woRowHTML(w, me); }).join('')
+      : '<div class="empty-state" style="padding:34px"><i class="ti ti-clipboard-list"></i>' +
+        '<div>Захиалга алга. «Шинэ захиалга»-аар эхлүүлнэ үү.</div></div>');
+}
+
+/* ── ДЭЛГЭРЭНГҮЙ ── */
+function woDetailModal(id) {
+  var wo = (WO_ROWS || []).filter(function (w) { return w.id === id; })[0];
+  if (!wo) { toast('Олдсонгүй', 'error'); return; }
+  var me = reqMe();
+  var k = woKind(wo.kind);
+  var n = woNextSig(wo);
+
+  var line = function (mn, en, val) {
+    if (!val) return '';
+    return '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #F1F5F9">' +
+      '<span style="flex:0 0 168px;font-size:11.5px;color:#94A3B8;font-weight:600">' + esc(mn) +
+      '<br><span style="font-weight:400;color:#CBD5E1">' + esc(en) + '</span></span>' +
+      '<span style="flex:1;font-size:13px;color:#1E293B;line-height:1.6">' + esc(val) + '</span></div>';
+  };
+  var sigBox = function (key) {
+    var g = wo.sig && wo.sig[key];
+    var who = woSignerFor(wo, key);
+    var isNext = n && n.key === key;
+    var canSign = isNext && me && who && who.uid === me.uid;
+    return '<div style="border:1.5px solid ' + (g ? '#BBF7D0' : isNext ? '#C7D2FE' : '#E2E8F0') +
+      ';background:' + (g ? '#F0FDF4' : isNext ? '#F5F7FF' : '#fff') +
+      ';border-radius:10px;padding:9px 11px;flex:1;min-width:180px">' +
+      '<div style="font-size:10.5px;font-weight:800;color:#94A3B8;letter-spacing:.3px">' +
+      esc(WO_SIG_LABEL[key] || key).toUpperCase() + '</div>' +
+      (g
+        ? '<div style="font-size:12.5px;font-weight:700;color:#15803D;margin-top:3px">✓ ' + esc(g.name || '') + '</div>' +
+          '<div style="font-size:11px;color:#64748B">' + esc(String(g.at || '').slice(0, 16).replace('T', ' ')) +
+          (g.code ? ' · код ' + esc(g.code) : '') + '</div>'
+        : '<div style="font-size:12.5px;font-weight:600;color:#64748B;margin-top:3px">' +
+          esc((who && who.name) || 'тодорхойгүй') + '</div>' +
+          (canSign
+            ? '<button class="btn btn-primary btn-sm" data-wo-sign="' + esc(wo.id) + '|' + key +
+              '" style="margin-top:6px;width:100%"><i class="ti ti-writing-sign"></i> Гарын үсэг зурах</button>'
+            : '<div style="font-size:11px;color:#CBD5E1;margin-top:2px">' +
+              (isNext ? 'хүлээгдэж байна' : '—') + '</div>')) +
+      '</div>';
+  };
+
+  var body =
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px">' +
+    '<span style="font-size:17px;font-weight:900;color:#1E293B;font-family:\'Bricolage Grotesque\',sans-serif">' +
+    esc(wo.id) + '</span>' +
+    '<span style="background:' + k.bg + ';color:' + k.c + ';border-radius:7px;padding:2px 9px;' +
+    'font-size:11.5px;font-weight:800">' + k.en + ' · ' + k.mn + '</span>' +
+    (wo.hazardous ? '<span style="background:#FEF2F2;color:#B91C1C;border-radius:7px;padding:2px 9px;' +
+      'font-size:11.5px;font-weight:800">⚠ Хорт нөхцөл / Hazardous</span>' : '') +
+    (woIsDone(wo) ? '<span style="background:#F0FDF4;color:#15803D;border-radius:7px;padding:2px 9px;' +
+      'font-size:11.5px;font-weight:800">✓ Дууссан</span>' : '') +
+    '</div>' +
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:11px 14px;margin-bottom:13px">' +
+    woStepBarHTML(wo) + '</div>';
+
+  /* SECTION 1 */
+  body += '<div style="font-size:11.5px;font-weight:800;color:#fff;background:#334155;border-radius:7px;' +
+    'padding:4px 10px;display:inline-block;margin:6px 0 8px">ХЭСЭГ 1 · ХҮСЭЛТ / SECTION 1: REQUEST</div>' +
+    line('Хүсэлт гаргасан', 'Requested by', wo.reqName) +
+    line('Алба', 'Department', wo.dept) +
+    line('Хүсэлтийн огноо', 'Requested date', wo.reqDate) +
+    line('Тоноглол', 'Plant / Building', wo.plant) +
+    line('Тоног төхөөрөмж', 'Equipment', wo.equipment) +
+    line('Бүртгэлийн дугаар', 'Tag No', wo.tagNo) +
+    line('Ажлын ба саатлын тодорхойлолт', 'Description of Problem', wo.problem) +
+    line('Зогсох боломжтой хугацаа', 'Plant available from/to',
+      (wo.availFrom || '') + (wo.availTo ? ' → ' + wo.availTo : '')) +
+    (wo.photo ? '<img src="' + esc(wo.photo) + '" style="max-width:100%;border-radius:10px;margin-top:9px">' : '') +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin:11px 0 4px">' +
+    sigBox('req') + sigBox('mgrReq') + '</div>';
+
+  /* SECTION 2 */
+  body += '<div style="font-size:11.5px;font-weight:800;color:#fff;background:#334155;border-radius:7px;' +
+    'padding:4px 10px;display:inline-block;margin:16px 0 8px">ХЭСЭГ 2 · ГҮЙЦЭТГЭЛ / SECTION 2: PERFORMANCE</div>' +
+    line('Гүйцэтгэгч', 'Performer', (function () {
+      var p = woEmpByUid(wo.perfUid); return p ? (p.name + ' · ' + (p.pos || p.role || '')) : '';
+    })()) +
+    line('Цаг', 'Hours', wo.hours) +
+    line('Материал', 'Materials', wo.materials) +
+    line('Гүйцэтгэлийн тэмдэглэл', 'Notes', wo.perfNotes) +
+    line('Хяналтын тэмдэглэл', 'Notes', wo.supNotes) +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin:11px 0 4px">' +
+    sigBox('perf') + sigBox('sup') + '</div>';
+
+  /* SECTION 3 */
+  body += '<div style="font-size:11.5px;font-weight:800;color:#fff;background:#334155;border-radius:7px;' +
+    'padding:4px 10px;display:inline-block;margin:16px 0 8px">ХЭСЭГ 3 · ХҮЛЭЭЛГЭЖ ӨГӨХ / SECTION 3: COMMISSIONING</div>' +
+    line('Хүлээн авалтын тэмдэглэл', 'Notes', wo.commNotes) +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin:9px 0">' +
+    sigBox('commReq') + sigBox('commMgr') + '</div>' +
+    (woH72Ready(wo) || woSigned(wo, 'h72Req')
+      ? ''
+      : '<div style="font-size:11.5px;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;' +
+        'border-radius:9px;padding:8px 11px;margin:4px 0 9px">⏱ 72 цагийн шалгалт нь хүлээн авснаас ' +
+        '72 цагийн дараа нээгдэнэ</div>') +
+    line('72 цагийн дараах тэмдэглэл', 'Notes', wo.h72Notes) +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin:9px 0">' +
+    sigBox('h72Req') + sigBox('h72Mgr') + '</div>' +
+    (wo.preventive
+      ? '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;margin-top:11px">' +
+        '<div style="font-size:11.5px;font-weight:800;color:#15803D">🛡 УРЬДЧИЛАН СЭРГИЙЛЭХ АЛХМУУД / PREVENTIVE ACTIONS</div>' +
+        '<div style="font-size:13px;color:#166534;line-height:1.65;margin-top:5px">' + esc(wo.preventive) + '</div>' +
+        (wo.hazardous ? '<button class="btn btn-sm" data-wo-tomea="' + esc(wo.id) + '" style="margin-top:9px;' +
+          'background:#16A34A;color:#fff;border-color:#16A34A"><i class="ti ti-shield-plus"></i> ' +
+          'Эрсдэлийн арга хэмжээ болгон нэмэх</button>' : '') + '</div>'
+      : '') +
+    (wo.completedAt ? '<div style="font-size:12.5px;color:#15803D;font-weight:700;margin-top:11px">' +
+      '✓ Дууссан хугацаа / Completion Date: ' + esc(String(wo.completedAt).slice(0, 10)) + '</div>' : '');
+
+  body += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:15px">' +
+    '<button class="btn btn-secondary btn-sm" data-wo-one-xl="' + esc(wo.id) + '">' +
+    '<i class="ti ti-printer"></i> Маягтаар хэвлэх (Excel)</button>' +
+    (wo.reportId ? '<button class="btn btn-secondary btn-sm" data-wo-rep="' + esc(wo.reportId) + '">' +
+      '<i class="ti ti-flag-2"></i> Холбогдох аюул</button>' : '') + '</div>';
+
+  var node = elc('div', 'modal-info', body);
+  buildModal('Ажлын захиалга — Work order', node, { width: 'min(860px, 96vw)' });
+}
+
+/* ══ EXCEL — цаасан маягтын байрлалаар ══
+   ⚠ Эх файлын бичгийн алдааг зассан: Proflem→Problem, commisioning→
+   commissioning, тодорхойлт→тодорхойлолт, гаргагчын→гаргагчийн,
+   авсаны→авсны. Утга нь хэвээр. */
+/* ── ExcelJS-ийг хэрэгтэй үед нь ачаална (загвар хадгалдаг цорын ганц арга) ── */
+function woLoadExcelJS(cb) {
+  if (typeof ExcelJS !== 'undefined') { cb(true); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+  s.onload = function () { cb(true); };
+  s.onerror = function () { cb(false); };
+  document.head.appendChild(s);
+}
+
+/* Маягтын аль нүдэнд юу бичихийг ЭХ ФАЙЛААС хэмжиж тогтоосон зураглал.
+   (нэгтгэсэн мужийн зүүн дээд нүд рүү бичнэ) */
+function woFormCells(wo) {
+  var sg = function (key) {
+    var g = wo.sig && wo.sig[key];
+    if (!g) return '';
+    return (g.name || '') + '\n' + String(g.at || '').slice(0, 16).replace('T', ' ') +
+      (g.code ? '  [' + g.code + ']' : '');
+  };
+  var perf = woEmpByUid(wo.perfUid);
+  var tick = function (k) { return wo.kind === k ? '✔' : ''; };
+  var note = function (label, val) { return val ? (label + '\n' + val) : label; };
+  return {
+    /* Толгой */
+    N1: 'WO number:  ' + (wo.id || ''),
+    /* ХЭСЭГ 1 — Хүсэлт */
+    D5: wo.reqName || '',
+    M5: wo.plant || '',
+    T5: tick('bm'),
+    D7: wo.dept || '',
+    M7: wo.equipment || '',
+    T7: tick('im'),
+    D9: wo.reqDate || String(wo.createdAt || '').slice(0, 10),
+    M9: wo.tagNo || '',
+    T9: tick('pm'),
+    T11: tick('new'),
+    A13: wo.problem || '',
+    A21: sg('req'),
+    F21: sg('mgrReq'),
+    K21: (wo.availFrom || '') + (wo.availTo ? '  →  ' + wo.availTo : ''),
+    P21: wo.hazardous ? '✔  ТИЙМ / YES' : '',
+    /* ХЭСЭГ 2 — Гүйцэтгэл */
+    A25: perf ? ((perf.name || '') + '\n' + (perf.pos || perf.role || '')) : '',
+    I25: wo.hours || '',
+    M25: wo.materials || '',
+    D30: note('Notes:Тэмдэглэл', wo.perfNotes),
+    A32: sg('perf'),
+    D37: note('Notes:Тэмдэглэл', wo.supNotes),
+    A39: sg('sup'),
+    /* ХЭСЭГ 3 — Хүлээлгэж өгөх */
+    E44: note('Notes:Тэмдэглэл', wo.commNotes),
+    A46: sg('commReq'),
+    P44: note('Notes:Тэмдэглэл', wo.h72Notes),
+    J46: sg('h72Req'),
+    A53: sg('commMgr'),
+    J53: sg('h72Mgr'),
+    A57: wo.preventive || '',
+    H60: String(wo.completedAt || '').slice(0, 10)
+  };
+}
+
+/* ══ МАЯГТЫГ БӨГЛӨЖ ТАТАХ ══ */
+function woOneExcel(id) {
+  var wo = (WO_ROWS || []).filter(function (w) { return w.id === id; })[0];
+  if (!wo) { toast('Захиалга олдсонгүй', 'error'); return; }
+  var t = toast('Маягт бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+
+  woLoadExcelJS(function (ok) {
+    if (!ok) { fin(); woOneExcelPlain(wo); return; }
+    fetch('vendor/work-order-template.xlsx?v=1', { cache: 'force-cache' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('загвар ' + r.status);
+        return r.arrayBuffer();
+      })
+      .then(function (buf) {
+        var wb = new ExcelJS.Workbook();
+        return wb.xlsx.load(buf).then(function () {
+          var ws = wb.worksheets[0];
+          var map = woFormCells(wo);
+          Object.keys(map).forEach(function (addr) {
+            var v = map[addr];
+            if (v === '' || v == null) return;
+            try {
+              var c = ws.getCell(addr);
+              c.value = v;
+              /* Урт бичвэр таслагдахгүйн тулд мөр таслалт асаана —
+                 бусад загвар (хүрээ, өнгө, фонт) хэвээр үлдэнэ. */
+              var al = c.alignment || {};
+              c.alignment = { vertical: al.vertical || 'top',
+                horizontal: al.horizontal || 'left', wrapText: true };
+            } catch (e) {}
+          });
+          return wb.xlsx.writeBuffer();
+        });
+      })
+      .then(function (out) {
+        var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (wo.id || 'work-order') + '.xlsx';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+        fin();
+        toast('✓ ' + wo.id + '.xlsx татагдлаа — маягт бүрэн бөглөгдсөн', 'success');
+      })
+      .catch(function (e) {
+        console.error('[wo] excel', e);
+        fin(); woOneExcelPlain(wo);
+      });
+  });
+}
+
+/* Нөөц хувилбар — загвар татагдаагүй үед энгийн хүснэгтээр гаргана */
+function woOneExcelPlain(wo) {
+  if (!wo) return;
+  if (typeof XLSX === 'undefined') { toast('Excel сан ачаалагдаагүй', 'error'); return; }
+  var k = woKind(wo.kind);
+  var sg = function (key) {
+    var g = wo.sig && wo.sig[key];
+    return g ? (g.name + '  ✓ ' + String(g.at || '').slice(0, 16).replace('T', ' ') +
+      (g.code ? '  [' + g.code + ']' : '')) : '';
+  };
+  var perf = woEmpByUid(wo.perfUid);
+  var A = [
+    ['Monos', '', '', '', '', 'Work order', '', '', '', '', '', '', '', 'WO number:', wo.id],
+    ['', '', '', '', '', 'Ажлын захиалгын хуудас', '', '', '', '', '', '', '',
+     'Төрөл / Type:', k.en + ' · ' + k.mn],
+    ['', '', '', '', '', '', '', '', '', '', '', '', '',
+     'Хорт нөхцөл / Hazardous:', wo.hazardous ? 'ТИЙМ / YES' : 'үгүй / no'],
+    [],
+    ['SECTION 1: REQUEST / Хүсэлт'],
+    ['Requested by / Хүсэлт гаргасан', wo.reqName || '', '', 'Plant / Building — Тоноглол', wo.plant || ''],
+    ['Department / Алба', wo.dept || '', '', 'Equipment / Тоног төхөөрөмж', wo.equipment || ''],
+    ['Requested date / Хүсэлтийн огноо', wo.reqDate || '', '', 'Tag No / Бүртгэлийн дугаар', wo.tagNo || ''],
+    [],
+    ['Description of Problem and Work Requested / Ажлын ба саатлын тодорхойлолт'],
+    [wo.problem || ''],
+    [],
+    ['Requester Sign / Хүсэлт гаргагчийн гарын үсэг', sg('req')],
+    ['Manager Sign (Request) / Менежерийн гарын үсэг', sg('mgrReq')],
+    ['Plant available from/to / Тоноглол зогсох боломжтой хугацаа',
+     (wo.availFrom || '') + (wo.availTo ? ' → ' + wo.availTo : '')],
+    [],
+    ['SECTION 2: PERFORMANCE / Гүйцэтгэл'],
+    ['Performer / Гүйцэтгэгч', perf ? (perf.name + ' · ' + (perf.pos || perf.role || '')) : ''],
+    ['Hours / Цаг', wo.hours || ''],
+    ['Materials / Материал', wo.materials || ''],
+    ['Notes / Тэмдэглэл (гүйцэтгэл)', wo.perfNotes || ''],
+    ['Performer / Гүйцэтгэсэн', sg('perf')],
+    ['Notes / Тэмдэглэл (хяналт)', wo.supNotes || ''],
+    ['Supervise by / Хянасан', sg('sup')],
+    [],
+    ['SECTION 3: COMMISSIONING / Хүлээлгэж өгөх'],
+    ['After commissioning / Шалгаж хүлээн авсны дараа', '', '', 'After 72 hours run / 72 цагийн дараа'],
+    ['Requester Sign / Хүсэлт гаргагчийн гарын үсэг', sg('commReq'), '',
+     'Requester sign / Хүсэлт гаргагчийн гарын үсэг', sg('h72Req')],
+    ['Manager Sign / Менежерийн гарын үсэг', sg('commMgr'), '',
+     'Manager Sign / Менежерийн гарын үсэг', sg('h72Mgr')],
+    ['Notes / Тэмдэглэл', wo.commNotes || '', '', 'Notes / Тэмдэглэл', wo.h72Notes || ''],
+    [],
+    ['Preventive actions (safety, operational instruction, PM or project improvements, training etc)'],
+    ['Урьдчилан сэргийлэх алхмууд (Аюулгүйн ба ажиллагааны зааварчилгаа, төлөвлөгөөт засвар эсвэл ' +
+     'төслөөр сайжруулах, сургалт гэх мэт)'],
+    [wo.preventive || ''],
+    [],
+    ['Completion Date: Дууссан хугацаа', String(wo.completedAt || '').slice(0, 10)]
+  ];
+  var ws = XLSX.utils.aoa_to_sheet(A);
+  ws['!cols'] = [{ wch: 46 }, { wch: 34 }, { wch: 3 }, { wch: 40 }, { wch: 32 },
+                 { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+                 { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 22 }, { wch: 20 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Work order');
+  XLSX.writeFile(wb, wo.id + '.xlsx');
+  toast('Excel татагдлаа', 'success');
+}
+
+/* Бүх захиалгыг нэг хүснэгтэд */
+function woAllExcel() {
+  if (typeof XLSX === 'undefined') { toast('Excel сан ачаалагдаагүй', 'error'); return; }
+  var head = ['Дугаар', 'Огноо', 'Төрөл', 'Хорт нөхцөл', 'Алба', 'Хүсэлт гаргасан',
+    'Тоноглол', 'Тоног төхөөрөмж', 'Бүртгэлийн дугаар', 'Тодорхойлолт',
+    'Гүйцэтгэгч', 'Цаг', 'Материал', 'Төлөв', 'Хэн дээр байна',
+    'Урьдчилан сэргийлэх алхам', 'Дууссан', 'Холбогдох аюул'];
+  var rows = [head];
+  (WO_ROWS || []).forEach(function (w) {
+    var p = woEmpByUid(w.perfUid);
+    rows.push([w.id, String(w.createdAt || '').slice(0, 10), woKind(w.kind).mn,
+      w.hazardous ? 'ТИЙМ' : '', w.dept || '', w.reqName || '',
+      w.plant || '', w.equipment || '', w.tagNo || '', w.problem || '',
+      p ? p.name : '', w.hours || '', w.materials || '',
+      w.cancelled ? 'Цуцлагдсан' : woIsDone(w) ? 'Дууссан' : 'Хийгдэж буй',
+      woWaitingText(w), w.preventive || '',
+      String(w.completedAt || '').slice(0, 10), w.reportId || '']);
+  });
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 14 }, { wch: 11 }, { wch: 12 }, { wch: 12 }, { wch: 26 }, { wch: 18 },
+    { wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 46 }, { wch: 18 }, { wch: 8 },
+    { wch: 22 }, { wch: 13 }, { wch: 34 }, { wch: 40 }, { wch: 11 }, { wch: 12 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ажлын захиалга');
+  XLSX.writeFile(wb, 'Ажлын-захиалга-' + todayISO() + '.xlsx');
+  toast('Excel татагдлаа', 'success');
+}
+
+/* Урьдчилан сэргийлэх алхмыг эрсдэлийн арга хэмжээ болгох саналыг харуулна */
+function woToMeasure(id) {
+  var wo = (WO_ROWS || []).filter(function (w) { return w.id === id; })[0];
+  if (!wo || !wo.preventive) return;
+  var node = elc('div', 'modal-info',
+    '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
+    'Энэ ажлын захиалгаас гарсан <b>урьдчилан сэргийлэх алхам</b>:</div>' +
+    '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;' +
+    'font-size:13px;color:#166534;line-height:1.65;margin-bottom:13px">' + esc(wo.preventive) + '</div>' +
+    '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;padding:11px 13px;' +
+    'font-size:12.5px;color:#92400E;line-height:1.7">' +
+    '<b>Дараагийн алхам:</b> үүнийг эрсдэлийн үнэлгээний «авах арга хэмжээ» болгон нэмэхийн тулд ' +
+    'Эрсдэлийн үнэлгээ цэсэнд <b>' + esc(wo.dept || '') + '</b>-ны холбогдох эрсдлийг олж, ' +
+    'дэлгэрэнгүй дотор нь оруулна уу.<br><br>' +
+    'Доорх товчоор текстийг хуулж авна.</div>' +
+    '<button class="btn btn-primary btn-block" id="woCopyPrev" style="margin-top:12px">' +
+    '<i class="ti ti-copy"></i> Текстийг хуулах</button>');
+  node.addEventListener('click', function (ev) {
+    if (!ev.target.closest('#woCopyPrev')) return;
+    try {
+      navigator.clipboard.writeText(wo.preventive);
+      toast('Хуулагдлаа — эрсдэлийн арга хэмжээнд буулгана уу', 'success');
+    } catch (e) { toast('Хуулж чадсангүй', 'error'); }
+  });
+  buildModal('Эрсдэлийн арга хэмжээ болгох', node, { width: 'min(560px, 96vw)' });
+}
+
 function renderReportflow() {
+
+
+
+
   var sec = pageEl('reportflow');
   if (!sec) return;
   var reports = DB.reports || [];
@@ -12147,10 +13192,17 @@ function renderReportflow() {
   var myBonus = 0;
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
+  var woMineN = 0; try { woMineN = woMine().length; } catch (e) {}
   var html = '<div class="page-header"><div><h1>Аюул / Near-miss мэдээлэл</h1>' +
     '<p class="page-subtitle">Зураг → байршил → нэг өгүүлбэр → эрсдэл. Баталгаажсаны дараа бонус нэмэгдэнэ.</p></div>' +
     '<div class="page-actions">' +
     '<button class="btn btn-primary" data-newreport="hazard"><i class="ti ti-flag-2"></i> Аюул мэдээлэх</button></div></div>';
+
+  /* ⭐ ТАБ — мэдээлэл нь аюулыг ОЛОХ, ажлын захиалга нь ЗАСАХ хэсэг.
+     Хоёулаа нэг цэсэнд байж «олсон → зассан» гэсэн бүтэн гогцоо болно. */
+  html += rfTabsHTML(woMineN);
+  if (RF_TAB === 'wo') { sec.innerHTML = html + woListHTML(false); rfAfter(sec, admin, pending); return; }
+  if (RF_TAB === 'womine') { sec.innerHTML = html + woListHTML(true); rfAfter(sec, admin, pending); return; }
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
     statCard('Хүлээгдэж буй', pending.length, 'ti-clock', '#D97706') +
@@ -12174,22 +13226,89 @@ function renderReportflow() {
   }
 
   sec.innerHTML = html;
+  rfAfter(sec, admin, pending);
+}
+
+/* Табын мөр */
+var RF_TAB = 'rep';
+function rfTabsHTML(woN) {
+  var t = [
+    { k: 'rep',    ic: 'ti-flag-2',        l: 'Мэдээллүүд',      n: null },
+    { k: 'wo',     ic: 'ti-clipboard-list', l: 'Ажлын захиалга',  n: (WO_ROWS || []).length || null },
+    { k: 'womine', ic: 'ti-writing-sign',  l: 'Миний гарын үсэг', n: woN || null, tone: woN ? '#DC2626' : '' }
+  ];
+  return '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:15px">' +
+    t.map(function (x) {
+      var on = RF_TAB === x.k;
+      return '<button data-rf-tab="' + x.k + '" style="border:1.5px solid ' + (on ? '#4F46E5' : '#E2E8F0') +
+        ';background:' + (on ? '#4F46E5' : '#fff') + ';color:' + (on ? '#fff' : '#334155') +
+        ';border-radius:11px;padding:9px 15px;cursor:pointer;font-family:inherit;font-size:13px;' +
+        'font-weight:' + (on ? '800' : '600') + ';display:inline-flex;align-items:center;gap:7px">' +
+        '<i class="ti ' + x.ic + '"></i>' + x.l +
+        (x.n ? '<span style="background:' + (on ? 'rgba(255,255,255,.25)' : (x.tone || '#EEF2FF')) +
+          ';color:' + (on ? '#fff' : (x.tone ? '#fff' : '#4F46E5')) + ';border-radius:7px;padding:1px 7px;' +
+          'font-size:11.5px;font-weight:800">' + x.n + '</span>' : '') + '</button>';
+    }).join('') + '</div>';
+}
+
+/* Хуудас зурсны дараах нийтлэг хэсэг */
+function rfAfter(sec, admin, pending) {
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
-
-  if (!sec._wired) {
-    sec._wired = true;
-    sec.addEventListener('click', function (ev) {
-      var nb = ev.target.closest('[data-newreport]');
-      if (nb) { actionReportNew(nb.getAttribute('data-newreport')); return; }
-      var vb = ev.target.closest('[data-verify]');
-      if (vb) { ev.stopPropagation(); verifyReport(vb.getAttribute('data-verify'), 'verify'); return; }
-      var rb = ev.target.closest('[data-reject]');
-      if (rb) { ev.stopPropagation(); verifyReport(rb.getAttribute('data-reject'), 'reject'); return; }
-      var card = ev.target.closest('[data-report]');
-      if (card) openReportDetail(card.getAttribute('data-report'));
-    });
+  /* Ажлын захиалгыг нэг удаа арын талд татна */
+  if (!WO_OK && !renderReportflow._woOnce) {
+    renderReportflow._woOnce = true;
+    woLoad().then(function () { renderReportflow(); }).catch(function (e) { console.error('[wo]', e); });
   }
+
+  /* ⚠ Холболт нь ЭНД байх ёстой — таб солиход renderReportflow эрт
+     буцдаг тул хуудасны төгсгөлд байвал огт ажиллахгүй. */
+  if (sec._wired) return;
+  sec._wired = true;
+  sec.addEventListener('click', function (ev) {
+    /* ── таб ── */
+    var tb = ev.target.closest('[data-rf-tab]');
+    if (tb) { RF_TAB = tb.getAttribute('data-rf-tab'); renderReportflow(); return; }
+
+    /* ── ажлын захиалга ── */
+    if (ev.target.closest('[data-wo-new]')) { woNewModal(''); return; }
+    var wf = ev.target.closest('[data-wo-f]');
+    if (wf) { WO_FILTER = wf.getAttribute('data-wo-f'); renderReportflow(); return; }
+    var ws = ev.target.closest('[data-wo-sign]');
+    if (ws) {
+      ev.stopPropagation();
+      var p = String(ws.getAttribute('data-wo-sign') || '').split('|');
+      closeModal(); setTimeout(function () { woSignModal(p[0], p[1]); }, 80);
+      return;
+    }
+    var wx = ev.target.closest('[data-wo-one-xl]');
+    if (wx) { ev.stopPropagation(); woOneExcel(wx.getAttribute('data-wo-one-xl')); return; }
+    if (ev.target.closest('[data-wo-xl]')) { woAllExcel(); return; }
+    var wm = ev.target.closest('[data-wo-tomea]');
+    if (wm) { ev.stopPropagation(); closeModal();
+      setTimeout(function () { woToMeasure(wm.getAttribute('data-wo-tomea')); }, 80); return; }
+    var wr = ev.target.closest('[data-wo-rep]');
+    if (wr) { ev.stopPropagation(); closeModal();
+      setTimeout(function () { openReportDetail(wr.getAttribute('data-wo-rep')); }, 80); return; }
+    var wo = ev.target.closest('[data-wo-open]');
+    if (wo) { woDetailModal(wo.getAttribute('data-wo-open')); return; }
+
+    /* ── аюулаас захиалга үүсгэх ── */
+    var wn = ev.target.closest('[data-wo-from]');
+    if (wn) { ev.stopPropagation(); closeModal();
+      setTimeout(function () { woNewModal(wn.getAttribute('data-wo-from')); }, 80); return; }
+
+    /* ── одоо байгаа мэдээллийн товчлуурууд ── */
+    var nb = ev.target.closest('[data-newreport]');
+    if (nb) { actionReportNew(nb.getAttribute('data-newreport')); return; }
+    var vb = ev.target.closest('[data-verify]');
+    if (vb) { ev.stopPropagation(); verifyReport(vb.getAttribute('data-verify'), 'verify'); return; }
+    var rb = ev.target.closest('[data-reject]');
+    if (rb) { ev.stopPropagation(); verifyReport(rb.getAttribute('data-reject'), 'reject'); return; }
+    var card = ev.target.closest('[data-report]');
+    if (card) openReportDetail(card.getAttribute('data-report'));
+  });
+
 }
 
 /* ============ Санал ============ */
