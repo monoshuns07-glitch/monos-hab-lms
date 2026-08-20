@@ -11972,14 +11972,16 @@ function reportCard(r, withActions) {
   var equipTag = r.equipment
     ? '<span style="background:#F1F5F9;color:#475569;border-radius:6px;padding:1px 8px;font-size:10.5px;' +
       'font-weight:700;margin-right:5px">🔧 ' + esc(r.equipment) + '</span>' : '';
-  /* ⭐ Баталгаажсан аюулыг ЗАСАХ алхам руу шилжүүлэх гүүр.
-     Захиалга аль хэдийн үүссэн бол давхардуулахгүй. */
-  if (r.status === 'verified') {
-    var has = (WO_ROWS || []).some(function (w) { return w.reportId === r.id; });
-    actions += '<div style="margin-top:8px">' + (has
-      ? '<span style="font-size:11.5px;color:#15803D;font-weight:700">🔧 Ажлын захиалга үүссэн</span>'
+  /* ⭐ Аюул → засвар нь НЭГ урсгал. Мөр бүр дээр засварын төлөв харагдана,
+     байхгүй бол засварлуулах зам шууд нээгдэнэ. */
+  var woLink = woForReport(r.id);
+  if (r.status !== 'rejected') {
+    actions += '<div style="margin-top:8px">' + (woLink
+      ? '<span data-wo-open="' + esc(woLink.id) + '" style="display:inline-flex;align-items:center;gap:5px;' +
+        'font-size:11.5px;font-weight:700;color:' + (woIsDone(woLink) ? '#15803D' : '#4338CA') + ';cursor:pointer">' +
+        (woIsDone(woLink) ? '✅ Засвар дууссан · ' : '🔧 Засварт · ') + esc(woLink.id) + ' ›</span>'
       : '<button class="btn btn-sm" data-wo-from="' + r.id + '" style="background:#0F766E;color:#fff;' +
-        'border-color:#0F766E"><i class="ti ti-tool"></i> Ажлын захиалга үүсгэх</button>') + '</div>';
+        'border-color:#0F766E"><i class="ti ti-tool"></i> ИТА-аар засварлуулах</button>') + '</div>';
   }
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
@@ -12186,16 +12188,125 @@ function verifyReport(id, decision, newRisk) {
   renderReportflow(); renderKpiPage(); renderEmployees(); renderDashboard(); renderNotifBadge();
 }
 
+/* ══ МОДАЛЬ ДОТОРХ ажлын захиалгын товчлууруудыг холбоно ══
+   ⚠ Модаль нь хуудасны гадна байдаг тул хуудасны delegated холболт
+   түүнийг барихгүй. Модаль бүрд ЭНЭ функцийг заавал дуудна. */
+function woWireNode(node) {
+  if (!node || node._woWired) return;
+  node._woWired = true;
+  node.addEventListener('click', function (ev) {
+    var sg = ev.target.closest('[data-wo-sign]');
+    if (sg) {
+      ev.stopPropagation();
+      var p = String(sg.getAttribute('data-wo-sign') || '').split('|');
+      closeModal(); setTimeout(function () { woSignModal(p[0], p[1]); }, 90);
+      return;
+    }
+    var fr = ev.target.closest('[data-wo-from]');
+    if (fr) {
+      ev.stopPropagation();
+      var rid = fr.getAttribute('data-wo-from');
+      closeModal(); setTimeout(function () { woNewModal(rid); }, 90);
+      return;
+    }
+    var op = ev.target.closest('[data-wo-open]');
+    if (op) {
+      ev.stopPropagation();
+      var wid = op.getAttribute('data-wo-open');
+      closeModal(); setTimeout(function () { woDetailModal(wid); }, 90);
+      return;
+    }
+    var xl = ev.target.closest('[data-wo-one-xl]');
+    if (xl) { ev.stopPropagation(); woOneExcel(xl.getAttribute('data-wo-one-xl')); return; }
+    var tm = ev.target.closest('[data-wo-tomea]');
+    if (tm) {
+      ev.stopPropagation();
+      var wid2 = tm.getAttribute('data-wo-tomea');
+      closeModal(); setTimeout(function () { woToMeasure(wid2); }, 90);
+      return;
+    }
+    var rp = ev.target.closest('[data-wo-rep]');
+    if (rp) {
+      ev.stopPropagation();
+      var rid2 = rp.getAttribute('data-wo-rep');
+      closeModal(); setTimeout(function () { openReportDetail(rid2); }, 90);
+      return;
+    }
+  });
+}
+
+/* Энэ аюулд ажлын захиалга гарсан уу */
+function woForReport(reportId) {
+  if (!reportId) return null;
+  var f = (WO_ROWS || []).filter(function (w) { return w && w.reportId === reportId; });
+  return f.length ? f[0] : null;
+}
+/* ⭐ АЮУЛЫН БҮХ МӨЧЛӨГ — нэг зурвасаар.
+   «Мэдээлэгдсэн → Баталгаажсан → Засварт → Хаагдсан» гэсэн зам нь
+   аюулын мэдээлэл дээрээ харагдана, тусдаа таб биш. */
+function reportFlowHTML(r) {
+  var wo = woForReport(r.id);
+  var st = [
+    { l: 'Мэдээлэгдсэн', on: true, ok: true },
+    { l: 'Баталгаажсан', on: r.status !== 'reported',
+      ok: r.status === 'verified', bad: r.status === 'rejected' },
+    { l: wo ? 'Засварт · ' + wo.id : 'Засвар', on: !!wo, ok: !!(wo && woIsDone(wo)) },
+    { l: 'Хаагдсан', on: !!(wo && woIsDone(wo)), ok: !!(wo && woIsDone(wo)) }
+  ];
+  return '<div style="display:flex;align-items:flex-start;margin:4px 0 13px">' +
+    st.map(function (x, i) {
+      var col = x.bad ? '#DC2626' : x.ok ? '#16A34A' : x.on ? '#4F46E5' : '#CBD5E1';
+      return '<div style="flex:1;text-align:center;position:relative">' +
+        (i > 0 ? '<div style="position:absolute;left:-50%;top:10px;width:100%;height:2.5px;background:' +
+          (x.on ? '#A5B4FC' : '#E2E8F0') + '"></div>' : '') +
+        '<div style="position:relative;width:21px;height:21px;margin:0 auto;border-radius:50%;background:' + col +
+        ';color:#fff;font-size:11px;font-weight:900;display:flex;align-items:center;justify-content:center">' +
+        (x.bad ? '✕' : x.ok ? '✓' : x.on ? '•' : '') + '</div>' +
+        '<div style="font-size:10.5px;font-weight:' + (x.on ? '800' : '600') + ';color:' +
+        (x.on ? '#475569' : '#B6BECC') + ';margin-top:4px;line-height:1.3">' + esc(x.l) + '</div></div>';
+    }).join('') + '</div>';
+}
+/* Аюулаас засвар руу шилжих БЛОК — дэлгэрэнгүй дотор томоор */
+function reportRepairHTML(r) {
+  var wo = woForReport(r.id);
+  if (wo) {
+    var done = woIsDone(wo);
+    return '<div style="background:' + (done ? '#F0FDF4' : '#EEF2FF') + ';border:1.5px solid ' +
+      (done ? '#BBF7D0' : '#C7D2FE') + ';border-radius:12px;padding:13px 15px;margin:13px 0">' +
+      '<div style="font-size:11.5px;font-weight:800;color:' + (done ? '#15803D' : '#3730A3') + '">' +
+      (done ? '✅ ЗАСВАР ДУУССАН' : '🔧 ЗАСВАР ХИЙГДЭЖ БАЙНА') + '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#1E293B;margin-top:4px">' + esc(wo.id) + '</div>' +
+      '<div style="font-size:12.5px;color:#475569;margin-top:2px">' + esc(woWaitingText(wo)) + '</div>' +
+      (wo.preventive ? '<div style="font-size:12px;color:#166534;margin-top:6px">🛡 ' +
+        esc(String(wo.preventive).slice(0, 130)) + '</div>' : '') +
+      '<button class="btn btn-sm" data-wo-open="' + esc(wo.id) + '" style="margin-top:9px;' +
+      'background:#4F46E5;color:#fff;border-color:#4F46E5"><i class="ti ti-arrow-right"></i> ' +
+      'Засварын явцыг харах</button></div>';
+  }
+  if (r.status === 'rejected') return '';
+  /* ⭐ Аюулаас засвар руу явах ГОЛ ЗАМ */
+  return '<div style="background:#F0FDFA;border:1.5px solid #99F6E4;border-radius:12px;padding:13px 15px;margin:13px 0">' +
+    '<div style="font-size:12.5px;color:#115E59;line-height:1.65">' +
+    '<b>Энэ аюулыг арилгахад засвар шаардлагатай юу?</b><br>' +
+    'ИТА-д ажлын захиалга үүсгэвэл хэн, хэзээ засахыг бүртгэж, ' +
+    '72 цагийн дараа дахин шалгана.</div>' +
+    '<button class="btn" data-wo-from="' + esc(r.id) + '" style="margin-top:10px;width:100%;' +
+    'background:#0F766E;color:#fff;border-color:#0F766E">' +
+    '<i class="ti ti-tool"></i> ИТА-аар засварлуулах</button></div>';
+}
+
 function openReportDetail(id) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) return;
   var admin = isAdmin();
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
-  var html = photo + sig + '<div class="detail-grid">' +
+  var html = reportFlowHTML(r) + reportRepairHTML(r) + photo + sig + '<div class="detail-grid">' +
     '<div class="detail-row"><span>Төрөл</span><b>' + reportTypeLabel(r.type) + '</b></div>' +
     '<div class="detail-row"><span>Эрсдэл</span><b>' + riskTag(r.risk_level) + '</b></div>' +
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
+    (r.equipment ? '<div class="detail-row"><span>Тоног төхөөрөмж</span><b>' + esc(r.equipment) + '</b></div>' : '') +
+    (r.urgent ? '<div class="detail-row"><span>Яаралтай</span><b style="color:#DC2626">🚨 Тийм</b></div>' : '') +
     '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(r.reporterName || '—') + '</b></div>' +
     '<div class="detail-row"><span>Огноо</span><b>' + new Date(r.createdAt).toLocaleString('mn-MN') + '</b></div>' +
     '<div class="detail-row"><span>Төлөв</span><b>' + reportStatusTag(r.status) + '</b></div>' +
@@ -12211,13 +12322,14 @@ function openReportDetail(id) {
       '<button class="btn btn-primary" data-rdverify="1">Баталгаажуулах</button></div>';
   }
   var node = elc('div', 'modal-info', html), pickedRisk = r.risk_level;
+  woWireNode(node);
   node.addEventListener('click', function (ev) {
     var chip = ev.target.closest('#rdRisk .rf-chip');
     if (chip) { $$('#rdRisk .rf-chip', node).forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); pickedRisk = chip.getAttribute('data-val'); return; }
     if (ev.target.closest('[data-rdverify]')) { closeModal(); verifyReport(r.id, 'verify', pickedRisk); return; }
     if (ev.target.closest('[data-rdreject]')) { closeModal(); verifyReport(r.id, 'reject'); return; }
   });
-  buildModal('Мэдээллийн дэлгэрэнгүй', node, { width: '460px' });
+  buildModal('Мэдээллийн дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -12827,8 +12939,9 @@ function woRowHTML(wo, me) {
     'font-size:10.5px;font-weight:800">' + k.en + ' · ' + k.mn + '</span>' +
     (wo.hazardous ? '<span style="background:#FEF2F2;color:#B91C1C;border-radius:6px;padding:1px 7px;' +
       'font-size:10.5px;font-weight:800">⚠ Хорт нөхцөл</span>' : '') +
-    (wo.reportId ? '<span style="background:#FFF7ED;color:#9A3412;border-radius:6px;padding:1px 7px;' +
-      'font-size:10.5px;font-weight:700">🚩 аюулаас</span>' : '') +
+    (wo.reportId ? '<span data-wo-rep="' + esc(wo.reportId) + '" title="Эх аюулын мэдээллийг харах" ' +
+      'style="background:#FFF7ED;color:#9A3412;border-radius:6px;padding:1px 7px;' +
+      'font-size:10.5px;font-weight:700;cursor:pointer">🚩 аюулаас ›</span>' : '') +
     (mine ? '<span style="background:#4F46E5;color:#fff;border-radius:6px;padding:1px 8px;' +
       'font-size:10.5px;font-weight:800">ТАНЫ ЭЭЛЖ</span>' : '') +
     '</div>' +
@@ -13013,6 +13126,7 @@ function woDetailModal(id) {
       '<i class="ti ti-flag-2"></i> Холбогдох аюул</button>' : '') + '</div>';
 
   var node = elc('div', 'modal-info', body);
+  woWireNode(node);
   buildModal('Ажлын захиалга — Work order', node, { width: 'min(860px, 96vw)' });
 }
 
