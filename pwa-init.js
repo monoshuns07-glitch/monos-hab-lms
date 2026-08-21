@@ -13,6 +13,102 @@
   try { inFrame = (window.self !== window.top); } catch (e) { inFrame = true; }
   if (inFrame) return;
 
+  /* ══════════════════════════════════════════════════════════════════
+     0.5. ХУВИЛБАР ШАЛГАГЧ — «шинэчлэлт хүрэхгүй байна» асуудлыг таслана
+     ------------------------------------------------------------------
+     ⚠ АСУУДАЛ: сайтыг шинэчилсэн ч зарим ажилтны утсанд ХУУЧИН хувилбар
+     үлдэж, шинэ цэс/товч харагдахгүй байв. Шалтгаан нь index.html-ийг
+     хөтөч (эсвэл байгууллагын прокси, эсвэл суусан PWA) кэшлээд, дотор
+     нь бичигдсэн `script.js?v=NNN` хуучин үлддэгт байна.
+
+     ШИЙДЭЛ: серверээс `version.json`-ыг кэшгүйгээр асууж, ажиллаж байгаа
+     хувилбартай тааруулна. Таарахгүй бол кэшийг цэвэрлэж, ӨӨР хаягаар
+     (?_v=NNN) нэг удаа дахин ачаална — ингэснээр кэш давхаргууд бүгд
+     алгасагдана. Давталтад орохгүйн тулд sessionStorage-оор хамгаална. */
+  (function versionGuard() {
+    function running() {
+      var t = document.querySelector('script[src*="script.js?v="]');
+      var m = t && String(t.getAttribute('src') || '').match(/v=(\d+)/);
+      return m ? m[1] : '';
+    }
+    function go() {
+      var mine = running();
+      if (!mine) return;
+      fetch('/kpi/version.json?t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          var latest = j && j.v != null ? String(j.v) : '';
+          if (!latest || latest === mine) {
+            /* Таарсан — хаягнаас ?_v= тэмдэглэгээг цэвэрлэнэ */
+            try {
+              if (location.search.indexOf('_v=') >= 0) {
+                var u = new URL(location.href);
+                u.searchParams.delete('_v');
+                history.replaceState(null, '', u.pathname + (u.search === '?' ? '' : u.search) + u.hash);
+              }
+              sessionStorage.removeItem('mhVerTry');
+            } catch (e) {}
+            return;
+          }
+          var tried = '';
+          try { tried = sessionStorage.getItem('mhVerTry') || ''; } catch (e) {}
+          if (tried === latest) { banner(latest); return; }   /* нэг л удаа оролдоно */
+          try { sessionStorage.setItem('mhVerTry', latest); } catch (e) {}
+
+          /* Кэш + service worker-ийг цэвэрлээд дахин ачаална */
+          var jobs = [];
+          try {
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              }));
+            }
+          } catch (e) {}
+          try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.update().catch(function () {}); }));
+              }));
+            }
+          } catch (e) {}
+          Promise.all(jobs).catch(function () {}).then(function () {
+            var u;
+            try { u = new URL(location.href); } catch (e) { location.reload(); return; }
+            u.searchParams.set('_v', latest);
+            location.replace(u.toString());
+          });
+        })
+        .catch(function () {});
+    }
+    /* Хэрэглэгчид харагдах анхааруулга — автоматаар засарсангүй бол */
+    function banner(latest) {
+      if (document.getElementById('mhVerBar')) return;
+      var d = document.createElement('div');
+      d.id = 'mhVerBar';
+      d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:2147483600;' +
+        'background:#B91C1C;color:#fff;font-family:inherit;font-size:13px;font-weight:700;' +
+        'padding:11px 14px;text-align:center;line-height:1.5;box-shadow:0 4px 14px rgba(0,0,0,.25)';
+      d.innerHTML = 'Шинэ хувилбар (' + latest + ') гарсан байна. Апп-аа бүрэн хаагаад ' +
+        'дахин нээнэ үү. <button id="mhVerGo" style="margin-left:8px;border:0;border-radius:8px;' +
+        'padding:6px 12px;background:#fff;color:#B91C1C;font-weight:800;font-family:inherit;' +
+        'font-size:12.5px;cursor:pointer">Дахин ачаалах</button>';
+      (document.body || document.documentElement).appendChild(d);
+      var b = d.querySelector('#mhVerGo');
+      if (b) b.addEventListener('click', function () {
+        try { sessionStorage.removeItem('mhVerTry'); } catch (e) {}
+        location.reload();
+      });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+    else go();
+    /* Апп удаан нээлттэй байвал 30 минут тутам дахин шалгана */
+    setInterval(go, 30 * 60 * 1000);
+    /* Утсанд апп-ыг ар талаас буцаан нээхэд шалгана */
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) go();
+    });
+  })();
+
   // ── 1. Service worker ──
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {

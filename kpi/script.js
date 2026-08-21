@@ -13675,6 +13675,111 @@ function wkUnclaimedHours(r) {
   return Math.max(0, (Date.now() - new Date(r.createdAt).getTime()) / 3600000);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ТОЛЬ (workflow/_open.json) — СЕРВЕР ТАЛЫН CRON-Д ЗОРИУЛСАН
+   ----------------------------------------------------------------------
+   ⚠ Сервер (/api/wk-escalate) дээр Firebase-ийн админ түлхүүр БАЙХГҮЙ
+   (repo нийтийн тул зориуд). Тиймээс хугацаа хэтэрсэн эсэхийг шалгах
+   мэдээллийг хөтөч энд толь болгон бичиж өгнө: нээлттэй ажил бүрийн
+   хугацаа, төлөв, БА ХЭНД мэдэгдэхийг урьдчилан тооцоод.
+
+   Хоёр талын давхардлаас сэргийлэх журам:
+     • Хөтөч илгээвэл тэмдгийг БИЧЛЭГ дээр (Firestore) үлдээнэ
+     • Сервер илгээвэл тэмдгийг ТОЛЬ дээр үлдээнэ
+     • Хөтөч дараагийн удаа тольны тэмдгийг бичлэг рүү БУУЛГАНА (wkMirrorPull)
+       → Firestore нь эцсийн үнэн, хоёр тал давхар илгээхгүй
+   ══════════════════════════════════════════════════════════════════════ */
+var WK_OPEN_FILE = 'workflow/_open.json';
+var WK_ESC_KEYS = { noclaim: 'wkEscNoClaim', half: 'wkEsc50', due: 'wkEsc100', late2: 'wkEsc200' };
+
+/* Сервер илгээсэн тэмдгийг бичлэг рүү буулгана */
+async function wkMirrorPull(all) {
+  var mir = null;
+  try { mir = await riskR2GetJson(WK_OPEN_FILE, { fresh: true }); } catch (e) { return 0; }
+  var rows = (mir && mir.list) || [];
+  if (!rows.length) return 0;
+  var byId = {};
+  (all || []).forEach(function (r) { if (r && r.id) byId[r.id] = r; });
+  var n = 0;
+  rows.forEach(function (m) {
+    var r = m && m.id ? byId[m.id] : null;
+    if (!r || !m.esc) return;
+    var ch = false;
+    Object.keys(WK_ESC_KEYS).forEach(function (k) {
+      var f = WK_ESC_KEYS[k];
+      if (m.esc[k] && !r[f]) { r[f] = m.esc[k]; ch = true; }
+    });
+    if (ch) { n++; try { reportPushToServer(r); } catch (e) {} }
+  });
+  if (n) { try { saveDB(); } catch (e) {} }
+  return n;
+}
+
+/* Нээлттэй ажлуудын хураангуйг тольд бичнэ */
+async function wkMirrorPush(all) {
+  var dir = null;
+  try { dir = ackDirector('prod') || ackDirector('ceo'); } catch (e) {}
+  var slim = function (e) { return e && e.uid ? { uid: e.uid, name: e.name || '' } : null; };
+  var leadCache = {};
+  var list = [];
+  (all || []).forEach(function (r) {
+    if (!r || !r.id || !r.wkKind) return;
+    if (wkStatus(r) === 'closed') return;
+    var g = r.wkGate || 'hab';
+    if (!leadCache[g]) leadCache[g] = (wkGateLeads(g) || []).map(slim).filter(Boolean);
+    var cl = null;
+    try { cl = slim(woEmpByUid(r.wkClaimBy && r.wkClaimBy.uid)); } catch (e) {}
+    list.push({
+      id: r.id,
+      kind: r.wkKind, kindAb: wkKindOf(r).ab,
+      gate: g, gateAb: wkGate(g).ab,
+      urg: wkUrg(r), hours: wkUrgHours(wkUrg(r)),
+      createdAt: r.createdAt || '',
+      loc: wkLocLabel(r) || '',
+      desc: String(r.desc || '').slice(0, 120),
+      claimUid: (r.wkClaimBy && r.wkClaimBy.uid) || '',
+      closed: false,
+      esc: {
+        noclaim: r.wkEscNoClaim || '', half: r.wkEsc50 || '',
+        due: r.wkEsc100 || '', late2: r.wkEsc200 || ''
+      },
+      leads: leadCache[g],
+      claimer: cl || ((r.wkClaimBy && r.wkClaimBy.uid)
+        ? { uid: r.wkClaimBy.uid, name: r.wkClaimBy.name || '' } : null),
+      director: slim(dir)
+    });
+  });
+  /* Өөрчлөгдөөгүй бол бичихгүй — хуудас дүрслэх бүрд R2 руу бичих нь илүү.
+     (Хоосон болсон үед ч НЭГ удаа бичнэ — хаагдсан ажил тольноос арилна.) */
+  var sig = JSON.stringify(list);
+  if (wkMirrorPush._last === sig) return true;
+  try {
+    await riskR2PutJson(WK_OPEN_FILE, {
+      updatedAt: new Date().toISOString(), by: 'browser', list: list
+    });
+  } catch (e) { return false; }
+  wkMirrorPush._last = sig;
+  return true;
+}
+
+/* Нэг цохилт: сервер илгээснийг татах → өөрөө шалгах → толио шинэчлэх */
+async function wkTick(all) {
+  if (!rfSeeAll()) return;          /* зөвхөн бүх мөрийг харах эрхтэй хөтөч */
+  if (wkTick._busy) return;
+  wkTick._busy = true;
+  try {
+    await wkMirrorPull(all);
+    try { wkEscalate(all); } catch (e) { console.error('[wk] esc', e); }
+    /* Хөтөч илгээж дуустал хүлээгээд толио бичнэ (тэмдэг нь орсон байхын тулд) */
+    await new Promise(function (r) { setTimeout(r, wkEscalate._busy ? 9000 : 300); });
+    await wkMirrorPush(all);
+  } catch (e) {
+    console.error('[wk] tick', e);
+  } finally {
+    setTimeout(function () { wkTick._busy = false; }, 30000);
+  }
+}
+
 /* ══ ШАТЛАН СЭРЭМЖЛҮҮЛЭХ ══
    ⚠ Сервер талын cron байхгүй тул ХАБЭА/ИТА/админы хөтөч хуудсаа нээхэд
    шалгаж явуулна. Бичлэг дээр тэмдэг үлдээх тул НЭГ УДАА л явна. */
@@ -15061,7 +15166,7 @@ function rfAfter(sec, admin, pending) {
   /* ⚠ Хугацааны сэрэмжлүүлгийг АЛЬ Ч таб дээр шалгана — зөвхөн Work order
      таб нээсэн үед ажиллуулбал хэн ч тэр таб руу ороогүй өдөр эскалац
      явахгүй өнгөрнө. */
-  try { wkEscalate(DB.reports || []); } catch (e) { console.error('[wk] esc', e); }
+  try { wkTick(DB.reports || []); } catch (e) { console.error('[wk] tick', e); }
   var dot = $('.nav-item[data-page="reportflow"] .nav-dot');
   if (dot) dot.style.display = (admin && pending.length) ? 'inline-block' : 'none';
   /* Work order-ийн тохиргоог нэг удаа татна */

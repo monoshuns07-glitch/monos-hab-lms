@@ -303,10 +303,27 @@ module.exports = async function handler(req, res) {
     } catch (e) { saved = false; }
   }
 
+  /* ⭐ Work order-ийн хугацааны сэрэмжлүүлгийг МӨН энд дуудна.
+     Vercel-ийн үнэгүй багцад cron ажил ХОЁР л байж болно, өдөрт нэг удаа
+     ажиллана. Тиймээс өглөө (энэ cron) + өдөр (0 6 * * *) гэж хоёр удаа
+     шалгаж чадаж байна. Алдаа гарсан ч энэ хариуг унагаахгүй. */
+  let esc = null;
+  if (!onlyUid) {
+    try {
+      const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+      const cs2 = process.env.CRON_SECRET || '';
+      const r = await fetch('https://' + host + '/api/wk-escalate/', {
+        headers: cs2 ? { Authorization: 'Bearer ' + cs2 } : {}
+      });
+      esc = await r.json().catch(function () { return { ok: false, status: r.status }; });
+    } catch (e) { esc = { ok: false, error: String(e.message || e) }; }
+  }
+
   return res.status(200).json({
     ok: true, date: today, weekday: weekday, total: list.length,
     sent: sent, skipped: skipped, failed: failed,
     dropped: Object.keys(drop).length, saved: saved,
+    wkEscalate: esc,
     why: sent ? '' : 'Сануулах шаардлагатай хүн олдсонгүй'
   });
 };
