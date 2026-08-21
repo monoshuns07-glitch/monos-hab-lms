@@ -12933,8 +12933,12 @@ function rfDashHTML(all) {
   RF_DRILL = {}; RF_DRILL_N = 0;      /* дүрслэх бүрд шинээр бүртгэнэ */
   H += rfHeroHTML(d) + '<div style="height:12px"></div>';
   H += '<div class="dash-2col" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">' +
-    rfKindHTML(d) + rfFunnelHTML(d) +
-    rfUrgHTML(d) +
+    /* ⚠ «Мэдээллийн төрөл» нь хоёр багана эзэлж, өндөр нь их. Хажуугийн
+       нүдэнд ганц намхан карт тавивал доогуур нь ХООСОН зай үлддэг байв.
+       Тиймээс тэр нүдэнд ХОЁР картыг босоо байрлуулж зайг дүүргэнэ. */
+    rfKindHTML(d) +
+    '<div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
+      rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
     rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй · дарж жагсаалтыг харна', d.byDept, RF_C.a, d.deptRows) +
     rfRiskHTML(d) +
     rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна · дарж харна', d.byPlace, RF_C.a, d.placeRows) +
