@@ -13769,9 +13769,9 @@ async function wkTick(all) {
   wkTick._busy = true;
   try {
     await wkMirrorPull(all);
-    try { wkEscalate(all); } catch (e) { console.error('[wk] esc', e); }
-    /* Хөтөч илгээж дуустал хүлээгээд толио бичнэ (тэмдэг нь орсон байхын тулд) */
-    await new Promise(function (r) { setTimeout(r, wkEscalate._busy ? 9000 : 300); });
+    /* Хөтөч илгээж ДУУСТАЛ хүлээнэ — эс бөгөөс тольд тэмдэг дутуу орж,
+       сервер тэр зүйлийг давхар илгээнэ */
+    try { await wkEscalate(all); } catch (e) { console.error('[wk] esc', e); }
     await wkMirrorPush(all);
   } catch (e) {
     console.error('[wk] tick', e);
@@ -13783,9 +13783,11 @@ async function wkTick(all) {
 /* ══ ШАТЛАН СЭРЭМЖЛҮҮЛЭХ ══
    ⚠ Сервер талын cron байхгүй тул ХАБЭА/ИТА/админы хөтөч хуудсаа нээхэд
    шалгаж явуулна. Бичлэг дээр тэмдэг үлдээх тул НЭГ УДАА л явна. */
+/* ⚠ Promise БУЦААНА — дуусахыг нь хүлээхгүй бол тольд тэмдэг дутуу бичигдэж,
+   сервер талын cron нэг зүйлийг ДАВХАР илгээх эрсдэлтэй. */
 function wkEscalate(all) {
-  if (wkEscalate._busy) return;
-  if (!rfSeeAll()) return;                 /* зөвхөн хариуцах хүмүүсийн хөтөч */
+  if (wkEscalate._busy) return Promise.resolve(0);
+  if (!rfSeeAll()) return Promise.resolve(0);   /* зөвхөн хариуцах хүмүүсийн хөтөч */
   var jobs = [];
   (all || []).forEach(function (r) {
     if (!r || !r.wkKind) return;
@@ -13797,25 +13799,28 @@ function wkEscalate(all) {
     if (pct >= 1 && !r.wkEsc100) jobs.push({ r: r, k: 'due' });
     if (pct >= 2 && !r.wkEsc200) jobs.push({ r: r, k: 'late2' });
   });
-  if (!jobs.length) return;
+  if (!jobs.length) return Promise.resolve(0);
   wkEscalate._busy = true;
 
   /* ⚠ Мэдэгдлүүд НЭГ R2 файл руу бичигддэг тул зэрэг илгээвэл бие биенээ
      дарж, сэрэмжлүүлэг АЛГА болно (4 явуулахад 2 нь л үлдсэн). Тиймээс
      ДАРААЛУУЛЖ, нэг нь дуустал дараагийнхыг эхлүүлэхгүй. */
   var queue = jobs.slice(0, 12);
-  var step = function (i) {
-    if (i >= queue.length) {
-      try { console.log('[wk] сэрэмжлүүлэг илгээв: ' + queue.length); } catch (e) {}
-      setTimeout(function () { wkEscalate._busy = false; }, 60000);
-      return;
-    }
-    var one = queue[i];
-    var p = null;
-    try { p = wkEscOne(one); } catch (e) { console.error('[wk] эскалац', e); }
-    Promise.resolve(p).catch(function () {}).then(function () { step(i + 1); });
-  };
-  step(0);
+  return new Promise(function (done) {
+    var step = function (i) {
+      if (i >= queue.length) {
+        try { console.log('[wk] сэрэмжлүүлэг илгээв: ' + queue.length); } catch (e) {}
+        setTimeout(function () { wkEscalate._busy = false; }, 60000);
+        done(queue.length);
+        return;
+      }
+      var one = queue[i];
+      var p = null;
+      try { p = wkEscOne(one); } catch (e) { console.error('[wk] эскалац', e); }
+      Promise.resolve(p).catch(function () {}).then(function () { step(i + 1); });
+    };
+    step(0);
+  });
 }
 
 /* Нэг сэрэмжлүүлэг — Promise буцаана (дараалуулахын тулд) */
@@ -15147,6 +15152,10 @@ function rfTabsHTML(woN) {
     { k: 'wk', ic: 'ti-clipboard-plus', l: 'Work order', n: wkN || null,
       tone: wkN ? '#DC2626' : '' }
   ]);
+  /* Ганц таб байвал огт харуулахгүй — хуудасны толгой аль хэдийн «Work order»
+     гэж бичсэн байдаг тул ганц товч нь зүгээр л илүү зай эзэлнэ.
+     (Энгийн ажилтанд дашбоард харагдахгүй тул үргэлж ганц таб үлддэг.) */
+  if (t.length < 2) return '';
   return '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:15px">' +
     t.map(function (x) {
       var on = RF_TAB === x.k;
