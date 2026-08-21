@@ -12069,7 +12069,9 @@ function actionReportNew(presetType) {
   }
   node.innerHTML =
     '<div class="rf-field"><label>1. Зураг (заавал биш)</label>' +
-    '<label class="rf-photo" id="rfPhotoLbl"><input type="file" accept="image/*" id="rfPhoto" hidden>' +
+    '<label class="rf-photo" id="rfPhotoLbl" style="position:relative">' +
+    '<input type="file" accept="image/*" id="rfPhoto" ' +
+    'style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;pointer-events:none">' +
     '<i class="ti ti-camera"></i><span>Зураг авах / хавсаргах</span></label>' +
     '<img id="rfPreview" style="display:none;max-width:100%;border-radius:10px;margin-top:8px"></div>' +
     '<div class="rf-field"><label>2. Төрөл</label>' + chips([['near_miss', 'Осолд дөхсөн (near-miss)'], ['hazard', 'Аюул / эрсдэл']], sel.type, 'type') + '</div>' +
@@ -12145,6 +12147,12 @@ function actionReportNew(presetType) {
         setTimeout(function () { woNewModal(made.id); }, 450);
       }
     }
+  });
+  /* ⚠ iOS дээр шошго дарахад оролт өөрөө нээгддэггүй — гараар нээнэ */
+  var _rfLbl = $('#rfPhotoLbl', node);
+  if (_rfLbl) _rfLbl.addEventListener('click', function (ev) {
+    var inp = $('#rfPhoto', node);
+    if (inp && ev.target !== inp) { ev.preventDefault(); try { inp.click(); } catch (e) {} }
   });
   $('#rfPhoto', node).addEventListener('change', function () {
     var f = this.files && this.files[0]; if (!f) return;
@@ -12751,6 +12759,13 @@ function wkKind(k) {
   for (var i = 0; i < WK_KINDS.length; i++) if (WK_KINDS[i].k === k) return WK_KINDS[i];
   return WK_KINDS[1];
 }
+/* «Хуучин мэдээлэл» таб хасагдсан тул хуучин бичлэгүүд ЭНЭ жагсаалтад нэгдэнэ.
+   `wkKind` талбаргүй бичлэгийн төрлийг хуучин `type`-аас гаргана. */
+function wkKindOf(r) {
+  if (!r) return WK_KINDS[1];
+  if (r.wkKind) return wkKind(r.wkKind);
+  return wkKind(r.type === 'near_miss' ? 'odt' : 'hazard');
+}
 
 /* ── ЯАРАЛТАЙ ЗЭРЭГ 1–5 ── админаас цагийг тохируулна ── */
 var WK_URG_FILE = 'workflow/_urgency.json';
@@ -12952,16 +12967,16 @@ function wkNewModal() {
       /* ── ⑤ ЗУРАГ ── */
       H += wkStep(5, 'Зураг (заавал биш, гэхдээ маш тустай)', !!sel.photo);
       H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:13px;' +
-        'text-align:center;cursor:pointer;background:#F8FAFC">' +
-        '<input type="file" accept="image/*" id="wkFile" hidden>' +
-        '<i class="ti ti-photo"></i> <span style="font-size:12.5px;color:#475569">Файлаас сонгох</span></label>' +
-        '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:13px;' +
-        'text-align:center;cursor:pointer;background:#F8FAFC">' +
-        '<input type="file" accept="image/*" capture="environment" id="wkCam" hidden>' +
-        '<i class="ti ti-camera"></i> <span style="font-size:12.5px;color:#475569">Камераар авах</span></label>' +
+        wkPickerHTML('wkFile', 'Файлаас сонгох', 'ti-photo', false) +
+        wkPickerHTML('wkCam', 'Камераар авах', 'ti-camera', true) +
         '</div>' +
-        (sel.photo ? '<img src="' + sel.photo + '" style="max-width:100%;border-radius:11px;margin-top:9px">' : '');
+        (sel.photo
+          ? '<div style="margin-top:9px;position:relative">' +
+            '<img src="' + sel.photo + '" style="max-width:100%;border-radius:11px;display:block">' +
+            '<button type="button" id="wkPhotoDel" style="position:absolute;top:8px;right:8px;' +
+            'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
+            'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
+          : '');
 
       /* ── ⑥ АЛБА ── */
       H += wkStep(6, 'Хэн рүү илгээх вэ?', !!sel.gate);
@@ -12993,13 +13008,7 @@ function wkNewModal() {
     node.innerHTML = H;
     var ta = node.querySelector('#wkDesc');
     if (ta) ta.addEventListener('input', function () { sel.desc = this.value; });
-    ['#wkFile', '#wkCam'].forEach(function (id) {
-      var el = node.querySelector(id);
-      if (el) el.addEventListener('change', function () {
-        var f = this.files && this.files[0]; if (!f) return;
-        downscaleImage(f, 1000, 0.72, function (durl) { sel.photo = durl || ''; draw(); });
-      });
-    });
+    wkWirePickers(node, function (durl) { sel.photo = durl; draw(); });
   };
 
   node.addEventListener('click', function (ev) {
@@ -13011,6 +13020,7 @@ function wkNewModal() {
     }
     if ((b = ev.target.closest('[data-wk-ls]'))) { sel.locSub = b.getAttribute('data-wk-ls'); draw(); return; }
     if ((b = ev.target.closest('[data-wk-gate]'))) { sel.gate = b.getAttribute('data-wk-gate'); draw(); return; }
+    if (ev.target.closest('#wkPhotoDel')) { sel.photo = ''; draw(); return; }
     if (ev.target.closest('#wkSend')) {
       var ta = node.querySelector('#wkDesc');
       var desc = ta ? String(ta.value || '').trim() : '';
@@ -13108,7 +13118,7 @@ function wkNotifyGate(r, why) {
   try {
     var to = wkGateStaff(r.wkGate);
     if (!to.length) return;
-    var k = wkKind(r.wkKind);
+    var k = wkKindOf(r);
     ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow',
       title: (why === 'moved' ? '↪ Шилжиж ирлээ · ' : '') + k.ab + ' · ' +
         wkHoursText(wkUrgHours(wkUrg(r))) + ' дотор',
@@ -13241,28 +13251,23 @@ function wkExecModal(id) {
       '<div style="font-size:12.5px;font-weight:700;color:#334155;margin:11px 0 6px">' +
       'Баталгааны зураг <span style="color:#DC2626">*</span></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-      '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:12px;' +
-      'text-align:center;cursor:pointer;background:#F8FAFC">' +
-      '<input type="file" accept="image/*" id="wkExFile" hidden>' +
-      '<i class="ti ti-photo"></i> <span style="font-size:12.5px;color:#475569">Файлаас</span></label>' +
-      '<label style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;border-radius:11px;padding:12px;' +
-      'text-align:center;cursor:pointer;background:#F8FAFC">' +
-      '<input type="file" accept="image/*" capture="environment" id="wkExCam" hidden>' +
-      '<i class="ti ti-camera"></i> <span style="font-size:12.5px;color:#475569">Камераар</span></label></div>' +
-      (photo ? '<img src="' + photo + '" style="max-width:100%;border-radius:11px;margin-top:9px">' : '') +
+      wkPickerHTML('wkExFile', 'Файлаас', 'ti-photo', false) +
+      wkPickerHTML('wkExCam', 'Камераар', 'ti-camera', true) + '</div>' +
+      (photo
+        ? '<div style="margin-top:9px;position:relative">' +
+          '<img src="' + photo + '" style="max-width:100%;border-radius:11px;display:block">' +
+          '<button type="button" id="wkExDel" style="position:absolute;top:8px;right:8px;' +
+          'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
+          'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
+        : '') +
       '<div style="font-size:11.5px;color:#64748B;margin-top:9px">' +
       'Илгээсний дараа мэдээлсэн хүн шалгаж <b>батална</b>. Дутуу бол буцаана.</div>' +
       '<button class="btn btn-primary btn-block" id="wkExGo" style="margin-top:12px">' +
       '<i class="ti ti-checkbox"></i> Гүйцэтгэсэн гэж илгээх</button>';
-    ['#wkExFile', '#wkExCam'].forEach(function (q) {
-      var el = node.querySelector(q);
-      if (el) el.addEventListener('change', function () {
-        var f = this.files && this.files[0]; if (!f) return;
-        downscaleImage(f, 1000, 0.72, function (d) { photo = d || ''; draw(); });
-      });
-    });
+    wkWirePickers(node, function (d) { photo = d; draw(); });
   };
   node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#wkExDel')) { photo = ''; draw(); return; }
     if (!ev.target.closest('#wkExGo')) return;
     var note = (node.querySelector('#wkExNote').value || '').trim();
     if (!note) { toast('Юу хийснээ бичнэ үү', 'warn'); return; }
@@ -13354,7 +13359,7 @@ function wkAcceptModal(id) {
 /* ── НЭГ МӨР ── */
 function wkRowHTML(r) {
   var me = reqMe() || {};
-  var k = wkKind(r.wkKind), st = wkStatus(r), S = WK_STATUS[st];
+  var k = wkKindOf(r), st = wkStatus(r), S = WK_STATUS[st];
   var t = wkTime(r), u = wkUrg(r);
   var mine = r.reporterUid === me.uid;
   var myGate = wkMyGate();
@@ -13420,7 +13425,9 @@ var WK_TAB = 'in';
 function wkListHTML(all) {
   var me = reqMe() || {};
   var myGate = wkMyGate();
-  var rows = (all || []).filter(function (r) { return r && r.wkKind; })
+  /* ⚠ `r.wkKind` шүүлт БАЙХГҮЙ — хуучин бичлэгүүд ч энд харагдана,
+     эс бөгөөс «Хуучин мэдээлэл» таб хасагдсанаар тэд бүрмөсөн алга болно. */
+  var rows = (all || []).filter(function (r) { return !!r; })
     .sort(function (a, b) {
       var ta = wkTime(a), tb = wkTime(b);
       var la = ta && ta.late ? 0 : 1, lb = tb && tb.late ? 0 : 1;
@@ -13711,7 +13718,7 @@ function wkEscOne(j) {
   return (function (arr) {
     var out = null;
     arr.forEach(function (j) {
-    var r = j.r, k = wkKind(r.wkKind), g = wkGate(r.wkGate);
+    var r = j.r, k = wkKindOf(r), g = wkGate(r.wkGate);
     var where = wkLocLabel(r);
     var body = k.ab + ' · ' + where + ' — ' + String(r.desc || '').slice(0, 90);
     var to = [], title = '';
@@ -13747,6 +13754,43 @@ function wkEscOne(j) {
     });
     return out;
   })([j]);
+}
+
+/* ══ ФАЙЛ СОНГОХ ТОВЧ — бүх хөтөч дээр ажиллана ══
+   ⚠ `hidden` / `display:none` оролт нь **iOS Safari дээр НЭЭГДДЭГГҮЙ**.
+   Тиймээс оролтыг үзэгдэхгүй боловч БАЙГАА байдлаар үлдээж, шошго дарахад
+   .click()-ийг өөрсдөө дуудна. */
+function wkPickerHTML(id, label, icon, cam) {
+  return '<label data-wk-pick="' + id + '" style="flex:1;min-width:150px;border:1.5px dashed #CBD5E1;' +
+    'border-radius:11px;padding:13px;text-align:center;cursor:pointer;background:#F8FAFC;' +
+    'position:relative;display:block">' +
+    '<input type="file" accept="image/*"' + (cam ? ' capture="environment"' : '') + ' id="' + id + '" ' +
+    'style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;pointer-events:none">' +
+    '<i class="ti ' + icon + '"></i> <span style="font-size:12.5px;color:#475569">' + esc(label) + '</span></label>';
+}
+/* Шошгыг оролттой нь холбоно (нэг удаа) */
+function wkWirePickers(node, onPick) {
+  if (!node) return;
+  Array.prototype.forEach.call(node.querySelectorAll('[data-wk-pick]'), function (lb) {
+    var inp = node.querySelector('#' + lb.getAttribute('data-wk-pick'));
+    if (!inp || inp._wired) return;
+    inp._wired = true;
+    lb.addEventListener('click', function (ev) {
+      /* Шошго дарахад оролтыг ШУУД нээнэ — iOS дээр энэ л ажилладаг */
+      if (ev.target !== inp) { ev.preventDefault(); try { inp.click(); } catch (e) {} }
+    });
+    inp.addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      if (!/^image\//i.test(f.type || '')) { toast('Зөвхөн зураг оруулна уу', 'warn'); return; }
+      var t = toast('Зураг боловсруулж байна…', 'info');
+      downscaleImage(f, 1000, 0.72, function (durl) {
+        try { if (t && t.remove) t.remove(); } catch (e) {}
+        if (!durl) { toast('Зургийг уншиж чадсангүй — өөр зураг оруулна уу', 'error'); return; }
+        onPick(durl);
+      });
+    });
+  });
 }
 
 function rfSeeAll() {
@@ -14565,7 +14609,7 @@ function woListHTML(onlyMine) {
         '<b style="color:#0F766E">«ИТА-аар засварлуулах»</b> дарна</span><br><br>' +
         'Ингэснээр байршил, тоног төхөөрөмж, зураг нь өөрөө бөглөгдөж, ' +
         'аль аюулыг засаж байгаа нь бүртгэгдэнэ.</div>' +
-        '<button class="btn btn-primary" data-rf-tab="rep" style="margin-top:14px">' +
+        '<button class="btn btn-primary" data-rf-tab="wk" style="margin-top:14px">' +
         '<i class="ti ti-flag-2"></i> Мэдээллүүд рүү очих</button></div>');
 }
 
@@ -14958,37 +15002,17 @@ function renderReportflow() {
 
   /* ⭐ ТАБ — мэдээлэл нь аюулыг ОЛОХ, ажлын захиалга нь ЗАСАХ хэсэг.
      Хоёулаа нэг цэсэнд байж «олсон → зассан» гэсэн бүтэн гогцоо болно. */
+  /* ⚠ Табыг ЭХЛЭЭД зөв болгоно — эс бөгөөс таб самбар зурагдсаны ДАРАА
+     утга нь өөрчлөгдөж, идэвхтэй таб нь тодроогүй үлдэнэ.
+     «rep/wo/womine» гурав хасагдсан тул хуучин утгатай бол Work order руу. */
+  if (RF_TAB !== 'dash' && RF_TAB !== 'wk') RF_TAB = 'wk';
+  if (RF_TAB === 'dash' && !rfSeeAll()) RF_TAB = 'wk';
+
   html += rfTabsHTML(woMineN);
   if (RF_TAB === 'dash') {
-    if (!rfSeeAll()) RF_TAB = 'rep';
-    else { sec.innerHTML = html + rfDashHTML(reports); rfAfter(sec, admin, pending); rfTipWire(); return; }
+    sec.innerHTML = html + rfDashHTML(reports); rfAfter(sec, admin, pending); rfTipWire(); return;
   }
-  if (RF_TAB === 'wk') { sec.innerHTML = html + wkListHTML(reports); rfAfter(sec, admin, pending); return; }
-  if (RF_TAB === 'wo') { sec.innerHTML = html + woListHTML(false); rfAfter(sec, admin, pending); return; }
-  if (RF_TAB === 'womine') { sec.innerHTML = html + woListHTML(true); rfAfter(sec, admin, pending); return; }
-
-  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
-    statCard('Хүлээгдэж буй', pending.length, 'ti-clock', '#D97706') +
-    statCard('Энэ сар баталгаажсан', thisMonth, 'ti-circle-check', '#16A34A') +
-    statCard('Татгалзсан', rejected.length, 'ti-x', '#DC2626') +
-    (admin ? statCard('Нийт мэдээлэл', reports.length, 'ti-flag', '#334155')
-      : isDeptHead() ? statCard('Албаны бонус (дундаж)', deptBonusScore(SESSION.dept), 'ti-gift', '#16A34A')
-        : statCard('Миний бонус', '+' + myBonus, 'ti-gift', '#16A34A')) + '</div>';
-
-  if (admin) {
-    html += '<div class="card" style="padding:18px;margin-bottom:18px"><h3 style="margin:0 0 4px">Баталгаажуулах дараалал <span class="badge badge-warn">' + pending.length + '</span></h3>' +
-      '<p style="font-size:13px;color:#8A94A6;margin:0 0 12px">Тоо биш чанарыг урамшуул — эрсдэлийн зэргийг зөв тогтоо.</p>' +
-      (pending.length ? pending.map(function (r) { return reportCard(r, true); }).join('') : emptyBox('Хүлээгдэж буй мэдээлэл алга')) + '</div>';
-    var hist = verified.concat(rejected).sort(function (a, b) { return new Date(b.verifiedAt || b.createdAt) - new Date(a.verifiedAt || a.createdAt); });
-    html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">Шийдвэрлэсэн түүх</h3>' +
-      (hist.length ? hist.slice(0, 30).map(function (r) { return reportCard(r, false); }).join('') : emptyBox('Түүх алга')) + '</div>';
-  } else {
-    var sorted = reports.slice().sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); });
-    html += '<div class="card" style="padding:18px"><h3 style="margin:0 0 12px">' + (isDeptHead() ? 'Албаны мэдээлэл' : 'Миний мэдээлэл') + '</h3>' +
-      (sorted.length ? sorted.map(function (r) { return reportCard(r, false); }).join('') : emptyBox(isDeptHead() ? 'Албанд мэдээлэл алга' : 'Та одоогоор мэдээлэл оруулаагүй байна. Дээрх товчоор эхэл!')) + '</div>';
-  }
-
-  sec.innerHTML = html;
+  sec.innerHTML = html + wkListHTML(reports);
   rfAfter(sec, admin, pending);
 }
 
@@ -15010,12 +15034,13 @@ function rfTabsHTML(woN) {
       return false;
     }).length;
   } catch (e) {}
+  /* ⚠ ЗӨВХӨН хоёр таб. «Хуучин мэдээлэл», «Ажлын захиалга», «Миний гарын
+     үсэг» гурав нь ХАСАГДСАН — тэдгээр нь Work order-той давхардаж, нэг
+     мэдээлэл хоёр газар харагдаж эргэлзээ төрүүлдэг байв. Хуучин бичлэгүүд
+     Work order-ийн жагсаалтад нэгдэж орно. */
   t = t.concat([
-    { k: 'wk',     ic: 'ti-clipboard-plus', l: 'Work order',     n: wkN || null,
-      tone: wkN ? '#DC2626' : '' },
-    { k: 'rep',    ic: 'ti-flag-2',        l: 'Хуучин мэдээлэл', n: null },
-    { k: 'wo',     ic: 'ti-clipboard-list', l: 'Ажлын захиалга',  n: (WO_ROWS || []).length || null },
-    { k: 'womine', ic: 'ti-writing-sign',  l: 'Миний гарын үсэг', n: woN || null, tone: woN ? '#DC2626' : '' }
+    { k: 'wk', ic: 'ti-clipboard-plus', l: 'Work order', n: wkN || null,
+      tone: wkN ? '#DC2626' : '' }
   ]);
   return '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:15px">' +
     t.map(function (x) {
