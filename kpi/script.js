@@ -13101,6 +13101,10 @@ async function wkCreate(sel) {
   saveDB();
   reportPushToServer(r);
   wkNotifyGate(r, 'new');
+  /* ⚠ Хөвөгч товчоор ӨӨР хуудаснаас илгээвэл rfAfter ажиллахгүй тул
+     толь шинэчлэгдэхгүй үлдэнэ. Тиймээс энд шууд дуудна — сервер талын
+     хугацааны сэрэмжлүүлэг энэ ажлыг ТЭР ДАРУЙ мэдэж авна. */
+  try { wkTick(DB.reports || []); } catch (e) {}
   try { renderReportflow(); renderNotifBadge(); } catch (e) {}
   toast('✓ Илгээгдлээ — ' + wkGate(r.wkGate).ab + '-д мэдэгдлээ', 'success');
 }
@@ -13134,6 +13138,7 @@ function wkPatch(id, fn, msg) {
   fn(r);
   saveDB();
   reportPushToServer(r);
+  try { wkTick(DB.reports || []); } catch (e) {}   /* толио мөн шинэчилнэ */
   try { renderReportflow(); renderNotifBadge(); } catch (e) {}
   if (msg) toast(msg, 'success');
   return r;
@@ -13715,8 +13720,15 @@ async function wkMirrorPull(all) {
   return n;
 }
 
-/* Нээлттэй ажлуудын хураангуйг тольд бичнэ */
-async function wkMirrorPush(all) {
+/* Нээлттэй ажлуудын хураангуйг тольд бичнэ.
+   full=true  → бүх мөрийг харах эрхтэй хөтөч. Толийг БҮРЭН дахин бичнэ
+                (хаагдсан ажил арилна — эцсийн үнэн нь Firestore).
+   full=false → энгийн ажилтан. ЗӨВХӨН өөрийн мөрүүдээ нэмж/шинэчилнэ.
+                ⚠ Бүрэн солиулж БОЛОХГҮЙ — тэр нь бусдын ажлыг тольноос
+                устгаж, сервер эскалацыг мэдэхгүй болно. Гэхдээ ажилтан
+                өөрөө мэдээлэл өгмөгц тольд ОРОХ ёстой — эс бөгөөс ХАБЭА/ИТА
+                хэн ч цэсээ нээхгүй өдөр сервер тэр ажлыг огт олохгүй. */
+async function wkMirrorPush(all, full) {
   var dir = null;
   try { dir = ackDirector('prod') || ackDirector('ceo'); } catch (e) {}
   var slim = function (e) { return e && e.uid ? { uid: e.uid, name: e.name || '' } : null; };
@@ -13751,11 +13763,40 @@ async function wkMirrorPush(all) {
   });
   /* Өөрчлөгдөөгүй бол бичихгүй — хуудас дүрслэх бүрд R2 руу бичих нь илүү.
      (Хоосон болсон үед ч НЭГ удаа бичнэ — хаагдсан ажил тольноос арилна.) */
-  var sig = JSON.stringify(list);
+  var sig = (full ? 'F|' : 'P|') + JSON.stringify(list);
   if (wkMirrorPush._last === sig) return true;
+
+  var out = list;
+  if (!full) {
+    /* Нэгтгэх горим: бусдын мөрийг хэвээр үлдээнэ. Мөн `esc` тэмдгийг
+       ХӨНДӨХГҮЙ — сервер тэнд бичсэн байж болно. */
+    var cur = null;
+    try { cur = await riskR2GetJson(WK_OPEN_FILE, { fresh: true }); } catch (e) { cur = null; }
+    var old = (cur && cur.list) || [];
+    var mineIds = {};
+    list.forEach(function (x) { mineIds[x.id] = x; });
+    var merged = [];
+    old.forEach(function (x) {
+      if (!x || !x.id) return;
+      var n = mineIds[x.id];
+      if (!n) { merged.push(x); return; }        /* бусдынх — хэвээр */
+      n.esc = x.esc || n.esc;                    /* серверийн тэмдгийг хадгална */
+      merged.push(n);
+      delete mineIds[x.id];
+    });
+    Object.keys(mineIds).forEach(function (k) { merged.push(mineIds[k]); });
+    /* Өөрийн ХААГДСАН ажлыг тольноос хасна (тольд нээлттэй нь л байх ёстой) */
+    var myClosed = {};
+    (all || []).forEach(function (r) {
+      if (r && r.id && r.wkKind && wkStatus(r) === 'closed') myClosed[r.id] = 1;
+    });
+    out = merged.filter(function (x) { return !myClosed[x.id]; });
+    if (JSON.stringify(out) === JSON.stringify(old)) { wkMirrorPush._last = sig; return true; }
+  }
+
   try {
     await riskR2PutJson(WK_OPEN_FILE, {
-      updatedAt: new Date().toISOString(), by: 'browser', list: list
+      updatedAt: new Date().toISOString(), by: full ? 'browser' : 'emp', list: out
     });
   } catch (e) { return false; }
   wkMirrorPush._last = sig;
@@ -13764,15 +13805,20 @@ async function wkMirrorPush(all) {
 
 /* Нэг цохилт: сервер илгээснийг татах → өөрөө шалгах → толио шинэчлэх */
 async function wkTick(all) {
-  if (!rfSeeAll()) return;          /* зөвхөн бүх мөрийг харах эрхтэй хөтөч */
   if (wkTick._busy) return;
   wkTick._busy = true;
   try {
+    if (!rfSeeAll()) {
+      /* Энгийн ажилтан: сэрэмжлүүлэг илгээхгүй, зөвхөн өөрийн ажлаа
+         тольд оруулж өгнө — ингэснээр сервер түүнийг олж чадна. */
+      await wkMirrorPush(all, false);
+      return;
+    }
     await wkMirrorPull(all);
     /* Хөтөч илгээж ДУУСТАЛ хүлээнэ — эс бөгөөс тольд тэмдэг дутуу орж,
        сервер тэр зүйлийг давхар илгээнэ */
     try { await wkEscalate(all); } catch (e) { console.error('[wk] esc', e); }
-    await wkMirrorPush(all);
+    await wkMirrorPush(all, true);
   } catch (e) {
     console.error('[wk] tick', e);
   } finally {
