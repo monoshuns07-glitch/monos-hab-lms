@@ -12375,7 +12375,11 @@ function rfDrillOpen(key) {
     return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
   });
   var stat = { reported: 'Хүлээгдэж буй', verified: 'Баталгаажсан', rejected: 'Татгалзсан' };
-  var body = rows.length ? rows.map(function (r) {
+  /* ⚠ Дата өсөхөд цонх хэдэн мянган мөр зурж гацахаас сэргийлж 200-аар
+     тасална — шинэ нь эхэндээ байна. Бүгдийг «Хүснэгтээр харах»-аас үзнэ. */
+  var cut = rows.length > 200;
+  var shown = cut ? rows.slice(0, 200) : rows;
+  var body = shown.length ? shown.map(function (r) {
     var k = wkKindOf(r), u = wkUrg(r);
     var who = r.reporterFull || r.reporterName || '—';
     var pos = r.reporterPos || '';
@@ -12400,7 +12404,8 @@ function rfDrillOpen(key) {
 
   var node = elc('div', 'modal-info',
     '<div style="font-size:12px;color:' + RF_INK.m + ';margin-bottom:9px">' +
-    esc(d.s || '') + (d.s ? ' · ' : '') + rows.length + ' мэдээлэл</div>' +
+    esc(d.s || '') + (d.s ? ' · ' : '') + rows.length + ' мэдээлэл' +
+    (cut ? ' (шинэ 200-г харуулав)' : '') + '</div>' +
     '<div style="max-height:min(62vh,560px);overflow:auto;margin:0 -4px">' + body + '</div>');
   node.addEventListener('click', function (ev) {
     var row = ev.target.closest('[data-rf-row]');
@@ -12589,9 +12594,9 @@ function rfFunnelHTML(d) {
       '<span style="font-size:12.5px;font-weight:800;color:' + RF_INK.p + '">' + x.v + '</span>' +
       (i > 0 && drop > 0 ? '<span style="font-size:11px;color:' + RF_INK.m + ';margin-left:auto">' +
         '↓ ' + drop + '% энэ шатанд гацсан</span>' : '') + '</div>' +
-      '<div style="height:14px;background:#F1F5F9;border-radius:7px;overflow:hidden">' +
-      '<div style="width:' + w + '%;height:100%;background:' + RF_STEP[i] +
-      ';border-radius:0 7px 7px 0"></div></div></div>';
+      '<div style="height:15px;background:#F1F5F9;border-radius:8px;overflow:hidden">' +
+      '<div style="width:' + w + '%;height:100%;background:linear-gradient(90deg,' + RF_STEP[i] + 'CC,' +
+      RF_STEP[i] + ');border-radius:8px"></div></div></div>';
   }).join('');
   return rfCard('Аюулаас хаалт хүртэл', 'Шат бүр дээр дарж хэн, юуг нь харна',
     body + '<div style="font-size:11px;color:' + RF_INK.m + ';margin-top:4px">' +
@@ -12643,15 +12648,17 @@ function rfKindHTML(d) {
       var h = (v / max) * 100;
       var key = rfDrill(RF_KIND[k].l + ' · ' + rfMonLabel(mk), 'Сонгосон сарын мэдээлэл',
         d.kindMonth[k + '|' + mk] || []);
+      /* Дээд талд нь бага зэрэг цайрсан налуу — хавтгай биш, эзэлхүүнтэй харагдана.
+         Хэсгүүдийн хооронд 2px гадаргуун завсар (нэг нь нөгөөгөө залгихгүй). */
       return '<span' + rfHit(key, RF_KIND[k].l + ' ' + rfMonLabel(mk) + ': ' + v) +
-        'class="rf-hit" style="display:block;height:' + h + '%;min-height:6px;background:' + RF_KIND[k].c +
-        ';border-radius:4px;margin-top:2px;cursor:pointer"></span>';
+        'class="rf-hit" style="display:block;height:' + h + '%;min-height:7px;background:linear-gradient(180deg,' +
+        RF_KIND[k].c + 'D9,' + RF_KIND[k].c + ');border-radius:5px;margin-top:2px;cursor:pointer"></span>';
     }).join('');
     return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px">' +
       '<span style="font-size:12px;font-weight:800;color:' + (tot ? RF_INK.p : RF_INK.m) +
       ';font-variant-numeric:tabular-nums">' + tot + '</span>' +
       '<span style="width:100%;max-width:46px;height:132px;display:flex;flex-direction:column;' +
-      'justify-content:flex-end;background:#F8FAFC;border-radius:6px;padding:3px">' + segs + '</span>' +
+      'justify-content:flex-end;background:#F1F5F9;border-radius:8px;padding:3px">' + segs + '</span>' +
       '<span style="font-size:10.5px;color:' + RF_INK.m + ';white-space:nowrap">' +
       esc(rfMonLabel(mk)) + '</span></div>';
   }).join('');
@@ -12709,9 +12716,9 @@ function rfUrgHTML(d) {
       'align-items:center;justify-content:center">' + n + '</span>' +
       '<span style="flex:0 0 76px;font-size:11.5px;color:' + RF_INK.s + '">' +
       esc(wkHoursText(wkUrgHours(n))) + '</span>' +
-      '<span style="flex:1;height:14px;background:#F8FAFC;border-radius:0 7px 7px 0;position:relative">' +
-      '<span style="position:absolute;left:0;top:0;height:100%;width:' + w + '%;background:' + RF_URG[n - 1] +
-      ';border-radius:0 7px 7px 0"></span></span>' +
+      '<span style="flex:1;height:15px;background:#F1F5F9;border-radius:8px;position:relative;overflow:hidden">' +
+      '<span style="position:absolute;left:0;top:0;height:100%;width:' + w + '%;background:linear-gradient(90deg,' +
+      RF_URG[n - 1] + 'CC,' + RF_URG[n - 1] + ');border-radius:8px"></span></span>' +
       '<span style="flex:0 0 28px;text-align:right;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
       ';font-variant-numeric:tabular-nums">' + v + '</span></div>';
   }).join('');
@@ -12798,9 +12805,9 @@ function rfRankHTML(title, sub, map, col, rowsMap) {
       'margin-right:-5px">' +
       '<span style="flex:0 0 128px;font-size:11.5px;color:' + RF_INK.s + ';overflow:hidden;' +
       'text-overflow:ellipsis;white-space:nowrap" title="' + esc(x.k) + '">' + esc(x.k) + '</span>' +
-      '<span style="flex:1;height:14px;background:#F8FAFC;border-radius:0 7px 7px 0;position:relative">' +
+      '<span style="flex:1;height:15px;background:#F1F5F9;border-radius:8px;position:relative;overflow:hidden">' +
       '<span style="position:absolute;left:0;top:0;height:100%;width:' + w +
-      '%;background:' + col + ';border-radius:0 7px 7px 0"></span></span>' +
+      '%;background:linear-gradient(90deg,' + col + 'CC,' + col + ');border-radius:8px"></span></span>' +
       '<span style="flex:0 0 30px;text-align:right;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
       ';font-variant-numeric:tabular-nums">' + x.v + '</span></div>';
   }).join('');
@@ -12820,8 +12827,9 @@ function rfRiskHTML(d) {
   ];
   var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
     seg.filter(function (x) { return x.v; }).map(function (x) {
-      return '<div' + rfTip(x.l + ': ' + x.v) + 'style="flex:' + x.v + ';background:' + x.c +
-        ';border-radius:4px"></div>';
+      return '<div' + rfHit(rfDrill('Эрсдэл: ' + x.l, 'Мэдээлсэн хүний үнэлгээ', x.rows), x.l + ': ' + x.v) +
+        'style="flex:' + x.v + ';background:linear-gradient(180deg,' + x.c + 'E6,' + x.c +
+        ');border-radius:6px;cursor:pointer"></div>';
     }).join('') + '</div>';
   var list = seg.map(function (x) {
     var pct = Math.round((x.v / tot) * 100);

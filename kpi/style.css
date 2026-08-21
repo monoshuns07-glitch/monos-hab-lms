@@ -2523,7 +2523,9 @@ details > summary .ti-chevron-right { transition: transform .15s; }
 /* ── Дашбоард дээр ДАРАГДАХ хэсгүүд ──
    Хэрэглэгч юу дарж болохыг мэдэх ёстой: хулгана ойртоход бага зэрэг
    өнгөрч, гараар (Tab) шилжихэд тод хүрээ гарна. */
-.rf-hit { transition: background .14s, transform .14s; }
-.rf-hit:hover { background: #F1F5F9; }
+.rf-hit { transition: background .14s, transform .14s, filter .14s; }
+/* ⚠ Өнгөт баганы `background` нь inline бичигдсэн тул ЭНД дарж чадахгүй.
+   Тиймээс `filter`-ээр гэрэлтүүлж, өнгө үлдээсэн ч мэдэгдэхүйц болгоно. */
+.rf-hit:hover { background: #F1F5F9; filter: brightness(1.07); }
 .rf-hit:active { transform: scale(.985); }
 .rf-hit:focus-visible { outline: 2px solid #4F46E5; outline-offset: 2px; }
