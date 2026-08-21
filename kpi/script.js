@@ -13017,12 +13017,50 @@ function rfExportName(ext) {
   return 'Work-order-dashboard_' + t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) +
     '_' + p(t.getHours()) + p(t.getMinutes()) + '.' + ext;
 }
+/* ⚠ Кодоор дуудсан `a.click()`-ийг байгууллагын Chrome чимээгүй ХААДАГ
+   (ялангуяа .html; суусан апп цонхонд бүр илүү). Тиймээс эхлээд оролдоод,
+   ЗЭРЭГ нь хэрэглэгч өөрөө дарж хадгалах цонх гаргана. */
 function rfSaveBlob(blob, name) {
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a); a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+  var url = URL.createObjectURL(blob);
+  try {
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) {}
+  rfSaveModal(url, name, blob.size || 0);
+}
+
+/* Хэрэглэгч ӨӨРӨӨ дарж хадгалах цонх — хөтөч хаахгүй */
+function rfSaveModal(url, name, size) {
+  var kb = size ? (size > 1048576 ? (size / 1048576).toFixed(1) + ' МБ'
+    : Math.max(1, Math.round(size / 1024)) + ' КБ') : '';
+  var isHtml = /\.html$/i.test(name);
+  var node = elc('div', 'modal-info',
+    '<div style="text-align:center;padding:4px 0 2px">' +
+    '<div style="width:52px;height:52px;border-radius:15px;background:#EEF2FF;color:#4F46E5;' +
+    'display:flex;align-items:center;justify-content:center;margin:0 auto 11px">' +
+    '<i class="ti ' + (isHtml ? 'ti-file-code' : 'ti-file-spreadsheet') + '" style="font-size:26px"></i></div>' +
+    '<div style="font-size:15px;font-weight:800;color:#1E293B">Файл бэлэн боллоо</div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-top:3px;word-break:break-all">' +
+    esc(name) + (kb ? ' · ' + kb : '') + '</div></div>' +
+    '<a id="rfSaveGo" href="' + url + '" download="' + esc(name) + '" ' +
+    'class="btn btn-primary btn-block" style="margin-top:14px;text-decoration:none;' +
+    'display:flex;align-items:center;justify-content:center;gap:8px">' +
+    '<i class="ti ti-download"></i> Хадгалах</a>' +
+    (isHtml ? '<button class="btn btn-secondary btn-block" id="rfSaveOpen" style="margin-top:8px">' +
+      '<i class="ti ti-external-link"></i> Шинэ цонхонд нээж үзэх</button>' : '') +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:11px;line-height:1.6">' +
+    'Товч дарахад татагдахгүй бол — хөтчийн баруун дээд буланд «татахыг хаасан» ' +
+    'сануулга гарсан эсэхийг шалгаад <b>Зөвшөөрөх</b> гэж сонгоно уу.</div>');
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#rfSaveOpen')) { try { window.open(url, '_blank'); } catch (e) {} return; }
+    if (ev.target.closest('#rfSaveGo')) {
+      setTimeout(function () { try { closeModal(); } catch (e) {} }, 400);
+    }
+  });
+  buildModal('Татаж авах', node, { width: 'min(430px, 94vw)' });
+  /* Санах ойг сулласнаар холбоос ажиллахгүй болох тул 10 минутын дараа */
+  setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 600000);
 }
 /* Шүүлтүүрийн тайлбар — татсан файл дээр ямар зүсмэл болохыг бичнэ */
 function rfScopeText() {
@@ -13157,7 +13195,7 @@ function rfExportHTML(all) {
 
     rfSaveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), rfExportName('html'));
     fin();
-    toast('✓ HTML татагдлаа — файлыг нээхэд бүх зүйл ажиллана', 'success');
+    toast('HTML бэлэн — «Хадгалах» дарна уу', 'success');
   } catch (e) {
     fin(); console.error('[rf] html', e);
     toast('Татаж чадсангүй: ' + (e.message || e), 'error');
@@ -13271,7 +13309,7 @@ function rfExportXlsx(all) {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }), rfExportName('xlsx'));
       fin();
-      toast('✓ Excel татагдлаа — ' + wb.SheetNames.length + ' хуудастай', 'success');
+      toast('Excel бэлэн (' + wb.SheetNames.length + ' хуудас) — «Хадгалах» дарна уу', 'success');
     } catch (e) {
       fin(); console.error('[rf] xlsx', e);
       toast('Татаж чадсангүй: ' + (e.message || e), 'error');
@@ -14832,6 +14870,100 @@ function reportRepairHTML(r) {
     '<i class="ti ti-tool"></i> ИТА-аар засварлуулах</button></div>';
 }
 
+/* ══ МЭДЭЭЛЛИЙН ХУУДАС (Excel) ══════════════════════════════════════════
+   Дэлгэц дээрх дэлгэрэнгүйтэй ЯГ ИЖИЛ талбарууд — өөр юу ч нэмэхгүй,
+   хасахгүй. Инженерийн албан ёсны маягт (8 гарын үсэгтэй) нь ЗӨВХӨН
+   «Ажлын захиалга» төрөлд утга учиртай тул тэндээ үлдэнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+function wkSheetRows(r) {
+  var k = wkKindOf(r), g = wkGate(r.wkGate);
+  var urg = wkUrg(r), hrs = wkUrgHours(urg);
+  var dt = function (v) { return v ? String(v).slice(0, 16).replace('T', ' ') : ''; };
+  var due = '';
+  try {
+    if (r.createdAt && hrs) due = new Date(new Date(r.createdAt).getTime() + hrs * 3600000)
+      .toISOString().slice(0, 16).replace('T', ' ');
+  } catch (e) {}
+  var risk = { low: 'Бага эрсдэл', mid: 'Дунд эрсдэл', high: 'Өндөр эрсдэл' };
+  var st = r.status === 'verified' ? 'Баталгаажсан'
+    : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй';
+  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+
+  var A = [
+    ['МОНОС ХҮНС ХХК — ХАБЭА-Н АЛБА'],
+    [k.name.toUpperCase() + ' — МЭДЭЭЛЛИЙН ХУУДАС'],
+    [],
+    ['Дугаар', r.id || ''],
+    ['Огноо', dt(r.createdAt)],
+    [],
+    ['МЭДЭЭЛЛИЙН АГУУЛГА'],
+    ['Төрөл', k.name],
+    ['Эрсдэлийн зэрэг', risk[r.risk_level] || ''],
+    ['Яаралтай зэрэг', urg + ' / 5   (' + wkHoursText(hrs) + ')'],
+    ['Дуусах хугацаа', due],
+    ['Байршил', wkLocLabel(r) || r.location || ''],
+    ['Тайлбар', String(r.desc || '')],
+    ['Зураг хавсаргасан', (r.photo && String(r.photo).length > 100) ? 'Тийм' : 'Үгүй'],
+    [],
+    ['МЭДЭЭЛСЭН АЖИЛТАН'],
+    ['Овог нэр', r.reporterFull || r.reporterName || ''],
+    ['Албан тушаал', r.reporterPos || ''],
+    ['Алба', r.dept || ''],
+    ['И-мэйл', r.reporterEmail || ''],
+    [],
+    ['ШИЙДВЭРЛЭЛТИЙН ЯВЦ'],
+    ['Хариуцах алба', g.name],
+    ['Төлөв', st + (WK_STATUS[wkStatus(r)] ? '  ·  ' + WK_STATUS[wkStatus(r)].l : '')],
+    ['Баталгаажуулсан', (r.verifiedBy || '') + (r.verifiedAt ? '   ' + dt(r.verifiedAt) : '')],
+    ['Хүлээж авсан', (cl.name || '') + (cl.pos ? '  ·  ' + cl.pos : '') + (cl.at ? '   ' + dt(cl.at) : '')],
+    ['Гүйцэтгэсэн огноо', dt(r.wkExecAt)],
+    ['Гүйцэтгэлийн тайлбар', String(r.wkExecNote || '')],
+    ['Баталгааны зураг', (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) ? 'Тийм' : 'Үгүй'],
+    ['Мэдээлсэн хүн баталсан',
+      r.wkAccept === 'done' ? ('Тийм' + (ac.name ? '  ·  ' + ac.name : '') + (ac.at ? '   ' + dt(ac.at) : ''))
+        : r.wkAccept === 'reject' ? ('Буцаасан: ' + (r.wkRejectWhy || '')) : ''],
+    [],
+    ['Гаргасан огноо', new Date().toLocaleString('mn-MN')]
+  ];
+  return A;
+}
+
+function wkSheetExcel(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) { toast('Мэдээлэл олдсонгүй', 'error'); return; }
+  var t = toast('Excel бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  riskLoadXlsx(function (ok) {
+    if (!ok) { fin(); toast('Excel сан ачаалагдсангүй — интернэт шалгана уу', 'error'); return; }
+    try {
+      var A = wkSheetRows(r);
+      var wb = XLSX.utils.book_new();
+      var ws = XLSX.utils.aoa_to_sheet(A);
+      ws['!cols'] = [{ wch: 26 }, { wch: 74 }];
+      /* Толгойн мөрүүдийг нийлүүлж, бүлгийн гарчгийг тодруулна */
+      ws['!merges'] = [];
+      A.forEach(function (row, i) {
+        if (row.length === 1 && row[0]) ws['!merges'].push({ s: { r: i, c: 0 }, e: { r: i, c: 1 } });
+      });
+      /* Мөрийн өндөр — урт тайлбар багтана */
+      ws['!rows'] = A.map(function (row) {
+        var v = String(row[1] == null ? '' : row[1]);
+        return { hpt: v.length > 90 ? 46 : (v.length > 45 ? 30 : 17) };
+      });
+      XLSX.utils.book_append_sheet(wb, ws, 'Мэдээлэл');
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      rfSaveBlob(new Blob([out], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }), (r.id || 'medeelel') + '.xlsx');
+      fin();
+      toast('Excel бэлэн — «Хадгалах» дарна уу', 'success');
+    } catch (e) {
+      fin(); console.error('[wk] sheet', e);
+      toast('Татаж чадсангүй: ' + (e.message || e), 'error');
+    }
+  });
+}
+
 /* ══ ШИНЭ УРСГАЛЫН ЗАХИАЛГЫГ АЛБАН ЁСНЫ EXCEL МАЯГТААР ТАТАХ ══
    Хуучин 8 гарын үсэгтэй урсгалын `woOneExcel`-тэй ИЖИЛ загварыг
    (`vendor/work-order-template.xlsx`) ашиглана — зөвхөн нүд рүү буулгах
@@ -14916,7 +15048,7 @@ function wkExcel(id) {
         document.body.appendChild(a); a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
         fin();
-        toast('✓ ' + r.id + '.xlsx татагдлаа', 'success');
+        toast('Excel бэлэн — «Хадгалах» дарна уу', 'success');
       })
       .catch(function (e) {
         console.error('[wk] excel', e);
@@ -14953,15 +15085,27 @@ function openReportDetail(id) {
       '<div class="detail-actions"><button class="btn btn-secondary" data-rdreject="1">Татгалзах</button>' +
       '<button class="btn btn-primary" data-rdverify="1">Баталгаажуулах</button></div>';
   }
-  /* Албан ёсны маягтаар татах — шинэ урсгалын бичлэг дээр */
+  /* ⚠ ӨМНӨ НЬ: аль ч төрөлд ИНЖЕНЕРИЙН албан ёсны маягт (BM/IM/PM, Plant,
+     Equipment, Tag No, Hours, Materials, 8 гарын үсэг) руу дүүргэдэг байв.
+     Аюул/ОДТ-д тэр маягтын бараг бүх нүд хамаагүй тул «шал өөр зүйл
+     татагдлаа» гэж харагддаг байсан.
+     ОДОО: үндсэн товч нь ДЭЛГЭЦТЭЙ ЯГ ИЖИЛ «Мэдээллийн хуудас» гаргана.
+     Албан ёсны маягт нь ЗӨВХӨН «Ажлын захиалга» төрөлд нэмэлтээр гарна. */
   if (r.wkKind) {
-    html += '<div class="detail-actions" style="margin-top:12px">' +
-      '<button class="btn btn-secondary" data-wk-xl="' + esc(r.id) + '">' +
-      '<i class="ti ti-file-spreadsheet"></i> Work order маягт (Excel)</button></div>';
+    html += '<div class="detail-actions" style="margin-top:12px;flex-wrap:wrap">' +
+      '<button class="btn btn-secondary" data-wk-sheet="' + esc(r.id) + '">' +
+      '<i class="ti ti-file-spreadsheet"></i> Excel татах</button>' +
+      (r.wkKind === 'job'
+        ? '<button class="btn btn-secondary" data-wk-xl="' + esc(r.id) + '" ' +
+          'title="Инженерийн албан ёсны Work order маягт">' +
+          '<i class="ti ti-file-text"></i> Албан ёсны маягт</button>' : '') +
+      '</div>';
   }
   var node = elc('div', 'modal-info', html), pickedRisk = r.risk_level;
   woWireNode(node);
   node.addEventListener('click', function (ev) {
+    var wsh = ev.target.closest('[data-wk-sheet]');
+    if (wsh) { ev.stopPropagation(); wkSheetExcel(wsh.getAttribute('data-wk-sheet')); return; }
     var wxl = ev.target.closest('[data-wk-xl]');
     if (wxl) { ev.stopPropagation(); wkExcel(wxl.getAttribute('data-wk-xl')); return; }
     var chip = ev.target.closest('#rdRisk .rf-chip');
