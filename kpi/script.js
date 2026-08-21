@@ -12657,7 +12657,7 @@ function rfKindHTML(d) {
     return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px">' +
       '<span style="font-size:12px;font-weight:800;color:' + (tot ? RF_INK.p : RF_INK.m) +
       ';font-variant-numeric:tabular-nums">' + tot + '</span>' +
-      '<span style="width:100%;max-width:46px;height:132px;display:flex;flex-direction:column;' +
+      '<span style="width:100%;max-width:46px;height:176px;display:flex;flex-direction:column;' +
       'justify-content:flex-end;background:#F1F5F9;border-radius:8px;padding:3px">' + segs + '</span>' +
       '<span style="font-size:10.5px;color:' + RF_INK.m + ';white-space:nowrap">' +
       esc(rfMonLabel(mk)) + '</span></div>';
@@ -12965,8 +12965,8 @@ function rfAttentionHTML(d) {
     rows: [d.slowest.r] });
   if (!items.length) items.push({ i: '✅', c: '#0ca30c', t: 'Гацсан зүйл алга', s: 'Бүх мэдээлэл хөдөлж байна' });
   /* ⚠ Энэ карт мөрийн сүүлд ганцаараа үлдэж, баруун талд ХООСОН нүд
-     үлддэг байв. Хоёр багана эзэлж нөхнө (нарийн дэлгэц дээр өөрөө нэг
-     багана болно — grid auto-fit). */
+     үлддэг байв. Одоо БҮТЭН өргөнийг эзэлнэ (`1/-1`) — хэдэн ч багана
+     байсан хоосон нүд үлдэхгүй. */
   return rfCard('Анхаарал шаардсан', 'Юуг эхлээд барих вэ — мөр дээр дарж жагсаалтыг харна',
     items.map(function (x) {
       var hit = (x.rows && x.rows.length)
@@ -12980,7 +12980,7 @@ function rfAttentionHTML(d) {
         '<span style="display:block;font-size:11.5px;color:' + RF_INK.m + '">' + esc(x.s) + '</span></span>' +
         (hit ? '<i class="ti ti-chevron-right" style="color:' + RF_INK.m + ';flex-shrink:0"></i>' : '') +
         '</div>';
-    }).join(''), 'grid-column:span 2');
+    }).join(''), 'grid-column:1/-1');
 }
 
 /* ── Хулганы тайлбарын давхарга (нэг л удаа) ── */
