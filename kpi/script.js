@@ -14033,6 +14033,99 @@ function reportRepairHTML(r) {
     '<i class="ti ti-tool"></i> ИТА-аар засварлуулах</button></div>';
 }
 
+/* ══ ШИНЭ УРСГАЛЫН ЗАХИАЛГЫГ АЛБАН ЁСНЫ EXCEL МАЯГТААР ТАТАХ ══
+   Хуучин 8 гарын үсэгтэй урсгалын `woOneExcel`-тэй ИЖИЛ загварыг
+   (`vendor/work-order-template.xlsx`) ашиглана — зөвхөн нүд рүү буулгах
+   зураглал нь өөр. ⚠ Гарын үсэг зурдаггүй болсон тул нүдэнд бүртгэлээс
+   ирсэн Овог Нэр / Албан тушаал / огноо бичигдэнэ (хэрэглэгчийн шаардлага). */
+function wkFormCells(r) {
+  var kind = wkKindOf(r), g = wkGate(r.wkGate);
+  var urg = wkUrg(r), hrs = wkUrgHours(urg);
+  var who = function (name, pos, at) {
+    if (!name) return '';
+    return name + (pos ? '\n' + pos : '') +
+      (at ? '\n' + String(at).slice(0, 16).replace('T', ' ') : '');
+  };
+  var due = '';
+  try {
+    if (r.createdAt && hrs) due = new Date(new Date(r.createdAt).getTime() + hrs * 3600000)
+      .toISOString().slice(0, 16).replace('T', ' ');
+  } catch (e) {}
+  var problem = '[' + kind.ab + '] ' + String(r.desc || '') +
+    '\nЯаралтай зэрэг: ' + urg + '/5  (' + wkHoursText(hrs) + ')' +
+    (due ? '   ·   Дуусах хугацаа: ' + due : '') +
+    '\nХаана: ' + (wkLocLabel(r) || '') +
+    '\nХариуцах алба: ' + g.name +
+    (r.photo ? '\n(Зураг хавсаргасан — системээс харна уу)' : '');
+  var cl = r.wkClaimBy || {};
+  var ac = r.wkAcceptBy || {};
+  return {
+    N1: 'WO number:  ' + (r.id || ''),
+    D5: who(r.reporterFull || r.reporterName, r.reporterPos, ''),
+    M5: r.locGroup || '',
+    D7: r.dept || '',
+    M7: r.locSub || '',
+    D9: String(r.createdAt || '').slice(0, 10),
+    T11: '✔',                                   /* «Шинэ ажил» нүд */
+    A13: problem,
+    A21: who(r.reporterFull || r.reporterName, r.reporterPos, r.createdAt),
+    K21: due,
+    A25: who(cl.name, cl.pos, ''),
+    D30: r.wkExecNote ? ('Notes:Тэмдэглэл\n' + r.wkExecNote) : 'Notes:Тэмдэглэл',
+    A32: who(cl.name, cl.pos, r.wkExecAt),
+    E44: r.wkRejectWhy ? ('Notes:Тэмдэглэл\n↩ Буцаасан: ' + r.wkRejectWhy) : 'Notes:Тэмдэглэл',
+    /* ⚠ Батласны төлөв нь 'done' (wkStatus → closed), 'ok' БИШ.
+       Огноо нь wkAcceptBy.at дотор байдаг. */
+    A46: r.wkAccept === 'done'
+      ? who(ac.name || r.reporterFull || r.reporterName, ac.pos || r.reporterPos, ac.at) : '',
+    H60: String(ac.at || r.wkExecAt || '').slice(0, 10)
+  };
+}
+
+function wkExcel(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) { toast('Захиалга олдсонгүй', 'error'); return; }
+  var t = toast('Маягт бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  woLoadExcelJS(function (ok) {
+    if (!ok) { fin(); toast('Excel сан ачаалагдсангүй — дахин оролдоно уу', 'error'); return; }
+    fetch('vendor/work-order-template.xlsx?v=1', { cache: 'force-cache' })
+      .then(function (rr) { if (!rr.ok) throw new Error('загвар ' + rr.status); return rr.arrayBuffer(); })
+      .then(function (buf) {
+        var wb = new ExcelJS.Workbook();
+        return wb.xlsx.load(buf).then(function () {
+          var ws = wb.worksheets[0], map = wkFormCells(r);
+          Object.keys(map).forEach(function (addr) {
+            var v = map[addr];
+            if (v === '' || v == null) return;
+            try {
+              var c = ws.getCell(addr);
+              c.value = v;
+              var al = c.alignment || {};
+              c.alignment = { vertical: al.vertical || 'top',
+                horizontal: al.horizontal || 'left', wrapText: true };
+            } catch (e) {}
+          });
+          return wb.xlsx.writeBuffer();
+        });
+      })
+      .then(function (out) {
+        var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (r.id || 'work-order') + '.xlsx';
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+        fin();
+        toast('✓ ' + r.id + '.xlsx татагдлаа', 'success');
+      })
+      .catch(function (e) {
+        console.error('[wk] excel', e);
+        fin(); toast('Татаж чадсангүй: ' + (e.message || e), 'error');
+      });
+  });
+}
+
 function openReportDetail(id) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) return;
@@ -14061,9 +14154,17 @@ function openReportDetail(id) {
       '<div class="detail-actions"><button class="btn btn-secondary" data-rdreject="1">Татгалзах</button>' +
       '<button class="btn btn-primary" data-rdverify="1">Баталгаажуулах</button></div>';
   }
+  /* Албан ёсны маягтаар татах — шинэ урсгалын бичлэг дээр */
+  if (r.wkKind) {
+    html += '<div class="detail-actions" style="margin-top:12px">' +
+      '<button class="btn btn-secondary" data-wk-xl="' + esc(r.id) + '">' +
+      '<i class="ti ti-file-spreadsheet"></i> Work order маягт (Excel)</button></div>';
+  }
   var node = elc('div', 'modal-info', html), pickedRisk = r.risk_level;
   woWireNode(node);
   node.addEventListener('click', function (ev) {
+    var wxl = ev.target.closest('[data-wk-xl]');
+    if (wxl) { ev.stopPropagation(); wkExcel(wxl.getAttribute('data-wk-xl')); return; }
     var chip = ev.target.closest('#rdRisk .rf-chip');
     if (chip) { $$('#rdRisk .rf-chip', node).forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); pickedRisk = chip.getAttribute('data-val'); return; }
     if (ev.target.closest('[data-rdverify]')) { closeModal(); verifyReport(r.id, 'verify', pickedRisk); return; }
