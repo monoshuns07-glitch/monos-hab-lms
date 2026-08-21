@@ -15041,12 +15041,10 @@ function wkExcel(id) {
         });
       })
       .then(function (out) {
-        var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = (r.id || 'work-order') + '.xlsx';
-        document.body.appendChild(a); a.click();
-        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+        /* Хөтөч кодоор эхлүүлсэн татахыг хааж болзошгүй тул нэгдсэн цонхоор */
+        rfSaveBlob(new Blob([out], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }), (r.id || 'work-order') + '.xlsx');
         fin();
         toast('Excel бэлэн — «Хадгалах» дарна уу', 'success');
       })
@@ -16038,14 +16036,12 @@ function woOneExcel(id) {
         });
       })
       .then(function (out) {
-        var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = (wo.id || 'work-order') + '.xlsx';
-        document.body.appendChild(a); a.click();
-        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+        /* Хөтөч кодоор эхлүүлсэн татахыг хааж болзошгүй тул нэгдсэн цонхоор */
+        rfSaveBlob(new Blob([out], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }), (wo.id || 'work-order') + '.xlsx');
         fin();
-        toast('✓ ' + wo.id + '.xlsx татагдлаа — маягт бүрэн бөглөгдсөн', 'success');
+        toast('Маягт бэлэн — «Хадгалах» дарна уу', 'success');
       })
       .catch(function (e) {
         console.error('[wo] excel', e);
@@ -22519,13 +22515,11 @@ function saveWeights() {
 }
 
 /* ============ Тайлан / экспорт ============ */
+/* ⚠ Байгууллагын Chrome нь КОДООР эхлүүлсэн татахыг чимээгүй хааж болно.
+   Тиймээс энэ ерөнхий татагч ч мөн `rfSaveBlob`-оор дамжина — оролдоод,
+   зэрэг нь хэрэглэгч өөрөө дарж хадгалах цонх гаргана. */
 function download(filename, content, mime) {
-  var blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
-  var url = URL.createObjectURL(blob);
-  var a = elc('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  rfSaveBlob(new Blob([content], { type: mime || 'text/plain;charset=utf-8' }), filename);
 }
 function exportEmployeesCSV() {
   var head = ['Код', 'Нэр', 'Албан тушаал', 'Алба', 'Босго', 'Давтан+шалгалт', 'Видео(LMS)', 'Даалгавар', 'Суурь оноо', 'Бонус оноо', 'Нийт оноо'];
