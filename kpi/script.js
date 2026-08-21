@@ -13316,7 +13316,9 @@ function wkStep(n, title, done) {
 function wkNewModal() {
   var me = reqMe();
   if (!me || !me.uid) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
-  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', photo: '', gate: '' };
+  /* `locOpen` нь ЗӨВХӨН дэлгэцийн төлөв — аль бүлгийн дотор орсныг заана.
+     Илгээх датад ордоггүй (wkCreate нь locGroup/locSub-ыг л уншина). */
+  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', locOpen: '', photo: '', gate: '' };
   var node = elc('div', 'modal-info');
   var meName = '', mePos = '', meDept = '';
   try {
@@ -13359,61 +13361,83 @@ function wkNewModal() {
         'Таны сонголтыг хүлээж авсан алба баталгаажуулна.</div>';
     }
 
-    /* ── ③ БАЙРШИЛ ── */
+    /* ── ③ БАЙРШИЛ — ХОЁР ШАТТАЙ ──────────────────────────────────────
+       ⚠ Өмнө нь бүлгүүд ба дэд хэсгүүд ЗЭРЭГ харагддаг байсан тул аль нь
+       юуны дотор байгаа нь ойлгомжгүй, сонгосон нь ялгардаггүй байв.
+       Одоо: бүлэг дээр дарж «дотогш ордог» → зөвхөн тэр бүлгийн хэсгүүд
+       гарна → нэгийг сонгомогц БУЦААД гарч, сонголт нь нэг мөрөөр
+       баталгаажин харагдана. Хүсвэл «Өөрчлөх»-өөр дахин сонгоно. */
     if (sel.urg) {
-      H += wkStep(3, 'Хаана вэ?', !!sel.locGroup);
-      var gs = wkLocGroups();
-      /* ⚠ Өмнө нь сонгосон бүлэг нь зөвхөн бүдэг хүрээ + цайвар дэвсгэртэй
-         байсан тул бусдаасаа ЯЛГАРАХГҮЙ, аль нь сонгогдсоныг харахад
-         бэрх байв. Одоо СОНГОСОН нь дүүргэгдэж, цагаан бичигтэй болно. */
-      H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + gs.map(function (g) {
-        var on = sel.locGroup === g.id;
-        return '<button type="button" data-wk-lg="' + esc(g.id) + '" style="border:2px solid ' +
-          (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
-          ';border-radius:11px;padding:9px 13px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
-          'font-weight:' + (on ? '800' : '600') + ';color:' + (on ? '#fff' : '#1E293B') +
-          (on ? ';box-shadow:0 4px 14px rgba(79,70,229,.28)' : '') + '">' +
-          (on ? '<i class="ti ti-check" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>' : '') +
-          esc(g.short || g.name) +
-          (g.short ? '<span style="font-weight:400;color:' + (on ? 'rgba(255,255,255,.78)' : '#94A3B8') +
-            '"> ' + esc(g.name) + '</span>' : '') +
-          '</button>';
-      }).join('') + '</div>';
-      var grp = wkLocGroup(sel.locGroup);
-      if (grp) {
-        if ((grp.subs || []).length) {
-          /* ⚠ Дэд байршил нь дээрх бүлгүүдтэй ЯГ ИЖИЛ харагдаж, аль бүлгийн
-             дотоод хэсэг болох нь ойлгогдохгүй байв. Одоо: өөрийн дэвсгэртэй
-             «хайрцаг», зүүн талдаа өнгөт зураас, дээр нь эцэг бүлгийн нэр
-             тодоор — сонголтын мод болж уншигдана. */
-          H += '<div style="margin-top:10px;background:#F5F7FF;border:1.5px solid #DDE3FF;' +
-            'border-left:4px solid #4F46E5;border-radius:0 12px 12px 0;padding:11px 13px">' +
-            '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-bottom:8px">' +
-            '<i class="ti ti-corner-down-right" style="font-size:13px;vertical-align:-2px"></i> ' +
-            esc(grp.name) + ' — аль хэсэг вэ?</div>' +
-            '<div style="display:flex;gap:7px;flex-wrap:wrap">' + grp.subs.map(function (sb) {
-              var on = sel.locSub === sb;
-              return '<button type="button" data-wk-ls="' + esc(sb) + '" style="border:2px solid ' +
-                (on ? '#4F46E5' : '#CBD5E1') + ';background:' + (on ? '#4F46E5' : '#fff') +
-                ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:7px 12px;cursor:pointer;' +
-                'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') +
-                (on ? ';box-shadow:0 4px 12px rgba(79,70,229,.28)' : '') + '">' +
-                (on ? '<i class="ti ti-check" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>' : '') +
-                esc(sb) + '</button>';
-            }).join('') + '</div></div>';
-        } else {
-          H += '<div style="margin-top:10px;background:#F8FAFC;border:1.5px solid #E2E8F0;' +
-            'border-left:4px solid #CBD5E1;border-radius:0 12px 12px 0;padding:11px 13px;' +
-            'font-size:11.5px;color:#64748B;line-height:1.6">' +
-            '<b style="color:#334155">' + esc(grp.name) + '</b> — дэд байршил тохируулаагүй байна.<br>' +
-            'Яг хаана болсныг доорх тайлбартаа бичнэ үү.</div>';
-        }
+      var grpSel = wkLocGroup(sel.locGroup);
+      var needSub = !!(grpSel && (grpSel.subs || []).length);
+      var locDone = !!(grpSel && (!needSub || sel.locSub));
+      H += wkStep(3, 'Хаана вэ?', locDone);
+
+      if (locDone && !sel.locOpen) {
+        /* ── ДУУССАН: сонголт нэг мөрөөр ── */
+        H += '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;' +
+          'background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:13px;padding:12px 14px">' +
+          '<span style="width:30px;height:30px;border-radius:9px;background:#0ca30c;color:#fff;' +
+          'display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+          '<i class="ti ti-map-pin" style="font-size:16px"></i></span>' +
+          '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:13.5px;font-weight:800;color:#14532D">' +
+          esc(grpSel.name) + (sel.locSub ? ' · ' + esc(sel.locSub) : '') + '</span>' +
+          '<span style="display:block;font-size:11.5px;color:#3F7A4F;margin-top:1px">' +
+          'Байршил сонгогдлоо</span></span>' +
+          '<button type="button" data-wk-ledit="1" style="border:1.5px solid #BBF7D0;background:#fff;' +
+          'color:#166534;border-radius:10px;padding:7px 13px;cursor:pointer;font-family:inherit;' +
+          'font-size:12.5px;font-weight:700"><i class="ti ti-edit" style="font-size:13px;' +
+          'vertical-align:-2px"></i> Өөрчлөх</button></div>';
+
+      } else if (sel.locOpen) {
+        /* ── ДОТОГШ ОРСОН: зөвхөн энэ бүлгийн хэсгүүд ── */
+        var og = wkLocGroup(sel.locOpen) || {};
+        H += '<div style="background:#F5F7FF;border:1.5px solid #DDE3FF;border-radius:13px;' +
+          'padding:12px 14px">' +
+          '<div style="display:flex;align-items:center;gap:9px;margin-bottom:11px">' +
+          '<button type="button" data-wk-lback="1" style="border:1.5px solid #C7D2FE;background:#fff;' +
+          'color:#4F46E5;border-radius:9px;padding:5px 11px;cursor:pointer;font-family:inherit;' +
+          'font-size:12px;font-weight:700;flex-shrink:0">' +
+          '<i class="ti ti-arrow-left" style="font-size:13px;vertical-align:-2px"></i> Буцах</button>' +
+          '<span style="font-size:13px;font-weight:800;color:#312E81;min-width:0;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap">' + esc(og.name || '') + '</span></div>' +
+          '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-bottom:8px">' +
+          'Аль хэсэг вэ?</div>' +
+          '<div style="display:flex;gap:7px;flex-wrap:wrap">' + (og.subs || []).map(function (sb) {
+            var on = sel.locSub === sb;
+            return '<button type="button" data-wk-ls="' + esc(sb) + '" style="border:2px solid ' +
+              (on ? '#4F46E5' : '#CBD5E1') + ';background:' + (on ? '#4F46E5' : '#fff') +
+              ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:9px 14px;cursor:pointer;' +
+              'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
+              esc(sb) + '</button>';
+          }).join('') + '</div></div>';
+
+      } else {
+        /* ── ЭХНИЙ ШАТ: бүлгүүд ── */
+        var gs = wkLocGroups();
+        H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + gs.map(function (g) {
+          var has = (g.subs || []).length;
+          return '<button type="button" data-wk-lg="' + esc(g.id) + '" style="border:2px solid #E2E8F0;' +
+            'background:#fff;border-radius:11px;padding:9px 13px;cursor:pointer;font-family:inherit;' +
+            'font-size:12.5px;font-weight:600;color:#1E293B;display:inline-flex;align-items:center;gap:7px">' +
+            '<span>' + esc(g.short || g.name) +
+            (g.short ? '<span style="font-weight:400;color:#94A3B8"> ' + esc(g.name) + '</span>' : '') +
+            '</span>' +
+            (has ? '<i class="ti ti-chevron-right" style="font-size:14px;color:#94A3B8"></i>' : '') +
+            '</button>';
+        }).join('') + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:7px">' +
+        'Бүлэг дээр дарж дотор нь орно. <b>›</b> тэмдэгтэй нь дэд хэсэгтэй.</div>';
       }
     }
 
     /* ── ④ ТАЙЛБАР ── */
-    var locOk = sel.locGroup && (!(wkLocGroup(sel.locGroup) || {}).subs ||
-      !(wkLocGroup(sel.locGroup) || {}).subs.length || sel.locSub);
+    /* Дараагийн алхам зөвхөн байршил БҮРЭН сонгогдож, дотогш орсон
+       горимоос гарсан үед л нээгдэнэ. */
+    var _g = wkLocGroup(sel.locGroup);
+    var locOk = !sel.locOpen && !!_g &&
+      (!(_g.subs || []).length || !!sel.locSub);
     if (locOk) {
       H += wkStep(4, 'Юу болсныг дэлгэрэнгүй бичнэ үү', false);
       H += '<textarea id="wkDesc" class="rf-input" rows="4" placeholder="' +
@@ -13473,9 +13497,26 @@ function wkNewModal() {
     if ((b = ev.target.closest('[data-wk-kind]'))) { sel.kind = b.getAttribute('data-wk-kind'); draw(); return; }
     if ((b = ev.target.closest('[data-wk-urg]'))) { sel.urg = +b.getAttribute('data-wk-urg'); draw(); return; }
     if ((b = ev.target.closest('[data-wk-lg]'))) {
-      sel.locGroup = b.getAttribute('data-wk-lg'); sel.locSub = ''; draw(); return;
+      var gid = b.getAttribute('data-wk-lg');
+      var gg = wkLocGroup(gid) || {};
+      sel.locGroup = gid; sel.locSub = '';
+      /* Дэд хэсэгтэй бол ДОТОГШ орно; байхгүй бол шууд дуусна */
+      sel.locOpen = (gg.subs || []).length ? gid : '';
+      draw(); return;
     }
-    if ((b = ev.target.closest('[data-wk-ls]'))) { sel.locSub = b.getAttribute('data-wk-ls'); draw(); return; }
+    if ((b = ev.target.closest('[data-wk-ls]'))) {
+      sel.locSub = b.getAttribute('data-wk-ls');
+      sel.locOpen = '';                 /* сонгомогц БУЦААД гарна */
+      draw(); return;
+    }
+    /* Дотогш орсноос буцах — сонголтыг цуцална */
+    if (ev.target.closest('[data-wk-lback]')) {
+      sel.locOpen = ''; sel.locGroup = ''; sel.locSub = ''; draw(); return;
+    }
+    /* Дууссан байршлыг дахин сонгох */
+    if (ev.target.closest('[data-wk-ledit]')) {
+      sel.locOpen = ''; sel.locGroup = ''; sel.locSub = ''; draw(); return;
+    }
     if ((b = ev.target.closest('[data-wk-gate]'))) { sel.gate = b.getAttribute('data-wk-gate'); draw(); return; }
     if (ev.target.closest('#wkPhotoDel')) { sel.photo = ''; draw(); return; }
     if (ev.target.closest('#wkSend')) {
