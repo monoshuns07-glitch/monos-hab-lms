@@ -13003,6 +13003,282 @@ function rfRiskHTML(d) {
     bar + list);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ДАШБОАРДЫГ ТАТАХ
+   ----------------------------------------------------------------------
+   ① HTML — ГАНЦ файл, гаднын юу ч шаардахгүй, дарж үзэх нь БҮРЭН
+     ажиллана (график дээр дарахад жагсаалт, мөр дээр дарахад дэлгэрэнгүй).
+     Дөрвөн төрлийн харагдац урьдчилан хийгдэж, товчоор солигдоно.
+   ② Excel — тойм, бүх мэдээлэл, график тус бүрийн эх дата тусдаа хуудсаар.
+   ══════════════════════════════════════════════════════════════════════ */
+function rfExportName(ext) {
+  var t = new Date();
+  var p = function (n) { return ('0' + n).slice(-2); };
+  return 'Work-order-dashboard_' + t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) +
+    '_' + p(t.getHours()) + p(t.getMinutes()) + '.' + ext;
+}
+function rfSaveBlob(blob, name) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 900);
+}
+/* Шүүлтүүрийн тайлбар — татсан файл дээр ямар зүсмэл болохыг бичнэ */
+function rfScopeText() {
+  var days = RF_DASH.days;
+  return 'Хугацаа: ' + (days ? days + ' хоног' : 'Бүх хугацаа') +
+    ' · Алба: ' + (RF_DASH.dept || 'Бүх алба') +
+    ' · Гаргасан: ' + new Date().toLocaleString('mn-MN');
+}
+
+/* ── ① HTML ── */
+function rfExportHTML(all) {
+  var t = toast('HTML бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  try {
+    var keepKind = RF_DASH.kind;
+    var views = {}, drills = {};
+    /* Дөрвөн харагдацыг тус тусад нь дүрсэлж, drill-үүдийг цуглуулна */
+    ['all', 'odt', 'hazard', 'job'].forEach(function (k) {
+      RF_DASH.kind = k;
+      var d = rfDashData(all);
+      RF_DRILL = {}; RF_DRILL_N = 0;
+      var body = rfHeroHTML(d) + '<div style="height:12px"></div>' +
+        '<div class="rf-grid">' +
+        rfKindHTML(d) +
+        '<div class="rf-col">' + rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
+        rfSlaHTML(d) + rfGateHTML(d) + rfRiskHTML(d) + rfQualityHTML(d) +
+        rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй', d.byDept, RF_C.a, d.deptRows) +
+        rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна', d.byPlace, RF_C.a, d.placeRows) +
+        rfRankHTML('Идэвхтэй мэдээлэгчид', 'Хэн хамгийн их мэдээлж байна', d.byWho, RF_C.a, d.whoRows) +
+        rfRankHTML('Гүйцэтгэгчид', 'Хэн хамгийн олон ажил хүлээж авсан бэ', d.byDoer, RF_C.a, d.doerRows) +
+        rfAttentionHTML(d) + '</div>';
+      /* Түлхүүрүүд харагдац хооронд давхцахгүйн тулд угтвар нэмнэ */
+      views[k] = body.replace(/data-rf-drill="/g, 'data-rf-drill="' + k + '_');
+      Object.keys(RF_DRILL).forEach(function (id) {
+        var x = RF_DRILL[id];
+        drills[k + '_' + id] = {
+          t: x.t, s: x.s,
+          rows: (x.rows || []).slice(0, 400).map(function (r) {
+            return {
+              who: r.reporterFull || r.reporterName || '',
+              pos: r.reporterPos || '', dept: r.dept || '',
+              loc: wkLocLabel(r) || r.location || '',
+              desc: String(r.desc || '').slice(0, 300),
+              at: String(r.createdAt || '').slice(0, 10),
+              kind: wkKindOf(r).ab, kc: (RF_KIND[wkKindOf(r).k] || {}).c || '#94A3B8',
+              urg: wkUrg(r), gate: wkGate(r.wkGate).ab,
+              st: r.status === 'verified' ? 'Баталгаажсан'
+                : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+              wk: WK_STATUS[wkStatus(r)] ? WK_STATUS[wkStatus(r)].l : '',
+              doer: (r.wkClaimBy && r.wkClaimBy.name) || '',
+              photo: r.photo && String(r.photo).length > 100 ? 'тийм' : 'үгүй'
+            };
+          })
+        };
+      });
+    });
+    RF_DASH.kind = keepKind;
+
+    /* Ганц файлд шаардлагатай ХАМГИЙН БАГА CSS */
+    var css = 'body{margin:0;background:#F1F5F9;font-family:"Segoe UI",system-ui,-apple-system,' +
+      'Roboto,Arial,sans-serif;color:#1E293B;-webkit-font-smoothing:antialiased}' +
+      '*{box-sizing:border-box}.wrap{max-width:2400px;margin:0 auto;padding:18px}' +
+      '.card{background:#fff;border:1px solid #E2E8F0;border-radius:14px;' +
+      'box-shadow:0 1px 3px rgba(15,23,42,.05)}' +
+      '.rf-grid{display:grid;gap:12px;align-content:start;grid-template-columns:minmax(0,1fr)}' +
+      '@media(min-width:780px){.rf-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
+      '@media(min-width:1240px){.rf-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}' +
+      '@media(min-width:1720px){.rf-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}' +
+      '@media(min-width:2160px){.rf-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}' +
+      '.rf-grid>.rf-w2{grid-column:span 2}.rf-grid>.rf-full{grid-column:1/-1}' +
+      '@media(max-width:779px){.rf-grid>.rf-w2{grid-column:1/-1}}' +
+      '.rf-col{display:flex;flex-direction:column;gap:12px;min-width:0}' +
+      '.rf-hit{transition:background .14s,filter .14s;border-radius:9px}' +
+      '.rf-hit:hover{background:#F1F5F9;filter:brightness(1.07)}' +
+      '.ti{display:none}' +
+      '.hd{max-width:2400px;margin:0 auto;padding:16px 18px 0}' +
+      '.hd h1{margin:0;font-size:21px}.hd p{margin:4px 0 0;font-size:12.5px;color:#64748B}' +
+      '.kb{display:inline-flex;gap:7px;margin:12px 0 0;flex-wrap:wrap}' +
+      '.kb button{border:1.5px solid #E2E8F0;background:#fff;color:#1E293B;border-radius:10px;' +
+      'padding:7px 14px;cursor:pointer;font:inherit;font-size:12.5px;font-weight:700}' +
+      '.kb button.on{background:#4F46E5;border-color:#4F46E5;color:#fff}' +
+      '#ov{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;z-index:99;' +
+      'align-items:center;justify-content:center;padding:18px}' +
+      '#ov.on{display:flex}#mo{background:#fff;border-radius:16px;max-width:640px;width:100%;' +
+      'max-height:86vh;overflow:auto;padding:18px 20px}' +
+      '#mo h3{margin:0 0 3px;font-size:16px}#mo .sb{font-size:12px;color:#94A3B8;margin-bottom:10px}' +
+      '.rw{display:flex;gap:11px;padding:10px 4px;border-bottom:1px solid #F1F5F9}' +
+      '.rw b{font-size:12.5px}.rw .m{font-size:11.5px;color:#64748B;margin-top:2px}' +
+      '.rw .s{font-size:11px;color:#94A3B8;margin-top:3px}' +
+      '.cl{float:right;border:0;background:#F1F5F9;border-radius:9px;padding:6px 12px;cursor:pointer;font:inherit}';
+
+    var js = '(function(){var D=' + JSON.stringify(drills) + ';' +
+      'var V=document.querySelectorAll("[data-view]");' +
+      'document.querySelectorAll(".kb button").forEach(function(b){b.onclick=function(){' +
+      'document.querySelectorAll(".kb button").forEach(function(x){x.className=""});b.className="on";' +
+      'V.forEach(function(v){v.style.display=v.getAttribute("data-view")===b.getAttribute("data-k")?"":"none"})}});' +
+      'var ov=document.getElementById("ov"),mo=document.getElementById("mo");' +
+      'document.addEventListener("click",function(e){' +
+      'var h=e.target.closest?e.target.closest("[data-rf-drill]"):null;' +
+      'if(!h)return; var d=D[h.getAttribute("data-rf-drill")]; if(!d)return;' +
+      'var esc=function(x){return String(x==null?"":x).replace(/[&<>"]/g,function(c){' +
+      'return {"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;"}[c]})};' +
+      'mo.innerHTML="<button class=cl onclick=\'document.getElementById(\\"ov\\").className=\\"\\"\'>Хаах</button>"+' +
+      '"<h3>"+esc(d.t)+"</h3><div class=sb>"+esc(d.s||"")+" · "+d.rows.length+" мэдээлэл</div>"+' +
+      '(d.rows.length?d.rows.map(function(r){return "<div class=rw>"+' +
+      '"<span style=\\"flex:0 0 4px;align-self:stretch;border-radius:3px;background:"+r.kc+"\\"></span>"+' +
+      '"<span style=\\"flex:1;min-width:0\\"><b>"+esc(r.who)+(r.pos?" · <span style=\\"font-weight:600;color:#94A3B8\\">"+esc(r.pos)+"</span>":"")+"</b>"+' +
+      '"<div class=m>"+esc(r.loc)+" — "+esc(r.desc)+"</div>"+' +
+      '"<div class=s>"+esc(r.at)+" · "+esc(r.kind)+" · зэрэг "+r.urg+" · "+esc(r.gate)+" · "+esc(r.st)+' +
+      '(r.wk?" · "+esc(r.wk):"")+(r.doer?" · гүйцэтгэгч: "+esc(r.doer):"")+" · зураг: "+esc(r.photo)+"</div></span></div>"}).join("")' +
+      ':"<div style=\\"padding:20px;text-align:center;color:#94A3B8\\">Мэдээлэл алга</div>");' +
+      'ov.className="on";});' +
+      'ov.onclick=function(e){if(e.target===ov)ov.className=""};' +
+      'document.addEventListener("keydown",function(e){if(e.key==="Escape")ov.className=""});})()';
+
+    var kinds = [['all', 'Бүгд'], ['odt', 'Осолд дөхсөн'], ['hazard', 'Аюул'], ['job', 'Ажлын захиалга']];
+    var html = '<!doctype html><html lang="mn"><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Work order — дашбоард</title><style>' + css + '</style></head><body>' +
+      '<div class="hd"><h1>Work order — дашбоард</h1>' +
+      '<p>' + esc(rfScopeText()) + '</p>' +
+      '<div class="kb">' + kinds.map(function (k) {
+        return '<button data-k="' + k[0] + '"' + (k[0] === 'all' ? ' class="on"' : '') + '>' +
+          esc(k[1]) + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="wrap">' + kinds.map(function (k) {
+        return '<div data-view="' + k[0] + '"' + (k[0] === 'all' ? '' : ' style="display:none"') + '>' +
+          views[k[0]] + '</div>';
+      }).join('') + '</div>' +
+      '<div id="ov"><div id="mo"></div></div>' +
+      '<script>' + js + '<\/script></body></html>';
+
+    rfSaveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), rfExportName('html'));
+    fin();
+    toast('✓ HTML татагдлаа — файлыг нээхэд бүх зүйл ажиллана', 'success');
+  } catch (e) {
+    fin(); console.error('[rf] html', e);
+    toast('Татаж чадсангүй: ' + (e.message || e), 'error');
+  }
+}
+
+/* ── ② EXCEL ── */
+function rfExportXlsx(all) {
+  var t = toast('Excel бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  riskLoadXlsx(function (ok) {
+    if (!ok) { fin(); toast('Excel сан ачаалагдсангүй — интернэт шалгана уу', 'error'); return; }
+    try {
+      var d = rfDashData(all);
+      var wb = XLSX.utils.book_new();
+      var add = function (name, aoa) {
+        var ws = XLSX.utils.aoa_to_sheet(aoa);
+        var w = [];
+        (aoa[0] || []).forEach(function (_, i) {
+          var mx = 8;
+          aoa.forEach(function (r) { mx = Math.max(mx, String(r[i] == null ? '' : r[i]).length + 2); });
+          w.push({ wch: Math.min(46, mx) });
+        });
+        ws['!cols'] = w;
+        XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 28));
+      };
+      var pct = function (a, b) { return b ? Math.round((a / b) * 100) + '%' : '0%'; };
+
+      /* 1. Тойм */
+      add('Тойм', [
+        ['WORK ORDER — ДАШБОАРДЫН ТОЙМ'],
+        [rfScopeText()], [],
+        ['Үзүүлэлт', 'Тоо', 'Хувь'],
+        ['Нийт мэдээлэл', d.n, '100%'],
+        ['Шийдвэрлэгдээгүй', d.open, pct(d.open, d.n)],
+        ['Баталгаажаагүй', d.pending, pct(d.pending, d.n)],
+        ['Засварт байгаа', d.inRepair, pct(d.inRepair, d.n)],
+        ['Хаагдсан', d.closed, pct(d.closed, d.n)],
+        ['Яаралтай', d.urgent, pct(d.urgent, d.n)],
+        [],
+        ['Батлах дундаж хугацаа (цаг)', d.avgVerifyH == null ? '' : Math.round(d.avgVerifyH)],
+        ['Хүлээж авах хүртэл дундаж (цаг)', rfAvg(d.claimHrs) == null ? '' : Math.round(rfAvg(d.claimHrs))],
+        ['Гүйцэтгэх хүртэл дундаж (цаг)', rfAvg(d.doneHrs) == null ? '' : Math.round(rfAvg(d.doneHrs))],
+        [],
+        ['Хугацаандаа', d.onTime.length, pct(d.onTime.length, d.n)],
+        ['Хугацаа хэтэрсэн', d.late.length, pct(d.late.length, d.n)],
+        ['Хугацаа дуусаагүй', d.waiting.length, pct(d.waiting.length, d.n)],
+        [],
+        ['Зураг хавсаргасан', d.hasPhoto.length, pct(d.hasPhoto.length, d.n)],
+        ['Зураггүй', d.noPhoto.length, pct(d.noPhoto.length, d.n)]
+      ]);
+
+      /* 2. Бүх мэдээлэл */
+      var rows = [['Огноо', 'Дугаар', 'Төрөл', 'Яаралтай зэрэг', 'Хугацаа (цаг)', 'Дуусах хугацаа',
+        'Хариуцах алба', 'Байршил', 'Алба', 'Мэдээлсэн', 'Албан тушаал', 'Тайлбар',
+        'Төлөв', 'Work order төлөв', 'Хүлээж авсан', 'Гүйцэтгэсэн огноо', 'Батлагдсан', 'Зураг']];
+      d.rows.slice().sort(function (a, b) {
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      }).forEach(function (r) {
+        var hrs = wkUrgHours(wkUrg(r)), due = '';
+        try {
+          if (r.createdAt && hrs) due = new Date(new Date(r.createdAt).getTime() + hrs * 3600000)
+            .toISOString().slice(0, 16).replace('T', ' ');
+        } catch (e) {}
+        rows.push([
+          String(r.createdAt || '').slice(0, 10), r.id || '', wkKindOf(r).ab, wkUrg(r), hrs, due,
+          wkGate(r.wkGate).ab, wkLocLabel(r) || r.location || '', r.dept || '',
+          r.reporterFull || r.reporterName || '', r.reporterPos || '',
+          String(r.desc || ''),
+          r.status === 'verified' ? 'Баталгаажсан' : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
+          (WK_STATUS[wkStatus(r)] || {}).l || '',
+          (r.wkClaimBy && r.wkClaimBy.name) || '',
+          String(r.wkExecAt || '').slice(0, 16).replace('T', ' '),
+          r.wkAccept === 'done' ? 'Тийм' : r.wkAccept === 'reject' ? 'Буцаасан' : '',
+          (r.photo && String(r.photo).length > 100) ? 'тийм' : 'үгүй'
+        ]);
+      });
+      add('Бүх мэдээлэл', rows);
+
+      /* 3. Графикуудын эх дата */
+      var mapSheet = function (name, head, map) {
+        var a = [[head, 'Тоо', 'Хувь']];
+        rfTop(map, 200).forEach(function (x) { a.push([x.k, x.v, pct(x.v, d.n)]); });
+        add(name, a);
+      };
+      add('Төрлөөр', [['Төрөл', 'Тоо', 'Хувь']].concat(RF_KIND_ORDER.map(function (k) {
+        return [RF_KIND[k].l, d.kind[k] || 0, pct(d.kind[k] || 0, d.n)];
+      })));
+      add('Сараар', [['Сар'].concat(RF_KIND_ORDER.map(function (k) { return RF_KIND[k].l; })).concat(['Нийт'])]
+        .concat(rfMonths(12).map(function (mk) {
+          var vs = RF_KIND_ORDER.map(function (k) { return (d.kindMonth[k + '|' + mk] || []).length; });
+          return [rfMonLabel(mk)].concat(vs).concat([vs.reduce(function (a, b) { return a + b; }, 0)]);
+        })));
+      add('Яаралтай зэрэг', [['Зэрэг', 'Хугацаа', 'Тоо', 'Хувь']].concat([5, 4, 3, 2, 1].map(function (n) {
+        return [n, wkHoursText(wkUrgHours(n)), d.urg[n - 1], pct(d.urg[n - 1], d.n)];
+      })));
+      add('Хариуцах алба', [['Алба', 'Тоо', 'Хувь'],
+        [WK_GATES[0].name, d.gate.hab, pct(d.gate.hab, d.n)],
+        [WK_GATES[1].name, d.gate.ita, pct(d.gate.ita, d.n)]]);
+      add('Эрсдэлийн зэрэг', [['Зэрэг', 'Тоо', 'Хувь'],
+        ['Өндөр', d.risk.high, pct(d.risk.high, d.n)],
+        ['Дунд', d.risk.mid, pct(d.risk.mid, d.n)],
+        ['Бага', d.risk.low, pct(d.risk.low, d.n)]]);
+      mapSheet('Албадаар', 'Алба', d.byDept);
+      mapSheet('Байршлаар', 'Байршил', d.byPlace);
+      mapSheet('Мэдээлэгчид', 'Ажилтан', d.byWho);
+      mapSheet('Гүйцэтгэгчид', 'Ажилтан', d.byDoer);
+
+      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      rfSaveBlob(new Blob([out], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }), rfExportName('xlsx'));
+      fin();
+      toast('✓ Excel татагдлаа — ' + wb.SheetNames.length + ' хуудастай', 'success');
+    } catch (e) {
+      fin(); console.error('[rf] xlsx', e);
+      toast('Татаж чадсангүй: ' + (e.message || e), 'error');
+    }
+  });
+}
+
 /* ── ШҮҮЛТҮҮР: БҮХ график дээр НЭГ мөр (карт дотор биш) ── */
 function rfFilterHTML(all) {
   var depts = {};
@@ -13034,6 +13310,15 @@ function rfFilterHTML(all) {
     ';color:' + (RF_DASH.table ? '#fff' : RF_INK.p) + ';border-radius:9px;padding:6px 12px;' +
     'cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700">' +
     '<i class="ti ti-table"></i> ' + (RF_DASH.table ? 'График харах' : 'Хүснэгтээр харах') + '</button>' +
+    /* ⭐ Татах — HTML нь дарж үзэхэд бүрэн ажилладаг ганц файл */
+    '<button data-rf-dl="html" style="border:1.5px solid ' + RF_INK.grid + ';background:#fff;color:' +
+    RF_INK.p + ';border-radius:9px;padding:6px 12px;cursor:pointer;font-family:inherit;' +
+    'font-size:12.5px;font-weight:700" title="Дарж үзэхэд бүх зүйл ажиллана">' +
+    '<i class="ti ti-file-code"></i> HTML татах</button>' +
+    '<button data-rf-dl="xlsx" style="border:1.5px solid ' + RF_INK.grid + ';background:#fff;color:' +
+    RF_INK.p + ';border-radius:9px;padding:6px 12px;cursor:pointer;font-family:inherit;' +
+    'font-size:12.5px;font-weight:700" title="График бүрийн эх дата тусдаа хуудсаар">' +
+    '<i class="ti ti-file-spreadsheet"></i> Excel татах</button>' +
     '</div>';
 }
 
@@ -15886,6 +16171,14 @@ function rfAfter(sec, admin, pending) {
     var fd = ev.target.closest('[data-rf-days]');
     if (fd) { RF_DASH.days = +fd.getAttribute('data-rf-days'); renderReportflow(); return; }
     if (ev.target.closest('[data-rf-table]')) { RF_DASH.table = !RF_DASH.table; renderReportflow(); return; }
+    /* ⭐ Дашбоардыг татах */
+    var dl = ev.target.closest('[data-rf-dl]');
+    if (dl) {
+      var kindDl = dl.getAttribute('data-rf-dl');
+      if (kindDl === 'html') rfExportHTML(DB.reports || []);
+      else rfExportXlsx(DB.reports || []);
+      return;
+    }
     /* ⭐ Мэдээллийн төрлийн товч */
     var fk = ev.target.closest('[data-rf-kind]');
     if (fk) { RF_DASH.kind = fk.getAttribute('data-rf-kind'); renderReportflow(); return; }
