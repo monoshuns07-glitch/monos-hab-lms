@@ -19806,7 +19806,6 @@ function hrCard(o) {
       '<div style="font-size:11.5px;color:#94A3B8;display:flex;gap:12px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + esc(o.dept || '') + '</span>' +
         '<span><i class="ti ti-user"></i> ' + esc(o.byName || '') + '</span>' +
-        (o.salary ? '<span><i class="ti ti-coin"></i> ' + esc(hrMoney(o.salary)) + '</span>' : '') +
         '<span><i class="ti ti-calendar-plus"></i> ' + esc(hrDate(o.at)) + '</span>' +
       '</div>' +
       /* 4 гарын үсгийн явц */
@@ -19863,18 +19862,18 @@ function actionAddHrOrder(edit) {
   function reasonRow() {
     return HR_REASONS.map(function (x) {
       var on = pick.reason === x.key;
-      return '<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 11px;border:1.5px solid ' +
-        (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') + ';border-radius:10px;margin-bottom:6px;cursor:pointer">' +
-        '<input type="radio" name="hrReason" data-hr-reason="' + x.key + '"' + (on ? ' checked' : '') + ' style="margin-top:2px;flex-shrink:0">' +
-        '<span style="font-size:12.5px;color:#334155;line-height:1.45">' + esc(x.label) + '</span></label>';
+      return '<label style="display:flex;align-items:center;gap:11px;padding:11px 13px;border:1.5px solid ' +
+        (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') + ';border-radius:10px;margin-bottom:7px;cursor:pointer">' +
+        '<input type="radio" name="hrReason" data-hr-reason="' + x.key + '"' + (on ? ' checked' : '') + '>' +
+        '<span style="font-size:14px;color:#1E293B;line-height:1.4;font-weight:' + (on ? '700' : '500') + '">' + esc(x.label) + '</span></label>';
     }).join('') +
     (pick.reason === 'tur'
       ? '<div style="margin:2px 0 8px 26px">' + HR_TUR.map(function (x) {
           var on = pick.tur === x.key;
-          return '<label style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1.5px solid ' +
-            (on ? '#4F46E5' : '#E2E8F0') + ';border-radius:9px;margin-bottom:5px;cursor:pointer">' +
+          return '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid ' +
+            (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') + ';border-radius:9px;margin-bottom:6px;cursor:pointer">' +
             '<input type="radio" name="hrTur" data-hr-tur="' + x.key + '"' + (on ? ' checked' : '') + '>' +
-            '<span style="font-size:12px;color:#475569">' + esc(x.label) + '</span></label>';
+            '<span style="font-size:13.5px;color:#334155;line-height:1.4">' + esc(x.label) + '</span></label>';
         }).join('') + '</div>'
       : '') +
     (pick.reason === 'shine'
@@ -19929,12 +19928,10 @@ function actionAddHrOrder(edit) {
 
     '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:18px 0 8px;padding-top:12px;border-top:1px solid #F1F5F9">2. Цалин, хангамж</div>' +
 
-    '<div class="form-row">' +
-      '<div class="form-group flex-grow"><label>Цалингийн хэмжээ (₮)</label>' +
-      '<input type="number" id="hrSal" placeholder="Жишээ: 2500000"></div>' +
-      '<div class="form-group flex-grow"><label>Ажлын цагийн хуваарь</label>' +
-      '<input type="text" id="hrHours" placeholder="Жишээ: 09:00-18:00, 5 өдөр"></div>' +
-    '</div>' +
+    /* ⚠ Цалингийн ХЭМЖЭЭ энд БИЧИГДЭХГҮЙ (хэрэглэгчийн шийдвэр).
+       Захиалгын маягт нь цалин тогтоох баримт биш — зөвхөн нөхцөлийг заана. */
+    '<div class="form-group"><label>Ажлын цагийн хуваарь</label>' +
+    '<input type="text" id="hrHours" placeholder="Жишээ: 09:00-18:00, 5 өдөр"></div>' +
 
     '<div class="form-group"><label>Цалингийн нөхцөл</label>' +
     '<div id="hrSk" style="display:flex;gap:8px;flex-wrap:wrap">' + btnRow(HR_SALARY_KIND, pick.salKind, 'data-hr-sk') + '</div></div>' +
@@ -19965,7 +19962,7 @@ function actionAddHrOrder(edit) {
     var setv = function (id, v) { var el = q('#' + id); if (el && v != null && v !== '') el.value = v; };
     setv('hrPos', edit.posName); setv('hrCnt', edit.headcount);
     setv('hrGen', edit.reqGeneral); setv('hrSpec', edit.reqSpecial);
-    setv('hrSal', edit.salary || ''); setv('hrHours', edit.workHours);
+    setv('hrHours', edit.workHours);
     setv('hrNewNeed', edit.newNeed);
     var sv = q('#hrSave');
     if (sv) sv.innerHTML = '<i class="ti ti-send"></i> Засаад дахин илгээх';
@@ -20056,7 +20053,7 @@ function actionAddHrOrder(edit) {
       posName: posName, headcount: Math.max(1, parseInt(g('hrCnt'), 10) || 1),
       level: pick.level, reason: pick.reason, tur: pick.tur, newNeed: g('hrNewNeed'),
       reqGeneral: g('hrGen'), reqSpecial: g('hrSpec'), disability: pick.disab,
-      salary: _f(g('hrSal')), salaryKind: pick.salKind, workHours: g('hrHours'),
+      salaryKind: pick.salKind, workHours: g('hrHours'),
       unaa: pick.unaa, utas: pick.utas,
       inner: inner.slice()
     };
@@ -20169,7 +20166,6 @@ function hrDetail(id) {
     row('Хөгжлийн бэрхшээлтэй ажиллаж болох', o.disability === 'yes' ? 'Тийм' : o.disability === 'no' ? 'Үгүй' : '') +
 
     '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 6px">2. Цалин, хангамж</div>' +
-    row('Цалингийн хэмжээ', hrMoney(o.salary)) +
     row('Цалингийн нөхцөл', lookup(HR_SALARY_KIND, o.salaryKind)) +
     row('Ажлын цагийн хуваарь', o.workHours) +
     row('Унаа', lookup(HR_UNAA, o.unaa)) +
@@ -20391,7 +20387,6 @@ function hrPrint(o) {
     '</table>' +
 
     '<div class="sec">2. Цалин, хангамж</div><table>' +
-    r('Цалингийн хэмжээ', esc(hrMoney(o.salary))) +
     r('Цалингийн нөхцөл', HR_SALARY_KIND.map(function (x) {
       return mk(o.salaryKind === x.key) + ' ' + esc(x.label);
     }).join('&nbsp;&nbsp; ')) +
