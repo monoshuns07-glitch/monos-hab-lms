@@ -13363,31 +13363,50 @@ function wkNewModal() {
     if (sel.urg) {
       H += wkStep(3, 'Хаана вэ?', !!sel.locGroup);
       var gs = wkLocGroups();
+      /* ⚠ Өмнө нь сонгосон бүлэг нь зөвхөн бүдэг хүрээ + цайвар дэвсгэртэй
+         байсан тул бусдаасаа ЯЛГАРАХГҮЙ, аль нь сонгогдсоныг харахад
+         бэрх байв. Одоо СОНГОСОН нь дүүргэгдэж, цагаан бичигтэй болно. */
       H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + gs.map(function (g) {
         var on = sel.locGroup === g.id;
         return '<button type="button" data-wk-lg="' + esc(g.id) + '" style="border:2px solid ' +
-          (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') +
+          (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
           ';border-radius:11px;padding:9px 13px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
-          'font-weight:' + (on ? '800' : '600') + ';color:#1E293B">' + esc(g.short || g.name) +
-          (g.short ? '<span style="font-weight:400;color:#94A3B8"> ' + esc(g.name) + '</span>' : '') +
+          'font-weight:' + (on ? '800' : '600') + ';color:' + (on ? '#fff' : '#1E293B') +
+          (on ? ';box-shadow:0 4px 14px rgba(79,70,229,.28)' : '') + '">' +
+          (on ? '<i class="ti ti-check" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>' : '') +
+          esc(g.short || g.name) +
+          (g.short ? '<span style="font-weight:400;color:' + (on ? 'rgba(255,255,255,.78)' : '#94A3B8') +
+            '"> ' + esc(g.name) + '</span>' : '') +
           '</button>';
       }).join('') + '</div>';
       var grp = wkLocGroup(sel.locGroup);
       if (grp) {
         if ((grp.subs || []).length) {
-          H += '<div style="margin-top:9px;padding-left:13px;border-left:2.5px solid #C7D2FE">' +
-            '<div style="font-size:11.5px;color:#64748B;margin-bottom:6px">' + esc(grp.name) + ' — аль хэсэг вэ?</div>' +
+          /* ⚠ Дэд байршил нь дээрх бүлгүүдтэй ЯГ ИЖИЛ харагдаж, аль бүлгийн
+             дотоод хэсэг болох нь ойлгогдохгүй байв. Одоо: өөрийн дэвсгэртэй
+             «хайрцаг», зүүн талдаа өнгөт зураас, дээр нь эцэг бүлгийн нэр
+             тодоор — сонголтын мод болж уншигдана. */
+          H += '<div style="margin-top:10px;background:#F5F7FF;border:1.5px solid #DDE3FF;' +
+            'border-left:4px solid #4F46E5;border-radius:0 12px 12px 0;padding:11px 13px">' +
+            '<div style="font-size:11.5px;color:#4F46E5;font-weight:700;margin-bottom:8px">' +
+            '<i class="ti ti-corner-down-right" style="font-size:13px;vertical-align:-2px"></i> ' +
+            esc(grp.name) + ' — аль хэсэг вэ?</div>' +
             '<div style="display:flex;gap:7px;flex-wrap:wrap">' + grp.subs.map(function (sb) {
               var on = sel.locSub === sb;
               return '<button type="button" data-wk-ls="' + esc(sb) + '" style="border:2px solid ' +
-                (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
+                (on ? '#4F46E5' : '#CBD5E1') + ';background:' + (on ? '#4F46E5' : '#fff') +
                 ';color:' + (on ? '#fff' : '#334155') + ';border-radius:10px;padding:7px 12px;cursor:pointer;' +
-                'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
+                'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') +
+                (on ? ';box-shadow:0 4px 12px rgba(79,70,229,.28)' : '') + '">' +
+                (on ? '<i class="ti ti-check" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>' : '') +
                 esc(sb) + '</button>';
             }).join('') + '</div></div>';
         } else {
-          H += '<div style="font-size:11.5px;color:#94A3B8;margin-top:7px">' +
-            esc(grp.name) + ' — дэд байршил тохируулагдаагүй. Тайлбартаа нарийн бичнэ үү.</div>';
+          H += '<div style="margin-top:10px;background:#F8FAFC;border:1.5px solid #E2E8F0;' +
+            'border-left:4px solid #CBD5E1;border-radius:0 12px 12px 0;padding:11px 13px;' +
+            'font-size:11.5px;color:#64748B;line-height:1.6">' +
+            '<b style="color:#334155">' + esc(grp.name) + '</b> — дэд байршил тохируулаагүй байна.<br>' +
+            'Яг хаана болсныг доорх тайлбартаа бичнэ үү.</div>';
         }
       }
     }
