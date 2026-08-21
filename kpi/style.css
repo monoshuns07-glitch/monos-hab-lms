@@ -2529,3 +2529,21 @@ details > summary .ti-chevron-right { transition: transform .15s; }
 .rf-hit:hover { background: #F1F5F9; filter: brightness(1.07); }
 .rf-hit:active { transform: scale(.985); }
 .rf-hit:focus-visible { outline: 2px solid #4F46E5; outline-offset: 2px; }
+
+/* ══ ДАШБОАРДЫН СҮЛЖЭЭ ══
+   ⚠ Өмнө нь `repeat(auto-fit,minmax(320px,1fr))` байсан тул ӨРГӨН дэлгэц
+   (эсвэл 50% масштаб) дээр 6 нарийн багана үүсч, карт бүр шахагдаж,
+   баруун доод тал нь бүхэлдээ хоосон үлддэг байв. Одоо баганын тоо
+   ШАТЛАН нэмэгдэж, дээд тал нь 4-өөр хязгаарлагдана. */
+.rf-wrap { max-width: 1760px; margin: 0 auto; }
+.rf-grid { display: grid; gap: 12px; align-content: start;
+           grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 780px)  { .rf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1240px) { .rf-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1720px) { .rf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.rf-grid > .rf-w2 { grid-column: span 2; }
+.rf-grid > .rf-full { grid-column: 1 / -1; }
+/* Нарийн дэлгэц дээр өргөн карт ч нэг багана болно */
+@media (max-width: 779px) { .rf-grid > .rf-w2 { grid-column: 1 / -1; } }
+/* Босоо багана — доторх картууд ижил өргөнтэй, зай нь сүлжээтэй адил */
+.rf-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

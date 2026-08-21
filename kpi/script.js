@@ -12445,6 +12445,13 @@ function rfDashData(all) {
     urg: [0, 0, 0, 0, 0], urgRows: [[], [], [], [], []],
     byDept: {}, byPlace: {}, byMonth: {},
     deptRows: {}, placeRows: {},
+    /* ⭐ Маягтад бөглөгддөг ч чартад ороогүй байсан талбарууд */
+    gate: { hab: 0, ita: 0 }, gateRows: { hab: [], ita: [] },
+    byWho: {}, whoRows: {},          /* хэн мэдээлсэн */
+    byDoer: {}, doerRows: {},        /* хэн хүлээж авсан */
+    onTime: [], late: [], waiting: [],
+    hasPhoto: [], noPhoto: [],
+    claimHrs: [], doneHrs: [],
     stage: { rep: [], ver: [], fix: [], done: [] },
     slowest: null, avgVerifyH: null
   };
@@ -12487,6 +12494,39 @@ function rfDashData(all) {
     if (d.byMonth[mk][r.type] != null) d.byMonth[mk][r.type]++;
     push(d.kindMonth, kk + '|' + mk, r);
 
+    /* ── Хариуцах алба (маягтын сүүлийн алхам) ── */
+    var gg = r.wkGate === 'ita' ? 'ita' : 'hab';
+    d.gate[gg]++; d.gateRows[gg].push(r);
+
+    /* ── Хэн мэдээлсэн ── */
+    var who = String(r.reporterFull || r.reporterName || '').trim() || 'Тодорхойгүй';
+    d.byWho[who] = (d.byWho[who] || 0) + 1;
+    push(d.whoRows, who, r);
+
+    /* ── Хэн хүлээж авсан (гүйцэтгэгч) ── */
+    if (r.wkClaimBy && r.wkClaimBy.name) {
+      var doer = String(r.wkClaimBy.name).trim();
+      d.byDoer[doer] = (d.byDoer[doer] || 0) + 1;
+      push(d.doerRows, doer, r);
+    }
+
+    /* ── Зураг хавсаргасан эсэх (маягтын 5-р алхам) ── */
+    if (r.photo && String(r.photo).length > 100) d.hasPhoto.push(r); else d.noPhoto.push(r);
+
+    /* ── Хугацаанд багтсан эсэх ── */
+    var hrs = wkUrgHours(wkUrg(r));
+    var born = new Date(r.createdAt).getTime();
+    var endAt = r.wkExecAt ? new Date(r.wkExecAt).getTime() : null;
+    if (endAt) {
+      if (endAt - born <= hrs * 3600000) d.onTime.push(r); else d.late.push(r);
+      var dh = (endAt - born) / 3600000; if (dh >= 0 && dh < 24 * 365) d.doneHrs.push(dh);
+    } else if (Date.now() - born > hrs * 3600000) d.late.push(r);
+    else d.waiting.push(r);
+    if (r.wkClaimBy && r.wkClaimBy.at) {
+      var ch = (new Date(r.wkClaimBy.at).getTime() - born) / 3600000;
+      if (ch >= 0 && ch < 24 * 365) d.claimHrs.push(ch);
+    }
+
     if (r.verifiedAt) {
       var hrs = (new Date(r.verifiedAt) - new Date(r.createdAt)) / 3600000;
       if (hrs >= 0 && hrs < 24 * 365) { vSum += hrs; vN++; }
@@ -12519,8 +12559,8 @@ var RF_MON = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9
 function rfMonLabel(k) { return RF_MON[+String(k).slice(5, 7) - 1] + ' сар'; }
 
 /* Картын хальс */
-function rfCard(title, sub, body, extra) {
-  return '<div class="card" style="padding:16px 18px;' + (extra || '') + '">' +
+function rfCard(title, sub, body, extra, cls) {
+  return '<div class="card' + (cls ? ' ' + cls : '') + '" style="padding:16px 18px;' + (extra || '') + '">' +
     '<div style="font-size:13.5px;font-weight:800;color:' + RF_INK.p + '">' + esc(title) + '</div>' +
     (sub ? '<div style="font-size:11.5px;color:' + RF_INK.m + ';margin-top:2px">' + esc(sub) + '</div>' : '') +
     '<div style="margin-top:11px">' + body + '</div></div>';
@@ -12693,7 +12733,7 @@ function rfKindHTML(d) {
 
   return rfCard('Мэдээллийн төрөл', 'Товч дээр дарж төрлөө сонгоно · багана дээр дарж тухайн сарын мэдээллийг харна',
     head + '<div style="display:flex;gap:8px;align-items:flex-end">' + cols + '</div>' + leg + sum,
-    'grid-column:span 2');
+    '', 'rf-w2');
 }
 
 /* ══ ЯАРАЛТАЙ ЗЭРЭГ 1–5 ══
@@ -12814,6 +12854,118 @@ function rfRankHTML(title, sub, map, col, rowsMap) {
   return rfCard(title, sub, body);
 }
 
+/* ── Дундаж тоолол ── */
+function rfAvg(a) { return a && a.length ? a.reduce(function (x, y) { return x + y; }, 0) / a.length : null; }
+function rfHrsTxt(h) {
+  if (h == null) return '—';
+  return h < 48 ? Math.round(h) + ' ц' : Math.round(h / 24) + ' хоног';
+}
+
+/* ══ ХАРИУЦАХ АЛБА ══ маягтын сүүлийн алхам — хаана явуулснаа сонгодог */
+function rfGateHTML(d) {
+  var tot = d.gate.hab + d.gate.ita;
+  if (!tot) return '';
+  var seg = [
+    { g: 'hab', l: WK_GATES[0].ab, full: WK_GATES[0].name, v: d.gate.hab, c: '#4F46E5', rows: d.gateRows.hab },
+    { g: 'ita', l: WK_GATES[1].ab, full: WK_GATES[1].name, v: d.gate.ita, c: '#0891B2', rows: d.gateRows.ita }
+  ];
+  var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
+    seg.filter(function (x) { return x.v; }).map(function (x) {
+      return '<div' + rfHit(rfDrill(x.full, 'Хариуцах алба', x.rows), x.l + ': ' + x.v) +
+        'style="flex:' + x.v + ';background:linear-gradient(180deg,' + x.c + 'E6,' + x.c +
+        ');border-radius:6px;cursor:pointer"></div>';
+    }).join('') + '</div>';
+  var list = seg.map(function (x) {
+    var pct = Math.round((x.v / tot) * 100);
+    return '<div' + rfHit(rfDrill(x.full, 'Хариуцах алба', x.rows), x.l + ': ' + x.v) +
+      'class="rf-hit" style="display:flex;align-items:center;gap:9px;padding:4px 5px;cursor:pointer;' +
+      'border-radius:9px;margin-left:-5px;margin-right:-5px">' +
+      '<span style="width:11px;height:11px;border-radius:3px;background:' + x.c + ';flex-shrink:0"></span>' +
+      '<span style="font-size:12.5px;color:' + RF_INK.s + '">' + esc(x.l) + '</span>' +
+      '<span style="margin-left:auto;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span>' +
+      '<span style="font-size:11.5px;color:' + RF_INK.m + ';width:34px;text-align:right;' +
+      'font-variant-numeric:tabular-nums">' + pct + '%</span></div>';
+  }).join('');
+  return rfCard('Хариуцах алба', 'Мэдээллийг хэн засах вэ — маягтын сүүлийн алхам', bar + list);
+}
+
+/* ══ ХУГАЦААНЫ БИЕЛЭЛТ ══ яаралтай зэргээс тооцсон хугацаанд багтсан эсэх */
+function rfSlaHTML(d) {
+  var tot = d.onTime.length + d.late.length + d.waiting.length;
+  if (!tot) return '';
+  var seg = [
+    { l: 'Хугацаандаа', v: d.onTime.length, c: '#0ca30c', i: '✔', rows: d.onTime,
+      s: 'Тогтоосон хугацаанд гүйцэтгэсэн' },
+    { l: 'Хугацаа хэтэрсэн', v: d.late.length, c: '#C81E3A', i: '⏰', rows: d.late,
+      s: 'Хугацаанаас хожимдсон эсвэл одоо ч хэтэрсэн' },
+    { l: 'Хугацаа дуусаагүй', v: d.waiting.length, c: '#94A3B8', i: '⏳', rows: d.waiting,
+      s: 'Хугацаа нь байсаар байна' }
+  ];
+  var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
+    seg.filter(function (x) { return x.v; }).map(function (x) {
+      return '<div' + rfHit(rfDrill(x.l, x.s, x.rows), x.l + ': ' + x.v) +
+        'style="flex:' + x.v + ';background:linear-gradient(180deg,' + x.c + 'E6,' + x.c +
+        ');border-radius:6px;cursor:pointer"></div>';
+    }).join('') + '</div>';
+  var list = seg.map(function (x) {
+    var pct = Math.round((x.v / tot) * 100);
+    return '<div' + rfHit(rfDrill(x.l, x.s, x.rows), x.l + ': ' + x.v) +
+      'class="rf-hit" style="display:flex;align-items:center;gap:9px;padding:4px 5px;cursor:pointer;' +
+      'border-radius:9px;margin-left:-5px;margin-right:-5px">' +
+      '<span style="width:11px;height:11px;border-radius:3px;background:' + x.c + ';flex-shrink:0"></span>' +
+      '<span style="font-size:12.5px;color:' + RF_INK.s + '">' + x.i + ' ' + esc(x.l) + '</span>' +
+      '<span style="margin-left:auto;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span>' +
+      '<span style="font-size:11.5px;color:' + RF_INK.m + ';width:34px;text-align:right;' +
+      'font-variant-numeric:tabular-nums">' + pct + '%</span></div>';
+  }).join('');
+  /* Хурдны хоёр тоо — тоо биш, хэмнэлийг харуулна */
+  var speed = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;padding-top:10px;' +
+    'border-top:1px solid #F1F5F9">' +
+    '<span style="flex:1;min-width:118px"><span style="display:block;font-size:11px;color:' + RF_INK.m +
+    '">Хүлээж авах хүртэл</span><span style="font-size:16px;font-weight:800;color:' + RF_INK.p + '">' +
+    rfHrsTxt(rfAvg(d.claimHrs)) + '</span></span>' +
+    '<span style="flex:1;min-width:118px"><span style="display:block;font-size:11px;color:' + RF_INK.m +
+    '">Гүйцэтгэх хүртэл</span><span style="font-size:16px;font-weight:800;color:' + RF_INK.p + '">' +
+    rfHrsTxt(rfAvg(d.doneHrs)) + '</span></span></div>';
+  return rfCard('Хугацааны биелэлт', 'Яаралтай зэргээс тооцсон хугацаанд багтсан эсэх', bar + list + speed);
+}
+
+/* ══ МЭДЭЭЛЛИЙН БҮРДЭЛ ══ маягт хэр бүрэн бөглөгдөж байна */
+function rfQualityHTML(d) {
+  if (!d.n) return '';
+  var withLoc = d.rows.filter(function (r) { return !!(r.locGroup || r.location); });
+  var withDesc = d.rows.filter(function (r) { return String(r.desc || '').trim().length >= 10; });
+  var rows = [
+    { l: 'Зураг хавсаргасан', ok: d.hasPhoto, bad: d.noPhoto,
+      s: 'Зурагтай мэдээлэл нь шийдвэрлэхэд хамгийн хурдан' },
+    { l: 'Байршил заасан', ok: withLoc,
+      bad: d.rows.filter(function (r) { return !(r.locGroup || r.location); }), s: 'Хаана болсныг заасан эсэх' },
+    { l: 'Тайлбар бичсэн', ok: withDesc,
+      bad: d.rows.filter(function (r) { return String(r.desc || '').trim().length < 10; }),
+      s: '10-аас дээш тэмдэгт' }
+  ];
+  var body = rows.map(function (x) {
+    var pct = Math.round((x.ok.length / d.n) * 100);
+    var col = pct >= 80 ? '#0ca30c' : pct >= 50 ? '#E9A100' : '#C81E3A';
+    return '<div style="margin-bottom:10px">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">' +
+      '<span' + rfHit(rfDrill(x.l, x.s, x.ok), x.l + ': ' + x.ok.length) +
+      'class="rf-hit" style="font-size:12.5px;font-weight:700;color:' + RF_INK.p + ';cursor:pointer;' +
+      'border-radius:7px;padding:1px 4px;margin-left:-4px">' + esc(x.l) + '</span>' +
+      '<span style="font-size:12.5px;font-weight:800;color:' + col + ';font-variant-numeric:tabular-nums">' +
+      pct + '%</span>' +
+      (x.bad.length ? '<span' + rfHit(rfDrill(x.l + ' — дутуу', x.s, x.bad), 'Дутуу: ' + x.bad.length) +
+        'class="rf-hit" style="margin-left:auto;font-size:11px;color:' + RF_INK.m + ';cursor:pointer;' +
+        'border-radius:7px;padding:1px 5px">' + x.bad.length + ' дутуу</span>' : '') + '</div>' +
+      '<div style="height:15px;background:#F1F5F9;border-radius:8px;overflow:hidden">' +
+      '<div style="width:' + Math.max(pct ? 3 : 0, pct) + '%;height:100%;background:linear-gradient(90deg,' +
+      col + 'CC,' + col + ');border-radius:8px"></div></div></div>';
+  }).join('');
+  return rfCard('Мэдээллийн бүрдэл', 'Маягт хэр бүрэн бөглөгдөж байна · дарж дутуугаа харна', body);
+}
+
 /* ── ЭРСДЭЛИЙН ЗЭРЭГ — хэсэг-бүхэлд, 2px гадаргуун завсар, ШУУД ШОШГО ЗААВАЛ ──
    ⚠ Палитр шалгагч: шар↔ногооны CVD ΔE 6.0 (6–8 зурваст) ба шар 2.2:1
    контрасттай тул шошго нь заавал — өнгө дангаараа утга дамжуулахгүй. */
@@ -12932,19 +13084,25 @@ function rfDashHTML(all) {
 
   RF_DRILL = {}; RF_DRILL_N = 0;      /* дүрслэх бүрд шинээр бүртгэнэ */
   H += rfHeroHTML(d) + '<div style="height:12px"></div>';
-  H += '<div class="dash-2col" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">' +
-    /* ⚠ «Мэдээллийн төрөл» нь хоёр багана эзэлж, өндөр нь их. Хажуугийн
-       нүдэнд ганц намхан карт тавивал доогуур нь ХООСОН зай үлддэг байв.
-       Тиймээс тэр нүдэнд ХОЁР картыг босоо байрлуулж зайг дүүргэнэ. */
+  /* ⚠ Багана нь ШАТЛАН нэмэгддэг (.rf-grid) — өргөн дэлгэц дээр 6 нарийн
+     багана болж карт шахагдахаа больсон. Хамгийн ихдээ 4 багана. */
+  H += '<div class="rf-grid">' +
     rfKindHTML(d) +
-    '<div style="display:flex;flex-direction:column;gap:12px;min-width:0">' +
-      rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
-    rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй · дарж жагсаалтыг харна', d.byDept, RF_C.a, d.deptRows) +
+    '<div class="rf-col">' + rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
+    rfSlaHTML(d) +
+    rfGateHTML(d) +
     rfRiskHTML(d) +
+    rfQualityHTML(d) +
+    rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй · дарж жагсаалтыг харна', d.byDept, RF_C.a, d.deptRows) +
     rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна · дарж харна', d.byPlace, RF_C.a, d.placeRows) +
+    rfRankHTML('Идэвхтэй мэдээлэгчид', 'Хэн хамгийн их мэдээлж байна · дарж харна',
+      d.byWho, RF_C.a, d.whoRows) +
+    /* ⚠ Хоёулаа НЭГ хэмжигдэхүүн (тоо) тул НЭГ өнгө. Өөр өнгө өгвөл
+       «Ажлын захиалга»-ын хөх өнгөтэй андуурагдаж утга гуйвуулна. */
+    rfRankHTML('Гүйцэтгэгчид', 'Хэн хамгийн олон ажил хүлээж авсан бэ', d.byDoer, RF_C.a, d.doerRows) +
     rfAttentionHTML(d) +
     '</div>';
-  return H;
+  return '<div class="rf-wrap">' + H + '</div>';
 }
 
 /* ── АНХААРАЛ ШААРДСАН — тоо биш, ҮЙЛДЭЛ ── */
@@ -12980,7 +13138,7 @@ function rfAttentionHTML(d) {
         '<span style="display:block;font-size:11.5px;color:' + RF_INK.m + '">' + esc(x.s) + '</span></span>' +
         (hit ? '<i class="ti ti-chevron-right" style="color:' + RF_INK.m + ';flex-shrink:0"></i>' : '') +
         '</div>';
-    }).join(''), 'grid-column:1/-1');
+    }).join(''), '', 'rf-full');
 }
 
 /* ── Хулганы тайлбарын давхарга (нэг л удаа) ── */
