@@ -12952,7 +12952,10 @@ function rfAttentionHTML(d) {
     s: String(d.slowest.r.location || '') + ' — ' + String(d.slowest.r.desc || '').slice(0, 60),
     rows: [d.slowest.r] });
   if (!items.length) items.push({ i: '✅', c: '#0ca30c', t: 'Гацсан зүйл алга', s: 'Бүх мэдээлэл хөдөлж байна' });
-  return rfCard('Анхаарал шаардсан', 'Юуг эхлээд барих вэ',
+  /* ⚠ Энэ карт мөрийн сүүлд ганцаараа үлдэж, баруун талд ХООСОН нүд
+     үлддэг байв. Хоёр багана эзэлж нөхнө (нарийн дэлгэц дээр өөрөө нэг
+     багана болно — grid auto-fit). */
+  return rfCard('Анхаарал шаардсан', 'Юуг эхлээд барих вэ — мөр дээр дарж жагсаалтыг харна',
     items.map(function (x) {
       var hit = (x.rows && x.rows.length)
         ? rfHit(rfDrill(x.t, 'Анхаарал шаардсан', x.rows), 'Дэлгэрэнгүй') : '';
@@ -12965,7 +12968,7 @@ function rfAttentionHTML(d) {
         '<span style="display:block;font-size:11.5px;color:' + RF_INK.m + '">' + esc(x.s) + '</span></span>' +
         (hit ? '<i class="ti ti-chevron-right" style="color:' + RF_INK.m + ';flex-shrink:0"></i>' : '') +
         '</div>';
-    }).join(''));
+    }).join(''), 'grid-column:span 2');
 }
 
 /* ── Хулганы тайлбарын давхарга (нэг л удаа) ── */
