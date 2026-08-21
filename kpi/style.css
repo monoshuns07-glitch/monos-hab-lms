@@ -2519,3 +2519,11 @@ details > summary .ti-chevron-right { transition: transform .15s; }
 @media (max-width: 860px) {
   .risk-mx-wrap { grid-template-columns: 1fr; gap: 14px; }
 }
+
+/* ── Дашбоард дээр ДАРАГДАХ хэсгүүд ──
+   Хэрэглэгч юу дарж болохыг мэдэх ёстой: хулгана ойртоход бага зэрэг
+   өнгөрч, гараар (Tab) шилжихэд тод хүрээ гарна. */
+.rf-hit { transition: background .14s, transform .14s; }
+.rf-hit:hover { background: #F1F5F9; }
+.rf-hit:active { transform: scale(.985); }
+.rf-hit:focus-visible { outline: 2px solid #4F46E5; outline-offset: 2px; }
