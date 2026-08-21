@@ -2535,12 +2535,17 @@ details > summary .ti-chevron-right { transition: transform .15s; }
    (эсвэл 50% масштаб) дээр 6 нарийн багана үүсч, карт бүр шахагдаж,
    баруун доод тал нь бүхэлдээ хоосон үлддэг байв. Одоо баганын тоо
    ШАТЛАН нэмэгдэж, дээд тал нь 4-өөр хязгаарлагдана. */
-.rf-wrap { max-width: 1760px; margin: 0 auto; }
+/* ⚠ Хэрэглэгч 50% масштабаар ажилладаг тул CSS-ийн харагдах өргөн нь
+   3000px-ээс давдаг. Тиймээс дээд хязгаарыг ӨРГӨН авч (2400px), 5 хүртэл
+   багана зөвшөөрнө — эс бөгөөс дашбоард дэлгэцийн тал хувийг эзэлж,
+   хажуу тал нь хоосон үлдэнэ. Багана нь 400px-ээс нарийсахгүй. */
+.rf-wrap { max-width: 2400px; margin: 0 auto; }
 .rf-grid { display: grid; gap: 12px; align-content: start;
            grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 780px)  { .rf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1240px) { .rf-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (min-width: 1720px) { .rf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 2160px) { .rf-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .rf-grid > .rf-w2 { grid-column: span 2; }
 .rf-grid > .rf-full { grid-column: 1 / -1; }
 /* Нарийн дэлгэц дээр өргөн карт ч нэг багана болно */
