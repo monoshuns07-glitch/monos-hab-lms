@@ -18077,6 +18077,242 @@ function renderCharts() {
 
 /* ============ Бүгдийг дахин зурах ============ */
 /* ============ Видео сургалт (MiSkill) — тусдаа цэс ============ */
+/* ══════════════════════════════════════════════════════════════════════
+   MiSKILL-ИЙН ЖИНХЭНЭ EXCEL ТАЙЛАНГ ШУУД ОРУУЛАХ
+   ----------------------------------------------------------------------
+   MiSkill платформоос «Хөтөлбөрийн тайлан» татахад гардаг файлыг ХЭВЭЭР
+   нь оруулна — гараар CSV болгож эвлүүлэх шаардлагагүй.
+     · «Ерөнхий тайлан»        — хөтөлбөрийн нэр, контентын тоо
+     · «N. Сургалтын тайлан»   — ажилтан бүрийн видео үзэлтийн хувь
+     · «N. Шалгалтын тайлан»   — ажилтан бүрийн тэнцсэн эсэх
+   Ажилтныг МЭЙЛЭЭР тааруулна (мэйл байхгүй бол «Овог Нэр»-ээр).
+   ══════════════════════════════════════════════════════════════════════ */
+var MS_TRAIN_RE = /сургалтын\s*тайлан/i;
+var MS_EXAM_RE = /шалгалтын\s*тайлан/i;
+
+/* Excel-ийн серийн огноог ISO болгоно ('-' бол хоосон) */
+function msDate(v) {
+  if (v == null || v === '' || v === '-') return '';
+  var n = Number(v);
+  if (isFinite(n) && n > 20000 && n < 80000) {
+    var ms = Math.round((n - 25569) * 86400000);
+    try { return new Date(ms).toISOString().slice(0, 10); } catch (e) { return ''; }
+  }
+  return String(v).slice(0, 10);
+}
+function msNumPct(v) {
+  var m = String(v == null ? '' : v).match(/-?[\d.]+/);
+  return m ? Math.round(parseFloat(m[0])) : 0;
+}
+/* Хүснэгтийн мөрийг {багана: утга} болгоно (толгойн НЭРЭЭР) */
+function msRowMap(head, row) {
+  var o = {};
+  for (var i = 0; i < head.length; i++) o[String(head[i] || '').trim()] = row[i];
+  return o;
+}
+
+function msImportXlsx() {
+  var node = elc('div', 'modal-info');
+  node.innerHTML =
+    '<div style="font-size:13px;line-height:1.7;color:#475569;margin-bottom:12px">' +
+    'MiSkill-ээс татсан <b>хөтөлбөрийн тайлан (.xlsx)</b>-г ХЭВЭЭР нь оруулна. ' +
+    'Гараар өөрчлөх, CSV болгох шаардлагагүй.' +
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:9px;padding:9px 11px;' +
+    'margin-top:9px;font-size:12px">Файлд байх ёстой хуудсууд:<br>' +
+    '· <b>N. Сургалтын тайлан</b> — «Видео хичээлийн үзэлтийн хувь»<br>' +
+    '· <b>N. Шалгалтын тайлан</b> — «Тэнцсэн эсэх»</div></div>' +
+    '<label class="rf-photo" id="msXLbl" style="position:relative;margin-bottom:8px">' +
+    '<input type="file" accept=".xlsx,.xls" id="msXlsx" ' +
+    'style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;pointer-events:none">' +
+    '<i class="ti ti-file-spreadsheet"></i><span>Excel файл сонгох</span></label>' +
+    '<div id="msXSt" style="font-size:12.5px;color:#64748B;line-height:1.7"></div>';
+
+  var st = node.querySelector('#msXSt');
+  var say = function (h) { st.innerHTML = h; };
+  var lbl = node.querySelector('#msXLbl');
+  lbl.addEventListener('click', function (ev) {
+    var i = node.querySelector('#msXlsx');
+    if (i && ev.target !== i) { ev.preventDefault(); try { i.click(); } catch (e) {} }
+  });
+
+  node.querySelector('#msXlsx').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    if (!f) return;
+    say('⏳ Excel сан ачаалж байна…');
+    riskLoadXlsx(function (ok) {
+      if (!ok) { say('<span style="color:#DC2626">Excel сан ачаалагдсангүй — интернэтээ шалгана уу.</span>'); return; }
+      var rd = new FileReader();
+      rd.onload = function (ev) {
+        try {
+          say('⏳ Файл уншиж байна… (' + Math.round(f.size / 1024) + ' КБ)');
+          var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+          var res = msParseWorkbook(wb, say);
+          if (!res) return;
+          msApplyImport(res, say);
+        } catch (e) {
+          console.error('[miskill]', e);
+          say('<span style="color:#DC2626">Уншиж чадсангүй: ' + esc(e.message || e) + '</span>');
+        }
+      };
+      rd.onerror = function () { say('<span style="color:#DC2626">Файлыг нээж чадсангүй</span>'); };
+      rd.readAsArrayBuffer(f);
+    });
+  });
+  buildModal('MiSkill тайлан оруулах', node, { width: 'min(520px, 96vw)' });
+}
+
+/* Ажлын дэвтрийг задалж, ажилтан тус бүрийн дүнг гаргана */
+function msParseWorkbook(wb, say) {
+  var trainSheets = [], examSheets = [];
+  (wb.SheetNames || []).forEach(function (n) {
+    if (MS_TRAIN_RE.test(n)) trainSheets.push(n);
+    else if (MS_EXAM_RE.test(n)) examSheets.push(n);
+  });
+  if (!trainSheets.length && !examSheets.length) {
+    say('<span style="color:#DC2626">«Сургалтын тайлан» / «Шалгалтын тайлан» хуудас олдсонгүй.<br>' +
+      'Байгаа хуудсууд: ' + esc((wb.SheetNames || []).slice(0, 8).join(', ')) + '</span>');
+    return null;
+  }
+
+  /* Хөтөлбөрийн нэр — «Ерөнхий тайлан»-аас */
+  var prog = '';
+  try {
+    var g = wb.Sheets[(wb.SheetNames || []).filter(function (n) { return /ерөнхий/i.test(n); })[0]];
+    if (g) {
+      var ga = XLSX.utils.sheet_to_json(g, { header: 1, defval: '' });
+      ga.forEach(function (r) {
+        if (String(r[0] || '').indexOf('Хөтөлбөрийн нэр') === 0) prog = String(r[1] || '').trim();
+      });
+    }
+  } catch (e) {}
+
+  var people = {};      /* мэйл → бичлэг */
+  var byName = {};      /* «Овог Нэр» → мэйл (нөөц тааруулалт) */
+  var take = function (row) {
+    var mail = String(row['Ажилтны мэйл'] || '').trim().toLowerCase();
+    var ln = String(row['Ажилтны овог'] || '').trim();
+    var fn = String(row['Ажилтны нэр'] || '').trim();
+    var key = mail || (ln + ' ' + fn).trim().toLowerCase();
+    if (!key) return null;
+    if (!people[key]) {
+      people[key] = {
+        empEmail: mail, lastName: ln, firstName: fn,
+        empName: (ln + ' ' + fn).trim(),
+        pos: String(row['Албан тушаал'] || '').trim(),
+        dept: String(row['Түвшин 2'] || row['Түвшин 1'] || '').trim(),
+        phone: String(row['Утасны дугаар'] || '').trim(),
+        trainReq: 0, trainDone: 0, examReq: 0, examDone: 0,
+        detail: { train: [], exam: [] }
+      };
+      byName[(ln + ' ' + fn).trim().toLowerCase()] = key;
+    }
+    return people[key];
+  };
+
+  var read = function (name) {
+    var ws = wb.Sheets[name];
+    if (!ws) return [];
+    var aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!aoa.length) return [];
+    var head = aoa[0];
+    return aoa.slice(1).map(function (r) { return msRowMap(head, r); })
+      .filter(function (o) { return String(o['Ажилтны мэйл'] || o['Ажилтны нэр'] || '').trim(); });
+  };
+
+  say('⏳ Хуудас задалж байна… (сургалт ' + trainSheets.length + ', шалгалт ' + examSheets.length + ')');
+
+  trainSheets.forEach(function (n) {
+    read(n).forEach(function (row) {
+      var p = take(row); if (!p) return;
+      var pct = msNumPct(row['Видео хичээлийн үзэлтийн хувь']);
+      var done = pct >= 100;
+      p.trainReq++; if (done) p.trainDone++;
+      p.detail.train.push({ n: n, pct: pct, done: done,
+        at: msDate(row['Сүүлд үзсэн огноо']),
+        spent: String(row['Нийт зарцуулсан хугацаа'] || '') });
+    });
+  });
+  examSheets.forEach(function (n) {
+    read(n).forEach(function (row) {
+      var p = take(row); if (!p) return;
+      var passed = /тэнцсэн/i.test(String(row['Тэнцсэн эсэх'] || '')) &&
+        !/тэнцээгүй/i.test(String(row['Тэнцсэн эсэх'] || ''));
+      p.examReq++; if (passed) p.examDone++;
+      p.detail.exam.push({ n: n, passed: passed,
+        best: msNumPct(row['Хамгийн өндөр дүн']),
+        need: msNumPct(row['Босго оноо']),
+        tries: Number(row['Шалгалт өгсөн тоо'] || 0),
+        at: msDate(row['Сүүлд өгсөн огноо']) });
+    });
+  });
+
+  return { prog: prog, people: people, byName: byName,
+    nTrain: trainSheets.length, nExam: examSheets.length };
+}
+
+/* Гарсан дүнг DB-д суулгаж, ажилтантай тааруулна */
+function msApplyImport(res, say) {
+  var keys = Object.keys(res.people);
+  if (!keys.length) { say('<span style="color:#DC2626">Ажилтны мөр олдсонгүй</span>'); return; }
+
+  /* Бүртгэлтэй ажилтантай тааруулна — мэйлээр, дараа нь нэрээр */
+  var emps = DB.employees || [];
+  var byMail = {}, byNm = {};
+  emps.forEach(function (e) {
+    if (e.email) byMail[String(e.email).trim().toLowerCase()] = e;
+    var full = empFullName(e); if (full) byNm[full.trim().toLowerCase()] = e;
+    if (e.name) byNm[String(e.name).trim().toLowerCase()] = e;
+  });
+
+  var rows = [], matched = 0, unmatched = [];
+  keys.forEach(function (k) {
+    var p = res.people[k];
+    var e = (p.empEmail && byMail[p.empEmail]) ||
+      byNm[String(p.empName).trim().toLowerCase()] || null;
+    if (e) matched++; else unmatched.push(p.empName || p.empEmail);
+    rows.push({
+      empId: e ? e.id : '', empUid: e ? (e.uid || '') : '',
+      empName: p.empName, empEmail: p.empEmail,
+      dept: (e && e.dept) || p.dept, pos: (e && (e.pos || e.role)) || p.pos,
+      trainReq: p.trainReq, trainDone: p.trainDone,
+      examReq: p.examReq, examDone: p.examDone,
+      detail: p.detail,
+      program: res.prog,
+      updatedAt: todayISO()
+    });
+  });
+
+  /* Одоо байгаа бичлэгийг СОЛИНО (мэйл/нэрээр), бусдыг хэвээр */
+  var prev = DB.miskillStats || [];
+  var keep = prev.filter(function (x) {
+    var m = String(x.empEmail || '').toLowerCase();
+    var n = String(x.empName || '').toLowerCase();
+    return !rows.some(function (r) {
+      return (m && m === String(r.empEmail || '').toLowerCase()) ||
+        (n && n === String(r.empName || '').toLowerCase());
+    });
+  });
+  DB.miskillStats = keep.concat(rows);
+  DB.miskillProgram = { name: res.prog, train: res.nTrain, exam: res.nExam, at: todayISO() };
+  saveDB();
+  dbCacheSave('miskill');
+  try { renderVideoTracking(); } catch (e) {}
+
+  var full = rows.filter(function (r) { return r.trainDone >= r.trainReq && r.examDone >= r.examReq; }).length;
+  var none = rows.filter(function (r) { return !r.trainDone && !r.examDone; }).length;
+  say('<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:11px 13px;color:#14532D">' +
+    '<b>✓ Импорт амжилттай</b><br>' +
+    'Хөтөлбөр: <b>' + esc(res.prog || '—') + '</b><br>' +
+    'Сургалт <b>' + res.nTrain + '</b> · Шалгалт <b>' + res.nExam + '</b><br>' +
+    'Ажилтан: <b>' + rows.length + '</b> (бүртгэлтэй нь ' + matched + ')<br>' +
+    'Бүрэн дуусгасан: <b>' + full + '</b> · Огт эхлээгүй: <b>' + none + '</b>' +
+    (unmatched.length ? '<div style="margin-top:7px;font-size:11.5px;color:#B45309">⚠ Бүртгэлээс олдсонгүй ' +
+      unmatched.length + ': ' + esc(unmatched.slice(0, 6).join(', ')) +
+      (unmatched.length > 6 ? '…' : '') + '</div>' : '') +
+    '</div>');
+  toast('✓ MiSkill тайлан орлоо — ' + rows.length + ' ажилтан', 'success');
+}
+
 /* ============ MiSkill дата оноо тооцоолол ============ */
 function miskillScore(r) {
   var tPct = r.trainReq > 0 ? Math.min(1, r.trainDone / r.trainReq) : (r.trainDone > 0 ? 1 : 0);
@@ -18148,13 +18384,17 @@ function renderVtAdmin(sec) {
     '<div style="padding:16px 28px 0">' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
     '<button class="btn btn-secondary btn-sm" id="vtTpl"><i class="ti ti-download"></i> Загвар татах</button>' +
-    '<button class="btn btn-primary" id="vtImport"><i class="ti ti-upload"></i> CSV байршуулах</button>' +
+    '<button class="btn btn-secondary btn-sm" id="vtCsv"><i class="ti ti-upload"></i> CSV</button>' +
+    /* ⭐ MiSkill-ээс татсан тайланг ХЭВЭЭР нь оруулна — гараар CSV болгох
+       шаардлагагүй. Хамгийн түгээмэл хэрэглээ тул ҮНДСЭН товч. */
+    '<button class="btn btn-primary" id="vtXlsx"><i class="ti ti-file-spreadsheet"></i> ' +
+    'MiSkill тайлан оруулах</button>' +
     '</div>' +
     (weekLabel ? '<div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1D4ED8;margin-bottom:8px"><i class="ti ti-calendar-week"></i> Тайлангийн долоо хоног: <strong>' + esc(rows[0].weekStart) + '</strong></div>' : '') +
     '</div>';
 
   if (!rows.length) {
-    html += '<div style="padding:24px">' + emptyBox('MiSkill датагүй байна. CSV байршуулна уу.') + '</div>';
+    html += '<div style="padding:24px">' + emptyBox('MiSkill дата алга. Дээрх «MiSkill тайлан оруулах» товчоор татсан Excel-ээ шууд оруулна уу.') + '</div>';
   } else {
     var totalEmps = rows.length;
     var fine = rows.filter(function (r) { return miskillScore(r) >= 70; }).length;
@@ -18209,7 +18449,8 @@ function renderVtAdmin(sec) {
   if (!sec._vtWired) {
     sec._vtWired = true;
     sec.addEventListener('click', function (ev) {
-      if (ev.target.closest('#vtImport')) importMiskillCSV();
+      if (ev.target.closest('#vtXlsx')) msImportXlsx();      /* ⭐ жинхэнэ MiSkill тайлан */
+      if (ev.target.closest('#vtCsv') || ev.target.closest('#vtImport')) importMiskillCSV();
       if (ev.target.closest('#vtTpl')) downloadMiskillTemplate();
       // Sub-tab switching
       if (ev.target.closest('#vtSubMiskill')) {
