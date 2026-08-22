@@ -862,7 +862,12 @@ async function loadDB() {
       if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
       /* MiSkill дүн — R2 нь эх сурвалж */
       if (_R2_MS && _R2_MS.rows.length) {
-        DB.miskillStats = _R2_MS.rows;
+        /* Дэлгэрэнгүйг санах ойд авч явахгүй — кэшэнд багтахгүй болно */
+        DB.miskillStats = _R2_MS.rows.map(function (r) {
+          if (!r || !r.detail) return r;
+          var o = {}; Object.keys(r).forEach(function (k) { if (k !== 'detail') o[k] = r[k]; });
+          return o;
+        });
         if (_R2_MS.program) DB.miskillProgram = _R2_MS.program;
       }
       /* Ажилтны жагсаалт дутуу бол R2-гийнхаар нөхнө — Firestore хүрэхгүй
@@ -18322,6 +18327,17 @@ function msApplyImport(res, say) {
     });
   });
 
+  /* ⚠⚠ ХЭМЖЭЭ: 298 ажилтан × (12 сургалт + 8 шалгалтын дэлгэрэнгүй) нь
+     1–2 МБ болж, хөтчийн localStorage-ийн багтаамжид багтахгүй → кэш
+     ХАДГАЛАГДАХГҮЙ болж, дараагийн удаа дата алга болно.
+     Тиймээс ДЭЛГЭРЭНГҮЙГ зөвхөн R2 файлд үлдээж, аппын дотор ХӨНГӨН
+     хувилбарыг хадгална (тоо, хувь). Дэлгэрэнгүй хэрэгтэй бол R2-оос. */
+  var slim = rows.map(function (r) {
+    var o = {};
+    Object.keys(r).forEach(function (k) { if (k !== 'detail') o[k] = r[k]; });
+    return o;
+  });
+
   /* Одоо байгаа бичлэгийг СОЛИНО (мэйл/нэрээр), бусдыг хэвээр */
   var prev = DB.miskillStats || [];
   var keep = prev.filter(function (x) {
@@ -18332,14 +18348,15 @@ function msApplyImport(res, say) {
         (n && n === String(r.empName || '').toLowerCase());
     });
   });
-  DB.miskillStats = keep.concat(rows);
+  DB.miskillStats = keep.concat(slim);
   DB.miskillProgram = { name: res.prog, train: res.nTrain, exam: res.nExam, at: todayISO() };
   saveDB();
-  dbCacheSave('miskill');
+  if (!dbCacheSave('miskill')) console.warn('[miskill] кэшэнд багтсангүй');
   try { renderVideoTracking(); } catch (e) {}
-  /* ⭐ БҮХ хэрэглэгч харахын тулд R2 руу нийтэлнэ (Firestore-т биш) */
+  /* ⭐ БҮХ хэрэглэгч харахын тулд R2 руу нийтэлнэ (Firestore-т биш).
+     R2-д ДЭЛГЭРЭНГҮЙТЭЙГЭЭ бүтнээр нь — тэнд хэмжээний хязгаар байхгүй. */
   say('⏳ Бүх ажилтанд түгээж байна…');
-  msR2Publish(DB.miskillStats, DB.miskillProgram).then(function () {
+  msR2Publish(keep.concat(rows), DB.miskillProgram).then(function () {
     console.log('[miskill] R2-д нийтлэв: ' + DB.miskillStats.length);
   }).catch(function (e) {
     console.error('[miskill] R2', e);
