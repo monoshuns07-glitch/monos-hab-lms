@@ -12113,24 +12113,96 @@ function renderIncidents() {
 /* ============ Аюул / Near-miss мэдээлэл → баталгаажуулалт → бонус ============ */
 var REPORT_RISK = [['low', 'Бага', '#16A34A'], ['mid', 'Дунд', '#D97706'], ['high', 'Өндөр', '#DC2626']];
 
+/* Файл зураг мөн үү — MIME БА өргөтгөлөөр. ⚠ Зарим сонгогч `type`-ыг
+   ХООСОН өгдөг тул хоосныг нь ГОЛЖ БОЛОХГҮЙ. */
+var IMG_EXT = /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif|tiff?)$/i;
+function isImageFile(f) {
+  if (!f) return false;
+  var t = String(f.type || '');
+  if (/^image\//i.test(t)) return true;
+  if (!t) return IMG_EXT.test(String(f.name || '')) || true;  /* MIME алга — зөвшөөрнө */
+  return IMG_EXT.test(String(f.name || ''));
+}
+function isHeic(f) {
+  if (!f) return false;
+  return /hei[cf]/i.test(String(f.type || '')) || /\.hei[cf]$/i.test(String(f.name || ''));
+}
+
+/* Зургийг задалж, багасгаж, JPEG data URL болгоно.
+   ⚠ Гурван арга ДАРААЛАН оролдоно — нэг нь чадахгүй бол дараагийнх. */
 function downscaleImage(file, maxDim, quality, cb) {
-  try {
-    var reader = new FileReader();
-    reader.onload = function (ev) {
-      var img = new Image();
-      img.onload = function () {
-        var sc = Math.min(1, maxDim / Math.max(img.width, img.height));
-        var c = document.createElement('canvas');
-        c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        try { cb(c.toDataURL('image/jpeg', quality)); } catch (e) { cb(''); }
-      };
-      img.onerror = function () { cb(''); };
-      img.src = ev.target.result;
+  var done = false;
+  var fin = function (v) { if (!done) { done = true; try { cb(v); } catch (e) {} } };
+  if (!file) { fin(''); return; }
+
+  var paint = function (src, w, h, release) {
+    try {
+      var dim = maxDim || 1000;
+      var sc = Math.min(1, dim / Math.max(w, h));
+      var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+      var out = '';
+      /* ⚠ Утасны канвасын хязгаарт мөргөвөл хэмжээг багасгаж дахин оролдоно */
+      for (var attempt = 0; attempt < 4 && !out; attempt++) {
+        try {
+          var c = document.createElement('canvas');
+          c.width = cw; c.height = ch;
+          var ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);   /* тунгалагийг цагаанаар */
+          ctx.drawImage(src, 0, 0, cw, ch);
+          out = c.toDataURL('image/jpeg', quality || 0.72);
+          if (out && out.length < 40) out = '';
+        } catch (e) { out = ''; }
+        if (!out) { cw = Math.max(1, Math.round(cw * 0.7)); ch = Math.max(1, Math.round(ch * 0.7)); }
+      }
+      if (release) { try { release(); } catch (e) {} }
+      fin(out || '');
+    } catch (e) { fin(''); }
+  };
+
+  /* ① createImageBitmap — HEIC зэрэг илүү олон форматыг задална, EXIF
+        эргэлтийг зөв тавина, гол урсгалыг түгжихгүй. */
+  var tryBitmap = function (next) {
+    if (typeof createImageBitmap !== 'function') { next(); return; }
+    var p;
+    try { p = createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { try { p = createImageBitmap(file); } catch (e2) { next(); return; } }
+    Promise.resolve(p).then(function (bm) {
+      if (!bm || !bm.width) { next(); return; }
+      paint(bm, bm.width, bm.height, function () { try { bm.close(); } catch (e) {} });
+    }).catch(function () { next(); });
+  };
+
+  /* ② objectURL + <img> — data URL-ээс хамаагүй бага санах ой иднэ */
+  var tryObjectUrl = function (next) {
+    var url = '';
+    try { url = URL.createObjectURL(file); } catch (e) { next(); return; }
+    var img = new Image();
+    img.onload = function () {
+      paint(img, img.naturalWidth || img.width, img.naturalHeight || img.height,
+        function () { try { URL.revokeObjectURL(url); } catch (e) {} });
     };
-    reader.onerror = function () { cb(''); };
-    reader.readAsDataURL(file);
-  } catch (e) { cb(''); }
+    img.onerror = function () { try { URL.revokeObjectURL(url); } catch (e) {} next(); };
+    img.src = url;
+  };
+
+  /* ③ FileReader — хамгийн сүүлийн арга */
+  var tryReader = function (next) {
+    try {
+      var r = new FileReader();
+      r.onload = function (ev) {
+        var img = new Image();
+        img.onload = function () { paint(img, img.naturalWidth || img.width, img.naturalHeight || img.height); };
+        img.onerror = function () { next(); };
+        img.src = ev.target.result;
+      };
+      r.onerror = function () { next(); };
+      r.readAsDataURL(file);
+    } catch (e) { next(); }
+  };
+
+  /* Аль нэг нь удаан бол хаагдаж үлдэхгүйн тулд 25 секундын хамгаалалт */
+  setTimeout(function () { fin(''); }, 25000);
+  tryBitmap(function () { tryObjectUrl(function () { tryReader(function () { fin(''); }); }); });
 }
 
 /* ⭐ «Овог Нэр» БҮТНЭЭР. Бүртгэлд овог байхгүй бол хуучин хэлбэрээр
@@ -12342,9 +12414,14 @@ function actionReportNew(presetType) {
     /* ⚠ Өмнө нь 240px / 45% болгож шахдаг байсан нь эвдэрсэн хамгаалалт,
        гоожсон хоолойг таних боломжгүй жижиг байв. 1000px / 72% нь ойролцоогоор
        120–200 КБ — Firestore-ийн 1 МБ хязгаараас хамаагүй бага. */
+    if (!isImageFile(f)) { toast('Зөвхөн зураг оруулна уу', 'warn'); this.value = ''; return; }
+    var _t = toast('Зураг боловсруулж байна…', 'info');
+    var _self = this;
     downscaleImage(f, 1000, 0.72, function (durl) {
+      try { if (_t && _t.remove) _t.remove(); } catch (e) {}
       sel.photo = durl || '';
       if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
+      else { imgFailToast(f); _self.value = ''; }
     });
   });
   /* ⭐ Гарын үсгийн самбар АВАГДСАН — хэн мэдээлснийг бүртгэлээс нь
@@ -14948,6 +15025,23 @@ function wkPickerHTML(id, label, icon, cam) {
     'style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;z-index:-1;pointer-events:none">' +
     '<i class="ti ' + icon + '"></i> <span style="font-size:12.5px;color:#475569">' + esc(label) + '</span></label>';
 }
+/* Зураг орохгүй бол ЯАГААД болохыг, ЮУ ХИЙХИЙГ хэлнэ (ерөнхий алдаа биш) */
+function imgFailToast(f) {
+  var mb = f && f.size ? (f.size / 1048576).toFixed(1) : '';
+  if (isHeic(f)) {
+    toast('Энэ бол iPhone-ы HEIC зураг — хөтөч задалж чадсангүй. ' +
+      'Тохиргоо → Камер → Формат → «Хамгийн нийцтэй» болгоод дахин авна уу. ' +
+      'Эсвэл зургаа зассаны дараа (crop) оруулбал JPEG болно.', 'error');
+    return;
+  }
+  if (f && f.size > 25 * 1048576) {
+    toast('Зураг хэт том байна (' + mb + ' МБ). Жижигрүүлж эсвэл дэлгэцийн зураг аваад оруулна уу.', 'error');
+    return;
+  }
+  toast('Зургийг уншиж чадсангүй' + (mb ? ' (' + mb + ' МБ)' : '') +
+    ' — өөр зураг эсвэл дэлгэцийн зураг оруулж үзнэ үү.', 'error');
+}
+
 /* Шошгыг оролттой нь холбоно (нэг удаа) */
 function wkWirePickers(node, onPick) {
   if (!node) return;
@@ -14962,11 +15056,13 @@ function wkWirePickers(node, onPick) {
     inp.addEventListener('change', function () {
       var f = this.files && this.files[0];
       if (!f) return;
-      if (!/^image\//i.test(f.type || '')) { toast('Зөвхөн зураг оруулна уу', 'warn'); return; }
+      /* ⚠ MIME хоосон файлыг ГОЛЖ БОЛОХГҮЙ — зарим сонгогч түүнийг өгдөггүй */
+      if (!isImageFile(f)) { toast('Зөвхөн зураг оруулна уу', 'warn'); this.value = ''; return; }
       var t = toast('Зураг боловсруулж байна…', 'info');
+      var self = this;
       downscaleImage(f, 1000, 0.72, function (durl) {
         try { if (t && t.remove) t.remove(); } catch (e) {}
-        if (!durl) { toast('Зургийг уншиж чадсангүй — өөр зураг оруулна уу', 'error'); return; }
+        if (!durl) { imgFailToast(f); self.value = ''; return; }
         onPick(durl);
       });
     });
