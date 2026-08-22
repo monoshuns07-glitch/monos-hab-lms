@@ -1312,6 +1312,8 @@ async function riskR2PutJson(key, obj) {
   blob.name = key.split('/').pop();
   var out = await r2Put(blob, key);
   riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
+  /* ⚠ Цохилтын файл өөрөө цохилт үүсгэвэл мөнхийн давталт болно */
+  if (key !== PULSE_FILE) { try { pulseBump(key); } catch (e) {} }
   return out;
 }
 
@@ -1879,8 +1881,96 @@ function saveErrorToast(e, step) {
   toast(human, 'error');
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ШУУД ШИНЭЧЛЭЛТ (pulse) — Represh хийхгүйгээр
+   ══════════════════════════════════════════════════════════════════════ */
+var PULSE_FILE = 'workflow/_pulse.json';
+var PULSE_MS = 30000;          /* цонх нээлттэй үед 30 секунд тутам */
+var PULSE_SEEN = 0;            /* сүүлд харсан дугаар */
+var PULSE_MINE = 0;            /* өөрийн бичсэн — өөрөө өөрийгөө шинэчлэхгүй */
+var _pulseBusy = false, _pulseLast = 0, _pulseWaiting = false;
+
+/* Дата өөрчлөгдсөнийг бусдад мэдэгдэнэ (хариу хүлээхгүй) */
+function pulseBump(what) {
+  var now = Date.now();
+  if (now - _pulseLast < 3000) return;      /* хэт олон бичихээс сэргийлнэ */
+  _pulseLast = now;
+  PULSE_MINE = now;
+  try {
+    riskR2PutJson(PULSE_FILE, {
+      v: now, what: String(what || ''),
+      by: (function () { try { var m = reqMe(); return (m && m.name) || ''; } catch (e) { return ''; } })()
+    }).catch(function () {});
+  } catch (e) {}
+}
+
+/* Дэлгэцийг шинэчлэхэд аюулгүй эсэх — хэрэглэгчийн ажлыг тасалж болохгүй */
+function pulseSafeNow() {
+  try {
+    if (document.hidden) return false;
+    if (document.querySelector('.modal-backdrop, .modal, #ov')) return false;
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+    if (typeof wkTick !== 'undefined' && wkTick._busy) return false;
+  } catch (e) {}
+  return true;
+}
+
+/* Датаг дахин татаж, дэлгэцийг шинэчилнэ */
+async function pulseRefresh(v) {
+  if (_pulseBusy) return;
+  if (!pulseSafeNow()) { _pulseWaiting = true; return; }   /* дараа хийнэ */
+  _pulseBusy = true; _pulseWaiting = false;
+  try {
+    await loadDB();
+    try { applyRole(); } catch (e) {}
+    try { renderAll(); } catch (e) {}
+    PULSE_SEEN = v || Date.now();
+    try { toast('🔄 Шинэ мэдээлэл ирлээ', 'info'); } catch (e) {}
+    console.log('[pulse] дэлгэц шинэчлэгдлээ');
+  } catch (e) {
+    console.error('[pulse]', e);
+  } finally {
+    _pulseBusy = false;
+  }
+}
+
+/* Цохилтыг шалгах */
+async function pulseCheck(force) {
+  if (document.hidden && !force) return;
+  var j = null;
+  try {
+    var r = await fetch(riskR2Url(PULSE_FILE) + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    j = await r.json();
+  } catch (e) { return; }
+  var v = Number((j && j.v) || 0);
+  if (!v) return;
+  if (!PULSE_SEEN) { PULSE_SEEN = v; return; }    /* эхний удаа — зөвхөн тэмдэглэнэ */
+  if (v <= PULSE_SEEN) return;
+  /* Өөрийн бичсэн цохилт бол дэлгэц аль хэдийн шинэчлэгдсэн */
+  if (Math.abs(v - PULSE_MINE) < 4000) { PULSE_SEEN = v; return; }
+  await pulseRefresh(v);
+}
+
+function pulseStart() {
+  if (pulseStart._on) return;
+  pulseStart._on = true;
+  setInterval(function () { pulseCheck(false); }, PULSE_MS);
+  /* Апп-ыг ар талаас буцаан нээхэд ШУУД шалгана — хамгийн түгээмэл тохиолдол */
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) setTimeout(function () { pulseCheck(true); }, 400);
+  });
+  /* Хойшлуулсан шинэчлэлтийг чөлөөтэй болмогц хийнэ */
+  setInterval(function () {
+    if (_pulseWaiting && pulseSafeNow()) pulseRefresh(0);
+  }, 4000);
+  console.log('[pulse] шууд шинэчлэлт асав (' + (PULSE_MS / 1000) + 'с)');
+}
+
 function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+  try { pulseBump('db'); } catch (e) {}     /* бусдын дэлгэц шууд шинэчлэгдэнэ */
   if (!fbReady) return;
   if (isAdmin()) {
     if (_saveTimer) clearTimeout(_saveTimer);
@@ -12223,7 +12313,11 @@ function reportPushToServer(r) {
   try {
     if (!fbReady || typeof fdb === 'undefined' || !fdb) { done(false, 'firebase бэлэн биш'); return; }
     colRef('reports').doc(String(r.id)).set(r)
-      .then(function () { done(true); reportNotifyHab(r); })
+      .then(function () {
+        done(true); reportNotifyHab(r);
+        /* ⭐ Холбогдох хүмүүс/админы дэлгэц Represh-гүйгээр шинэчлэгдэнэ */
+        try { pulseBump('report'); } catch (e) {}
+      })
       .catch(function (e) { done(false, e); });
   } catch (e) { done(false, e); }
 }
@@ -23850,6 +23944,7 @@ async function init() {
   try { applyRole(); } catch (err) { console.error('[init] applyRole:', err); }
   try { renderAll(); } catch (err) { console.error('[init] renderAll failed:', err); }
   try { wireEmployeesPage(); } catch (err) { console.error('[init] wireEmployeesPage:', err); }
+  try { pulseStart(); } catch (e) {}        // ⭐ шууд шинэчлэлт (Represh-гүй)
   try { injectHazardFab(); } catch (e) {}   // бүх цэсэнд "Аюул мэдээлэх"
   try { restoreLastPage(); } catch (e) {}   // сүүлд үзсэн хуудсаа сэргээнэ
   clearTimeout(_bootGuard);

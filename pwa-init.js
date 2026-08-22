@@ -101,8 +101,9 @@
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
     else go();
-    /* Апп удаан нээлттэй байвал 30 минут тутам дахин шалгана */
-    setInterval(go, 30 * 60 * 1000);
+    /* ⚠ 30 минут нь удаан байв — админ шинэчлэлт хийвэл ажилтнууд удаан
+       хүлээдэг. 2 минут тутам шалгана (version.json нь ~15 байт). */
+    setInterval(go, 2 * 60 * 1000);
     /* Утсанд апп-ыг ар талаас буцаан нээхэд шалгана */
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) go();
