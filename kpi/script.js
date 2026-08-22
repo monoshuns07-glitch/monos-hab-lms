@@ -23993,6 +23993,27 @@ async function init() {
         try { var _raw = localStorage.getItem(LSKEY); DB = _raw ? JSON.parse(_raw) : seedDB(); }
         catch (e2) { try { DB = seedDB(); } catch (e3) {} }
       }
+      /* ⚠⚠ Ачаалалт таслагдсан үед ажилтны жагсаалт ХООСОН үлдэж, апп
+         тухайн хүнийг өөрийг нь олохгүй («ОЛДСОНГҮЙ · бүртгэл=0 хүн»),
+         эрх нь буруу тодорхойлогдож, цэс дутуу гардаг байв.
+         Жагсаалт нь R2 дээр ГАНЦ ЖИЖИГ файл (~0.4 сек) тул тэр дор нь
+         татаж нөхнө — Firestore хэдий удаан ч ажилтан бүрэн харагдана. */
+      (async function () {
+        try {
+          if ((DB.employees || []).length > 10) return;
+          var rows = await empR2Load();
+          if (!rows || !rows.length) return;
+          var prev = {};
+          (DB.employees || []).forEach(function (e) { if (e && e.uid) prev[e.uid] = e; });
+          DB.employees = rows.map(function (r) {
+            return prev[r.uid] ? Object.assign({}, prev[r.uid], r) : r;
+          });
+          console.log('[emp] таслагдсаны дараа R2-оос нөхлөө: ' + DB.employees.length);
+          try { applyRole(); } catch (e) {}
+          try { renderAll(); } catch (e) {}
+          dbCacheSave('таслалт-ажилтан');
+        } catch (e) {}
+      })();
       /* ⚠ Дата дараа ирвэл автоматаар дахин зурна.
          Өмнө нь ЭНД эрхийн шилжилтийг дахин шалгадаггүй байсан тул сүлжээ
          удаан үед ТУСЛАХ АДМИН энгийн ажилтан болж үлддэг байв — таб нь
