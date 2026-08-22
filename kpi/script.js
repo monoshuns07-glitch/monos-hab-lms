@@ -2428,17 +2428,24 @@ function scoreClass(s) { return s >= 90 ? 'score-high' : (s >= 75 ? 'score-mid' 
 
 /* ============ Toast мэдэгдэл ============ */
 var toastRoot;
-function toast(msg, type) {
+function toast(msg, type, ms) {
   type = type || 'success';
   if (!toastRoot) { toastRoot = elc('div', 'toast-wrap'); document.body.appendChild(toastRoot); }
   var icons = { success: 'ti-circle-check', warn: 'ti-alert-triangle', error: 'ti-alert-octagon', info: 'ti-info-circle' };
   var t = elc('div', 'toast toast-' + type, '<i class="ti ' + (icons[type] || icons.info) + '"></i><span>' + esc(msg) + '</span>');
   toastRoot.appendChild(t);
   setTimeout(function () { t.classList.add('show'); }, 10);
-  setTimeout(function () {
+  /* ⚠ Урт зөвлөгөөг 3.4 секундэд уншиж амждаггүй — уртаас нь хамааруулна.
+     Алдааны мэдэгдлийг дарж хаах боломжтой. */
+  var life = ms || (type === 'error' ? Math.min(14000, 4000 + String(msg).length * 55) : 3400);
+  var kill = function () {
     t.classList.remove('show');
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 300);
-  }, 3400);
+  };
+  var timer = setTimeout(kill, life);
+  t.style.cursor = 'pointer';
+  t.addEventListener('click', function () { clearTimeout(timer); kill(); });
+  return t;
 }
 
 /* ============ Modal ============ */
@@ -12116,12 +12123,20 @@ var REPORT_RISK = [['low', 'Бага', '#16A34A'], ['mid', 'Дунд', '#D97706'
 /* Файл зураг мөн үү — MIME БА өргөтгөлөөр. ⚠ Зарим сонгогч `type`-ыг
    ХООСОН өгдөг тул хоосныг нь ГОЛЖ БОЛОХГҮЙ. */
 var IMG_EXT = /\.(jpe?g|png|gif|webp|bmp|heic|heif|avif|tiff?)$/i;
+/* ⚠⚠ УРЬДЧИЛАН ГОЛОХГҮЙ. Өмнө нь `file.type`-аар шүүдэг байсан тул үүлэн
+   сан, «Сүүлийн үеийн», зарим Android бүрхүүлээс сонгосон ЖИНХЭНЭ зургууд
+   («application/octet-stream» эсвэл хоосон төрөлтэй ирдэг) гологдож хаягдаж
+   байв. Одоо ЗАДЛАЖ ҮЗНЭ — задарвал зураг мөн, үгүй бол тодорхой алдаа.
+   Зөвхөн ил тод зураг БИШ (pdf/word/excel/видео) файлыг л шууд голно. */
+var NOT_IMG = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|7z|mp4|mov|avi|mkv|mp3|wav|txt|csv|json|exe|apk)$/i;
 function isImageFile(f) {
   if (!f) return false;
-  var t = String(f.type || '');
+  var n = String(f.name || ''), t = String(f.type || '');
   if (/^image\//i.test(t)) return true;
-  if (!t) return IMG_EXT.test(String(f.name || '')) || true;  /* MIME алга — зөвшөөрнө */
-  return IMG_EXT.test(String(f.name || ''));
+  if (IMG_EXT.test(n)) return true;
+  if (NOT_IMG.test(n)) return false;                 /* ил тод баримт/видео */
+  if (/^(video|audio|application\/pdf|text)\//i.test(t)) return false;
+  return true;                                        /* эргэлзээтэй бол ЗАДЛАЖ ҮЗНЭ */
 }
 function isHeic(f) {
   if (!f) return false;
@@ -15028,6 +15043,8 @@ function wkPickerHTML(id, label, icon, cam) {
 /* Зураг орохгүй бол ЯАГААД болохыг, ЮУ ХИЙХИЙГ хэлнэ (ерөнхий алдаа биш) */
 function imgFailToast(f) {
   var mb = f && f.size ? (f.size / 1048576).toFixed(1) : '';
+  /* ⚠ Богино хугацаанд алга болвол хэрэглэгч уншиж амждаггүй */
+  try { if (typeof TOAST_MS !== 'undefined') void TOAST_MS; } catch (e) {}
   if (isHeic(f)) {
     toast('Энэ бол iPhone-ы HEIC зураг — хөтөч задалж чадсангүй. ' +
       'Тохиргоо → Камер → Формат → «Хамгийн нийцтэй» болгоод дахин авна уу. ' +
