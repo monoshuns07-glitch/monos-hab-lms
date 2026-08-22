@@ -18101,6 +18101,32 @@ function renderCharts() {
    ⚠ MiSkill-ийн Excel-д контентын НЭР байдаггүй — зөвхөн дугаар. Тиймээс
    импорт нь сайтын видеотой холбогдохгүй, «хэн ямар хичээл үзсэн» гэдэг
    харагдахгүй байв. Админ нэг удаа тааруулбал цаашид автоматаар. */
+/* ⭐ Meskill-ийн КОНТЕНТЫН НЭР — дугаараар.
+   ⚠ Meskill-ийн Excel тайланд нэр байдаггүй тул Meskill админаас (602
+   сургалтын жагсаалт) ҮРГЭЛЖЛЭХ ХУГАЦААГААР нь тааруулж тогтоосон.
+   12-оос 9 нь хугацаагаар давхардалгүй таарсан; №8, №14 хоёрыг ХАБЭА-гийн
+   агуулгаар нь ялгасан; №22 нь хугацаагүй тул ТОДОРХОЙГҮЙ.
+   Шинэ контент нэмэгдвэл «Видеотой холбох» цонхноос гараар нэрлэнэ. */
+var MS_NAMES = {
+  '3':  'Оффисын ажилтнуудын аюулгүй ажиллагааны зааварчилгаа',
+  '5':  'Сэрээт ачигчийн аюулгүй ажиллагааны зааварчилгаа',
+  '8':  'Ажлын тусгай хувцас, хамгаалах хэрэгслийн талаарх ойлголт',
+  '10': 'Халтиргаа гулгаанаас урьдчилан сэргийлэх санамж',
+  '14': 'Гараар ачаа өргөх зааварчилгаа',
+  '16': 'Үйлдвэрлэлийн осол, осолд дөхсөн тохиолдлын талаарх ойлголт',
+  '18': 'Галын аюулгүй байдлын талаарх ойлголт',
+  '20': 'ХАБЭА-н үүсэл, хөгжлийн танин мэдэхүйн цуврал',
+  '21': 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн санамж зөвлөгөө',
+  '23': 'Хөдөлмөрийн аюулгүй байдлын талаарх ойлголт',
+  '25': 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн талаарх ойлголт'
+};
+/* Контентын харагдах нэр — нэр мэдэгдэхгүй бол дугаараа хэвээр */
+function msName(sheet) {
+  var no = msSheetNo(sheet);
+  var kind = /шалгалт/i.test(String(sheet || '')) ? 'Шалгалт' : 'Сургалт';
+  return (MS_NAMES[no] ? MS_NAMES[no] : (kind + ' №' + no)) + ' (№' + no + ')';
+}
+
 var MS_MAP_FILE = 'miskill/map.json';
 var MS_MAP = null;            /* { '3': trainingId, … } */
 var MS_LESSONS = null;        /* сайтын видео хичээлүүд */
@@ -18172,6 +18198,32 @@ async function msMapModal() {
   }
   nums.sort(function (a, b) { return Number(a) - Number(b); });
 
+  /* ⭐ Нэрээр АВТОМАТ санал — админ дарахад л хангалттай */
+  var norm = function (x) {
+    return String(x || '').toLowerCase().replace(/ё/g, 'е')
+      .replace(/[^а-яөүa-z0-9]/g, '');
+  };
+  var suggest = function () {
+    var n = 0;
+    Object.keys(MS_NAMES).forEach(function (no) {
+      if ((MS_MAP || {})[no]) return;                 /* гараар тавьсныг хөндөхгүй */
+      var a = norm(MS_NAMES[no]);
+      var best = null, score = 0;
+      lessons.forEach(function (l) {
+        var b = norm(l.title);
+        if (!a || !b) return;
+        /* хамгийн урт нийтлэг эхлэл + үгийн давхцал */
+        var i = 0; while (i < Math.min(a.length, b.length) && a[i] === b[i]) i++;
+        var words = String(MS_NAMES[no]).toLowerCase().split(/\s+/).filter(function (w) { return w.length > 4; });
+        var hit = words.filter(function (w) { return norm(l.title).indexOf(norm(w)) >= 0; }).length;
+        var sc = i + hit * 6;
+        if (sc > score) { score = sc; best = l; }
+      });
+      if (best && score >= 14) { MS_MAP = MS_MAP || {}; MS_MAP[no] = best.id; n++; }
+    });
+    return n;
+  };
+
   var draw = function () {
     var used = {};
     Object.keys(MS_MAP || {}).forEach(function (k) { if (MS_MAP[k]) used[MS_MAP[k]] = k; });
@@ -18186,7 +18238,10 @@ async function msMapModal() {
     var rowsH = nums.map(function (n) {
       var cur = (MS_MAP || {})[n] || '';
       return '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
-        '<span style="flex:0 0 74px;font-size:12.5px;font-weight:800;color:#1E293B">Контент №' + n + '</span>' +
+        '<span style="flex:0 0 250px;min-width:0;font-size:12.5px;font-weight:700;color:#1E293B;' +
+        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        esc(MS_NAMES[n] || ('Контент №' + n)) + '">' +
+        '<b style="color:#64748B">№' + n + '</b> ' + esc(MS_NAMES[n] || '(нэр тодорхойгүй)') + '</span>' +
         '<select data-ms-map="' + n + '" style="flex:1;min-width:0;border:1.5px solid #E2E8F0;border-radius:9px;' +
         'padding:7px 9px;font-family:inherit;font-size:12.5px;background:#fff">' +
         opts({ no: n, cur: cur }) + '</select></div>';
@@ -18210,7 +18265,9 @@ async function msMapModal() {
       (nums.length ? rowsH : '<div style="padding:16px;text-align:center;color:#94A3B8;font-size:12.5px">' +
         'Эхлээд MiSkill тайлан оруулна уу.</div>') +
       freeH +
-      '<button class="btn btn-primary btn-block" id="msMapGo" style="margin-top:13px">' +
+      '<button class="btn btn-secondary btn-block" id="msMapAuto" style="margin-top:11px">' +
+      '<i class="ti ti-wand"></i> Нэрээр автоматаар тааруулах</button>' +
+      '<button class="btn btn-primary btn-block" id="msMapGo" style="margin-top:8px">' +
       '<i class="ti ti-check"></i> Хадгалах</button>' +
       '<div id="msMapSt" style="font-size:12px;color:#64748B;margin-top:8px"></div>';
   };
@@ -18224,6 +18281,12 @@ async function msMapModal() {
     draw();
   });
   node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#msMapAuto')) {
+      var n = suggest(); draw();
+      toast(n ? (n + ' контент автоматаар таарлаа — шалгаад хадгална уу')
+              : 'Шинээр таарах зүйл олдсонгүй', n ? 'success' : 'warn');
+      return;
+    }
     if (!ev.target.closest('#msMapGo')) return;
     var st = node.querySelector('#msMapSt');
     st.textContent = 'Хадгалж байна…';
