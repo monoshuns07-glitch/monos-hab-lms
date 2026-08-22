@@ -18379,10 +18379,17 @@ function msApplyImport(res, say) {
 }
 
 /* ============ MiSkill дата оноо тооцоолол ============ */
+/* ⚠⚠ АЛДАА БАЙСАН: `(tPct*70 + ePct*30) * 100` гэж 100-аар ХОЁР УДАА
+   үржүүлдэг байв. `tPct` нь аль хэдийн 0–1 бутархай тул `tPct*70+ePct*30`
+   өөрөө 0–100. Дахин 100-аар үржүүлснээр оноо 0–10000 болж:
+     · «Дундаж оноо» 1973 гэх мэт утгагүй тоо гардаг
+     · «Норм биелүүлсэн (≥70)» шалгуурт бараг бүгд тэнцэж, 298/298 гэж
+       харагддаг — 0/12 сургалттай хүн ч «биелүүлсэн» болдог
+   Жинхэнэ дата орсны дараа л илэрсэн. Одоо 0–100 хэвийн хэмжээст. */
 function miskillScore(r) {
   var tPct = r.trainReq > 0 ? Math.min(1, r.trainDone / r.trainReq) : (r.trainDone > 0 ? 1 : 0);
   var ePct = r.examReq > 0 ? Math.min(1, r.examDone / r.examReq) : (r.examDone > 0 ? 1 : 0);
-  return Math.round((tPct * 70 + ePct * 30) * 100);
+  return Math.round(tPct * 70 + ePct * 30);
 }
 function miskillFindMyRow() {
   var me = myEmp();
