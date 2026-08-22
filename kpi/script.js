@@ -1990,6 +1990,7 @@ async function pulseRefresh(v) {
     try { applyRole(); } catch (e) {}
     try { renderAll(); } catch (e) {}
     PULSE_SEEN = v || Date.now();
+    dbCacheSave('шинэчлэлт');
     try { toast('🔄 Шинэ мэдээлэл ирлээ', 'info'); } catch (e) {}
     console.log('[pulse] дэлгэц шинэчлэгдлээ');
   } catch (e) {
@@ -2020,6 +2021,14 @@ async function pulseCheck(force) {
 function pulseStart() {
   if (pulseStart._on) return;
   pulseStart._on = true;
+  /* ⚠ Ажилтан аппаас гарах/таб солих мөчид кэш заавал хадгалагдсан байх
+     ёстой — ачаалалт дундуур орхивол кэшгүй үлдэж, дараагийн удаа дахин
+     хоосон дэлгэц гарах эрсдэлтэй. */
+  var _keep = function () { try { dbCacheSave(''); } catch (e) {} };
+  window.addEventListener('pagehide', _keep);
+  window.addEventListener('beforeunload', _keep);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) _keep(); });
+  setInterval(_keep, 60000);      /* минут тутам чимээгүй хадгална */
   setInterval(function () { pulseCheck(false); }, PULSE_MS);
   /* Апп-ыг ар талаас буцаан нээхэд ШУУД шалгана — хамгийн түгээмэл тохиолдол */
   document.addEventListener('visibilitychange', function () {
