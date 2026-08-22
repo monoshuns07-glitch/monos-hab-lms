@@ -738,13 +738,22 @@ function dbCacheOwner() {
 }
 function dbCacheSave(why) {
   try {
-    if (!DB || !DB.settings) return false;
+    if (!DB || !DB.settings) {
+      if (why) console.warn('[cache] хадгалсангүй (' + why + ') — DB бэлэн биш');
+      return false;
+    }
     localStorage.setItem(LSKEY, JSON.stringify(DB));
     try { localStorage.setItem(LSOWNER, dbCacheOwner()); } catch (e) {}
     if (why) console.log('[cache] хадгаллаа (' + why + ') — ажилтан ' +
       ((DB.employees || []).length) + ', мэдээлэл ' + ((DB.reports || []).length));
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    /* ⚠ Ихэвчлэн QuotaExceededError — багтаамж дүүрсэн. Чимээгүй өнгөрөхөөс
+       илүү нь мэдэгдэх; тэгвэл дараагийн удаа шалтгаан нь тодорхой байна. */
+    console.warn('[cache] хадгалж чадсангүй' + (why ? ' (' + why + ')' : '') + ': ' +
+      ((e && e.name) || '') + ' ' + ((e && e.message) || '').slice(0, 90));
+    return false;
+  }
 }
 function dbCacheLoad() {
   try {
@@ -24002,6 +24011,7 @@ async function init() {
         try { var _raw = localStorage.getItem(LSKEY); DB = _raw ? JSON.parse(_raw) : seedDB(); }
         catch (e2) { try { DB = seedDB(); } catch (e3) {} }
       }
+      dbCacheSave('таслалт');    /* ⚠ ШУУД — 60 секунд хүлээхгүй */
       /* ⚠⚠ Ачаалалт таслагдсан үед ажилтны жагсаалт ХООСОН үлдэж, апп
          тухайн хүнийг өөрийг нь олохгүй («ОЛДСОНГҮЙ · бүртгэл=0 хүн»),
          эрх нь буруу тодорхойлогдож, цэс дутуу гардаг байв.
