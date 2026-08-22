@@ -2552,3 +2552,35 @@ details > summary .ti-chevron-right { transition: transform .15s; }
 @media (max-width: 779px) { .rf-grid > .rf-w2 { grid-column: 1 / -1; } }
 /* Босоо багана — доторх картууд ижил өргөнтэй, зай нь сүлжээтэй адил */
 .rf-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* ══ БҮХ ТӨХӨӨРӨМЖИД ЗӨВ ХАРАГДАХ ══
+   ⚠ `width=device-width` болгосны дараа нарийн дэлгэц (320–430px) дээр
+   зарим элемент хажуу тийш гарч, хуудас хөндлөн гүйдэг болох эрсдэлтэй.
+   Дараах хамгаалалтууд түүнээс сэргийлнэ. */
+html, body { max-width: 100%; overflow-x: hidden; }
+img, video, canvas, svg, table { max-width: 100%; }
+/* Урт үг/холбоос мөр таслахгүй бол хайрцгаа цоолдог */
+.card, .modal-info, .detail-row, .toast { overflow-wrap: anywhere; word-break: break-word; }
+/* Хүснэгт өөрөө гүйнэ — хуудсыг гүйлгэхгүй */
+.table-wrap, .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Хустай утас (iPhone X+) — суусан апп горимд агуулга хусны доор орохгүй */
+@supports (padding: env(safe-area-inset-top)) {
+  body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  .topbar, .app-header { padding-top: env(safe-area-inset-top); }
+  .fab, #hazardFab, #pwaInstallBtn { bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .toast-wrap { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Хамгийн нарийн дэлгэц (320–380px) — товч, бичвэр багтана */
+@media (max-width: 380px) {
+  .btn { padding: 9px 12px; font-size: 12.5px; }
+  .card { padding: 13px 14px !important; }
+  h1 { font-size: 19px !important; }
+  h2 { font-size: 17px !important; }
+  h3 { font-size: 15px !important; }
+}
+/* Хуруугаар дарах талбай — 44px нь хүрэлцэхүйц доод хэмжээ */
+@media (pointer: coarse) {
+  .btn, .nav-item, [data-rf-tab], [data-wk-tab], [data-rf-kind] { min-height: 40px; }
+}
