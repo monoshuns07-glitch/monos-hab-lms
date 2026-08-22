@@ -12215,9 +12215,45 @@ function downscaleImage(file, maxDim, quality, cb) {
     } catch (e) { next(); }
   };
 
-  /* Аль нэг нь удаан бол хаагдаж үлдэхгүйн тулд 25 секундын хамгаалалт */
-  setTimeout(function () { fin(''); }, 25000);
-  tryBitmap(function () { tryObjectUrl(function () { tryReader(function () { fin(''); }); }); });
+  /* ④ HEIC — хөтөч задалж чадахгүй бол ЗАДЛАХ САН татаж хөрвүүлнэ.
+        ⚠ Сан нь ЗӨВХӨН HEIC илэрсэн үед л татагдана (≈0.5 МБ) — бусад
+        зурагт нэмэлт ачаалал үүсгэхгүй. Ингэснээр ажилтан утасныхаа
+        тохиргоог өөрчлөхгүйгээр iPhone-ы зургаа шууд оруулна. */
+  var tryHeic = function (next) {
+    if (!isHeic(file)) { next(); return; }
+    var go = function () {
+      if (typeof heic2any !== 'function') { next(); return; }
+      try {
+        heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }).then(function (out) {
+          var b = Array.isArray(out) ? out[0] : out;
+          if (!b) { next(); return; }
+          var url = URL.createObjectURL(b);
+          var img = new Image();
+          img.onload = function () {
+            paint(img, img.naturalWidth || img.width, img.naturalHeight || img.height,
+              function () { try { URL.revokeObjectURL(url); } catch (e) {} });
+          };
+          img.onerror = function () { try { URL.revokeObjectURL(url); } catch (e) {} next(); };
+          img.src = url;
+        }).catch(function () { next(); });
+      } catch (e) { next(); }
+    };
+    if (typeof heic2any === 'function') { go(); return; }
+    try {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+      sc.onload = go;
+      sc.onerror = function () { next(); };
+      document.head.appendChild(sc);
+    } catch (e) { next(); }
+  };
+
+  /* Аль нэг нь удаан бол хаагдаж үлдэхгүйн тулд 45 секундын хамгаалалт
+     (HEIC хөрвүүлэлт нь утсан дээр удаан байж болно) */
+  setTimeout(function () { fin(''); }, 45000);
+  tryBitmap(function () { tryObjectUrl(function () { tryReader(function () {
+    tryHeic(function () { fin(''); });
+  }); }); });
 }
 
 /* ⭐ «Овог Нэр» БҮТНЭЭР. Бүртгэлд овог байхгүй бол хуучин хэлбэрээр
@@ -15046,9 +15082,9 @@ function imgFailToast(f) {
   /* ⚠ Богино хугацаанд алга болвол хэрэглэгч уншиж амждаггүй */
   try { if (typeof TOAST_MS !== 'undefined') void TOAST_MS; } catch (e) {}
   if (isHeic(f)) {
-    toast('Энэ бол iPhone-ы HEIC зураг — хөтөч задалж чадсангүй. ' +
-      'Тохиргоо → Камер → Формат → «Хамгийн нийцтэй» болгоод дахин авна уу. ' +
-      'Эсвэл зургаа зассаны дараа (crop) оруулбал JPEG болно.', 'error');
+    toast('iPhone-ы HEIC зургийг хөрвүүлж чадсангүй (интернэт сул байж магадгүй). ' +
+      'Дахин оролдоно уу. Байнга давтагдвал: Тохиргоо → Камер → Формат → ' +
+      '«Хамгийн нийцтэй» болгоно уу — тэгвэл зураг шууд JPEG болж хадгалагдана.', 'error');
     return;
   }
   if (f && f.size > 25 * 1048576) {
@@ -15075,7 +15111,8 @@ function wkWirePickers(node, onPick) {
       if (!f) return;
       /* ⚠ MIME хоосон файлыг ГОЛЖ БОЛОХГҮЙ — зарим сонгогч түүнийг өгдөггүй */
       if (!isImageFile(f)) { toast('Зөвхөн зураг оруулна уу', 'warn'); this.value = ''; return; }
-      var t = toast('Зураг боловсруулж байна…', 'info');
+      var t = toast(isHeic(f) ? 'iPhone-ы зураг хөрвүүлж байна… (жаахан удаж магадгүй)'
+        : 'Зураг боловсруулж байна…', 'info', 60000);
       var self = this;
       downscaleImage(f, 1000, 0.72, function (durl) {
         try { if (t && t.remove) t.remove(); } catch (e) {}
