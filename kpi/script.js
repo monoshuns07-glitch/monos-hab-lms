@@ -779,7 +779,7 @@ async function loadDB() {
      секундын хугацаанд таслагддаг. Өмнө нь R2 ачаалалт Firestore-ийн ДАРАА
      байсан тул тэр таслалтад өртөж, эрсдэл огт ачаалагддаггүй байв.
      Одоо эрсдэл, даалгавар нь Firestore-оос үл хамааран эхэлж ирнэ. */
-  var _tOk = false, _R2_RISKS = null, _R2_TASKS = null, _R2_EMPS = null;
+  var _tOk = false, _R2_RISKS = null, _R2_TASKS = null, _R2_EMPS = null, _R2_MS = null;
   if (!DEMO) {
     try {
       var _idx = await riskR2GetJson(RISK_R2_INDEX);
@@ -824,6 +824,16 @@ async function loadDB() {
           if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
         } catch (e) { console.error('[tasks] R2', e); }
       })(),
+      /* ⭐ MiSkill сургалт/шалгалтын дүн — нэг файл, бүх хэрэглэгчид */
+      (async function () {
+        try {
+          var ms = await msR2Load();
+          if (ms && ms.rows.length) {
+            _R2_MS = ms;
+            console.log('[miskill] R2-оос ' + ms.rows.length);
+          }
+        } catch (e) {}
+      })(),
       /* ⭐ АЖИЛТНЫ ЖАГСААЛТ — ганц жижиг файл, ЭХЭНД нь татна.
          Өмнө нь энэ нь хамаагүй хожуу ирдэг тул апп тухайн хүнийг
          өөрийг нь олж чадахгүй («ОЛДСОНГҮЙ · бүртгэл=0 хүн»), эрх нь
@@ -850,6 +860,11 @@ async function loadDB() {
       if (!DB) return;
       if (_R2_RISKS && _R2_RISKS.length) { DB.risks = _R2_RISKS; riskCacheBust(); }
       if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
+      /* MiSkill дүн — R2 нь эх сурвалж */
+      if (_R2_MS && _R2_MS.rows.length) {
+        DB.miskillStats = _R2_MS.rows;
+        if (_R2_MS.program) DB.miskillProgram = _R2_MS.program;
+      }
       /* Ажилтны жагсаалт дутуу бол R2-гийнхаар нөхнө — Firestore хүрэхгүй
          байсан ч бүх ажилтан харагдана, өөрийг нь таних болно. */
       if (_R2_EMPS && _R2_EMPS.length > (DB.employees || []).length) {
@@ -18087,6 +18102,31 @@ function renderCharts() {
      · «N. Шалгалтын тайлан»   — ажилтан бүрийн тэнцсэн эсэх
    Ажилтныг МЭЙЛЭЭР тааруулна (мэйл байхгүй бол «Овог Нэр»-ээр).
    ══════════════════════════════════════════════════════════════════════ */
+/* ⚠⚠ MiSkill-ийн дүнг FIRESTORE-Т БИШ, R2-д НЭГ ФАЙЛААР хадгална:
+   ① `kpi_miskillStats` цуглуулгын дүрэм нь энэ repo-оос deploy ХИЙГДДЭГГҮЙ
+      (Firebase консолоос гараар нийтлэх шаардлагатай) — мартвал дата
+      чимээгүй алдагдана.
+   ② 298 ажилтныг тус тусад нь баримт болгон бичих нь өдрийн бичилтийн
+      квотыг дэмий иднэ.
+   ③ Ажилтны жагсаалт, эрсдэл, даалгавар бүгд аль хэдийн R2 дээр — ижил
+      зарчим. Нэг файл, бүх хэрэглэгч уншина, төлбөргүй. */
+var MS_R2_FILE = 'miskill/all.json';
+async function msR2Publish(rows, program) {
+  return await riskR2PutJson(MS_R2_FILE, {
+    updatedAt: new Date().toISOString(),
+    program: program || null,
+    total: (rows || []).length,
+    rows: rows || []
+  });
+}
+async function msR2Load() {
+  try {
+    var p = await riskR2GetJson(MS_R2_FILE);
+    if (!p || !Array.isArray(p.rows)) return null;
+    return p;
+  } catch (e) { return null; }
+}
+
 var MS_TRAIN_RE = /сургалтын\s*тайлан/i;
 var MS_EXAM_RE = /шалгалтын\s*тайлан/i;
 
@@ -18297,6 +18337,14 @@ function msApplyImport(res, say) {
   saveDB();
   dbCacheSave('miskill');
   try { renderVideoTracking(); } catch (e) {}
+  /* ⭐ БҮХ хэрэглэгч харахын тулд R2 руу нийтэлнэ (Firestore-т биш) */
+  say('⏳ Бүх ажилтанд түгээж байна…');
+  msR2Publish(DB.miskillStats, DB.miskillProgram).then(function () {
+    console.log('[miskill] R2-д нийтлэв: ' + DB.miskillStats.length);
+  }).catch(function (e) {
+    console.error('[miskill] R2', e);
+    toast('⚠ Түгээхэд алдаа гарлаа — дахин оруулна уу', 'error');
+  });
 
   var full = rows.filter(function (r) { return r.trainDone >= r.trainReq && r.examDone >= r.examReq; }).length;
   var none = rows.filter(function (r) { return !r.trainDone && !r.examDone; }).length;
