@@ -18097,6 +18097,145 @@ function renderCharts() {
 
 /* ============ Бүгдийг дахин зурах ============ */
 /* ============ Видео сургалт (MiSkill) — тусдаа цэс ============ */
+/* ══ САЙТЫН ВИДЕО ХИЧЭЭЛҮҮД ба MiSKILL-ИЙН КОНТЕНТЫГ ХОЛБОХ ══════════
+   ⚠ MiSkill-ийн Excel-д контентын НЭР байдаггүй — зөвхөн дугаар. Тиймээс
+   импорт нь сайтын видеотой холбогдохгүй, «хэн ямар хичээл үзсэн» гэдэг
+   харагдахгүй байв. Админ нэг удаа тааруулбал цаашид автоматаар. */
+var MS_MAP_FILE = 'miskill/map.json';
+var MS_MAP = null;            /* { '3': trainingId, … } */
+var MS_LESSONS = null;        /* сайтын видео хичээлүүд */
+
+async function msMapLoad(force) {
+  if (MS_MAP && !force) return MS_MAP;
+  try {
+    var j = await riskR2GetJson(MS_MAP_FILE, { fresh: !!force });
+    MS_MAP = (j && j.map) || {};
+  } catch (e) { MS_MAP = {}; }
+  return MS_MAP;
+}
+async function msMapSave() {
+  return await riskR2PutJson(MS_MAP_FILE, {
+    updatedAt: new Date().toISOString(), map: MS_MAP || {}
+  });
+}
+/* Сайтын видео хичээлүүд — LMS-ийн `trainings` цуглуулгаас */
+async function msLessonsLoad(force) {
+  if (MS_LESSONS && !force) return MS_LESSONS;
+  MS_LESSONS = [];
+  try {
+    if (typeof fdb === 'undefined' || !fdb) return MS_LESSONS;
+    var snap = await fdb.collection('trainings').get();
+    var out = [];
+    snap.forEach(function (d) {
+      var v = d.data() || {};
+      out.push({ id: d.id, title: String(v.title || v.name || '(нэргүй)'),
+        order: Number(v.order || 0), video: !!(v.videoUrl || v.video) });
+    });
+    out.sort(function (a, b) { return a.order - b.order || a.title.localeCompare(b.title); });
+    MS_LESSONS = out;
+  } catch (e) { console.error('[miskill] хичээл', e); }
+  return MS_LESSONS;
+}
+
+/* Контентын дугаарыг хуудасны нэрнээс («14. Сургалтын тайлан» → 14) */
+function msSheetNo(name) {
+  var m = String(name || '').match(/^\s*(\d+)/);
+  return m ? m[1] : '';
+}
+
+/* ══ ТААРУУЛАХ ЦОНХ ══ */
+async function msMapModal() {
+  var node = elc('div', 'modal-info', '<div style="padding:22px;text-align:center;color:#64748B">Ачаалж байна…</div>');
+  buildModal('MiSkill ↔ Видео хичээл холбох', node, { width: 'min(680px, 96vw)' });
+  await msMapLoad(true);
+  var lessons = await msLessonsLoad(true);
+
+  /* Импортод байсан контентын дугаарууд */
+  var nums = [];
+  (DB.miskillStats || []).some(function (r) {
+    if (!r.detail) return false;
+    (r.detail.train || []).forEach(function (t) { var n = msSheetNo(t.n); if (n && nums.indexOf(n) < 0) nums.push(n); });
+    (r.detail.exam || []).forEach(function (t) { var n = msSheetNo(t.n); if (n && nums.indexOf(n) < 0) nums.push(n); });
+    return nums.length > 0;
+  });
+  if (!nums.length && DB.miskillProgram) {
+    /* Дэлгэрэнгүй нь R2-д үлдсэн бол тэндээс */
+    try {
+      var ms = await msR2Load();
+      ((ms && ms.rows) || []).some(function (r) {
+        if (!r.detail) return false;
+        (r.detail.train || []).forEach(function (t) { var n = msSheetNo(t.n); if (n && nums.indexOf(n) < 0) nums.push(n); });
+        (r.detail.exam || []).forEach(function (t) { var n = msSheetNo(t.n); if (n && nums.indexOf(n) < 0) nums.push(n); });
+        return nums.length > 0;
+      });
+    } catch (e) {}
+  }
+  nums.sort(function (a, b) { return Number(a) - Number(b); });
+
+  var draw = function () {
+    var used = {};
+    Object.keys(MS_MAP || {}).forEach(function (k) { if (MS_MAP[k]) used[MS_MAP[k]] = k; });
+    var opts = function (sel) {
+      return '<option value="">— сонгоогүй —</option>' + lessons.map(function (l) {
+        var taken = used[l.id] && used[l.id] !== sel.no;
+        return '<option value="' + esc(l.id) + '"' + (sel.cur === l.id ? ' selected' : '') +
+          (taken ? ' disabled' : '') + '>' + esc(l.title.slice(0, 60)) +
+          (taken ? '  (№' + used[l.id] + '-д авсан)' : '') + '</option>';
+      }).join('');
+    };
+    var rowsH = nums.map(function (n) {
+      var cur = (MS_MAP || {})[n] || '';
+      return '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+        '<span style="flex:0 0 74px;font-size:12.5px;font-weight:800;color:#1E293B">Контент №' + n + '</span>' +
+        '<select data-ms-map="' + n + '" style="flex:1;min-width:0;border:1.5px solid #E2E8F0;border-radius:9px;' +
+        'padding:7px 9px;font-family:inherit;font-size:12.5px;background:#fff">' +
+        opts({ no: n, cur: cur }) + '</select></div>';
+    }).join('');
+
+    /* MiSkill-д ОРООГҮЙ видеонууд */
+    var free = lessons.filter(function (l) { return !used[l.id]; });
+    var freeH = free.length
+      ? '<div style="margin-top:13px;background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:11px;' +
+        'padding:10px 12px"><div style="font-size:12px;font-weight:800;color:#92400E">' +
+        '⚠ MiSkill-д ОРООГҮЙ видео хичээл — ' + free.length + '</div>' +
+        '<div style="font-size:11.5px;color:#B45309;margin-top:4px;line-height:1.65">' +
+        free.map(function (l) { return esc(l.title); }).join('<br>') + '</div></div>'
+      : '<div style="margin-top:13px;font-size:12px;color:#0ca30c">✓ Сайтын бүх видео MiSkill-д орсон</div>';
+
+    node.innerHTML =
+      '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
+      'MiSkill-ийн тайланд контентын <b>нэр байдаггүй</b> — зөвхөн дугаар. ' +
+      'Дугаар бүрийг сайтын видео хичээлтэй нэг удаа тааруулбал цаашид ' +
+      '<b>автоматаар</b> холбогдоно.</div>' +
+      (nums.length ? rowsH : '<div style="padding:16px;text-align:center;color:#94A3B8;font-size:12.5px">' +
+        'Эхлээд MiSkill тайлан оруулна уу.</div>') +
+      freeH +
+      '<button class="btn btn-primary btn-block" id="msMapGo" style="margin-top:13px">' +
+      '<i class="ti ti-check"></i> Хадгалах</button>' +
+      '<div id="msMapSt" style="font-size:12px;color:#64748B;margin-top:8px"></div>';
+  };
+  draw();
+
+  node.addEventListener('change', function (ev) {
+    var sel = ev.target.closest('[data-ms-map]');
+    if (!sel) return;
+    MS_MAP = MS_MAP || {};
+    MS_MAP[sel.getAttribute('data-ms-map')] = sel.value || '';
+    draw();
+  });
+  node.addEventListener('click', function (ev) {
+    if (!ev.target.closest('#msMapGo')) return;
+    var st = node.querySelector('#msMapSt');
+    st.textContent = 'Хадгалж байна…';
+    msMapSave().then(function () {
+      st.innerHTML = '<span style="color:#0ca30c">✓ Хадгаллаа — бүх хэрэглэгчид үйлчилнэ</span>';
+      toast('✓ Тааруулалт хадгалагдлаа', 'success');
+    }).catch(function (e) {
+      st.innerHTML = '<span style="color:#DC2626">Хадгалж чадсангүй: ' + esc(e.message || e) + '</span>';
+    });
+  });
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    MiSKILL-ИЙН ЖИНХЭНЭ EXCEL ТАЙЛАНГ ШУУД ОРУУЛАХ
    ----------------------------------------------------------------------
@@ -18461,6 +18600,9 @@ function renderVtAdmin(sec) {
        шаардлагагүй. Хамгийн түгээмэл хэрэглээ тул ҮНДСЭН товч. */
     '<button class="btn btn-primary" id="vtXlsx"><i class="ti ti-file-spreadsheet"></i> ' +
     'MiSkill тайлан оруулах</button>' +
+    /* ⭐ Контентын дугаарыг сайтын видеотой холбох */
+    '<button class="btn btn-secondary btn-sm" id="vtMap"><i class="ti ti-link"></i> ' +
+    'Видеотой холбох</button>' +
     '</div>' +
     (weekLabel ? '<div style="background:#EFF6FF;border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#1D4ED8;margin-bottom:8px"><i class="ti ti-calendar-week"></i> Тайлангийн долоо хоног: <strong>' + esc(rows[0].weekStart) + '</strong></div>' : '') +
     '</div>';
@@ -18522,6 +18664,7 @@ function renderVtAdmin(sec) {
     sec._vtWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#vtXlsx')) msImportXlsx();      /* ⭐ жинхэнэ MiSkill тайлан */
+      if (ev.target.closest('#vtMap')) msMapModal();          /* ⭐ видеотой холбох */
       if (ev.target.closest('#vtCsv') || ev.target.closest('#vtImport')) importMiskillCSV();
       if (ev.target.closest('#vtTpl')) downloadMiskillTemplate();
       // Sub-tab switching
