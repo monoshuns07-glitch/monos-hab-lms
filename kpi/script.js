@@ -746,13 +746,14 @@ async function loadDB() {
             if (_mine.length) _want = _mine;
           }
         } catch (e) { console.error('[risks] албаар шүүх алдаа — бүгдийг татна', e); }
+        /* ⚠ Өмнө нь алба бүрийг ДАРААЛЖ татдаг байсан тул утасны сүлжээнд
+           (70–300мс саатал × 11 алба) 3–10 секунд иддэг байв. Одоо ЗЭРЭГ. */
+        var _parts = await Promise.all(_want.map(function (w) {
+          return riskR2GetJson(RISK_R2_PREFIX + 'd/' + w.slug + '.json')
+            .catch(function () { return null; });
+        }));
         var _out = [];
-        for (var _i = 0; _i < _want.length; _i++) {
-          try {
-            var _p = await riskR2GetJson(RISK_R2_PREFIX + 'd/' + _want[_i].slug + '.json');
-            if (Array.isArray(_p)) _out = _out.concat(_p);
-          } catch (e) {}
-        }
+        _parts.forEach(function (_p) { if (Array.isArray(_p)) _out = _out.concat(_p); });
         if (_out.length) {
           _R2_RISKS = _out;
           RISK_LOAD_INFO = { src: 'R2', n: _out.length, depts: _want.length };
@@ -766,17 +767,25 @@ async function loadDB() {
       }
       console.log('[risks] ' + RISK_LOAD_INFO.src + ' ' + RISK_LOAD_INFO.n);
     } catch (e) { console.error('[risks] R2', e); RISK_LOAD_INFO = { src: 'алдаа', n: 0, depts: 0 }; }
-    try {
-      _R2_TASKS = await taskR2Load() || taskCacheLoad();
-      if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
-    } catch (e) { console.error('[tasks] R2', e); }
-    /* Нэг удаагийн ажлын нээлтүүд (жижиг файл) */
-    try { await riskReleasesLoad(); } catch (e) {}
-    /* Менежерийн хариуцах хэсгийн зураглал (жижиг файл) */
-    try { await ackSecLoad(true); } catch (e) {}
-    /* Арга хэмжээний биелэлт — KPI, самбарт хэрэгтэй (алба бүрд жижиг файл) */
-    try { await meaOwnLoad(true); } catch (e) {}
-    try { await meaLoadAll(true); } catch (e) { console.error('[measures] R2', e); }
+    /* ⚠ Эдгээр нь бие биенээсээ ХАМААРАХГҮЙ тул ЗЭРЭГ явуулна. Дараалуулбал
+       утасны сүлжээнд секунд тутам нэмэгдэж, ачаалалт хугацаанд амждаггүй. */
+    var _t2 = Date.now();
+    await Promise.all([
+      (async function () {
+        try {
+          _R2_TASKS = await taskR2Load() || taskCacheLoad();
+          if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
+        } catch (e) { console.error('[tasks] R2', e); }
+      })(),
+      riskReleasesLoad().catch(function () {}),      /* нэг удаагийн нээлтүүд */
+      ackSecLoad(true).catch(function () {}),        /* хариуцах хэсгийн зураглал */
+      /* Арга хэмжээ: эзэмшигчид → биелэлт (эзэмшигчээс хамаарна) */
+      (async function () {
+        try { await meaOwnLoad(true); } catch (e) {}
+        try { await meaLoadAll(true); } catch (e) { console.error('[measures] R2', e); }
+      })()
+    ]);
+    console.log('[boot] R2 нэмэлт дата: ' + (Date.now() - _t2) + 'мс');
   }
   /* DB бэлэн болмогц суулгах туслах */
   var _applyR2 = function () {
@@ -7144,9 +7153,11 @@ async function meaSave(dept, store) {
 /* Бүх албаны биелэлтийг татна (админ/KPI-д хэрэгтэй, файлууд жижиг) */
 async function meaLoadAll(force) {
   var ds = ackDeptsWithDue();
-  for (var i = 0; i < ds.length; i++) {
-    try { await meaLoad(ds[i], force); } catch (e) {}
-  }
+  /* ⚠ Алба бүрийг ДАРААЛЖ татдаг байсан — 11 алба × утасны саатал нь
+     ачаалалтыг хугацаанаас хэтрүүлдэг байв. Одоо ЗЭРЭГ. */
+  await Promise.all(ds.map(function (d) {
+    return meaLoad(d, force).catch(function () {});
+  }));
   return MEA_STORE;
 }
 /* Тухайн ажилтны арга хэмжээний биелэлт (KPI, самбарт) */
@@ -23793,12 +23804,16 @@ async function init() {
   if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
-  // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул 12 сек хугацаа тавина.
+  // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
+  // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд
+  // таслагдаж, ажилтан хоосон дэлгэц хардаг байсан. Ачаалалтыг зэрэгцүүлсэн
+  // ч удаан 3G дээр 12с багадна. 25 секунд болгов (ажилтан хүлээхээс
+  // хоосон дэлгэц харах нь дор).
   var fresh = false;
   try {
     fresh = await Promise.race([
       loadDB(),
-      new Promise(function (res) { setTimeout(function () { res('__timeout__'); }, 12000); })
+      new Promise(function (res) { setTimeout(function () { res('__timeout__'); }, 25000); })
     ]);
     if (fresh === '__timeout__') {
       console.warn('[init] loadDB хугацаа хэтэрлээ — локал/эхлэлийн датагаар үргэлжилнэ');
