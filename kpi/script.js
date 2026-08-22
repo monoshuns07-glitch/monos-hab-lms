@@ -726,13 +726,51 @@ async function clearAllDemoData() {
   toast('Жишээ (демо) дата бүрэн цэвэрлэгдлээ', 'success');
 }
 
+/* ══ КЭШ — хоосон дэлгэц хэзээ ч гаргахгүйн тулд ══
+   ⚠ Өмнө нь кэшийг ЗӨВХӨН `loadDB`-ийн төгсгөлд хадгалдаг байсан тул
+   ачаалалт таслагдвал юу ч үлддэггүй, ажилтан дараагийн удаа орохдоо
+   дахин тэглээс эхэлдэг байв. Одоо дата бүрдмэгц шууд хадгална. */
+var LSOWNER = 'safework_db_owner';
+/* Кэш ХЭНИЙХ бэ — нэг утсыг хоёр хүн хэрэглэвэл нөгөөгийнхөө датаг
+   харуулж болохгүй. Тиймээс эзэмшигчийг тэмдэглэж, таарвал л ашиглана. */
+function dbCacheOwner() {
+  try { var m = (SESSION && (SESSION.uid || SESSION.email)) || ''; return String(m); } catch (e) { return ''; }
+}
+function dbCacheSave(why) {
+  try {
+    if (!DB || !DB.settings) return false;
+    localStorage.setItem(LSKEY, JSON.stringify(DB));
+    try { localStorage.setItem(LSOWNER, dbCacheOwner()); } catch (e) {}
+    if (why) console.log('[cache] хадгаллаа (' + why + ') — ажилтан ' +
+      ((DB.employees || []).length) + ', мэдээлэл ' + ((DB.reports || []).length));
+    return true;
+  } catch (e) { return false; }
+}
+function dbCacheLoad() {
+  try {
+    /* ⚠ Өөр хүний кэшийг ХЭЗЭЭ Ч харуулахгүй */
+    var own = '';
+    try { own = localStorage.getItem(LSOWNER) || ''; } catch (e) {}
+    if (own && own !== dbCacheOwner()) {
+      console.log('[cache] өөр хэрэглэгчийн кэш — ашиглахгүй');
+      return false;
+    }
+    var raw = localStorage.getItem(LSKEY);
+    if (!raw) return false;
+    var d = JSON.parse(raw);
+    if (!d || !d.settings) return false;
+    DB = d;
+    return true;
+  } catch (e) { return false; }
+}
+
 async function loadDB() {
   var fresh = false;
   /* ⚠ R2-Г ХАМГИЙН ТҮРҮҮНД. Firestore удаан/квот дууссан үед loadDB нь 12
      секундын хугацаанд таслагддаг. Өмнө нь R2 ачаалалт Firestore-ийн ДАРАА
      байсан тул тэр таслалтад өртөж, эрсдэл огт ачаалагддаггүй байв.
      Одоо эрсдэл, даалгавар нь Firestore-оос үл хамааран эхэлж ирнэ. */
-  var _tOk = false, _R2_RISKS = null, _R2_TASKS = null;
+  var _tOk = false, _R2_RISKS = null, _R2_TASKS = null, _R2_EMPS = null;
   if (!DEMO) {
     try {
       var _idx = await riskR2GetJson(RISK_R2_INDEX);
@@ -777,6 +815,16 @@ async function loadDB() {
           if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
         } catch (e) { console.error('[tasks] R2', e); }
       })(),
+      /* ⭐ АЖИЛТНЫ ЖАГСААЛТ — ганц жижиг файл, ЭХЭНД нь татна.
+         Өмнө нь энэ нь хамаагүй хожуу ирдэг тул апп тухайн хүнийг
+         өөрийг нь олж чадахгүй («ОЛДСОНГҮЙ · бүртгэл=0 хүн»), эрх нь
+         буруу тодорхойлогдож, цэс дутуу гардаг байв. */
+      (async function () {
+        try {
+          _R2_EMPS = await empR2Load();
+          if (_R2_EMPS && _R2_EMPS.length) console.log('[emp] эхэнд R2-оос ' + _R2_EMPS.length);
+        } catch (e) {}
+      })(),
       riskReleasesLoad().catch(function () {}),      /* нэг удаагийн нээлтүүд */
       ackSecLoad(true).catch(function () {}),        /* хариуцах хэсгийн зураглал */
       /* Арга хэмжээ: эзэмшигчид → биелэлт (эзэмшигчээс хамаарна) */
@@ -793,6 +841,15 @@ async function loadDB() {
       if (!DB) return;
       if (_R2_RISKS && _R2_RISKS.length) { DB.risks = _R2_RISKS; riskCacheBust(); }
       if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
+      /* Ажилтны жагсаалт дутуу бол R2-гийнхаар нөхнө — Firestore хүрэхгүй
+         байсан ч бүх ажилтан харагдана, өөрийг нь таних болно. */
+      if (_R2_EMPS && _R2_EMPS.length > (DB.employees || []).length) {
+        var prev = {};
+        (DB.employees || []).forEach(function (e) { if (e && e.uid) prev[e.uid] = e; });
+        DB.employees = _R2_EMPS.map(function (r) {
+          return prev[r.uid] ? Object.assign({}, prev[r.uid], r) : r;
+        });
+      }
     } catch (e) {}
   };
   if (DEMO) { // Локал жишээ горим — Firebase-гүй, localStorage-д хадгална
@@ -819,8 +876,15 @@ async function loadDB() {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
       if (!DB || !DB.settings) { DB = seedDB(); }
     }
+    /* ⭐ Үндсэн баримт ирмэгц ШУУД кэшлэнэ — цаашид юу ч таслагдсан
+       кэш үлдэнэ, ажилтан дараагийн удаа хоосон дэлгэц харахгүй. */
+    try { migrateDB(); } catch (e) {}
+    _applyR2();
+    dbCacheSave('үндсэн');
+
     /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
     if (isSplit()) { try { await loadCols(_tOk ? { skip: ['tasks'] } : null); } catch (e) {} }
+    dbCacheSave('бүртгэлүүд');
     /* Эрсдэл, даалгавар нь ЭНД БИШ — loadDB-ийн эхэнд R2-оос аль хэдийн
        ачаалагдсан (Firestore-ийн удаашрал/таслалтад өртөхгүйн тулд). */
     _applyR2();
@@ -843,7 +907,7 @@ async function loadDB() {
   }
   try { migrateDB(); } catch (e) {}
   _applyR2();                       // R2-оос ирсэн эрсдэл/даалгаврыг эцэст нь суулгана
-  try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
+  dbCacheSave('бүрэн');
   return fresh;
 }
 
@@ -23903,6 +23967,19 @@ async function init() {
   // таслагдаж, ажилтан хоосон дэлгэц хардаг байсан. Ачаалалтыг зэрэгцүүлсэн
   // ч удаан 3G дээр 12с багадна. 25 секунд болгов (ажилтан хүлээхээс
   // хоосон дэлгэц харах нь дор).
+  /* ⭐ Кэш байвал ЭХЛЭЭД түүгээр зурна — сүлжээ удаан ч ажилтан
+     хоосон дэлгэц ХЭЗЭЭ Ч харахгүй. Сүлжээний дата ирмэгц дээрээс нь
+     шинэчилнэ (доорх loadDB үргэлжилсээр). */
+  try {
+    if (dbCacheLoad()) {
+      console.log('[cache] кэшээс эхлэв — ажилтан ' + ((DB.employees || []).length) +
+        ', мэдээлэл ' + ((DB.reports || []).length));
+      try { migrateDB(); } catch (e) {}
+      try { applyRole(); } catch (e) {}
+      try { renderAll(); } catch (e) {}
+    }
+  } catch (e) {}
+
   var fresh = false;
   try {
     fresh = await Promise.race([
@@ -23923,10 +24000,12 @@ async function init() {
          Эрх нь kpi_state/main.userRoles-д байдаг тул DB ирсний ДАРАА л мэдэгдэнэ. */
       loadDB().then(function () {
         try {
+          dbCacheSave('хожуу');       /* таслагдсаны дараа ирсэн ч хадгална */
           if (applyRoleOverride()) {
             loadDB().then(function () {
               try { applyRole(); } catch (e2) {}
               try { renderAll(); } catch (e2) {}
+              dbCacheSave('хожуу-эрх');
             }).catch(function () {});
             return;
           }
