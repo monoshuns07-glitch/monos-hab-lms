@@ -91,7 +91,8 @@ var pageLabels = {
   ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
   'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт',
-  hrorder: 'Хүний нөөцийн захиалгын хуудас', structure: 'Байгууллагын бүтэц'
+  hrorder: 'Хүний нөөцийн захиалгын хуудас', structure: 'Байгууллагын бүтэц',
+  myresults: 'Миний сургалтын явц'
 };
 
 /* Албуудыг ХАТУУ бичихгүй — зөвхөн бүртгэлтэй ажилтнуудаас гарна (deptList) */
@@ -17497,19 +17498,142 @@ function renderDataflow() {
 }
 
 /* ============ Миний сургалт + Шалгалтын дүн (апп дотор — нэг код) ============ */
+/* ---- Миний сургалтын явц: MiSkill-ийн БОДИТ дата ---- */
+var MSMY_PACK = null;
+
+/* Нэвтэрсэн ажилтны мөрийг олох: uid → и-мэйл → нэр */
+function msMyFind(pack) {
+  if (!pack || !Array.isArray(pack.rows) || !SESSION) return null;
+  var rows = pack.rows, uid = SESSION.uid || '', i, r;
+  var em = String(SESSION.email || '').toLowerCase().trim();
+  for (i = 0; i < rows.length; i++) { r = rows[i];
+    if (uid && (r.empUid === uid || r.empId === uid)) return r; }
+  for (i = 0; i < rows.length; i++) { r = rows[i];
+    if (em && String(r.empEmail || '').toLowerCase().trim() === em) return r; }
+  var nm = String((SESSION.name || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+  if (nm) for (i = 0; i < rows.length; i++) { r = rows[i];
+    if (String(r.empName || '').replace(/\s+/g, ' ').trim().toLowerCase() === nm) return r; }
+  return null;
+}
+/* «3. Сургалтын тайлан» → 3 */
+function msMyNo(n) { var m = String(n || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : 0; }
+/* Контентын харагдах нэр (дугааргүйгээр) */
+function msMyLabel(no) { return MS_NAMES[String(no)] || ('Контент №' + no); }
+/* «00:01:50» → «1м 50с» */
+function msMySpent(s) {
+  var m = String(s || '').match(/^(\d+):(\d+):(\d+)$/); if (!m) return '';
+  var h = +m[1], mi = +m[2], se = +m[3];
+  if (!h && !mi && !se) return '';
+  return (h ? h + 'ц ' : '') + (mi ? mi + 'м ' : '') + (se ? se + 'с' : '');
+}
+function msMyDate(s) { return s && s !== '-' ? String(s) : '—'; }
+/* Шалгалтын мөр БОДИТ эсэх — Meskill дээр тэнцэх оноо 0 болсон хоосон мөрүүд бий */
+function msMyExamOk(e) {
+  if (!e) return false;
+  var need = Number(e.need) || 0, best = Number(e.best) || 0, tries = Number(e.tries) || 0;
+  if (tries > 0) return true;
+  if (need > 0 && best > 0) return true;
+  return !!e.at;
+}
+
 function renderMyResults() {
   var sec = pageEl('myresults'); if (!sec) return;
   sec.style.padding = '';
-  // Шалгалтын сайт Firebase-тэй тул iframe дотор нэвтрэлт ажиллахгүй → шинэ цонхонд нээнэ
-  sec.innerHTML = '<div class="page-header"><div><h1>Дотоод сургалтын шалгалт</h1>' +
-    '<p class="page-subtitle">ХАБЭА онлайн шалгалт</p></div></div>' +
-    '<div class="card" style="padding:40px;text-align:center;max-width:560px;margin:24px auto 0">' +
-    '<div style="width:74px;height:74px;border-radius:20px;background:#D1FAE5;color:#065F46;display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 16px"><i class="ti ti-clipboard-check"></i></div>' +
-    '<h2 style="margin:0 0 8px;font-family:\'Bricolage Grotesque\',sans-serif">ХАБЭА Шалгалт</h2>' +
-    '<p style="color:#64748B;margin:0 0 22px;line-height:1.55">Шалгалт өгөхийн тулд доорх товчийг дарна уу. Шалгалт шинэ цонхонд нээгдэж, бүрэн ажиллана.</p>' +
-    '<button class="btn btn-primary" onclick="window.open(\'https://habea-deploy.vercel.app/habea-shalgalt.html\',\'_blank\',\'noopener\')" style="padding:13px 30px;font-size:15px"><i class="ti ti-external-link"></i> Шалгалт эхлүүлэх</button>' +
-    '</div>';
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Миний сургалтын явц</h1>' +
+    '<p class="page-subtitle">ХАБЭА видео хичээл ба шалгалтын бодит үзүүлэлт</p></div></div>' +
+    '<div id="msMyBody"><div class="card" style="padding:34px;text-align:center;color:#8A94A6">' +
+    '<i class="ti ti-loader-2"></i> Ачаалж байна…</div></div>';
+  msMyLoad();
 }
+
+async function msMyLoad() {
+  var box = $('#msMyBody'); if (!box) return;
+  var pack = MSMY_PACK;
+  if (!pack) { try { pack = await msR2Load(); } catch (e) { pack = null; } MSMY_PACK = pack; }
+  if (!pack) {
+    box.innerHTML = '<div class="card" style="padding:30px">' +
+      emptyBox('Сургалтын дата ачаалж чадсангүй. Дараа дахин оролдоно уу.') + '</div>';
+    return;
+  }
+  var row = msMyFind(pack);
+  if (!row) {
+    box.innerHTML = '<div class="card" style="padding:30px">' +
+      emptyBox('Таны нэр дээр сургалтын бүртгэл олдсонгүй. ХАБЭА-н албанд хандана уу.') + '</div>';
+    return;
+  }
+  box.innerHTML = msMyHTML(row, pack);
+}
+
+function msMyHTML(row, pack) {
+  var d = row.detail || {}, train = d.train || [], exam = d.exam || [];
+  /* шалгалт №N+1 нь видео №N-д харьяалагдана */
+  var exBy = {};
+  exam.forEach(function (e) { if (msMyExamOk(e)) exBy[msMyNo(e.n) - 1] = e; });
+
+  var tDone = train.filter(function (t) { return t.done; }).length;
+  var xReal = exam.filter(msMyExamOk);
+  var xPass = xReal.filter(function (e) { return e.passed; }).length;
+  var pct = Math.round(((tDone + xPass) / Math.max(1, train.length + xReal.length)) * 100);
+
+  var head =
+    '<div class="card" style="padding:20px 22px;margin-bottom:16px">' +
+    '<div style="font-weight:700;font-size:15px">' + esc(row.program || (pack.program && pack.program.name) || 'ХАБЭА сургалт') + '</div>' +
+    '<div style="font-size:12px;color:#8A94A6;margin-top:4px">' +
+    esc(row.empName || '') + (row.pos ? ' · ' + esc(row.pos) : '') +
+    ' · шинэчлэгдсэн ' + esc(row.updatedAt || (pack.program && pack.program.at) || '') + '</div></div>';
+
+  var stats = '<div class="stats-grid" style="margin-bottom:16px">' +
+    statCard('Видео үзсэн', tDone + '/' + train.length, 'ti-player-play', '#0891B2') +
+    statCard('Шалгалт тэнцсэн', xPass + '/' + xReal.length, 'ti-clipboard-check', '#16A34A') +
+    statCard('Нийт биелэлт', pct + '%', 'ti-progress-check', '#7C3AED') +
+    '</div>';
+
+  /* ---- Видео хичээлүүд ---- */
+  var vids = train.slice().sort(function (a, b) { return msMyNo(a.n) - msMyNo(b.n); }).map(function (t) {
+    var no = msMyNo(t.n), p = Math.max(0, Math.min(100, Math.round(t.pct || 0)));
+    var ex = exBy[no], sp = msMySpent(t.spent);
+    var tag = t.done
+      ? '<span class="tag tag-emerald">✓ Үзсэн</span>'
+      : (p > 0 ? '<span class="tag tag-warn">Дуусаагүй</span>' : '<span class="tag tag-coral">Үзээгүй</span>');
+    var exLine = ex
+      ? (ex.passed
+          ? '<span style="color:#16A34A;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : '—') + ' оноо · тэнцсэн</span>'
+          : '<span style="color:#BE123C;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : 0) + '/' + (ex.need || 80) +
+            ' оноо · тэнцээгүй' + (ex.tries ? ' (' + ex.tries + ' оролдлого)' : '') + '</span>')
+      : '<span style="color:#8A94A6">Шалгалтгүй — зөвхөн үзэх</span>';
+    return '<div style="padding:13px 0;border-bottom:1px solid #EEF1F4">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div style="flex:1;min-width:180px;font-weight:600">' + esc(msMyLabel(no)) + '</div>' + tag + '</div>' +
+      '<div style="display:flex;align-items:center;gap:9px;margin:8px 0 5px">' +
+      miniBar(p, t.done ? '#16A34A' : (p > 0 ? '#D97706' : '#E2E8F0')) +
+      '<span style="font-size:12px;color:#8A94A6;white-space:nowrap">' + p + '%</span></div>' +
+      '<div style="font-size:12px;color:#8A94A6">' + exLine +
+      ' · ' + msMyDate(t.at) + (sp ? ' · ' + sp : '') + '</div></div>';
+  }).join('');
+
+  /* ---- Дараа нь юу хийх ---- */
+  var todo = [];
+  train.forEach(function (t) {
+    var no = msMyNo(t.n);
+    if (!t.done) todo.push('«' + msMyLabel(no) + '» видеог үзэж дуусгах');
+    var ex = exBy[no];
+    if (ex && !ex.passed) todo.push('«' + msMyLabel(no) + '» шалгалтад тэнцэх');
+  });
+  var todoHTML = todo.length
+    ? '<div class="card" style="padding:18px 22px;margin-top:16px;border-left:4px solid #D97706">' +
+      '<div style="font-weight:700;margin-bottom:9px"><i class="ti ti-alert-triangle" style="color:#D97706"></i> Гүйцээх шаардлагатай (' + todo.length + ')</div>' +
+      '<ul style="margin:0;padding-left:20px;line-height:1.9;font-size:13px;color:#475569">' +
+      todo.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>'
+    : '<div class="card" style="padding:18px 22px;margin-top:16px;border-left:4px solid #16A34A">' +
+      '<div style="font-weight:700;color:#166534"><i class="ti ti-circle-check"></i> Бүх сургалт, шалгалтаа бүрэн гүйцэтгэсэн байна. Баяр хүргэе!</div></div>';
+
+  return head + stats +
+    '<div class="card" style="padding:6px 22px 14px">' +
+    '<div style="font-weight:700;padding:14px 0 4px">Видео хичээл ба шалгалт (' + train.length + ')</div>' +
+    vids + '</div>' + todoHTML;
+}
+
 function mrFmt(ts) {
   try { if (ts && ts.toDate) { var d = ts.toDate(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); } } catch (e) {}
   if (ts) { try { var d2 = new Date(ts); if (!isNaN(d2.getTime())) return d2.toLocaleDateString('mn-MN'); } catch (e) {} }
