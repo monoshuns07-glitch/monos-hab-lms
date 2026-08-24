@@ -548,8 +548,9 @@ async function buildEmployeesFromRealData() {
       partial: !!readErr };
     var examByUser = {}, progByUser = {};
     try {
-      var examSnap = await fdb.collection('exam_results').get();
-      examSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (examByUser[x.userId] = examByUser[x.userId] || []).push(x); });
+      /* ⚡ R2-оос — Firestore-д зөвхөн ажилтны бүртгэл үлдэнэ */
+      var examRows = await lmsExamLoad();
+      (examRows || []).forEach(function (x) { if (!x.userId) return; (examByUser[x.userId] = examByUser[x.userId] || []).push(x); });
     } catch (e) {}
     try {
       /* ⚡ R2-оос — Firestore бүрэн скан өдрийн уншилтын квотыг иддэг */
@@ -18282,12 +18283,11 @@ async function msLessonsLoad(force) {
   if (MS_LESSONS && !force) return MS_LESSONS;
   MS_LESSONS = [];
   try {
-    if (typeof fdb === 'undefined' || !fdb) return MS_LESSONS;
-    var snap = await fdb.collection('trainings').get();
+    /* ⚡ R2-оос (lmsTrnLoad нь хоосон үед л Firestore-оос татаж кэшилнэ) */
+    var list = await lmsTrnLoad(force);
     var out = [];
-    snap.forEach(function (d) {
-      var v = d.data() || {};
-      out.push({ id: d.id, title: String(v.title || v.name || '(нэргүй)'),
+    (list || []).forEach(function (v) {
+      out.push({ id: v.id, title: String(v.title || v.name || '(нэргүй)'),
         order: Number(v.order || 0), video: !!(v.videoUrl || v.video) });
     });
     out.sort(function (a, b) { return a.order - b.order || a.title.localeCompare(b.title); });
@@ -18637,6 +18637,32 @@ function msParseWorkbook(wb, say) {
    квот (50,000) хэдхэн арван нэвтрэлтэд дүүрч, БҮХ дата хаагддаг байв.
    R2-д нэг файл болгож хадгалснаар уншилт 964 → 1 болно. */
 var LMS_R2_FILE = 'lms/progress.json';
+
+/* Шалгалтын дүн — R2 (Firestore-д зөвхөн ажилтны бүртгэл үлдэнэ). */
+var LMS_EXAM_FILE = 'lms/exam_results.json';
+
+async function lmsExamPublish(list) {
+  return await riskR2PutJson(LMS_EXAM_FILE, {
+    updatedAt: new Date().toISOString(),
+    total: (list || []).length,
+    rows: list || []
+  });
+}
+/* R2-оос уншина. Хоосон бөгөөд АДМИН бол Firestore-оос татаад R2-д хадгална. */
+async function lmsExamLoad(force) {
+  var rows = [];
+  try {
+    var p = await riskR2GetJson(LMS_EXAM_FILE, { fresh: !!force });
+    if (p && Array.isArray(p.rows)) rows = p.rows;
+  } catch (e) {}
+  if (rows.length || DEMO || !fbReady || !isAdmin()) return rows;
+  try {
+    var snap = await fdb.collection('exam_results').get();
+    rows = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+    try { await lmsExamPublish(rows); } catch (e) {}
+  } catch (e) { console.warn('[LMS] exam_results', e && e.message); }
+  return rows;
+}
 
 /* Видео хичээлийн жагсаалт — R2 кэш (Firestore нь эх сурвалж хэвээр).
    Ажилтан ачаалахдаа Firestore-т ХҮРЭХГҮЙ → өдрийн квотоос ангид. */
