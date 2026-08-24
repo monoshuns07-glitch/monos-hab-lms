@@ -552,8 +552,9 @@ async function buildEmployeesFromRealData() {
       examSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (examByUser[x.userId] = examByUser[x.userId] || []).push(x); });
     } catch (e) {}
     try {
-      var progSnap = await fdb.collection('training_progress').get();
-      progSnap.forEach(function (d) { var x = d.data() || {}; if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
+      /* ⚡ R2-оос — Firestore бүрэн скан өдрийн уншилтын квотыг иддэг */
+      var progRows = await lmsR2Load();
+      (progRows || []).forEach(function (x) { if (!x.userId) return; (progByUser[x.userId] = progByUser[x.userId] || []).push(x); });
     } catch (e) {}
     var habeaByEmail = await readHabeaExamsByEmail() || {}; // ХАБЭА шалгалтын дүн (имэйлээр)
 
@@ -5145,20 +5146,19 @@ function filteredEmployees() {
 /* ---- Видео сургалт (MiSkill/LMS) — ажилтан бүрийн явцыг Firestore-оос уншина ---- */
 var LMS = { loaded: false, loading: false, trainings: [], progByUser: {} };
 function loadLmsData() {
-  if (DEMO || !fbReady) return Promise.resolve();
-  return fdb.collection('trainings').get().then(function (trSnap) {
-    LMS.trainings = trSnap.docs
-      .map(function (d) { return Object.assign({ id: d.id }, d.data()); })
-      .filter(function (t) { return t.isActive !== false; });
-    return fdb.collection('training_progress').get();
-  }).then(function (pgSnap) {
+  if (DEMO) return Promise.resolve();
+  /* ⚡ Хоёулаа R2-оос — ажилтан ачаалахдаа Firestore-т огт хүрэхгүй */
+  return lmsTrnLoad().then(function (trs) {
+    LMS.trainings = (trs || []).filter(function (t) { return t.isActive !== false; });
+    return lmsR2Load();
+  }).then(function (rows) {
     LMS.progByUser = {};
-    pgSnap.forEach(function (d) {
-      var x = d.data() || {};
+    (rows || []).forEach(function (x) {
       if (!x.userId || !x.trainingId) return;
       (LMS.progByUser[x.userId] = LMS.progByUser[x.userId] || {})[x.trainingId] = x;
     });
     LMS.loaded = true;
+    return lmsMergeSelf();
   }).catch(function (e) { console.warn('[LMS] load:', e && e.message); });
 }
 function empLmsStats(emp) {
@@ -18631,6 +18631,68 @@ function msParseWorkbook(wb, say) {
 }
 
 /* Гарсан дүнг DB-д суулгаж, ажилтантай тааруулна */
+/* ============ Сургалтын явц — R2 (Firestore-ийн оронд) ============
+   ⚠ ЯАГААД: `training_progress` цуглуулгыг апп ачаалах бүрд БҮРЭН уншиж
+   байсан. 964 бичлэг × ажилтан бүр = Firestore-ийн өдрийн үнэгүй уншилтын
+   квот (50,000) хэдхэн арван нэвтрэлтэд дүүрч, БҮХ дата хаагддаг байв.
+   R2-д нэг файл болгож хадгалснаар уншилт 964 → 1 болно. */
+var LMS_R2_FILE = 'lms/progress.json';
+
+/* Видео хичээлийн жагсаалт — R2 кэш (Firestore нь эх сурвалж хэвээр).
+   Ажилтан ачаалахдаа Firestore-т ХҮРЭХГҮЙ → өдрийн квотоос ангид. */
+var LMS_TRN_FILE = 'lms/trainings.json';
+
+async function lmsTrnPublish(list) {
+  return await riskR2PutJson(LMS_TRN_FILE, {
+    updatedAt: new Date().toISOString(),
+    total: (list || []).length,
+    rows: list || []
+  });
+}
+/* R2-оос уншина. Хоосон бол Firestore-оос татаад R2-д хадгална (өөрөө эдгэнэ). */
+async function lmsTrnLoad(force) {
+  var rows = [];
+  try {
+    var p = await riskR2GetJson(LMS_TRN_FILE, { fresh: !!force });
+    if (p && Array.isArray(p.rows)) rows = p.rows;
+  } catch (e) {}
+  if (rows.length) return rows;
+  if (DEMO || !fbReady) return [];
+  try {
+    var snap = await fdb.collection('trainings').get();
+    rows = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+    try { await lmsTrnPublish(rows); } catch (e) {}
+  } catch (e) { console.warn('[LMS] trainings', e && e.message); }
+  return rows;
+}
+
+async function lmsR2Publish(rows) {
+  return await riskR2PutJson(LMS_R2_FILE, {
+    updatedAt: new Date().toISOString(),
+    total: (rows || []).length,
+    rows: rows || []
+  });
+}
+async function lmsR2Load(force) {
+  try {
+    var p = await riskR2GetJson(LMS_R2_FILE, { fresh: !!force });
+    return (p && Array.isArray(p.rows)) ? p.rows : [];
+  } catch (e) { return []; }
+}
+/* Өөрийн ШИНЭ явцыг Firestore-оос нэмж уншина (сайт дээр шалгалт өгсөн бол).
+   Зөвхөн өөрийн баримт тул хэдхэн уншилт — квотод нөлөөлөхгүй. */
+async function lmsMergeSelf() {
+  try {
+    if (!SESSION || !SESSION.uid) return;
+    var s = await fdb.collection('training_progress').where('userId', '==', SESSION.uid).get();
+    s.forEach(function (d) {
+      var x = d.data() || {};
+      if (!x.trainingId) return;
+      (LMS.progByUser[SESSION.uid] = LMS.progByUser[SESSION.uid] || {})[x.trainingId] = x;
+    });
+  } catch (e) {}
+}
+
 /* ============ MiSkill импортын дараа — БОДИТ явцыг сайтад тусгах ============
    Ажилтан бүрийн үзсэн хувь, шалгалтын оноог training_progress-д бичиж,
    холбогдсон видеонуудын invitedEmployees-д хөтөлбөрт хамрагдсан бүх
@@ -18676,21 +18738,18 @@ async function msSyncProgress(rows, say) {
   });
 
   note('⏳ Ажилтны явцыг шинэчилж байна… (' + ops.length + ' бичлэг)');
+  /* ⚡ R2-д НЭГ файл болгож бичнэ. Firestore-д бичвэл апп ачаалах бүрд
+     964 уншилт болж, өдрийн үнэгүй квот тэр дороо дүүрдэг. */
   var wrote = 0, failed = 0;
-  for (var i = 0; i < ops.length; i += 400) {
-    var chunk = ops.slice(i, i + 400);
-    try {
-      var b = fdb.batch();
-      chunk.forEach(function (o) {
-        b.set(fdb.collection('training_progress').doc(o.id), o.data, { merge: true });
-      });
-      await b.commit();
-      wrote += chunk.length;
-      note('⏳ явц ' + wrote + '/' + ops.length + '…');
-    } catch (e) {
-      failed += chunk.length;
-      console.warn('[miskill] явц бичих', e && e.message);
-    }
+  try {
+    var prevRows = await lmsR2Load(true);
+    var keepRows = (prevRows || []).filter(function (x) { return x.source !== 'miskill'; });
+    var newRows = keepRows.concat(ops.map(function (o) { return o.data; }));
+    await lmsR2Publish(newRows);
+    wrote = ops.length;
+  } catch (e) {
+    failed = ops.length;
+    console.warn('[miskill] явц R2', e && e.message);
   }
 
   /* Оногдсон ажилтан = хөтөлбөрт хамрагдсан бүх ажилтан */
@@ -18703,10 +18762,15 @@ async function msSyncProgress(rows, say) {
     });
     await bi.commit();
   } catch (e) { invOk = 0; console.warn('[miskill] оногдсон', e && e.message); }
+  /* invitedEmployees өөрчлөгдсөн тул видеоны R2 кэшийг ч шинэчилнэ */
+  try {
+    var fresh = await fdb.collection('trainings').get();
+    await lmsTrnPublish(fresh.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); }));
+  } catch (e) { console.warn('[miskill] видео кэш', e && e.message); }
 
   if (failed) {
-    note('<span style="color:#DC2626">⚠ ' + wrote + ' бичлэг шинэчлэгдэв, ' + failed +
-      ' нь амжилтгүй. Firebase консол дээр дүрмээ шинэчилсэн эсэхээ шалгана уу.</span>');
+    note('<span style="color:#DC2626">⚠ Явц хадгалагдсангүй (' + failed +
+      ' бичлэг). Интернэт холболтоо шалгаад дахин оруулна уу.</span>');
   } else {
     note('<span style="color:#16A34A">✓ ' + wrote + ' явцын бичлэг, ' + invOk +
       ' видеоны оногдсон жагсаалт шинэчлэгдлээ</span>');
