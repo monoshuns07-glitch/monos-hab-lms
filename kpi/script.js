@@ -17568,13 +17568,16 @@ async function msMyLoad() {
 function msMyHTML(row, pack) {
   var d = row.detail || {}, train = d.train || [], exam = d.exam || [];
   /* шалгалт №N+1 нь видео №N-д харьяалагдана */
-  var exBy = {};
-  exam.forEach(function (e) { if (msMyExamOk(e)) exBy[msMyNo(e.n) - 1] = e; });
+  var exBy = {}, exAll = {};
+  exam.forEach(function (e) {
+    var k = msMyNo(e.n) - 1; exAll[k] = e;
+    if (msMyExamOk(e)) exBy[k] = e;
+  });
 
   var tDone = train.filter(function (t) { return t.done; }).length;
-  var xReal = exam.filter(msMyExamOk);
-  var xPass = xReal.filter(function (e) { return e.passed; }).length;
-  var pct = Math.round(((tDone + xPass) / Math.max(1, train.length + xReal.length)) * 100);
+  var xPass = exam.filter(msMyExamOk).filter(function (e) { return e.passed; }).length;
+  var xTotal = exam.length;
+  var pct = Math.round(((tDone + xPass) / Math.max(1, train.length + xTotal)) * 100);
 
   var head =
     '<div class="card" style="padding:20px 22px;margin-bottom:16px">' +
@@ -17585,7 +17588,7 @@ function msMyHTML(row, pack) {
 
   var stats = '<div class="stats-grid" style="margin-bottom:16px">' +
     statCard('Видео үзсэн', tDone + '/' + train.length, 'ti-player-play', '#0891B2') +
-    statCard('Шалгалт тэнцсэн', xPass + '/' + xReal.length, 'ti-clipboard-check', '#16A34A') +
+    statCard('Шалгалт тэнцсэн', xPass + '/' + xTotal, 'ti-clipboard-check', '#16A34A') +
     statCard('Нийт биелэлт', pct + '%', 'ti-progress-check', '#7C3AED') +
     '</div>';
 
@@ -17596,12 +17599,17 @@ function msMyHTML(row, pack) {
     var tag = t.done
       ? '<span class="tag tag-emerald">✓ Үзсэн</span>'
       : (p > 0 ? '<span class="tag tag-warn">Дуусаагүй</span>' : '<span class="tag tag-coral">Үзээгүй</span>');
-    var exLine = ex
-      ? (ex.passed
-          ? '<span style="color:#16A34A;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : '—') + ' оноо · тэнцсэн</span>'
-          : '<span style="color:#BE123C;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : 0) + '/' + (ex.need || 80) +
-            ' оноо · тэнцээгүй' + (ex.tries ? ' (' + ex.tries + ' оролдлого)' : '') + '</span>')
-      : '<span style="color:#8A94A6">Шалгалтгүй — зөвхөн үзэх</span>';
+    var exLine;
+    if (ex) {
+      exLine = ex.passed
+        ? '<span style="color:#16A34A;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : '—') + ' оноо · тэнцсэн</span>'
+        : '<span style="color:#BE123C;font-weight:600">Шалгалт ' + (ex.best != null ? ex.best : 0) + '/' + (ex.need || 80) +
+          ' оноо · тэнцээгүй' + (ex.tries ? ' (' + ex.tries + ' оролдлого)' : '') + '</span>';
+    } else if (exAll[no]) {
+      exLine = '<span style="color:#D97706;font-weight:600">Шалгалт өгөөгүй</span>';
+    } else {
+      exLine = '<span style="color:#8A94A6">Шалгалтгүй — зөвхөн үзэх</span>';
+    }
     return '<div style="padding:13px 0;border-bottom:1px solid #EEF1F4">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
       '<div style="flex:1;min-width:180px;font-weight:600">' + esc(msMyLabel(no)) + '</div>' + tag + '</div>' +
@@ -17619,6 +17627,7 @@ function msMyHTML(row, pack) {
     if (!t.done) todo.push('«' + msMyLabel(no) + '» видеог үзэж дуусгах');
     var ex = exBy[no];
     if (ex && !ex.passed) todo.push('«' + msMyLabel(no) + '» шалгалтад тэнцэх');
+    else if (!ex && exAll[no]) todo.push('«' + msMyLabel(no) + '» шалгалтыг өгөх');
   });
   var todoHTML = todo.length
     ? '<div class="card" style="padding:18px 22px;margin-top:16px;border-left:4px solid #D97706">' +
