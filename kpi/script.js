@@ -18631,6 +18631,89 @@ function msParseWorkbook(wb, say) {
 }
 
 /* Гарсан дүнг DB-д суулгаж, ажилтантай тааруулна */
+/* ============ MiSkill импортын дараа — БОДИТ явцыг сайтад тусгах ============
+   Ажилтан бүрийн үзсэн хувь, шалгалтын оноог training_progress-д бичиж,
+   холбогдсон видеонуудын invitedEmployees-д хөтөлбөрт хамрагдсан бүх
+   ажилтныг бүртгэнэ. Баримтын ID = {uid}_{trainingId} → дахин ажиллуулахад
+   давхардахгүй (идемпотент).
+   ⚠ Firestore дүрэм: бусдын явцыг зөвхөн users/{uid}.role=='admin' бичнэ. */
+async function msSyncProgress(rows, say) {
+  var note = function (m) { try { if (say) say(m); } catch (e) {} };
+  if (DEMO || !fbReady || !isAdmin()) return;
+  var map = null;
+  try { map = await msMapLoad(true); } catch (e) { map = null; }
+  var nos = map ? Object.keys(map).filter(function (k) { return map[k]; }) : [];
+  if (!nos.length) {
+    note('<span style="color:#D97706">⚠ Контентыг видеотой холбоогүй тул явц шинэчлэгдсэнгүй. ' +
+      '«Видеотой холбох» хэсгээс тааруулаад дахин оруулна уу.</span>');
+    return;
+  }
+  var now = new Date().toISOString(), ops = [], uids = [];
+  rows.forEach(function (r) { if (r.empUid && uids.indexOf(r.empUid) < 0) uids.push(r.empUid); });
+
+  rows.forEach(function (r) {
+    if (!r.empUid || !r.detail) return;
+    nos.forEach(function (no) {
+      var tid = map[no];
+      var tr = (r.detail.train || []).filter(function (x) { return msMyNo(x.n) === Number(no); })[0];
+      var exR = (r.detail.exam || []).filter(function (x) { return msMyNo(x.n) === Number(no) + 1; })[0];
+      var ex = msMyExamOk(exR) ? exR : null;          /* хоосон «тэнцсэн»-г тооцохгүй */
+      var pct = tr ? Math.max(0, Math.min(100, Math.round(tr.pct || 0))) : 0;
+      if (pct <= 0 && !ex) return;                    /* огт хөдлөөгүй */
+      var st = 'in_progress';
+      if (ex && ex.passed) st = 'passed'; else if (ex) st = 'failed';
+      var d = {
+        userId: r.empUid, trainingId: tid,
+        watchProgress: pct / 100, status: st,
+        attempts: ex ? (Number(ex.tries) || 0) : 0,
+        source: 'miskill', updatedAt: now
+      };
+      if (ex && ex.best != null && ex.best !== '') d.score = Math.round(Number(ex.best) || 0);
+      var at = (tr && tr.at) || (ex && ex.at) || '';
+      if (at) d.completedAt = at;
+      ops.push({ id: r.empUid + '_' + tid, data: d });
+    });
+  });
+
+  note('⏳ Ажилтны явцыг шинэчилж байна… (' + ops.length + ' бичлэг)');
+  var wrote = 0, failed = 0;
+  for (var i = 0; i < ops.length; i += 400) {
+    var chunk = ops.slice(i, i + 400);
+    try {
+      var b = fdb.batch();
+      chunk.forEach(function (o) {
+        b.set(fdb.collection('training_progress').doc(o.id), o.data, { merge: true });
+      });
+      await b.commit();
+      wrote += chunk.length;
+      note('⏳ явц ' + wrote + '/' + ops.length + '…');
+    } catch (e) {
+      failed += chunk.length;
+      console.warn('[miskill] явц бичих', e && e.message);
+    }
+  }
+
+  /* Оногдсон ажилтан = хөтөлбөрт хамрагдсан бүх ажилтан */
+  var invOk = 0;
+  try {
+    var bi = fdb.batch();
+    nos.forEach(function (no) {
+      bi.set(fdb.collection('trainings').doc(map[no]), { invitedEmployees: uids }, { merge: true });
+      invOk++;
+    });
+    await bi.commit();
+  } catch (e) { invOk = 0; console.warn('[miskill] оногдсон', e && e.message); }
+
+  if (failed) {
+    note('<span style="color:#DC2626">⚠ ' + wrote + ' бичлэг шинэчлэгдэв, ' + failed +
+      ' нь амжилтгүй. Firebase консол дээр дүрмээ шинэчилсэн эсэхээ шалгана уу.</span>');
+  } else {
+    note('<span style="color:#16A34A">✓ ' + wrote + ' явцын бичлэг, ' + invOk +
+      ' видеоны оногдсон жагсаалт шинэчлэгдлээ</span>');
+  }
+  try { LMS.loaded = false; loadLmsData && loadLmsData(); } catch (e) {}
+}
+
 function msApplyImport(res, say) {
   var keys = Object.keys(res.people);
   if (!keys.length) { say('<span style="color:#DC2626">Ажилтны мөр олдсонгүй</span>'); return; }
@@ -18693,6 +18776,8 @@ function msApplyImport(res, say) {
   say('⏳ Бүх ажилтанд түгээж байна…');
   msR2Publish(keep.concat(rows), DB.miskillProgram).then(function () {
     console.log('[miskill] R2-д нийтлэв: ' + DB.miskillStats.length);
+    /* ⭐ Бодит явцыг сайтын видеонуудад ШУУД тусгана */
+    return msSyncProgress(keep.concat(rows), say);
   }).catch(function (e) {
     console.error('[miskill] R2', e);
     toast('⚠ Түгээхэд алдаа гарлаа — дахин оруулна уу', 'error');

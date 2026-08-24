@@ -25,6 +25,13 @@ service cloud.firestore {
       return isAuth() && request.auth.uid == uid;
     }
 
+    // Админ эсэх — users/{uid}.role == 'admin'.
+    // ⚠ Бичилт тутамд НЭГ уншилт нэмнэ. Зөвхөн шаардлагатай газар ашигла.
+    function isAdminUser() {
+      return isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Хэрэглэгчийн профайл — нэвтэрсэн хүн бүр уншина (админд бүтэн жагсаалт
     // хэрэгтэй), гэхдээ зөвхөн эзэн нь өөрийнхөө баримтыг засна.
     match /users/{uid} {
@@ -41,10 +48,14 @@ service cloud.firestore {
     match /trainings/{docId} { allow read, write: if isAuth(); }
     match /questions/{docId} { allow read, write: if isAuth(); }
 
-    // Сургалтын явц — бичихдээ өөрийн userId-г заавал агуулна.
+    // Сургалтын явц — ажилтан ЗӨВХӨН өөрийн явцыг бичнэ.
+    // Админ бусдынхыг бичиж чадна: MiSkill импортоор 298 ажилтны бодит
+    // явцыг нэг дор шинэчлэхэд шаардлагатай (msSyncProgress).
     match /training_progress/{docId} {
-      allow read:   if isAuth();
-      allow write:  if isAuth() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAuth();
+      allow create, update: if isAuth() &&
+        (request.resource.data.userId == request.auth.uid || isAdminUser());
+      allow delete: if isAdminUser();
     }
 
     // Шалгалтын дүн — үүссэний дараа ӨӨРЧЛӨГДӨХГҮЙ.
