@@ -19434,6 +19434,52 @@ function meaMyRules(emp) {
   return out.sort(function (a, b) { return b.score - a.score; });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   ХУУЛИАР ХҮЛЭЭСЭН ҮҮРЭГ — «Миний мөрдөх дүрэм» хэсэгт
+   ----------------------------------------------------------------------
+   Эх сурвалж: «Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн тухай хууль»
+   (2008.05.22 · шинэчилсэн найруулга · 2015.05.14-ний нэмэлт, өөрчлөлттэй)
+   28 дугаар зүйл. Ажил олгогчийн үүрэг — 28.1.1-ээс 28.1.16.
+
+   ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ: «Мөрдөх дүрэм» нь эрсдэлийн үнэлгээний «авах арга
+     хэмжээ» нүднээс гардаг. Тэдгээр нь тухайн АЖЛЫН БАЙРНЫ аюулын тухай
+     байдаг — халтирах, гараа хавчуулах, нойтон цэвэрлэгээ г.м. Гүйцэтгэх
+     захиралд ийм дүрэм утгагүй: түүний хариуцлага бол ажил олгогчийн
+     хуулиар хүлээсэн үүрэг. Тиймээс энэ хүнд ХУУЛИЙН үүргийг үндсэн
+     байранд тавьж, ажлын байрны дүрмийг доор эвхмэлээр үлдээнэ.
+   ⚠ Эрсдэл ХАРАХ эрхэд огт хамаагүй — зөвхөн энэ хэсгийн агуулга солигдоно.
+   ⚠ Заалтын дугаар, агуулгыг хуулийн ЭХ БИЧВЭРЭЭС шалгаж бичсэн. Санаанаасаа
+     бүү өөрчил. Хууль шинэчлэгдвэл энд засаж, огноог нь шинэчилнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+var LAW_OSH_SRC = 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн тухай хууль · 28 дугаар зүйл';
+var LAW_CEO_DUTIES = [
+  { no: '28.1.1',  t: 'Үйлдвэрлэлээс гарах хими, физик, биологийн хүчин зүйл ажилтны эрүүл мэнд, байгаль орчинд хор хүргэхгүй нөхцөлийг бүрдүүлнэ.' },
+  { no: '28.1.2',  t: 'Амь нас, эрүүл мэндэд аюултай нөхцөл үүсвэл ажлыг ДАРУЙ ЗОГСООЖ, аюулыг арилгана.' },
+  { no: '28.1.3',  t: 'Ажилтныг осол, бэртэл, өвчлөлөөс хамгаалах ХАБЭА-н удирдлагын тогтолцоог нэвтрүүлнэ.' },
+  { no: '28.1.4',  t: 'Ажлын байр бүрт эрсдэлийн үнэлгээ хийлгэнэ — аюулыг илрүүлж, үнэлж, бууруулна.' },
+  { no: '28.1.5',  t: 'Ажлын байрны хөдөлмөрийн нөхцөлийн үнэлгээг хийлгэнэ.' },
+  { no: '28.1.6',  t: 'Ажлын байрны онцлогт тохирсон дүрэм, заавар, журам батлан мөрдүүлнэ.' },
+  { no: '28.1.7',  t: 'ХАБЭА-н талаар шаардлагатай мэдлэгийг өөрөө эзэмшсэн байна.' },
+  { no: '28.1.8',  t: 'Сургалтад хамрагдаагүй, зааварчилга аваагүй, шалгалт өгөөгүй ажилтнаар ажил үүрэг ГҮЙЦЭТГҮҮЛЭХГҮЙ. Мэдлэгийг нь жил бүр шалгана.' },
+  { no: '28.1.9',  t: 'Аюултай, хортой нөхцөлд ажилладаг ажилтныг хор саармагжуулах бодис, хоол хүнсээр ҮНЭГҮЙ хангана.' },
+  { no: '28.1.10', t: 'Задгай газар, халаалтгүй байранд ажиллагсдад амрах, дулаацах, хоргодох байр гаргаж өгнө.' },
+  { no: '28.1.11', t: 'Үйлдвэрлэлийн осол, хурц хордлого, мэргэжлээс шалтгаалсан өвчнийг бүртгэж, холбогдох байгууллагад мэдээлнэ.' },
+  { no: '28.1.12', t: 'Хяналт тавих эрх бүхий хүнийг ажлын байранд саадгүй нэвтрүүлнэ.' },
+  { no: '28.1.13', t: 'Илэрсэн зөрчил, байцаагчийн шаардлага, дүгнэлтийн дагуу арга хэмжээ авч, эргэж мэдэгдэнэ.' },
+  { no: '28.1.14', t: 'ХАБЭА-н арга хэмжээ, түүнд шаардагдах хөрөнгийг жил бүрийн төсөв, төлөвлөгөө, хамтын гэрээнд тусгаж, зориулалтаар нь зарцуулна.' },
+  { no: '28.1.15', t: 'Осол, мэргэжлээс шалтгаалсан өвчний улмаас хөдөлмөрийн чадвараа алдсан ажилтанд нөхөн төлбөр олгоно.' },
+  { no: '28.1.16', t: 'Гэрээгээр ажил гүйцэтгүүлж байгаа бол тэдгээр этгээд өөрийн ажиллагсдын аюулгүй нөхцөлийг хангаж байгааг шаардана.' }
+];
+/* Аль албан тушаалд хуулийн үүрэг харуулах вэ.
+   ⚠ Албан тушаалаар таьна — хүн солигдоход код засах шаардлагагүй.
+   Одоохондоо зөвхөн Гүйцэтгэх захирал. Бусад захирал, албаны даргад
+   өөр багц хэрэгтэй бол ЭНД нэг мөр нэмнэ. */
+function lawDutiesFor(emp) {
+  var p = String((emp && (emp.pos || emp.role)) || '');
+  if (/гүйцэтгэх\s*захирал/i.test(p)) return LAW_CEO_DUTIES;
+  return null;
+}
+
 /* ══ АДМИН/ХАРИУЦАГЧИЙН «Арга хэмжээ» хуудас ══════════════════════════ */
 function renderMeasureAdminPage(sec, embed) {
   if (!sec) return;
@@ -19558,16 +19604,11 @@ function renderMeasurePage(sec, embed) {
 
   /* ── 📌 МӨРДӨХ ДҮРЭМ — баримт шаардахгүй, гарын үсгээр баталгаажна ── */
   var rules = meaMyRules(me);
-  var rulesHTML = rules.length
-    ? '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
-      '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
-      '<div style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
-      rules.length + '</div></div>' +
-      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:11px;line-height:1.6">' +
-      'Эдгээрийг ажлын явцад <b>өөрөө байнга мөрдөнө</b>. Зураг хавсаргах шаардлагагүй — ' +
-      'эрсдэлтэй танилцаж <b>гарын үсэг зурснаараа</b> хүлээн зөвшөөрсөнд тооцогдоно.</div>' +
-      '<div class="emp-todo-grid">' +
+  var lawList = lawDutiesFor(me);
+
+  /* Ажлын байрны дүрмийн жагсаалт (хоёр газраас дуудагдана) */
+  var ruleItemsHTML = function () {
+    return '<div class="emp-todo-grid">' +
       rules.slice(0, 40).map(function (x) {
         return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #F1F5F9;' +
           'border-radius:12px;background:#F8FAFC">' +
@@ -19577,9 +19618,53 @@ function renderMeasurePage(sec, embed) {
           '</div>';
       }).join('') + '</div>' +
       (rules.length > 40 ? '<div style="font-size:12px;color:#94A3B8;margin-top:8px">+' + (rules.length - 40) +
-        ' дүрэм — эрсдэлийн үнэлгээ цэсээс бүрэн үзнэ үү</div>' : '') +
-      '</div>'
-    : '';
+        ' дүрэм — эрсдэлийн үнэлгээ цэсээс бүрэн үзнэ үү</div>' : '');
+  };
+
+  /* ⭐ ХУУЛИАР ХҮЛЭЭСЭН ҮҮРЭГ — Гүйцэтгэх захиралд ажлын байрны дүрмийн
+     ОРОНД энэ гарна. Ажлын байрны дүрэм нь доор эвхмэлээр үлдэнэ. */
+  var rulesHTML = '';
+  if (lawList) {
+    rulesHTML = '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
+      '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
+      '<div style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
+      lawList.length + '</div></div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:12px;line-height:1.6">' +
+      'Эдгээр нь <b>ажил олгогчийн хуулиар хүлээсэн үүрэг</b> — таны албан тушаалд ' +
+      'шууд хамаарна. Эх сурвалж: <b>' + esc(LAW_OSH_SRC) + '</b>.</div>' +
+      '<div class="emp-todo-grid">' +
+      lawList.map(function (x) {
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #E0E7FF;' +
+          'border-radius:12px;background:#F8FAFF">' +
+          '<span style="flex-shrink:0;font-size:10.5px;font-weight:800;color:#3730A3;background:#EEF2FF;' +
+          'border-radius:6px;padding:2px 6px;font-family:\'Bricolage Grotesque\',sans-serif">' + esc(x.no) + '</span>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;line-height:1.55">' + esc(x.t) + '</span>' +
+          '</div>';
+      }).join('') + '</div>' +
+      (rules.length
+        ? '<details style="margin-top:12px">' +
+          '<summary style="cursor:pointer;font-size:12.5px;color:#64748B">' +
+          'Ажлын байрны эрсдэлээс гарсан дүрэм (' + rules.length + ')</summary>' +
+          '<div style="padding-top:10px">' +
+          '<div style="font-size:12px;color:#94A3B8;margin-bottom:9px;line-height:1.55">' +
+          'Эдгээр нь таны ажлын байрны эрсдэлийн үнэлгээнээс гарсан — өдөр тутмын ' +
+          'хувийн аюулаас сэргийлэх зөвлөмж.</div>' + ruleItemsHTML() + '</div></details>'
+        : '') +
+      '</div>';
+  } else if (rules.length) {
+    /* Бусад бүх хүн — ажлын байрны эрсдэлээс гарсан дүрэм (хуучин хэвээр) */
+    rulesHTML = '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
+      '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
+      '<div style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
+      rules.length + '</div></div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:11px;line-height:1.6">' +
+      'Эдгээрийг ажлын явцад <b>өөрөө байнга мөрдөнө</b>. Зураг хавсаргах шаардлагагүй — ' +
+      'эрсдэлтэй танилцаж <b>гарын үсэг зурснаараа</b> хүлээн зөвшөөрсөнд тооцогдоно.</div>' +
+      ruleItemsHTML() +
+      '</div>';
+  }
 
   sec.innerHTML =
     (embed ? '' :
