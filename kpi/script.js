@@ -2769,6 +2769,31 @@ var EXAM_PAGES = [
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
 
+  /* ⚠ ЯАГААД ЭНЭ ШАЛГАЛТ ХЭРЭГТЭЙ ВЭ: тохиргоо (moduleReleases) ирэхээс ӨМНӨ
+     энэ хуудсыг нээвэл «Нээлттэй шалгалт байхгүй» гэж ХУДАЛ харагдаад, дата
+     ирсэн ч дахин зурагддаггүй байв. «Зарим ажилтан дээр шалгалт нээгдэхгүй»
+     гэсэн гомдол яг үүнээс үүдэлтэй байсан (2026-08-25). Одоо ачаалж байгааг
+     үнэнээр нь хэлээд, дата ирмэгц өөрөө дахин зурна. */
+  if (!isAdmin()) {
+    var _ready = ((DB.employees || []).length > 0) &&
+                 (Object.keys(DB.moduleReleases || {}).length > 0);
+    if (renderMyExams._wait == null) renderMyExams._wait = 0;
+    if (!_ready && renderMyExams._wait < 25) {
+      renderMyExams._wait++;
+      sec.innerHTML =
+        '<div style="padding:26px 28px 14px"><h1 style="font-size:22px;font-weight:700;color:#1E293B;margin:0 0 4px">ХАБЭА Шалгалт</h1>' +
+        '<p style="font-size:13px;color:#64748B;margin:0">Мэдээлэл ачаалж байна…</p></div>' +
+        '<div style="padding:0 28px 28px"><div class="card" style="padding:40px;text-align:center;color:#8A94A6">' +
+        '<i class="ti ti-loader-2"></i> Түр хүлээнэ үү</div></div>';
+      setTimeout(function () {
+        var a = document.querySelector('.page.active');
+        if (a && a.getAttribute('data-page') === 'myexams') renderMyExams();
+      }, 1000);
+      return;
+    }
+    if (_ready) renderMyExams._wait = 0;
+  }
+
   // Ажилтан шалгалт өгөөд буцахад дүнг Firebase-ээс дахин татаж шинэчилнэ
   if (!isAdmin() && fbReady && (Date.now() - (renderMyExams._lastRefresh || 0) > 4000)) {
     renderMyExams._lastRefresh = Date.now();
