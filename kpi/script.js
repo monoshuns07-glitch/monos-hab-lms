@@ -894,8 +894,14 @@ async function loadDB() {
   }
   if (fbReady) {
     try {
-      var snap = await KPI_DOC().get();
-      var d = snap.exists ? snap.data() : null;
+      /* ⚡ Эхлээд R2-оос. Firestore-ийн том баримт зарим ажилтанд ирж
+         амждаггүй тул тохиргоо алга болж, шалгалт нээгдэхгүй байв. */
+      var d = null;
+      try { d = await kpiR2Load(); } catch (e0) { d = null; }
+      if (!d) {
+        var snap = await KPI_DOC().get();
+        d = snap.exists ? snap.data() : null;
+      }
       if (d && (d.settings || d.hazards || d.suggestions || d.incidents)) {
         DB = d;
         if (!DB.settings) DB.settings = seedDB().settings;
@@ -2073,6 +2079,27 @@ function pulseStart() {
   console.log('[pulse] шууд шинэчлэлт асав (' + (PULSE_MS / 1000) + 'с)');
 }
 
+/* ============ Үндсэн тохиргоо (kpi_state) — R2 ============
+   ⚠ ЯАГААД: Firestore дахь `kpi_state/main` баримт ~500 KB болсон тул
+   зарим ажилтны сүлжээнд 25 секундын дотор ирж амждаггүй. Тэр үед
+   loadDB хугацаа хэтэрч, DB хоосон үлдэж, `moduleReleases` ирэхгүйгээс
+   «Нээлттэй шалгалт байхгүй» гэж харагддаг байв (2026-08-25).
+   R2-оос уншихад нэг файл, шууд ирнэ. */
+var KPI_R2_FILE = 'kpi/state.json';
+
+async function kpiR2Publish(payload) {
+  try { return await riskR2PutJson(KPI_R2_FILE, payload); }
+  catch (e) { console.warn('[kpi] R2 нийтлэх', e && e.message); }
+}
+async function kpiR2Load() {
+  try {
+    var p = await riskR2GetJson(KPI_R2_FILE);
+    /* Зөв тохиргоотой байж л хүчинтэй гэж үзнэ */
+    if (p && (p.settings || p.moduleReleases || p.trainingModules)) return p;
+  } catch (e) {}
+  return null;
+}
+
 function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   try { pulseBump('db'); } catch (e) {}     /* бусдын дэлгэц шууд шинэчлэгдэнэ */
@@ -2087,10 +2114,13 @@ function saveDB() {
         KPI_DOC().set(mainDocPayload())
           .then(function () { step = 'бүртгэлүүд'; return saveCols(); })
           .then(function () { taskR2Sync(); })   // R2 дахь даалгаврын хувилбарыг шинэчилнэ
+          .then(function () { return kpiR2Publish(mainDocPayload()); })
           .catch(function (e) { saveErrorToast(e, step); });
       } else {
         /* v1 — хуучнаараа (шилжүүлэг хийгээгүй байхад) */
-        KPI_DOC().set(DB).catch(function (e) { saveErrorToast(e, 'бүх дата'); });
+        KPI_DOC().set(DB)
+          .then(function () { return kpiR2Publish(DB); })
+          .catch(function (e) { saveErrorToast(e, 'бүх дата'); });
       }
     }, 700);
   } else if (isSplit()) {
