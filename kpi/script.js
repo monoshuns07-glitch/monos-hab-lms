@@ -24845,8 +24845,11 @@ function applyRole() {
     if (SESSION) {
       USER.name = (SESSION.email || '').split('@')[0] || USER.name;
       USER.initials = makeInitials(USER.name);
+      /* ⚠ Энгийн хүнийг «Ажилтан» биш «Хэрэглэгч» гэж бичнэ (хэрэглэгчийн
+         шийдвэр, 2026-08-26). Гүйцэтгэх захирал, захирлууд ч энэ салаанд
+         ордог тул «Ажилтан» гэж бичих нь буруу байв. */
       USER.role = isAdmin() ? 'ХАБЭА-н мэргэжилтэн'
-        : (isDeptHead() ? ('Албаны дарга' + (SESSION.dept ? ' · ' + SESSION.dept : '')) : 'Ажилтан');
+        : (isDeptHead() ? ('Албаны дарга' + (SESSION.dept ? ' · ' + SESSION.dept : '')) : 'Хэрэглэгч');
     }
     var nmeEl = document.querySelector('.user-name');
     var roleEl = document.querySelector('.user-role');
