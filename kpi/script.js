@@ -14083,7 +14083,24 @@ var WK_GATES = [
   { g: 'ita', name: 'Инженер техникийн алба', ab: 'ИТА',
     hint: 'Засвар, тоног төхөөрөмж, дэд бүтэц', c: '#0F766E' }
 ];
-function wkGate(g) { return g === 'ita' ? WK_GATES[1] : WK_GATES[0]; }
+/* ⚠ 2026-08-26-наас ШИНЭ мэдээлэл ХОЁУЛАНД нь зэрэг очно ('both') —
+   илгээгч «хэн рүү явуулах вэ» гэж сонгохоо больсон. Буруу албанд явуулж
+   хэд хоног гээхгүйн тулд. Хуучин бичлэгт 'hab' / 'ita' хэвээр байгаа тул
+   гурвуулангийнх нь тайлбарыг үлдээв. */
+var WK_GATE_BOTH = { g: 'both', name: 'ХАБЭА ба Инженер техникийн алба', ab: 'ХАБЭА + ИТА',
+  hint: 'Хоёуланд нь зэрэг очно', c: '#4F46E5' };
+function wkGate(g) {
+  if (g === 'both') return WK_GATE_BOTH;
+  return g === 'ita' ? WK_GATES[1] : WK_GATES[0];
+}
+/* Энэ бичлэг тухайн албанд ХАМААРАХ уу.
+   ⚠ Хаа сайгүй r.wkGate === myGate гэж шууд харьцуулж БОЛОХГҮЙ —
+     'both' бичлэг хоёуланд нь хамаарна. */
+function wkGateHas(r, gate) {
+  if (!r || !gate) return false;
+  var g = r.wkGate || 'hab';
+  return g === 'both' ? (gate === 'hab' || gate === 'ita') : g === gate;
+}
 /* Тухайн хүн аль хаалтад харьяалагдах вэ ('' = аль нь ч биш) */
 function wkMyGate() {
   var dept = '';
@@ -14110,8 +14127,10 @@ function wkNewModal() {
   if (!me || !me.uid) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
   /* `locOpen` нь ЗӨВХӨН дэлгэцийн төлөв — аль бүлгийн дотор орсныг заана.
      Илгээх датад ордоггүй (wkCreate нь locGroup/locSub-ыг л уншина). */
-  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', locOpen: '', photo: '', gate: '',
-    haz: [], hazText: '' };
+  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', locOpen: '', photo: '',
+    haz: [], hazText: '',
+    /* ⚠ Үргэлж 'both' — илгээгч сонгодоггүй болсон */
+    gate: 'both' };
   var node = elc('div', 'modal-info');
   var meName = '', mePos = '', meDept = '';
   try {
@@ -14283,19 +14302,16 @@ function wkNewModal() {
           : '');
 
       /* ── АЛБА ── */
-      H += wkStep(sN++, 'Хэн рүү илгээх вэ?', !!sel.gate);
-      H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_GATES.map(function (g) {
-        var on = sel.gate === g.g;
-        return '<button type="button" data-wk-gate="' + g.g + '" style="flex:1;min-width:170px;' +
-          'border:2px solid ' + (on ? g.c : '#E2E8F0') + ';background:' + (on ? g.c : '#fff') +
-          ';border-radius:12px;padding:12px 11px;cursor:pointer;font-family:inherit;text-align:left">' +
-          '<span style="display:block;font-size:14px;font-weight:900;color:' + (on ? '#fff' : g.c) + '">' +
-          g.ab + '</span>' +
-          '<span style="display:block;font-size:11px;color:' + (on ? 'rgba(255,255,255,.9)' : '#64748B') +
-          ';margin-top:2px;line-height:1.4">' + esc(g.hint) + '</span></button>';
-      }).join('') + '</div>' +
-        '<div style="font-size:11.5px;color:#64748B;margin-top:6px">' +
-        'Алдаа гарвал зүгээр — хүлээж авсан алба нөгөө рүү нь шилжүүлж чадна.</div>';
+      /* ⚠ «Хэн рүү илгээх вэ?» сонголт ХАСАГДСАН (2026-08-26).
+         Илгээгч аль алба хариуцахыг мэдэх албагүй — буруу сонгосноос
+         мэдээлэл хэд хоног гацдаг байв. Одоо ХАБЭА, ИТА ХОЁУЛАНД нь
+         зэрэг очно, аль нь эхэлж авах нь тэдний хооронд шийдэгдэнэ. */
+      H += '<div style="background:#EEF2FF;border:1.5px solid #C7D2FE;border-radius:12px;' +
+        'padding:11px 13px;margin-top:16px">' +
+        '<div style="font-size:11px;font-weight:800;color:#3730A3;letter-spacing:.3px">ХЭН РҮҮ ОЧИХ ВЭ</div>' +
+        '<div style="font-size:13px;font-weight:800;color:#312E81;margin-top:3px">ХАБЭА ба ИТА — хоёуланд нь зэрэг</div>' +
+        '<div style="font-size:11.5px;color:#4338CA;margin-top:2px;line-height:1.45">' +
+        'Та сонгох шаардлагагүй. Аль нь хариуцахыг тэд өөрсдөө шийднэ.</div></div>';
     }
 
     /* ── Хэн илгээж байна ── */
@@ -14305,7 +14321,8 @@ function wkNewModal() {
       (mePos ? '<div style="font-size:12px;color:#166534">' + esc(mePos) + '</div>' : '') +
       (meDept ? '<div style="font-size:11.5px;color:#4D7C0F">' + esc(meDept) + '</div>' : '') + '</div>';
 
-    var ready = sel.kind && sel.urg && locOk && sel.gate;
+    /* ⚠ sel.gate шалгалтаас ХАСАГДСАН — үргэлж 'both' тул сонгох зүйлгүй */
+    var ready = sel.kind && sel.urg && locOk;
     H += '<button class="btn btn-primary btn-block" id="wkSend" style="margin-top:13px' +
       (ready ? '' : ';opacity:.45;pointer-events:none') + '">' +
       '<i class="ti ti-send"></i> ' + (ready ? 'Илгээх' : 'Дээрх алхмуудыг бөглөнө үү') + '</button>';
@@ -14451,6 +14468,16 @@ async function wkCreate(sel) {
 
 /* Албаны БҮХ ажилтанд мэдэгдэнэ */
 function wkGateStaff(gate) {
+  /* 'both' — хоёр албаны ажилтныг НЭГТГЭЖ буцаана (давхардлыг арилгана) */
+  if (gate === 'both') {
+    var seenS = {}, outS = [];
+    ['hab', 'ita'].forEach(function (g) {
+      wkGateStaff(g).forEach(function (e) {
+        if (e && e.uid && !seenS[e.uid]) { seenS[e.uid] = 1; outS.push(e); }
+      });
+    });
+    return outS;
+  }
   var want = wkGate(gate).name;
   return empAll().filter(function (e) {
     if (!e || !e.uid) return false;
@@ -14503,6 +14530,94 @@ function wkClaim(id) {
       title: '👷 Таны мэдээллийг хүлээж авлаа',
       body: rr.wkClaimBy.name + ' — ' + String(rr.desc || '').slice(0, 90) });
   } catch (e) {}
+}
+
+/* ══ АЮУЛЫН ТӨРЛИЙГ ЗАСАХ — ЗӨВХӨН ХАБЭА ═══════════════════════════════
+   Илгээгч ажилтан аюулаа зөв ангилж чадахгүй байж болно (шинээр хэрэглэж
+   эхэлж байгаа, мэргэжлийн ойлголт өөр). Тиймээс ХАБЭА-н алба ирсэн
+   мэдээллийн ангиллыг зөв болгож засна.
+   ⚠ Засвар нь ЧИМЭЭГҮЙ болох ЁСГҮЙ — илгээгчид яагаад засагдсаныг
+     тайлбартай нь мэдэгдэнэ. Эс бөгөөс хүн сурахгүй, дахин буруу ангилна. */
+function wkCanFixHaz() {
+  try { if (isAdmin()) return true; } catch (e) {}
+  try { return wkMyGate() === 'hab'; } catch (e) {}
+  return false;
+}
+function wkHazFixModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  var pick = ((r.wkHaz || []).slice());
+  var node = elc('div', 'modal-info');
+
+  var draw = function () {
+    node.innerHTML =
+      '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:10px 12px;' +
+      'margin-bottom:12px;font-size:12.5px;color:#475569;line-height:1.6">' +
+      '<b>' + esc(r.reporterFull || r.reporterName || '') + '</b> ийм мэдээлэл өгсөн:<br>' +
+      esc(String(r.desc || '').slice(0, 160)) +
+      (r.wkHazText ? '<br><span style="color:#92400E">Аюул: ' + esc(r.wkHazText) + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:12px;font-weight:800;color:#94A3B8;margin-bottom:7px">' +
+      'ЗӨВ АНГИЛАЛ — олныг сонгож болно</div>' +
+      '<div style="display:flex;gap:7px;flex-wrap:wrap">' + WK_HAZ_TYPES.map(function (h) {
+        var on = pick.indexOf(h.k) > -1;
+        return '<button type="button" data-hf="' + h.k + '" style="border:2px solid ' +
+          (on ? h.c : '#E2E8F0') + ';background:' + (on ? h.bg : '#fff') + ';color:' +
+          (on ? h.c : '#334155') + ';border-radius:11px;padding:9px 13px;cursor:pointer;' +
+          'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
+          (on ? '✓ ' : '') + esc(h.mn) + '</button>';
+      }).join('') + '</div>' +
+      '<div style="font-size:12px;font-weight:800;color:#94A3B8;margin:14px 0 6px">' +
+      'ЯАГААД ЗАСАВ — илгээгчид ингэж очно</div>' +
+      '<textarea id="hfWhy" class="rf-input" rows="3" style="width:100%" placeholder="' +
+      'ж: Уур нь халуун гадаргуу учраас энэ нь химийн биш ФИЗИКийн аюул юм.">' +
+      esc(node._why || '') + '</textarea>' +
+      '<button class="btn btn-primary btn-block" id="hfSave" style="margin-top:12px">' +
+      '<i class="ti ti-check"></i> Засаад илгээгчид мэдэгдэх</button>';
+    var ta = node.querySelector('#hfWhy');
+    if (ta) ta.addEventListener('input', function () { node._why = this.value; });
+  };
+
+  node.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-hf]');
+    if (b) {
+      var k = b.getAttribute('data-hf'), i = pick.indexOf(k);
+      if (i > -1) pick.splice(i, 1); else pick.push(k);
+      draw(); return;
+    }
+    if (ev.target.closest('#hfSave')) {
+      if (!pick.length) { toast('Дор хаяж нэг ангилал сонгоно уу', 'warn'); return; }
+      var why = String((node.querySelector('#hfWhy') || {}).value || '').trim();
+      if (!why) { toast('Яагаад засаж байгаагаа бичнэ үү', 'warn'); return; }
+      var me = reqMe() || {};
+      var emp = woEmpByUid(me.uid) || me;
+      var before = (r.wkHaz || []).slice();
+      /* Юу ч өөрчлөгдөөгүй бол мэдэгдэл явуулахгүй — дэмий чирэгдэл */
+      var same = before.length === pick.length &&
+        before.every(function (x) { return pick.indexOf(x) > -1; });
+      closeModal();
+      if (same) { toast('Ангилал өөрчлөгдөөгүй байна', 'info'); return; }
+      wkPatch(id, function (x) {
+        x.wkHaz = pick.slice();
+        x.wkHazFix = { by: me.uid || '', byName: empFullName(emp) || me.name || '',
+          at: new Date().toISOString(), from: before, to: pick.slice(), why: why };
+      }, '✓ Ангилал засагдаж, илгээгчид мэдэгдлээ');
+      /* Илгээгчид мэдэгдэл — юу байснаас юу болсныг ТОДОРХОЙ хэлнэ */
+      try {
+        var rep = woEmpByUid(r.reporterUid);
+        var nm = function (arr) {
+          return (arr || []).map(function (k2) { var h = wkHazType(k2); return h ? h.mn : k2; }).join(', ') || '—';
+        };
+        if (rep) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
+          title: '✏️ Аюулын ангилал засагдлаа',
+          body: nm(before) + ' → ' + nm(pick) + '. ' + why });
+      } catch (e) { console.error('[wk] ангиллын мэдэгдэл', e); }
+      return;
+    }
+  });
+
+  buildModal('Аюулын төрлийг зөв болгох', node, { width: 'min(560px, 96vw)' });
+  draw();
 }
 
 /* ── ШИЛЖҮҮЛЭХ (буруу алба руу ирсэн бол) ── */
@@ -14735,6 +14850,13 @@ function wkHazChipsHTML(r) {
       (r.wkHazText ? '5px' : '0') + '">' + chips + '</div>' : '') +
     (r.wkHazText ? '<div style="font-size:12px;color:#78350F;line-height:1.45">' +
       esc(r.wkHazText) + '</div>' : '') +
+    /* ХАБЭА засварласан бол ил хэлнэ — илгээгч ч, бусад ч сурна */
+    (r.wkHazFix
+      ? '<div style="margin-top:6px;padding-top:5px;border-top:1px dashed #FDE68A;' +
+        'font-size:11px;color:#92400E;line-height:1.45">' +
+        '✏️ ХАБЭА зөв болгов (' + esc(r.wkHazFix.byName || '') + '): ' +
+        esc(r.wkHazFix.why || '') + '</div>'
+      : '') +
     '</div>';
 }
 
@@ -14744,14 +14866,16 @@ function wkRowHTML(r) {
   var t = wkTime(r), u = wkUrg(r);
   var mine = r.reporterUid === me.uid;
   var myGate = wkMyGate();
-  var inMyGate = myGate && myGate === r.wkGate;
+  var inMyGate = wkGateHas(r, myGate);
   var claimedByMe = r.wkClaimBy && r.wkClaimBy.uid === me.uid;
 
   /* Товчлуурууд — тухайн хүн ЮУ ХИЙЖ ЧАДАХ вэ */
   var acts = [];
   if (inMyGate && st === 'new')
     acts.push(['wk-claim', 'Хүлээж авах', '#4F46E5', 'ti-hand-grab']);
-  if (inMyGate && st === 'new')
+  /* ⚠ «Өөр алба руу» нь ЗӨВХӨН хуучин, нэг албанд илгээгдсэн бичлэгт.
+     Шинэ бичлэг хоёуланд нь очдог тул шилжүүлэх утгагүй. */
+  if (inMyGate && st === 'new' && r.wkGate !== 'both')
     acts.push(['wk-move', 'Өөр алба руу', '#64748B', 'ti-arrow-right']);
   if (inMyGate && (st === 'new' || st === 'claimed') && !r.wkUrgBy)
     acts.push(['wk-urg', 'Зэрэг батлах', '#E9A100', 'ti-flag']);
@@ -14759,6 +14883,9 @@ function wkRowHTML(r) {
     acts.push(['wk-exec', 'Гүйцэтгэсэн', '#0ca30c', 'ti-checkbox']);
   if (mine && st === 'executed')
     acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
+  /* ХАБЭА — ирсэн мэдээллийн аюулын ангиллыг зөв болгоно */
+  if (wkCanFixHaz() && (r.wkHaz || []).length && st !== 'closed')
+    acts.push(['wk-hazfix', 'Аюулын төрөл засах', '#B45309', 'ti-edit']);
 
   return '<div data-wk-open="' + esc(r.id) + '" style="border:1.5px solid ' +
     (t && t.late ? '#FECACA' : inMyGate && st === 'new' ? '#C7D2FE' : '#E2E8F0') +
@@ -14820,7 +14947,7 @@ function wkListHTML(all) {
     });
 
   var inbox = rows.filter(function (r) {
-    return myGate && r.wkGate === myGate && wkStatus(r) !== 'closed';
+    return wkGateHas(r, myGate) && wkStatus(r) !== 'closed';
   });
   var mineClaim = rows.filter(function (r) {
     return r.wkClaimBy && r.wkClaimBy.uid === me.uid && wkStatus(r) !== 'closed';
@@ -15030,6 +15157,15 @@ function wkAdminModal() {
 /* ── Хаалтын дарга нар ── */
 function wkGateLeads(gate) {
   var out = [];
+  if (gate === 'both') {
+    var seenL = {}, outL = [];
+    ['hab', 'ita'].forEach(function (g) {
+      wkGateLeads(g).forEach(function (e) {
+        if (e && e.uid && !seenL[e.uid]) { seenL[e.uid] = 1; outL.push(e); }
+      });
+    });
+    return outL;
+  }
   try {
     if (gate === 'hab') {
       out = [ackLeadFor('Хөдөлмөрийн аюулгүй байдал эрүүл ахуйн алба', '')];
@@ -16788,7 +16924,7 @@ function rfTabsHTML(woN) {
     wkN = (DB.reports || []).filter(function (r) {
       if (!r || !r.wkKind) return false;
       var st = wkStatus(r);
-      if (_mg && r.wkGate === _mg && st === 'new') return true;
+      if (wkGateHas(r, _mg) && st === 'new') return true;
       if (r.reporterUid === _me.uid && st === 'executed') return true;
       if (r.wkClaimBy && r.wkClaimBy.uid === _me.uid && st === 'claimed') return true;
       return false;
@@ -16862,6 +16998,8 @@ function rfAfter(sec, admin, pending) {
     if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
     var wm = ev.target.closest('[data-wk-move]');
     if (wm) { ev.stopPropagation(); wkMoveModal(wm.getAttribute('data-wk-move')); return; }
+    var wh = ev.target.closest('[data-wk-hazfix]');
+    if (wh) { ev.stopPropagation(); wkHazFixModal(wh.getAttribute('data-wk-hazfix')); return; }
     var wu = ev.target.closest('[data-wk-urg]');
     if (wu) { ev.stopPropagation(); wkUrgModal(wu.getAttribute('data-wk-urg')); return; }
     var we = ev.target.closest('[data-wk-exec]');
