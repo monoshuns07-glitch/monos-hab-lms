@@ -182,7 +182,7 @@
       var w = document.createElement('div');
       w.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:rgba(8,12,28,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:18px';
       w.innerHTML =
-        '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+        '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;max-height:calc(100vh - 36px);overflow-y:auto;-webkit-overflow-scrolling:touch;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
           '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">Утсанд суулгах</div>' +
           '<div style="font-size:14px;color:#374151;line-height:1.75">' +
             '1. Доод талын <b>Хуваалцах</b> товч <b>&#x2934;</b> дарна<br>' +
@@ -248,7 +248,7 @@
           ? '<button id="pwaOpenChrome" style="margin-top:14px;width:100%;padding:13px;border:none;border-radius:12px;background:#0F1117;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Chrome-оор нээх</button>'
           : '';
         w.innerHTML =
-          '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+          '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;max-height:calc(100vh - 36px);overflow-y:auto;-webkit-overflow-scrolling:touch;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
             '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">' + head + '</div>' +
             '<div style="font-size:14px;color:#374151;line-height:1.75">' + steps + '</div>' +
             chromeBtn +
