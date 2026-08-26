@@ -31,10 +31,14 @@ function buildMime(o) {
     'To: <' + o.to + '>',
     'Subject: ' + encHeader(o.subject),
     'Date: ' + new Date().toUTCString(),
-    'Message-ID: <' + Date.now() + '.' + Math.random().toString(36).slice(2) + '@monos-hab>',
+    /* ⚠ Message-ID-ийн домэйн нь ЖИНХЭНЭ байх ёстой. Өмнө нь '@monos-hab' гэсэн
+   домэйн бус утга байсан нь Microsoft 365 (Outlook)-д спамын дохио болж,
+   OTP код хогийн сав/хорионд ордог байв (2026-08-26). */
+    'Message-ID: <' + Date.now() + '.' + Math.random().toString(36).slice(2) +
+      '@' + String(o.user || 'gmail.com').split('@').pop() + '>',
+    'Reply-To: ' + encHeader(o.fromName) + ' <' + o.user + '>',
     'MIME-Version: 1.0',
     'X-Auto-Response-Suppress: All',
-    'Auto-Submitted: auto-generated',
     'Content-Type: multipart/alternative; boundary="' + b + '"',
     '',
     '--' + b,
