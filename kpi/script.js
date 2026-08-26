@@ -19513,17 +19513,25 @@ var LAW_TIERS = [
     art28: ['28.1.2','28.1.6','28.1.8','28.1.11'] },
   { key: 'emp',   label: 'Ажилтан · оператор', art28: [] }
 ];
-/* ackRoleOf-ийн түлхүүрийг түвшин рүү буулгана */
+/* Албан тушаалаас түвшинг тогтооно.
+   ⚠⚠ ЭХЛЭЭД албан тушаалын БИЧВЭРЭЭС уншина, дараа нь ackRoleOf-оос.
+     Шалтгаан: ackRoleOf нь «Санхүү хариуцсан захирал»-ыг Санхүүгийн албаны
+     ХАРИУЦАГЧ гэж үздэг (ACK_LEADS-д тэгж бүртгэгдсэн) тул дангаараа
+     хангалтгүй — Ц.Дэлгэрмаа захирал атлаа «албаны дарга» түвшинд унадаг
+     байв. ACK_LEADS-ыг засвал эрсдэлийн ГАРЫН ҮСГИЙН ДАРААЛАЛ өөрчлөгдөх
+     тул тэнд хүрэхгүй, зөвхөн ЭНД шийднэ. */
 function lawTierOf(emp) {
+  var byKey = function (k) {
+    for (var i = 0; i < LAW_TIERS.length; i++) { if (LAW_TIERS[i].key === k) return LAW_TIERS[i]; }
+    return LAW_TIERS[LAW_TIERS.length - 1];
+  };
+  var p = String((emp && (emp.pos || emp.role)) || '');
+  if (/гүйцэтгэх\s*захирал/i.test(p)) return byKey('ceo');
+  if (/захирал/i.test(p)) return byKey('dir');       /* бүх хариуцсан захирал */
   var r = 'emp';
   try { r = ackRoleOf(emp); } catch (e) {}
-  var key = (r === 'ceo') ? 'ceo'
-    : (r === 'lead') ? 'lead'
-    : (r === 'mgr') ? 'mgr'
-    : (r === 'emp') ? 'emp'
-    : 'dir';                       /* prod / sales / бусад захирал */
-  for (var i = 0; i < LAW_TIERS.length; i++) { if (LAW_TIERS[i].key === key) return LAW_TIERS[i]; }
-  return LAW_TIERS[LAW_TIERS.length - 1];
+  return byKey((r === 'ceo') ? 'ceo' : (r === 'lead') ? 'lead'
+    : (r === 'mgr') ? 'mgr' : (r === 'emp') ? 'emp' : 'dir');
 }
 /* Тухайн хүнд харагдах хуулийн багц.
    rights/duties — бүгдэд ижил (18 дугаар зүйл)
