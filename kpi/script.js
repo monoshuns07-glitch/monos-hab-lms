@@ -9722,7 +9722,7 @@ function riskTabList(list) {
   } else {
     var st = { total: 0, done: 0, late: 0 }, nr = 0;
     try { var me = myEmp(); st = meaMineStats(me); nr = meaMyRules(me).length; } catch (e) {}
-    tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Миний арга хэмжээ',
+    tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Миний арга хэмжээ, мөрдөх дүрэм',
       n: (st.total - st.done) + nr, tone: st.late ? '#DC2626' : '' });
     tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
   }
@@ -19451,7 +19451,29 @@ function meaMyRules(emp) {
    ⚠ Заалтын дугаар, агуулгыг хуулийн ЭХ БИЧВЭРЭЭС шалгаж бичсэн. Санаанаасаа
      бүү өөрчил. Хууль шинэчлэгдвэл энд засаж, огноог нь шинэчилнэ.
    ══════════════════════════════════════════════════════════════════════ */
-var LAW_OSH_SRC = 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн тухай хууль · 28 дугаар зүйл';
+var LAW_OSH_SRC = 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн тухай хууль';
+
+/* ── 18 дугаар зүйл. Ажилтны ЭРХ (18.1) — БҮХ хүнд ижил ──
+   ⚠ Ялангуяа 18.1.4 нь чухал: аюултай нөхцөлд ажлаа ЗОГСООХ эрх.
+     Ажилтнууд үүнийг ихэвчлэн мэддэггүй тул тод харуулна. */
+var LAW_RIGHTS = [
+  { no: '18.1.1', t: 'ХАБЭА-н шаардлага хангасан ажлын байранд ажиллах.' },
+  { no: '18.1.2', t: 'Үйлдвэрлэлийн осол, мэргэжлээс шалтгаалсан өвчний даатгалд хамрагдах.' },
+  { no: '18.1.3', t: 'Ажлын байрны нөхцөл, эрүүл мэндэд учирч болох эрсдэл, аюултай хүчин зүйлийн талаар БОДИТ мэдээлэл авах.' },
+  { no: '18.1.4', t: 'Аюулгүй байдлын журам зөрчигдсөн, амь нас, эрүүл мэндэд аюултай нөхцөл бий болсон бол АЖЛАА ЗОГСООЖ, ажил олгогчид мэдэгдэх.' },
+  { no: '18.1.5', t: 'ХАБЭА-н асуудал хэлэлцэхэд өөрөө буюу төлөөлөгчөөрөө оролцох.' }
+];
+/* ── 18 дугаар зүйл. Ажилтны ҮҮРЭГ (18.2) — БҮХ хүнд ижил ── */
+var LAW_DUTIES = [
+  { no: '18.2.1', t: 'ХАБЭА-н шаардлага, стандарт, дүрэм, технологийн горимыг чанд мөрдөх.' },
+  { no: '18.2.2', t: 'ХАБЭА-н сургалтад хамрагдсан, шалгалт өгсөн, зааварчилга авсан байх.' },
+  { no: '18.2.3', t: 'Амь нас, эрүүл мэндэд сөрөг нөлөөлөх нөхцөл үүсвэл дүрэмд заасны дагуу шуурхай арга хэмжээ авах.' },
+  { no: '18.2.4', t: 'Эрүүл мэндээ хамгаалах, эрүүл мэндийн үзлэг, шинжилгээнд орох.' },
+  { no: '18.2.5', t: 'Ажлын тусгай хувцас, хамгаалах хэрэгслийг зориулалтын дагуу хэрэглэх.' },
+  { no: '18.2.6', t: 'Ажлаа осолгүй гүйцэтгэх арга барил эзэмших, анхны тусламж үзүүлэх чадвартай байх.' },
+  { no: '18.2.7', t: 'Өөрийгөө болон бусдыг аюул, эрсдэлд учруулахгүй байх.' },
+  { no: '18.2.8', t: 'Ажил олгогчийн хуулийн хүрээнд тавьсан ХАБЭА-н шаардлагыг биелүүлж ажиллах.' }
+];
 var LAW_CEO_DUTIES = [
   { no: '28.1.1',  t: 'Үйлдвэрлэлээс гарах хими, физик, биологийн хүчин зүйл ажилтны эрүүл мэнд, байгаль орчинд хор хүргэхгүй нөхцөлийг бүрдүүлнэ.' },
   { no: '28.1.2',  t: 'Амь нас, эрүүл мэндэд аюултай нөхцөл үүсвэл ажлыг ДАРУЙ ЗОГСООЖ, аюулыг арилгана.' },
@@ -19470,14 +19492,53 @@ var LAW_CEO_DUTIES = [
   { no: '28.1.15', t: 'Осол, мэргэжлээс шалтгаалсан өвчний улмаас хөдөлмөрийн чадвараа алдсан ажилтанд нөхөн төлбөр олгоно.' },
   { no: '28.1.16', t: 'Гэрээгээр ажил гүйцэтгүүлж байгаа бол тэдгээр этгээд өөрийн ажиллагсдын аюулгүй нөхцөлийг хангаж байгааг шаардана.' }
 ];
-/* Аль албан тушаалд хуулийн үүрэг харуулах вэ.
-   ⚠ Албан тушаалаар таьна — хүн солигдоход код засах шаардлагагүй.
-   Одоохондоо зөвхөн Гүйцэтгэх захирал. Бусад захирал, албаны даргад
-   өөр багц хэрэгтэй бол ЭНД нэг мөр нэмнэ. */
+/* ══ АЛБАН ТУШААЛЫН ТҮВШНЭЭР ЯЛГАХ ══════════════════════════════════════
+   ⚠ ХУУЛИЙН БҮТЭЦ: 18 дугаар зүйл нь АЖИЛТНЫ эрх, үүрэг — ГҮЙЦЭТГЭХ
+     ЗАХИРАЛ ЧЬ ажилтан тул бүх хүнд адилхан хамаарна. 28 дугаар зүйл нь
+     АЖИЛ ОЛГОГЧийн үүрэг — хуульд «ажил олгогч» гэж бичсэн тул үүнийг
+     удирдах албан тушаалтан ажил олгогчийн НЭРИЙН ӨМНӨӨС, эрх мэдлийнхээ
+     хүрээнд хэрэгжүүлнэ. Тиймээс доорх хуваарилалт нь дотоод эрх мэдлийн
+     хуваарилалт болохоос хуулийн шууд заалт БИШ — дэлгэц дээр ингэж хэлнэ.
+   ⚠ Түвшнийг ackRoleOf()-оос авна (ceo · захирал · lead · mgr · emp) —
+     тэр нь албан тушаалаар таьдаг тул хүн солигдоход код засахгүй. */
+var LAW_TIERS = [
+  { key: 'ceo',   label: 'Гүйцэтгэх захирал',
+    art28: ['28.1.1','28.1.2','28.1.3','28.1.4','28.1.5','28.1.6','28.1.7','28.1.8',
+            '28.1.9','28.1.10','28.1.11','28.1.12','28.1.13','28.1.14','28.1.15','28.1.16'] },
+  { key: 'dir',   label: 'Хариуцсан захирал',
+    art28: ['28.1.2','28.1.4','28.1.6','28.1.8','28.1.11','28.1.13','28.1.14'] },
+  { key: 'lead',  label: 'Албаны дарга · ахлах',
+    art28: ['28.1.2','28.1.4','28.1.6','28.1.8','28.1.9','28.1.10','28.1.11'] },
+  { key: 'mgr',   label: 'Менежер',
+    art28: ['28.1.2','28.1.6','28.1.8','28.1.11'] },
+  { key: 'emp',   label: 'Ажилтан · оператор', art28: [] }
+];
+/* ackRoleOf-ийн түлхүүрийг түвшин рүү буулгана */
+function lawTierOf(emp) {
+  var r = 'emp';
+  try { r = ackRoleOf(emp); } catch (e) {}
+  var key = (r === 'ceo') ? 'ceo'
+    : (r === 'lead') ? 'lead'
+    : (r === 'mgr') ? 'mgr'
+    : (r === 'emp') ? 'emp'
+    : 'dir';                       /* prod / sales / бусад захирал */
+  for (var i = 0; i < LAW_TIERS.length; i++) { if (LAW_TIERS[i].key === key) return LAW_TIERS[i]; }
+  return LAW_TIERS[LAW_TIERS.length - 1];
+}
+/* Тухайн хүнд харагдах хуулийн багц.
+   rights/duties — бүгдэд ижил (18 дугаар зүйл)
+   employer     — түвшнээс хамаарна (28 дугаар зүйл), ажилтанд хоосон */
 function lawDutiesFor(emp) {
-  var p = String((emp && (emp.pos || emp.role)) || '');
-  if (/гүйцэтгэх\s*захирал/i.test(p)) return LAW_CEO_DUTIES;
-  return null;
+  if (!emp) return null;
+  var tier = lawTierOf(emp);
+  var pick = {};
+  (tier.art28 || []).forEach(function (n) { pick[n] = 1; });
+  return {
+    tier: tier.key, label: tier.label,
+    rights: LAW_RIGHTS,
+    duties: LAW_DUTIES,
+    employer: LAW_CEO_DUTIES.filter(function (x) { return pick[x.no]; })
+  };
 }
 
 /* ══ АДМИН/ХАРИУЦАГЧИЙН «Арга хэмжээ» хуудас ══════════════════════════ */
@@ -19621,29 +19682,58 @@ function renderMeasurePage(sec, embed) {
         ' дүрэм — эрсдэлийн үнэлгээ цэсээс бүрэн үзнэ үү</div>' : '');
   };
 
-  /* ⭐ ХУУЛИАР ХҮЛЭЭСЭН ҮҮРЭГ — Гүйцэтгэх захиралд ажлын байрны дүрмийн
-     ОРОНД энэ гарна. Ажлын байрны дүрэм нь доор эвхмэлээр үлдэнэ. */
+  /* ⭐ ХУУЛИАР ХҮЛЭЭСЭН ЭРХ, ҮҮРЭГ — албан тушаалын түвшнээр.
+     Гурван бүлэг: ① миний эрх ② миний үүрэг ③ удирдлагын хувьд хүлээх үүрэг.
+     Ажлын байрны эрсдэлээс гарсан дүрэм нь доор эвхмэлээр үлдэнэ. */
+  var lawRow = function (x, tone) {
+    return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid ' +
+      tone.br + ';border-radius:12px;background:' + tone.bg + '">' +
+      '<span style="flex-shrink:0;font-size:10.5px;font-weight:800;color:' + tone.fg + ';background:' + tone.pill +
+      ';border-radius:6px;padding:2px 6px;font-family:\'Bricolage Grotesque\',sans-serif">' + esc(x.no) + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;line-height:1.55">' + esc(x.t) + '</span>' +
+      '</div>';
+  };
+  var lawGroup = function (title, sub, list, tone) {
+    if (!list || !list.length) return '';
+    return '<div style="margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:3px">' +
+      '<div style="font-size:13px;font-weight:800;color:#334155">' + title + '</div>' +
+      '<div style="background:' + tone.pill + ';color:' + tone.fg + ';border-radius:20px;padding:1px 9px;' +
+      'font-size:11.5px;font-weight:800">' + list.length + '</div></div>' +
+      '<div style="font-size:12px;color:#94A3B8;margin-bottom:9px;line-height:1.55">' + sub + '</div>' +
+      '<div class="emp-todo-grid">' + list.map(function (x) { return lawRow(x, tone); }).join('') + '</div></div>';
+  };
+  var TONE_R = { br: '#BBF7D0', bg: '#F0FDF4', fg: '#166534', pill: '#DCFCE7' };  /* эрх — ногоон */
+  var TONE_D = { br: '#E0E7FF', bg: '#F8FAFF', fg: '#3730A3', pill: '#EEF2FF' };  /* үүрэг — ягаан */
+  var TONE_E = { br: '#FDE68A', bg: '#FFFBEB', fg: '#92400E', pill: '#FEF3C7' };  /* удирдлага — шар */
+
   var rulesHTML = '';
   if (lawList) {
+    var lawN = lawList.rights.length + lawList.duties.length + lawList.employer.length;
     rulesHTML = '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
       '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
       '<div style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">' +
-      lawList.length + '</div></div>' +
-      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:12px;line-height:1.6">' +
-      'Эдгээр нь <b>ажил олгогчийн хуулиар хүлээсэн үүрэг</b> — таны албан тушаалд ' +
-      'шууд хамаарна. Эх сурвалж: <b>' + esc(LAW_OSH_SRC) + '</b>.</div>' +
-      '<div class="emp-todo-grid">' +
-      lawList.map(function (x) {
-        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:1px solid #E0E7FF;' +
-          'border-radius:12px;background:#F8FAFF">' +
-          '<span style="flex-shrink:0;font-size:10.5px;font-weight:800;color:#3730A3;background:#EEF2FF;' +
-          'border-radius:6px;padding:2px 6px;font-family:\'Bricolage Grotesque\',sans-serif">' + esc(x.no) + '</span>' +
-          '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;line-height:1.55">' + esc(x.t) + '</span>' +
-          '</div>';
-      }).join('') + '</div>' +
+      lawN + '</div>' +
+      '<div style="background:#F1F5F9;color:#475569;border-radius:20px;padding:2px 10px;font-size:11.5px;font-weight:700">' +
+      esc(lawList.label) + '</div></div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;margin-bottom:13px;line-height:1.6">' +
+      '<b>' + esc(LAW_OSH_SRC) + '</b>-иар танд хамаарах эрх, үүрэг. ' +
+      'Албан тушаалынхаа түвшнээс хамаарч ялгаатай.</div>' +
+
+      lawGroup('🟢 Миний ЭРХ', 'Хуулиар олгогдсон — хэн ч үүнийг хязгаарлаж болохгүй. ' +
+        '18 дугаар зүйл.', lawList.rights, TONE_R) +
+
+      lawGroup('🔵 Миний ҮҮРЭГ', 'Ажилтан бүр биелүүлэх ёстой. 18 дугаар зүйл.',
+        lawList.duties, TONE_D) +
+
+      lawGroup('🟡 Удирдлагын хувьд хүлээх үүрэг',
+        'Хуульд «<b>ажил олгогч</b>» гэж заасан үүргийг та эрх мэдлийнхээ хүрээнд, ' +
+        'ажил олгогчийн нэрийн өмнөөс хэрэгжүүлнэ. 28 дугаар зүйл.',
+        lawList.employer, TONE_E) +
+
       (rules.length
-        ? '<details style="margin-top:12px">' +
+        ? '<details style="margin-top:2px">' +
           '<summary style="cursor:pointer;font-size:12.5px;color:#64748B">' +
           'Ажлын байрны эрсдэлээс гарсан дүрэм (' + rules.length + ')</summary>' +
           '<div style="padding-top:10px">' +
