@@ -135,6 +135,26 @@ async function sendMail(to, subject, html, text) {
   throw new Error('NO_PROVIDER');
 }
 
+/* ── Нэвтэрсэн хэрэглэгчийг таних ───────────────────────────────────
+   ⚠ ЗӨВХӨН код авах хэсэгт хэрэглэнэ. Ажилтан аль хэдийн сайтдаа
+   нэвтэрсэн байдаг тул кодыг и-мэйлээр 2-3 минут хүлээхийн оронд
+   аппаараа шууд авах боломж олгоно. Бусад бүх зүйл (зөвшөөрөл,
+   гарын үсэг, дүн бүртгэх) ЯГ ХЭВЭЭР. */
+const FB_WEB_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
+async function whoIs(idToken) {
+  if (!idToken || String(idToken).length < 40) return null;
+  try {
+    const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FB_WEB_KEY,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: idToken }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const u = j && j.users && j.users[0];
+    if (!u || !u.localId || u.disabled === true) return null;
+    return { uid: u.localId, email: String(u.email || '').toLowerCase().trim() };
+  } catch (e) { return null; }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -171,6 +191,17 @@ module.exports = async function handler(req, res) {
     const origin = String(body.origin || 'https://monos-hab.vercel.app').replace(/\/+$/, '');
     const link = `${origin}/otp.html?id=${encodeURIComponent(id)}&c=${encodeURIComponent(code)}`;
     const subject = 'Баталгаажуулах код ' + code + ' — ХАБЭА шалгалт';
+
+    /* ⚡ АППААР АВАХ: хүсэлт нэвтэрсэн ажилтнаас өөрөөс нь ирсэн бөгөөд
+       и-мэйл нь таарч байвал кодыг ШУУД буцаана — и-мэйл илгээхгүй.
+       Код өөрөө хэвээр: нэг удаагийн, хугацаатай, hash-аар шалгагдана. */
+    if (String(body.channel || '') === 'app') {
+      const who = await whoIs(body.idToken);
+      if (who && who.email && who.email === email) {
+        return res.status(200).json({ ok: true, id, ttl: TTL_MIN, code, channel: 'app' });
+      }
+      /* Таниагүй бол доош үргэлжилж, хуучин ёсоор и-мэйлээр явна */
+    }
 
     let provider = '';
     try {

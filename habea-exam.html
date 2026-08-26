@@ -1347,9 +1347,47 @@ function otpCountdown(sec){
     }
     if(!OTP_OK){
       var m=Math.floor(OTP_LEFT/60), ss=OTP_LEFT%60;
-      otpMsg("Захидлын <b>гарчигнаас</b> 6 оронтой кодоо уншаад дээрх нүдэнд оруулна уу.<br>⚠️ Ирээгүй бол <b>Junk / Спам</b> хавтсаа шалгаарай.<br>Хүчинтэй хугацаа: <b>"+m+":"+(ss<10?"0":"")+ss+"</b>");
+      otpMsg((OTP_VIA_APP
+        ? "Кодыг <b>аппын цонхноос</b> уншаад дээрх нүдэнд оруулна уу."
+        : "Захидлын <b>гарчигнаас</b> 6 оронтой кодоо уншаад дээрх нүдэнд оруулна уу.<br>⚠️ Ирээгүй бол <b>Junk / Спам</b> хавтсаа шалгаарай.")
+        +"<br>Хүчинтэй хугацаа: <b>"+m+":"+(ss<10?"0":"")+ss+"</b>");
     }
   },1000);
+}
+
+var OTP_VIA_APP=false;
+/* ⚡ Кодыг АППААР авах оролдлого. Ажилтан нэвтэрсэн апп (ижил домэйн)
+   нээлттэй бол код тэнд шууд гарна — и-мэйл хүлээхгүй. Хариу ирэхгүй
+   бол false буцааж, хуучин ёсоор и-мэйлээр илгээнэ.
+   ⚠ Зөвхөн КОД АВАХ хэсэгт хамаарна: зөвшөөрөл, гарын үсэг, дүн
+   бүртгэх бүх зүйл өөрчлөгдөөгүй. */
+function otpTryApp(em){
+  return new Promise(function(resolve){
+    if(typeof BroadcastChannel==="undefined"){ resolve(false); return; }
+    var ch; try{ ch=new BroadcastChannel("monos-otp"); }catch(e){ resolve(false); return; }
+    var done=false;
+    var t=setTimeout(function(){ if(done)return; done=true;
+      try{ch.close()}catch(e){} resolve(false); },3000);
+    ch.addEventListener("message",function(ev){
+      var d=ev&&ev.data;
+      if(done||!d||d.type!=="otp-id"||!d.id) return;
+      if(String(d.email||"").toLowerCase()!==String(em).toLowerCase()) return;
+      done=true; clearTimeout(t);
+      OTP_ID=d.id; OTP_VIA_APP=true;
+      try{
+        otpEl("otpBox").classList.add("on");
+        otpEl("otpIn").style.display="flex";
+        otpEl("otpSub").innerHTML="Код <b>аппын цонхонд</b> гарлаа. Тэндээс уншаад энд бичнэ үү.";
+        var b=otpEl("otpSend"); if(b) b.style.display="none";
+        otpCountdown((d.ttl||10)*60);
+        otpStartPoll();
+        document.querySelector("[data-otp='0']").focus();
+      }catch(e){}
+      try{ ch.close(); }catch(e){}
+      resolve(true);
+    });
+    ch.postMessage({type:"otp-req", email:em, name:(typeof emp!=="undefined"&&emp&&emp.name)||""});
+  });
 }
 
 async function otpSendCode(){
@@ -1357,6 +1395,7 @@ async function otpSendCode(){
   if(!em){ otpMsg("И-мэйл хаяг олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.","err"); return; }
   var btn=otpEl("otpSend");
   btn.disabled=true; btn.textContent="⏳ Илгээж байна…";
+  try{ if(await otpTryApp(em)) return; }catch(e){}
   try{
     var r=await fetch("/api/send-otp/",{
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -1680,6 +1719,7 @@ async function finalSubmit(){ sigRelease();
   // ── Зөвшөөрөл ба өөрчлөгдөөгүйн нотолгоо ──
   doc.consent=true;
   doc.consentText=SIG_CONSENT_TEXT;
+  doc.otpChannel = OTP_VIA_APP ? "app" : "email";   /* аудитын мөр */
   doc.consentAt=firebase.firestore.FieldValue.serverTimestamp();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
