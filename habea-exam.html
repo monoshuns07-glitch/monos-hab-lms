@@ -437,6 +437,42 @@ let CFG={...DEF_S}, QS=JSON.parse(JSON.stringify(DEF_Q));
 let examType=null, emp=null, answers={}, curQ=0, pickLeft=null, donutCh=null;
 let signaturePad=null;
 
+/* ══ ЯВЦЫГ ХАДГАЛАХ ═══════════════════════════════════════════════
+   ⚠ ЯАГААД: ажилтан нэг удаагийн кодоо харахаар Gmail рүү шилжихэд
+   утасны хөтөч энэ хуудсыг санах ойгоос ЧӨЛӨӨЛДӨГ. Буцаж ирэхэд хуудас
+   шинээр ачаалагдаж, бөглөсөн бүх хариулт алга болж, эхнээс эхэлдэг
+   байв (2026-08-26). Одоо хариулт бүрийг хадгалж, буцахад сэргээнэ. */
+const SESS_TTL_H=6;
+function sessKey(){ return "habea_sess_"+(QP.exam||"main"); }
+function sessSave(){
+  try{
+    if(!emp||!examType) return;
+    var a=document.querySelector(".screen.active");
+    var scr=a?String(a.id||"").replace(/^screen/,""):"";
+    if(scr!=="Exam"&&scr!=="Signature") return;
+    localStorage.setItem(sessKey(),JSON.stringify({
+      at:Date.now(), examType:examType, emp:emp,
+      answers:answers, curQ:curQ, screen:scr }));
+  }catch(e){}
+}
+function sessClear(){ try{ localStorage.removeItem(sessKey()); }catch(e){} }
+function sessRestore(){
+  try{
+    var raw=localStorage.getItem(sessKey()); if(!raw) return false;
+    var o=JSON.parse(raw);
+    if(!o||!o.at||Date.now()-o.at>SESS_TTL_H*3600000){ sessClear(); return false; }
+    if(!o.emp||!o.examType||!QS.length) return false;
+    examType=o.examType; emp=o.emp;
+    answers=(o.answers&&typeof o.answers==="object")?o.answers:{};
+    curQ=Math.max(0,Math.min(Number(o.curQ)||0,QS.length-1));
+    document.getElementById("qTot").textContent=QS.length;
+    document.getElementById("eMeta").textContent=(emp.name||"")+(emp.dept?" · "+emp.dept:"");
+    renderQ(); renderDots(); show("Exam");
+    setTimeout(function(){ try{ toast("↩️ Өмнө бөглөсөн хариултууд сэргээгдлээ"); }catch(e){} },700);
+    return true;
+  }catch(e){ return false; }
+}
+
 async function init(){
   var KEY = (QP.exam ? "_"+QP.exam : ""); // тухайн сургалтын шалгалтын түлхүүр
   try{
@@ -460,11 +496,11 @@ async function init(){
   document.getElementById("welcomeTitle").innerHTML=(CFG.examTitle||"ХАБЭА Сургалтын")+'<span style="background:linear-gradient(135deg,#4F46E5,#7C3AED);-webkit-background-clip:text;-webkit-text-fill-color:transparent"> шалгалт</span>';
   document.getElementById("passPct").textContent=(CFG.passPercent||60)+"%";
   document.getElementById("qCnt").textContent=QS.length;
-  show("Welcome");
+  if(!sessRestore()) show("Welcome");
 }
 
 function show(n){document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));document.getElementById("screen"+n).classList.add("active");window.scrollTo({top:0,behavior:"smooth"})}
-function goHome(){examType=null;emp=null;answers={};curQ=0;pickLeft=null;if(signaturePad){try{signaturePad.clear()}catch(e){}}show("Welcome")}
+function goHome(){sessClear();examType=null;emp=null;answers={};curQ=0;pickLeft=null;if(signaturePad){try{signaturePad.clear()}catch(e){}}show("Welcome")}
 
 /* Шалгалтын төрлөө сонгомогц ШУУД шалгалт эхэлнэ.
    QR/бүртгэлийн дэлгэц АЛГАСНА — ажилтны мэдээлэл KPI системээс URL-аар ирдэг.
@@ -677,6 +713,7 @@ function renderDots(){
     const filled=a!=null&&(Array.isArray(a)?a.some(x=>String(x||"").trim()):typeof a==="object"&&a!==null?Object.keys(a).length>0:String(a||"").trim().length>0);
     return`<button class="q-dot${i===curQ?" cur":filled?" done":""}" onclick="jumpTo(${i})">${i+1}</button>`;
   }).join("");
+  try{ sessSave(); }catch(e){}
 }
 
 function grade(q,a){
@@ -705,6 +742,7 @@ function openSignature(){
   const pad=n=>String(n).padStart(2,"0");
   document.getElementById("sigDate").textContent=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   show("Signature");
+  try{ sessSave(); }catch(e){}
   // canvas-ийг идэвхтэй болсны дараа л setup хийнэ (offsetWidth зөв авахын тулд)
   sigLandscape();
   setTimeout(()=>setupSignaturePad(),110);
@@ -1688,6 +1726,7 @@ async function finalSubmit(){ sigRelease();
     }
   }
   if(saved){
+    sessClear();
     toast("✅ Амжилттай хадгалагдлаа");
     if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
   }
