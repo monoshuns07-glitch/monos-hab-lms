@@ -12839,6 +12839,10 @@ function rfDashData(all) {
     deptRows: {}, placeRows: {},
     /* ⭐ Маягтад бөглөгддөг ч чартад ороогүй байсан талбарууд */
     gate: { hab: 0, ita: 0 }, gateRows: { hab: [], ita: [] },
+    /* Энэ ажлыг хийгээгүйгээс учирч болох аюулын ангилал (WK_HAZ_TYPES).
+       Нэг захиалга ОЛОН ангилалтай байж болно тул нийлбэр нь мөрийн
+       тооноос ИХ гарч болно — картан дээр ингэж хэлнэ. */
+    byHaz: {}, hazRows: {}, hazN: 0,
     byWho: {}, whoRows: {},          /* хэн мэдээлсэн */
     byDoer: {}, doerRows: {},        /* хэн хүлээж авсан */
     onTime: [], late: [], waiting: [],
@@ -12867,6 +12871,17 @@ function rfDashData(all) {
     /* Төрөл — шинэ урсгалын `wkKind`, хуучин бичлэгт `type`-аас гаргана */
     var kk = wkKindOf(r).k;
     if (d.kind[kk] != null) { d.kind[kk]++; d.kindRows[kk].push(r); }
+
+    /* Аюулын ангилал — зөвхөн сонгосон бичлэгээс */
+    var hz = (r.wkHaz || []);
+    if (hz.length) {
+      d.hazN++;
+      hz.forEach(function (hk) {
+        var ht = wkHazType(hk); if (!ht) return;
+        d.byHaz[ht.mn] = (d.byHaz[ht.mn] || 0) + 1;
+        push(d.hazRows, ht.mn, r);
+      });
+    }
     var uu = Math.min(5, Math.max(1, wkUrg(r)));
     d.urg[uu - 1]++; d.urgRows[uu - 1].push(r);
 
@@ -13807,6 +13822,7 @@ function rfDashHTML(all) {
     rfSlaHTML(d) +
     rfGateHTML(d) +
     rfRiskHTML(d) +
+    rfHazHTML(d) +
     rfQualityHTML(d) +
     rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй · дарж жагсаалтыг харна', d.byDept, RF_C.a, d.deptRows) +
     rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна · дарж харна', d.byPlace, RF_C.a, d.placeRows) +
@@ -13818,6 +13834,42 @@ function rfDashHTML(all) {
     rfAttentionHTML(d) +
     '</div>';
   return '<div class="rf-wrap">' + H + '</div>';
+}
+
+/* ══ АЮУЛЫН АНГИЛАЛ ══
+   «Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?» гэсэн асуултын хариу.
+   ⚠ Ангилал бүр ӨӨРИЙН тогтмол өнгөтэй (WK_HAZ_TYPES) — энэ нь ЗЭРЭГЦЭЭ
+     ангилал болохоос эрэмбэ БИШ тул өнгө нь утга дамжуулж болно.
+   ⚠ Нэг захиалга олон ангилалтай байж болох тул нийлбэр нь захиалгын
+     тооноос их гарна — гарчигт ингэж тайлбарлав. */
+function rfHazHTML(d) {
+  var rows = WK_HAZ_TYPES.map(function (h) {
+    return { h: h, v: d.byHaz[h.mn] || 0 };
+  }).filter(function (x) { return x.v > 0; }).sort(function (a, b) { return b.v - a.v; });
+
+  if (!rows.length) {
+    return rfCard('Ямар аюулаас сэргийлж байна',
+      'Ажлын захиалга үүсгэхэд ангиллаа сонгоно',
+      '<div style="font-size:12.5px;color:' + RF_INK.m + '">Одоогоор сонголт хийгдээгүй байна</div>');
+  }
+  var max = Math.max.apply(null, rows.map(function (x) { return x.v; }));
+  var body = rows.map(function (x) {
+    var w = Math.max(3, (x.v / max) * 100);
+    var key = rfDrill(x.h.mn, 'Аюулын ангилал', d.hazRows[x.h.mn] || []);
+    return '<div' + rfHit(key, x.h.mn + ': ' + x.v) + 'class="rf-hit" style="display:flex;align-items:center;' +
+      'gap:10px;margin-bottom:7px;cursor:pointer;border-radius:9px;padding:2px 5px;margin-left:-5px;' +
+      'margin-right:-5px">' +
+      '<span style="flex:0 0 128px;font-size:11.5px;color:' + RF_INK.s + ';overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap" title="' + esc(x.h.mn) + '">' + esc(x.h.mn) + '</span>' +
+      '<span style="flex:1;height:15px;background:#F1F5F9;border-radius:8px;position:relative;overflow:hidden">' +
+      '<span style="position:absolute;left:0;top:0;height:100%;width:' + w +
+      '%;background:linear-gradient(90deg,' + x.h.c + 'CC,' + x.h.c + ');border-radius:8px"></span></span>' +
+      '<span style="flex:0 0 30px;text-align:right;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span></div>';
+  }).join('');
+  return rfCard('Ямар аюулаас сэргийлж байна',
+    d.hazN + ' захиалга ангилалтай · нэг захиалга олон ангилалтай байж болно · дарж жагсаалтыг харна',
+    body);
 }
 
 /* ── АНХААРАЛ ШААРДСАН — тоо биш, ҮЙЛДЭЛ ── */
@@ -13903,11 +13955,36 @@ function rfTipWire() {
 var WK_KINDS = [
   { k: 'odt',    ab: 'ОДТ',  name: 'Осолд дөхсөн тохиолдол',
     hint: 'Осол болох шахсан — азаар зүгээр өнгөрсөн', c: '#EA580C', bg: '#FFF7ED' },
-  { k: 'hazard', ab: 'Аюул', name: 'Аюул',
+  /* ⚠ «Аюул» нь ШИНЭ маягтад САНААТАЙГААР харагдахгүй (hidden).
+     Тусдаа төрөл байхаа больж, «Ажил»-ын дотор «энэ ажлыг хийгээгүйгээс
+     ямар аюул учирч болох вэ» гэсэн асуулт болж шилжсэн (2026-08-26).
+     ⚠⚠ Тодорхойлолтыг нь УСТГАЖ БОЛОХГҮЙ — өмнө нь бүртгэгдсэн олон
+        бичлэг wkKind:'hazard' гэж хадгалагдсан. Устгавал тэдгээр нь
+        буруу нэр, буруу өнгөөр харагдана. */
+  { k: 'hazard', ab: 'Аюул', name: 'Аюул', hidden: true,
     hint: 'Осол болж болзошгүй нөхцөл байсаар байна', c: '#C81E3A', bg: '#FEF2F2' },
   { k: 'job',    ab: 'Ажил', name: 'Ажлын захиалга',
     hint: 'Засварлах, солих, хийж өгөх ажил', c: '#0F766E', bg: '#F0FDFA' }
 ];
+
+/* ══ АЮУЛЫН АНГИЛАЛ — «Ажил» захиалахад заавал сонгоно ══════════════════
+   «Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?» гэсэн асуултын
+   хариу. Ингэснээр ажлын захиалга бүр ямар эрсдэлээс сэргийлж байгаа нь
+   тоологдож, графикаар харагдана.
+   ⚠ Дүрс тэмдэг (icon) ашиглаагүй — фонтод байхгүй тэмдэгт хар хайрцаг
+     болж гарч байсан тул зөвхөн бичвэр, өнгө хэрэглэнэ. */
+var WK_HAZ_TYPES = [
+  { k: 'chem', mn: 'Химийн',      c: '#7C3AED', bg: '#F5F3FF' },
+  { k: 'phys', mn: 'Физикийн',    c: '#0891B2', bg: '#ECFEFF' },
+  { k: 'psy',  mn: 'Сэтгэлзүйн',  c: '#DB2777', bg: '#FDF2F8' },
+  { k: 'bio',  mn: 'Биологийн',   c: '#16A34A', bg: '#F0FDF4' },
+  { k: 'ergo', mn: 'Эргономик',   c: '#D97706', bg: '#FFFBEB' },
+  { k: 'food', mn: 'Хүнсний чанар, аюулгүй байдлын', c: '#B45309', bg: '#FEF3C7' }
+];
+function wkHazType(k) {
+  for (var i = 0; i < WK_HAZ_TYPES.length; i++) if (WK_HAZ_TYPES[i].k === k) return WK_HAZ_TYPES[i];
+  return null;
+}
 function wkKind(k) {
   for (var i = 0; i < WK_KINDS.length; i++) if (WK_KINDS[i].k === k) return WK_KINDS[i];
   return WK_KINDS[1];
@@ -14033,7 +14110,8 @@ function wkNewModal() {
   if (!me || !me.uid) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
   /* `locOpen` нь ЗӨВХӨН дэлгэцийн төлөв — аль бүлгийн дотор орсныг заана.
      Илгээх датад ордоггүй (wkCreate нь locGroup/locSub-ыг л уншина). */
-  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', locOpen: '', photo: '', gate: '' };
+  var sel = { kind: '', urg: 0, locGroup: '', locSub: '', locOpen: '', photo: '', gate: '',
+    haz: [], hazText: '' };
   var node = elc('div', 'modal-info');
   var meName = '', mePos = '', meDept = '';
   try {
@@ -14046,7 +14124,11 @@ function wkNewModal() {
 
     /* ── ① ТӨРӨЛ ── */
     H += wkStep(1, 'Юуны тухай вэ?', !!sel.kind);
-    H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_KINDS.map(function (k) {
+    /* ⚠ hidden төрөл (Аюул) сонголтод ГАРАХГҮЙ — доорх «Ажил»-ын
+       аюулын ангилал руу шилжсэн. */
+    H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_KINDS.filter(function (k) {
+      return !k.hidden;
+    }).map(function (k) {
       var on = sel.kind === k.k;
       return '<button type="button" data-wk-kind="' + k.k + '" style="flex:1;min-width:104px;' +
         'border:2px solid ' + (on ? k.c : '#E2E8F0') + ';background:' + (on ? k.bg : '#fff') +
@@ -14154,14 +14236,40 @@ function wkNewModal() {
     var locOk = !sel.locOpen && !!_g &&
       (!(_g.subs || []).length || !!sel.locSub);
     if (locOk) {
-      H += wkStep(4, 'Юу болсныг дэлгэрэнгүй бичнэ үү', false);
+      /* ⚠ Алхмын дугаар ДИНАМИК — «Ажил» сонговол аюулын ангиллын нэмэлт
+         алхам орж ирдэг тул дараагийнх нь шилжинэ. Хатуу бичвэл 5 дугаар
+         хоёр удаа гарна. */
+      var sN = 4;
+      H += wkStep(sN++, 'Юу болсныг дэлгэрэнгүй бичнэ үү', false);
       H += '<textarea id="wkDesc" class="rf-input" rows="4" placeholder="' +
         (sel.kind === 'job' ? 'Ямар ажил хийлгэх вэ? Юу эвдэрсэн, юу дутуу вэ?'
           : 'Юу болсон / болж болзошгүй вэ? Хэн, юу, хэзээ?') +
         '" style="width:100%">' + esc(sel.desc || '') + '</textarea>';
 
-      /* ── ⑤ ЗУРАГ ── */
-      H += wkStep(5, 'Зураг (заавал биш, гэхдээ маш тустай)', !!sel.photo);
+      /* ── АЮУЛЫН АНГИЛАЛ — ЗӨВХӨН «Ажил» дээр ──
+         Тусдаа «Аюул» төрөл байхаа больж, ажлын захиалга бүр «энэ ажлыг
+         хийгээгүйгээс юу болох вэ» гэдгээ хэлдэг болсон. Ингэснээр
+         захиалга бүр ямар эрсдэлээс сэргийлж буй нь тоологдоно. */
+      if (sel.kind === 'job') {
+        H += wkStep(sN++, 'Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?',
+          !!(sel.haz || []).length);
+        H += '<div style="font-size:11.5px;color:#64748B;margin:-4px 0 8px;line-height:1.5">' +
+          'Ангиллаа сонгоно уу — олныг сонгож болно. Дараа нь юу болж болзошгүйг товч бичнэ үү.</div>';
+        H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + WK_HAZ_TYPES.map(function (h) {
+          var on = (sel.haz || []).indexOf(h.k) > -1;
+          return '<button type="button" data-wk-haz="' + h.k + '" style="border:2px solid ' +
+            (on ? h.c : '#E2E8F0') + ';background:' + (on ? h.bg : '#fff') + ';color:' +
+            (on ? h.c : '#334155') + ';border-radius:11px;padding:9px 13px;cursor:pointer;' +
+            'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
+            (on ? '✓ ' : '') + esc(h.mn) + '</button>';
+        }).join('') + '</div>';
+        H += '<textarea id="wkHazText" class="rf-input" rows="3" placeholder="' +
+          'ж: Уур алдагдаж ажилтан түлэгдэх · бүтээгдэхүүн бохирдох · нуруу гэмтэх" ' +
+          'style="width:100%;margin-top:9px">' + esc(sel.hazText || '') + '</textarea>';
+      }
+
+      /* ── ЗУРАГ ── */
+      H += wkStep(sN++, 'Зураг (заавал биш, гэхдээ маш тустай)', !!sel.photo);
       H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         wkPickerHTML('wkFile', 'Файлаас сонгох', 'ti-photo', false) +
         wkPickerHTML('wkCam', 'Камераар авах', 'ti-camera', true) +
@@ -14174,8 +14282,8 @@ function wkNewModal() {
             'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
           : '');
 
-      /* ── ⑥ АЛБА ── */
-      H += wkStep(6, 'Хэн рүү илгээх вэ?', !!sel.gate);
+      /* ── АЛБА ── */
+      H += wkStep(sN++, 'Хэн рүү илгээх вэ?', !!sel.gate);
       H += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + WK_GATES.map(function (g) {
         var on = sel.gate === g.g;
         return '<button type="button" data-wk-gate="' + g.g + '" style="flex:1;min-width:170px;' +
@@ -14204,6 +14312,10 @@ function wkNewModal() {
     node.innerHTML = H;
     var ta = node.querySelector('#wkDesc');
     if (ta) ta.addEventListener('input', function () { sel.desc = this.value; });
+    /* ⚠ Аюулын тайлбарыг бичих бүрд хадгална — ангилал дарахад draw()
+       нь innerHTML-ийг бүхэлд нь дахин зурдаг тул бичсэн зүйл алга болно. */
+    var hta = node.querySelector('#wkHazText');
+    if (hta) hta.addEventListener('input', function () { sel.hazText = this.value; });
     wkWirePickers(node, function (durl) { sel.photo = durl; draw(); });
   };
 
@@ -14232,6 +14344,13 @@ function wkNewModal() {
     if (ev.target.closest('[data-wk-ledit]')) {
       sel.locOpen = ''; sel.locGroup = ''; sel.locSub = ''; draw(); return;
     }
+    if ((b = ev.target.closest('[data-wk-haz]'))) {
+      var hk = b.getAttribute('data-wk-haz');
+      sel.haz = sel.haz || [];
+      var hx = sel.haz.indexOf(hk);
+      if (hx > -1) sel.haz.splice(hx, 1); else sel.haz.push(hk);
+      draw(); return;
+    }
     if ((b = ev.target.closest('[data-wk-gate]'))) { sel.gate = b.getAttribute('data-wk-gate'); draw(); return; }
     if (ev.target.closest('#wkPhotoDel')) { sel.photo = ''; draw(); return; }
     if (ev.target.closest('#wkSend')) {
@@ -14239,6 +14358,12 @@ function wkNewModal() {
       var desc = ta ? String(ta.value || '').trim() : '';
       if (!desc) { toast('Тайлбараа бичнэ үү', 'warn'); if (ta) ta.focus(); return; }
       sel.desc = desc;
+      /* «Ажил» захиалахад аюулын ангилал ЗААВАЛ — графикийн үндсэн дата */
+      if (sel.kind === 'job' && !(sel.haz || []).length) {
+        toast('Ямар аюул учирч болохыг сонгоно уу', 'warn'); return;
+      }
+      var hta2 = node.querySelector('#wkHazText');
+      if (hta2) sel.hazText = String(hta2.value || '').trim();
       closeModal();
       wkCreate(sel);
       return;
@@ -14296,6 +14421,8 @@ async function wkCreate(sel) {
     id: newId('RP'), status: 'reported',
     /* Work order талбарууд */
     wkKind: sel.kind, wkUrg: sel.urg, wkUrgFinal: sel.urg,
+    /* Энэ ажлыг хийгээгүйгээс учирч болох аюул (зөвхөн «Ажил» дээр) */
+    wkHaz: (sel.haz || []).slice(), wkHazText: sel.hazText || '',
     wkGate: sel.gate, wkGateLog: [],
     locGroup: grp.name || '', locSub: sel.locSub || '',
     /* Хуучин талбартай нийцтэй */
@@ -14591,6 +14718,26 @@ function wkAcceptModal(id) {
 }
 
 /* ── НЭГ МӨР ── */
+/* Аюулын ангиллын чипс — жагсаалт ба дэлгэрэнгүйд хоёуланд нь */
+function wkHazChipsHTML(r) {
+  var hz = (r && r.wkHaz) || [];
+  if (!hz.length && !(r && r.wkHazText)) return '';
+  var chips = hz.map(function (hk) {
+    var h = wkHazType(hk); if (!h) return '';
+    return '<span style="background:' + h.bg + ';color:' + h.c + ';border:1px solid ' + h.c +
+      '33;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:800">' + esc(h.mn) + '</span>';
+  }).join('');
+  return '<div style="margin-top:7px;padding:7px 9px;background:#FFFBEB;border:1px solid #FDE68A;' +
+    'border-radius:9px">' +
+    '<div style="font-size:10.5px;font-weight:800;color:#92400E;letter-spacing:.3px;margin-bottom:4px">' +
+    'ХИЙХГҮЙ БОЛ ЮУ БОЛОХ ВЭ</div>' +
+    (chips ? '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:' +
+      (r.wkHazText ? '5px' : '0') + '">' + chips + '</div>' : '') +
+    (r.wkHazText ? '<div style="font-size:12px;color:#78350F;line-height:1.45">' +
+      esc(r.wkHazText) + '</div>' : '') +
+    '</div>';
+}
+
 function wkRowHTML(r) {
   var me = reqMe() || {};
   var k = wkKindOf(r), st = wkStatus(r), S = WK_STATUS[st];
@@ -14640,6 +14787,9 @@ function wkRowHTML(r) {
       : '') +
     '<div style="font-size:13.5px;font-weight:600;color:#1E293B;line-height:1.45">' +
     esc(String(r.desc || '').slice(0, 130)) + '</div>' +
+    /* Энэ ажлыг хийгээгүйгээс учирч болох аюул — ангиллын чипс ба тайлбар.
+       Хүлээж авах хүн ЯАГААД яаралтай болохыг эндээс шууд ойлгоно. */
+    wkHazChipsHTML(r) +
     '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
     ' · 👤 ' + esc(r.reporterFull || r.reporterName || '') +
     (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(r.wkClaimBy.name) : '') + '</div>' +
