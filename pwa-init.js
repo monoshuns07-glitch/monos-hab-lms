@@ -201,4 +201,73 @@
       document.body.appendChild(w);
     });
   });
+
+  // ── 4. Android — «Суулгах» товч ГАРААГҮЙ үеийн нөөц зам ──
+  /* ⚠ ЯАГААД: Chrome-ын `beforeinstallprompt` тохиолдол дараах үед ОГТ
+     ажилладаггүй — Messenger/Facebook/Instagram зэргийн дотоод хөтөч
+     (чатаас QR уншуулбал ихэвчлэн ингэж нээгддэг), Samsung Internet,
+     Firefox, MIUI. Тэр үед ажилтан ямар ч товч харахгүй тул «апп суухгүй
+     байна» гэж ойлгодог байв (2026-08-26). Одоо гарын авлагын заавар
+     харуулна, дотоод хөтөч бол Chrome-оор нээхийг санал болгоно. */
+  document.addEventListener('DOMContentLoaded', function () {
+    var ua = navigator.userAgent || '';
+    if (!/Android/i.test(ua) || isInstalled()) return;
+    setTimeout(function () {
+      if (deferred) return;                                   // жинхэнэ товч гарсан
+      if (document.getElementById('pwaInstallBtn')) return;
+      try { if (localStorage.getItem('pwa_and_hint') === 'off') return; } catch (e) {}
+
+      var inApp = /FBAN|FBAV|FB_IAB|Instagram|Line\/|WhatsApp|Zalo|MicroMessenger|TwitterAndroid|EdgA?\/.*wv|; wv\)/i.test(ua);
+      var samsung = /SamsungBrowser/i.test(ua);
+      var steps, head;
+      if (inApp) {
+        head = 'Chrome хөтчөөр нээнэ үү';
+        steps = 'Та энэ хуудсыг чат аппын дотоод хөтчөөр нээсэн байна. ' +
+                'Тэндээс апп суулгах боломжгүй.<br><br>' +
+                '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
+                '2. <b>«Chrome-оор нээх»</b> (Open in Chrome / Browser) сонгоно<br>' +
+                '3. Chrome дээр нээгдмэгц <b>«Апп суулгах»</b> товч гарч ирнэ';
+      } else if (samsung) {
+        head = 'Утсанд суулгах';
+        steps = '1. Доод талын <b>&#8801;</b> цэс дарна<br>' +
+                '2. <b>«Add page to»</b> сонгоно<br>' +
+                '3. <b>«Home screen»</b> дарна — апп нүүр дэлгэцэд суулаа';
+      } else {
+        head = 'Утсанд суулгах';
+        steps = '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
+                '2. <b>«Апп суулгах»</b> эсвэл <b>«Нүүр дэлгэцэд нэмэх»</b> сонгоно<br>' +
+                '3. <b>Суулгах</b> дарна — апп нүүр дэлгэцэд суулаа<br><br>' +
+                '<span style="color:#6B7280;font-size:13px">Заавар олдохгүй бол хуудсаа ' +
+                '<b>Chrome</b> хөтчөөр нээж үзнэ үү.</span>';
+      }
+
+      makeBtn('Утсанд суулгах', function () {
+        var w = document.createElement('div');
+        w.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:rgba(8,12,28,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:18px';
+        var chromeBtn = inApp
+          ? '<button id="pwaOpenChrome" style="margin-top:14px;width:100%;padding:13px;border:none;border-radius:12px;background:#0F1117;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Chrome-оор нээх</button>'
+          : '';
+        w.innerHTML =
+          '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+            '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">' + head + '</div>' +
+            '<div style="font-size:14px;color:#374151;line-height:1.75">' + steps + '</div>' +
+            chromeBtn +
+            '<button id="pwaHintOk" style="margin-top:10px;width:100%;padding:13px;border:none;border-radius:12px;background:#E30613;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Ойлголоо</button>' +
+          '</div>';
+        var oc = w.querySelector('#pwaOpenChrome');
+        if (oc) oc.addEventListener('click', function () {
+          var host = location.host + location.pathname;
+          location.href = 'intent://' + host + '#Intent;scheme=https;package=com.android.chrome;end';
+        });
+        w.querySelector('#pwaHintOk').addEventListener('click', function () {
+          try { localStorage.setItem('pwa_and_hint', 'off'); } catch (e) {}
+          w.remove();
+          var el = document.getElementById('pwaInstallBtn');
+          if (el) el.remove();
+        });
+        w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
+        document.body.appendChild(w);
+      });
+    }, 3500);
+  });
 })();
