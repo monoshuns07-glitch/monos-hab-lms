@@ -1240,9 +1240,7 @@ function otpFillBoxes(code){
 function otpCacheKey(){ return "habea_otpok_"+otpEmail(); }
 
 function otpSaveCache(){
-  try{
-    localStorage.setItem(otpCacheKey(), JSON.stringify({ at:OTP_VERIFIED_AT, id:OTP_ID, code:OTP_CODE }));
-  }catch(e){}
+  /* Кэшлэхээ болив — бүр удаад шинэ код авна. */
 }
 function otpReadCache(){
   try{
@@ -1297,11 +1295,11 @@ function otpSetVerified(fromCache){
 
 /* Хадгалсан баталгаажилтыг сэргээх */
 function otpApplyCached(){
-  if(OTP_OK) return;
-  var c=otpReadCache();
-  if(!c) return;
-  OTP_VERIFIED_AT=c.at; OTP_ID=c.id||""; OTP_CODE=c.code||"";
-  otpSetVerified(true);
+  /* ⚠ 12 ЦАГИЙН КЭШ БОЛИУЛСАН (2026-08-27). Хэрэглэгч бүр удаад ШИНЭ
+     код авахыг хүссэн. Ингэснээр «Та ...-д баталгаажсан / 🔄 Шинэ код
+     авах» гэсэн нэмэлт алхам ч бүрмөсөн алга болов. */
+  try{ otpClearCache(); }catch(e){}
+  return;
 }
 
 /* Хэрэглэгч өөрөө шинэ код авахыг хүсвэл */
@@ -1604,7 +1602,12 @@ function setupSignaturePad(){
   }
   // Зөвшөөрлийн нүд ба "Шинээр" товчийг холбоно (нэг л удаа)
   var _cb=document.getElementById("sigConsent");
-  if(_cb&&!_cb._w){ _cb._w=true; _cb.addEventListener("change",sigUpdateSubmit); }
+  if(_cb&&!_cb._w){ _cb._w=true; _cb.addEventListener("change",function(){
+    sigUpdateSubmit();
+    /* ⚡ Зөвшөөрлийг тэмдэглэмэгц код ШУУД гарна — тусад нь товч дарах
+       шаардлагагүй (2026-08-27). */
+    try{ if(_cb.checked && !OTP_OK && !OTP_ID && !OTP_BYPASS) otpSendCode(); }catch(e){}
+  }); }
   try{ otpWire(); }catch(e){}
   var _rb=document.getElementById("sigRedrawBtn");
   if(_rb&&!_rb._w){ _rb._w=true; _rb.addEventListener("click",function(){ clearSignature(); try{toast("✍️ Шинээр зурна уу")}catch(e){} }); }
