@@ -20109,7 +20109,7 @@ function renderMeasurePage(sec, embed) {
    ⚠ Файлд НЭР, И-МЭЙЛ хадгалахгүй — зөвхөн uid, тоо, төхөөрөмжийн хаяг.
    ⚠ iPhone дээр эхлээд «Утсанд суулгах» хийсэн байх ёстой (Apple-ийн шаардлага).
    ══════════════════════════════════════════════════════════════════════ */
-var PUSH_PUB = 'BCNLcjRpD6ljHwlqpTTNKoyO10b4Rr_ITWO1lY7Vr7G7r7e-jhg2lGYJkCIp-0nK1xMdALYMyQpEYXJl4OhGGeQ';
+var PUSH_PUB = 'BK25tRHOOl2qa49SdcMAe_MK8Q6E6MzhiVaLBgEmX4imPACn9hPtAxS7JrGnQrGobiZWjEmjvXCXFJpYcsOIBK8';
 var PUSH_SUBS_FILE = 'push/subs.json';
 var PUSH_LS = 'kpi_push_v1';
 
