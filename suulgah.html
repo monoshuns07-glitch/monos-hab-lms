@@ -69,7 +69,25 @@ body{
   background:#F0FDF4;border:1px solid #BBF7D0;border-radius:14px;padding:15px 17px}
 .note-ic{font-size:18px;line-height:1.2}
 .note-tx{font-size:13px;color:#166534;line-height:1.7}
-.foot{text-align:center;font-size:11.5px;color:#8B93AB;margin-top:22px}
+    /* ══ Нэвтрэх мэдээллийн хэсэг ══ */
+    .login-box{margin-top:30px;border:1.5px solid #E3E7F2;border-radius:18px;padding:22px 22px 20px;background:#FBFCFF}
+    .login-h{font-size:17px;font-weight:800;color:#0F1730;margin-bottom:16px}
+    .login-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .login-cell{background:#fff;border:1px solid #E3E7F2;border-radius:14px;padding:14px 16px}
+    .login-lbl{font-size:10.5px;font-weight:800;color:#8B93AB;letter-spacing:.09em;margin-bottom:7px}
+    .login-val{font-size:16px;font-weight:700;color:#0F1730}
+    .login-code{font-size:24px;font-weight:800;color:#C1121F;letter-spacing:.06em;font-family:"Manrope",monospace}
+    .login-hint{font-size:12px;color:#8B93AB;margin-top:6px;line-height:1.45}
+    .login-step{display:flex;gap:12px;align-items:flex-start;margin-top:16px;font-size:13.5px;color:#2A3350;line-height:1.6}
+    .login-num{flex:0 0 auto;width:26px;height:26px;border-radius:9px;background:#0F1730;color:#fff;
+      display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px}
+    .login-once{display:block;margin-top:5px;color:#0B7A47;font-weight:700}
+    .login-warn{margin-top:16px;background:#FFF5F5;border:1px solid #FBD5D5;border-radius:12px;
+      padding:13px 15px;font-size:13px;color:#8A1C1C;line-height:1.6}
+    .login-tips{margin-top:14px;display:grid;gap:8px}
+    .login-tip{font-size:12.5px;color:#4A5570;line-height:1.55}
+    @media(max-width:640px){ .login-grid{grid-template-columns:1fr} .login-code{font-size:21px} }
+    .foot{text-align:center;font-size:11.5px;color:#8B93AB;margin-top:22px}
 
 @media print{
   body{background:#fff;padding:0}
@@ -133,6 +151,44 @@ body{
         </div>
       </div>
 
+      <!-- ══ НЭВТРЭХ МЭДЭЭЛЭЛ (2026-08-27-ноос шинэ журам) ══ -->
+      <div class="login-box">
+        <div class="login-h">Хэрхэн нэвтрэх вэ</div>
+
+        <div class="login-grid">
+          <div class="login-cell">
+            <div class="login-lbl">1 · НЭВТРЭХ НЭР</div>
+            <div class="login-val">Бүртгэлтэй и-мэйл хаягаа</div>
+            <div class="login-hint">ж: ner.ovog@gmail.com</div>
+          </div>
+          <div class="login-cell">
+            <div class="login-lbl">2 · НУУЦ ҮГ</div>
+            <div class="login-code">Monos2026</div>
+            <div class="login-hint">Бүх ажилтанд нийтлэг — том M үсгээр</div>
+          </div>
+        </div>
+
+        <div class="login-step">
+          <span class="login-num">3</span>
+          <div>
+            <b>Нэвтэрмэгц «Нууц үгээ солино уу» гэсэн цонх гарна.</b>
+            Өөрийн гэсэн шинэ нууц үг зохиож, хоёр удаа бичээд <b>Хадгалах</b> дарна.
+            <span class="login-once">Энэ зөвхөн НЭГ УДАА шаардагдана — дараа нь дахиж асуухгүй.</span>
+          </div>
+        </div>
+
+        <div class="login-warn">
+          <b>⚠ Зохиосон нууц үгээ сайн санаж авна уу.</b>
+          Систем түүнийг хадгалдаггүй — зөвхөн та л мэднэ. Мартвал ХАБЭА-н албанд хандана уу.
+        </div>
+
+        <div class="login-tips">
+          <div class="login-tip"><b>Нууц үг ямар байх ёстой вэ?</b> Дор хаяж 6 тэмдэгт. «Monos2026»-аас өөр байна.</div>
+          <div class="login-tip"><b>Дугаараа сольсон бол?</b> Нууц үг нь одоо утасны дугаартай холбоогүй — дээрх нийтлэг нууц үгээр орно.</div>
+          <div class="login-tip"><b>Нэвтэрч чадахгүй бол?</b> И-мэйл хаягаа зөв бичсэн эсэхээ шалгаад, ХАБЭА-н албанд хандана уу.</div>
+        </div>
+      </div>
+
       <div class="note">
         <div class="note-ic">✅</div>
         <div class="note-tx">
@@ -142,7 +198,7 @@ body{
         </div>
       </div>
 
-      <div class="foot">© 2025 Монос Хүнс ХК — ХАБЭА-н алба</div>
+      <div class="foot">© 2026 Монос Хүнс ХК — ХАБЭА-н алба</div>
     </div>
   </div>
 </div>

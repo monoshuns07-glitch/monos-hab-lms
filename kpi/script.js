@@ -1988,9 +1988,15 @@ function saveErrorToast(e, step) {
    ШУУД ШИНЭЧЛЭЛТ (pulse) — Represh хийхгүйгээр
    ══════════════════════════════════════════════════════════════════════ */
 var PULSE_FILE = 'workflow/_pulse.json';
-var PULSE_MS = 30000;          /* цонх нээлттэй үед 30 секунд тутам */
+var PULSE_MS = 12000;          /* цонх нээлттэй үед 12 секунд тутам (файл ~60 байт) */
 var PULSE_SEEN = 0;            /* сүүлд харсан дугаар */
 var PULSE_MINE = 0;            /* өөрийн бичсэн — өөрөө өөрийгөө шинэчлэхгүй */
+/* ⚠ Энэ сешний ДАВТАГДАШГҮЙ дугаар. Өмнө нь «миний дохио мөн үү»-г
+   ЦАГААР (4 секунд) таамагладаг байсан нь БУРУУ байв: өөр хүн миний
+   үйлдлээс хойш 4 секундын дотор аюул мэдээлбэл түүний дохиог минийх
+   гэж андуурч, шинэчлэлтийг алгасаад «үзсэн» гэж тэмдэглэдэг байсан
+   — мэдээлэл ирсэн хэсэгт ОГТ гарч ирэхгүй болдог (2026-08-28). */
+var PULSE_SID = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 var _pulseBusy = false, _pulseLast = 0, _pulseWaiting = false;
 
 /* Дата өөрчлөгдсөнийг бусдад мэдэгдэнэ (хариу хүлээхгүй) */
@@ -2001,7 +2007,7 @@ function pulseBump(what) {
   PULSE_MINE = now;
   try {
     riskR2PutJson(PULSE_FILE, {
-      v: now, what: String(what || ''),
+      v: now, sid: PULSE_SID, what: String(what || ''),
       by: (function () { try { var m = reqMe(); return (m && m.name) || ''; } catch (e) { return ''; } })()
     }).catch(function () {});
   } catch (e) {}
@@ -2052,8 +2058,10 @@ async function pulseCheck(force) {
   if (!v) return;
   if (!PULSE_SEEN) { PULSE_SEEN = v; return; }    /* эхний удаа — зөвхөн тэмдэглэнэ */
   if (v <= PULSE_SEEN) return;
-  /* Өөрийн бичсэн цохилт бол дэлгэц аль хэдийн шинэчлэгдсэн */
-  if (Math.abs(v - PULSE_MINE) < 4000) { PULSE_SEEN = v; return; }
+  /* Өөрийн бичсэн цохилт бол дэлгэц аль хэдийн шинэчлэгдсэн.
+     ⚠ ЦАГААР биш, сешний ДУГААРААР таньдаг — эс бөгөөс өөр хүний
+     дохиог минийх гэж андуурч, мэдээлэл гарч ирэхгүй үлддэг. */
+  if (j && j.sid && j.sid === PULSE_SID) { PULSE_SEEN = v; return; }
   await pulseRefresh(v);
 }
 
