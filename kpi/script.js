@@ -847,6 +847,7 @@ async function loadDB() {
           if (_R2_EMPS && _R2_EMPS.length) console.log('[emp] эхэнд R2-оос ' + _R2_EMPS.length);
         } catch (e) {}
       })(),
+      wkHazLoad().catch(function () {}),            /* аюулын ангилал (админ засдаг) */
       riskReleasesLoad().catch(function () {}),      /* нэг удаагийн нээлтүүд */
       ackSecLoad(true).catch(function () {}),        /* хариуцах хэсгийн зураглал */
       /* Арга хэмжээ: эзэмшигчид → биелэлт (эзэмшигчээс хамаарна) */
@@ -13981,6 +13982,170 @@ var WK_HAZ_TYPES = [
   { k: 'ergo', mn: 'Эргономик',   c: '#D97706', bg: '#FFFBEB' },
   { k: 'food', mn: 'Хүнсний чанар, аюулгүй байдлын', c: '#B45309', bg: '#FEF3C7' }
 ];
+/* ══ АЮУЛЫН АНГИЛЛЫГ АДМИН ЗАСАХ ══════════════════════════════════════
+   Өмнө нь 6 ангилал кодод ХАТУУ бичигдсэн байсан тул нэмэх бүрд
+   хөгжүүлэлт хийх шаардлагатай байв. Одоо админ өөрөө нэмж/засаж/
+   устгана. R2-д хадгална (Firestore-д БИШ). */
+var WK_HAZ_FILE = 'workflow/haztypes.json';
+var WK_HAZ_PALETTE = [
+  ['#7C3AED', '#F5F3FF'], ['#0891B2', '#ECFEFF'], ['#DB2777', '#FDF2F8'],
+  ['#16A34A', '#F0FDF4'], ['#D97706', '#FFFBEB'], ['#B45309', '#FEF3C7'],
+  ['#2563EB', '#EFF6FF'], ['#BE123C', '#FFF1F2'], ['#0D9488', '#F0FDFA'],
+  ['#9333EA', '#FAF5FF'], ['#65A30D', '#F7FEE7'], ['#C2410C', '#FFF7ED']
+];
+/* Жагсаалтыг ОРОНД НЬ солихгүй — доторх утгыг л сольж, бусад
+   лавлагаанууд хэвээр ажиллана. */
+function wkHazApply(list) {
+  if (!Array.isArray(list) || !list.length) return false;
+  var clean = [];
+  list.forEach(function (h) {
+    if (!h || !h.k || !h.mn) return;
+    clean.push({ k: String(h.k), mn: String(h.mn), c: h.c || '#64748B', bg: h.bg || '#F8FAFC' });
+  });
+  if (!clean.length) return false;
+  WK_HAZ_TYPES.length = 0;
+  clean.forEach(function (h) { WK_HAZ_TYPES.push(h); });
+  return true;
+}
+async function wkHazLoad(force) {
+  try {
+    var p = await riskR2GetJson(WK_HAZ_FILE, { fresh: !!force });
+    if (p && Array.isArray(p.rows)) return wkHazApply(p.rows);
+  } catch (e) {}
+  return false;
+}
+async function wkHazSave() {
+  return await riskR2PutJson(WK_HAZ_FILE, {
+    updatedAt: new Date().toISOString(),
+    updatedBy: (SESSION && SESSION.email) || '',
+    rows: WK_HAZ_TYPES
+  });
+}
+function wkHazNextColor() {
+  var used = {};
+  WK_HAZ_TYPES.forEach(function (h) { used[h.c] = 1; });
+  for (var i = 0; i < WK_HAZ_PALETTE.length; i++) {
+    if (!used[WK_HAZ_PALETTE[i][0]]) return WK_HAZ_PALETTE[i];
+  }
+  return WK_HAZ_PALETTE[WK_HAZ_TYPES.length % WK_HAZ_PALETTE.length];
+}
+function wkHazNewKey(mn) {
+  var h = 0, str = String(mn);
+  for (var i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  var base = 'h' + Math.abs(h).toString(36).slice(0, 6);
+  var k = base, n = 1;
+  while (WK_HAZ_TYPES.some(function (x) { return x.k === k; })) { n++; k = base + n; }
+  return k;
+}
+/* Админд зориулсан удирдах цонх */
+function wkHazManage() {
+  if (!isAdmin()) return;
+  var old = document.getElementById('hazMgrBox');
+  if (old) old.remove();
+  var w = document.createElement('div');
+  w.id = 'hazMgrBox';
+  w.style.cssText = 'position:fixed;inset:0;z-index:2147483300;background:rgba(8,12,28,.6);' +
+    'backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px';
+
+  function err(m) { var e = w.querySelector('#hzErr'); if (e) e.textContent = m || ''; }
+
+  function draw() {
+    var rows = WK_HAZ_TYPES.map(function (h, i) {
+      return '<div style="display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid #EEF1F4">' +
+        '<span style="width:13px;height:13px;border-radius:4px;flex-shrink:0;background:' + h.c + '"></span>' +
+        '<input data-hz-nm="' + i + '" value="' + esc(h.mn) + '" ' +
+        'style="flex:1;min-width:0;border:1px solid #E2E8F0;border-radius:9px;padding:8px 10px;' +
+        'font-family:inherit;font-size:13.5px">' +
+        '<button type="button" data-hz-del="' + i + '" ' +
+        'style="border:none;background:#FEE2E2;color:#991B1B;border-radius:9px;padding:8px 11px;' +
+        'cursor:pointer;font-family:inherit;font-weight:800;font-size:13px">✕</button>' +
+        '</div>';
+    }).join('');
+    w.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:460px;width:100%;' +
+      'max-height:calc(100vh - 36px);display:flex;flex-direction:column;' +
+      'box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+        '<div style="font-size:18px;font-weight:800;color:#0F1117;margin-bottom:4px">Аюулын ангилал</div>' +
+        '<div style="font-size:12.5px;color:#64748B;margin-bottom:14px">Ажилтны маягтад гарах сонголтууд.</div>' +
+        '<div style="flex:1 1 auto;overflow-y:auto;min-height:0">' + rows + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:12px">' +
+          '<input id="hzNew" placeholder="Шинэ ангиллын нэр" ' +
+          'style="flex:1;min-width:0;border:1px solid #E2E8F0;border-radius:10px;padding:11px 12px;' +
+          'font-family:inherit;font-size:14px">' +
+          '<button type="button" id="hzAdd" style="border:none;background:#0F1117;color:#fff;' +
+          'border-radius:10px;padding:11px 16px;cursor:pointer;font-family:inherit;font-weight:800;' +
+          'font-size:13.5px">Нэмэх</button>' +
+        '</div>' +
+        '<div id="hzErr" style="font-size:12.5px;color:#BE123C;min-height:18px;margin-top:7px"></div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<button type="button" id="hzCancel" style="flex:1;border:1px solid #E2E8F0;background:#fff;' +
+          'color:#334155;border-radius:11px;padding:12px;cursor:pointer;font-family:inherit;' +
+          'font-weight:700;font-size:14px">Болих</button>' +
+          '<button type="button" id="hzSave" style="flex:2;border:none;background:#4F46E5;color:#fff;' +
+          'border-radius:11px;padding:12px;cursor:pointer;font-family:inherit;font-weight:800;' +
+          'font-size:14px">Хадгалах</button>' +
+        '</div>' +
+      '</div>';
+    wire();
+  }
+
+  function wire() {
+    var dels = w.querySelectorAll('[data-hz-del]');
+    for (var i = 0; i < dels.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          var idx = Number(b.getAttribute('data-hz-del'));
+          if (WK_HAZ_TYPES.length <= 1) { err('Дор хаяж нэг ангилал үлдэх ёстой.'); return; }
+          var nm = WK_HAZ_TYPES[idx].mn;
+          if (!confirm(nm + ' — ангиллыг устгах уу? Өмнө нь бүртгэгдсэн мэдээлэл хэвээр үлдэнэ.')) return;
+          WK_HAZ_TYPES.splice(idx, 1);
+          draw();
+        });
+      })(dels[i]);
+    }
+    var nw = w.querySelector('#hzNew');
+    function doAdd() {
+      var v = (nw.value || '').trim();
+      if (v.length < 2) { err('Нэрээ бичнэ үү.'); return; }
+      var dup = WK_HAZ_TYPES.some(function (h) { return h.mn.toLowerCase() === v.toLowerCase(); });
+      if (dup) { err('Ийм нэртэй ангилал аль хэдийн бий.'); return; }
+      var col = wkHazNextColor();
+      WK_HAZ_TYPES.push({ k: wkHazNewKey(v), mn: v, c: col[0], bg: col[1] });
+      draw();
+    }
+    w.querySelector('#hzAdd').addEventListener('click', doAdd);
+    nw.addEventListener('keydown', function (e) { if (e.key === 'Enter') doAdd(); });
+    w.querySelector('#hzCancel').addEventListener('click', function () {
+      w.remove();
+      wkHazLoad(true).then(function () { try { renderReportFlow(); } catch (e) {} });
+    });
+    w.querySelector('#hzSave').addEventListener('click', function () {
+      var bad = false;
+      var ins = w.querySelectorAll('[data-hz-nm]');
+      for (var j = 0; j < ins.length; j++) {
+        var v = (ins[j].value || '').trim();
+        if (v.length < 2) { bad = true; break; }
+        WK_HAZ_TYPES[Number(ins[j].getAttribute('data-hz-nm'))].mn = v;
+      }
+      if (bad) { err('Нэр хоосон байж болохгүй.'); return; }
+      var sb = w.querySelector('#hzSave');
+      sb.disabled = true; sb.textContent = 'Хадгалж байна…';
+      wkHazSave().then(function () {
+        w.remove();
+        try { toast('✅ Ангилал шинэчлэгдлээ'); } catch (e) {}
+        try { renderReportFlow(); } catch (e) {}
+      }).catch(function (e2) {
+        err('Хадгалж чадсангүй: ' + String((e2 && e2.message) || '').slice(0, 60));
+        sb.disabled = false; sb.textContent = 'Хадгалах';
+      });
+    });
+  }
+
+  draw();
+  w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
+  document.body.appendChild(w);
+}
+
 function wkHazType(k) {
   for (var i = 0; i < WK_HAZ_TYPES.length; i++) if (WK_HAZ_TYPES[i].k === k) return WK_HAZ_TYPES[i];
   return null;
@@ -14281,7 +14446,11 @@ function wkNewModal() {
             (on ? h.c : '#334155') + ';border-radius:11px;padding:9px 13px;cursor:pointer;' +
             'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' +
             (on ? '✓ ' : '') + esc(h.mn) + '</button>';
-        }).join('') + '</div>';
+        }).join('') +
+          (isAdmin() ? '<button type="button" data-wk-hazmgr="1" style="border:2px dashed #CBD5E1;' +
+            'background:#fff;color:#64748B;border-radius:11px;padding:9px 13px;cursor:pointer;' +
+            'font-family:inherit;font-size:12.5px;font-weight:700">＋ Ангилал засах</button>' : '') +
+          '</div>';
         H += '<textarea id="wkHazText" class="rf-input" rows="3" placeholder="' +
           'ж: Уур алдагдаж ажилтан түлэгдэх · бүтээгдэхүүн бохирдох · нуруу гэмтэх" ' +
           'style="width:100%;margin-top:9px">' + esc(sel.hazText || '') + '</textarea>';
@@ -14361,6 +14530,8 @@ function wkNewModal() {
     if (ev.target.closest('[data-wk-ledit]')) {
       sel.locOpen = ''; sel.locGroup = ''; sel.locSub = ''; draw(); return;
     }
+    /* Админы «Ангилал засах» — data-wk-haz-аас ӨМНӨ шалгана */
+    if (ev.target.closest('[data-wk-hazmgr]')) { wkHazManage(); return; }
     if ((b = ev.target.closest('[data-wk-haz]'))) {
       var hk = b.getAttribute('data-wk-haz');
       sel.haz = sel.haz || [];
