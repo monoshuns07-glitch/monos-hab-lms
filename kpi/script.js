@@ -20045,6 +20045,96 @@ function lawTierOf(emp) {
   return byKey((r === 'ceo') ? 'ceo' : (r === 'lead') ? 'lead'
     : (r === 'mgr') ? 'mgr' : (r === 'emp') ? 'emp' : 'dir');
 }
+/* ══ ХАМТЫН БАЙГУУЛЛАГУУД — ХАБЭА зөвлөл ба ҮОХХСБК ═══════════════════
+   Эдгээр нь ХУВЬ ХҮНИЙ биш, БАЙГУУЛЛАГЫН эрх үүрэг. Гүйцэтгэх захирал
+   тэдгээрийг байгуулж, ажиллуулах үүрэгтэй тул түүнд, мөн хэрэгжүүлэгч
+   ХАБЭА-н албанд харагдана.
+   ⚠ Заалтын дугаарыг ЗӨВХӨН эх сурвалжид тодорхой заасан газарт бичсэн.
+     Зөвлөлийн журамд заалт тус бүрийн дугаар нийтлэгдээгүй тул дугааргүй.
+     Санаанаасаа дугаар БҮҮ нэм. */
+var LAW_BODIES = [
+  {
+    key: 'council', name: 'ХАБЭА зөвлөл', full: 'Хөдөлмөрийн аюулгүй байдал, эрүүл ахуйн зөвлөл',
+    src: 'ХАБЭА-н зөвлөлийн ажиллах үлгэрчилсэн журам · Хөдөлмөрийн сайдын 2015.06.22-ны А/114 тушаал',
+    groups: [
+      { t: '🟣 Байгуулах, ажиллуулах', tone: 'setup', s: 'Гүйцэтгэх захирлын хариуцах хэсэг',
+        items: [
+          '20-оос дээш ажилтантай тул зөвлөлийг ЗААВАЛ байгуулна.',
+          'Гишүүд 3-9 хүн — ажил олгогчийн ба АЖИЛТНЫ төлөөлөлтэй.',
+          'ХАБЭА хариуцсан нэгжийн дарга буюу ажилтан зөвлөлийг ахална.',
+          'Гишүүдийн 50%-иас дээш нь ирсэн үед хуралдана.',
+          'Жилийн тайланг 12 дугаар сарын 15-ны дотор нийслэлийн зөвлөлд хүргүүлнэ.'
+        ] },
+      { t: '🔵 Зөвлөлийн ҮҮРЭГ', tone: 'duty', s: '',
+        items: [
+          'ХАБЭА-н хууль тогтоомжийн хэрэгжилтэд хяналт тавьж, оролцох.',
+          'ХАБЭА-н хөтөлбөр, төлөвлөгөө, ТӨСВИЙГ боловсруулж хэлэлцэх.',
+          'Ажлын байрны эрсдэлийн үнэлгээ, шалгалтад оролцох.',
+          'Осол, хурц хордлогын шалтгааныг судалж дүгнэлт гаргах.',
+          'Сургалт, сурталчилгаа зохион байгуулах.',
+          'ХХХ, хөдөлмөрийн нөхцөл, эрүүл мэндийн үзлэгийн байдалд хяналт тавих.',
+          'Ажил олгогчийн тайланг зөвлөлийн хурлаар хэлэлцэх.'
+        ] },
+      { t: '🟢 Зөвлөлийн ЭРХ', tone: 'right', s: '',
+        items: [
+          'Ажил олгогч, ажилтанд зөвлөмж, шаардлага хүргүүлэх.',
+          'Асуудлыг олонхийн саналаар шийдвэрлэх.',
+          'Хурлын тэмдэглэл хөтөлж, шийдвэрээ албажуулах.'
+        ] }
+    ]
+  },
+  {
+    key: 'comm', name: 'ҮОХХСБК',
+    full: 'Үйлдвэрлэлийн осол, хурц хордлого судлан бүртгэх комисс',
+    src: 'Үйлдвэрлэлийн осол, хурц хордлогыг судлан бүртгэх дүрэм · Засгийн газрын тогтоол',
+    groups: [
+      { t: '🟣 Байгуулах, ажиллуулах', tone: 'setup', s: 'Гүйцэтгэх захирлын хариуцах хэсэг',
+        items: [
+          'Орон тооны бус БАЙНГЫН комисс байгуулна — осол гармагц биш, УРЬДЧИЛАН. (3.1)',
+          'Гишүүд 3-аас доошгүй — ажил олгогч болон ажилтны төлөөлөлтэй. (3.1)',
+          'Комиссын даргыг ажил олгогч томилно. (3.1)',
+          'Осол гарснаас хойш 48 цагийн дотор судлан бүртгэнэ. (3.8)',
+          'Актыг ажлын 3 өдөрт багтаан хяналтын байцаагчид хүргүүлнэ. (3.9)'
+        ] },
+      { t: '🔵 Комиссын ҮҮРЭГ', tone: 'duty', s: 'Дүрмийн 4.2',
+        items: [
+          'Газар дээр нь очиж нөхцөл байдалтай танилцаж судлах.',
+          'Аюултай хүчин зүйлийг арилгах арга хэмжээ авах.',
+          'Иргэдийн гомдол ирвэл ажлын 3 хоногийн дотор шалгах.',
+          'Ажилтнуудад ослын шалтгаан, урьдчилан сэргийлэх арга хэмжээг мэдээлэх.',
+          'Судалгааны дүнгээр акт, дүгнэлт гаргах.'
+        ] },
+      { t: '🟢 Комиссын ЭРХ', tone: 'right', s: 'Дүрмийн 4.1',
+        items: [
+          'Ажлын байранд саадгүй нэвтрэн орж танилцах.',
+          'Мэргэжилтэн, шинжээч оролцуулах.',
+          'Гэрч болон холбогдох хүмүүсээс мэдээлэл авах.',
+          'Судалгаанд шаардагдах ажлын байр, техник хэрэгсэл, унаагаар хангуулах.'
+        ] },
+      { t: '🔴 Осол гармагц — ажил олгогчийн үүрэг', tone: 'alarm', s: 'Хамгийн эхний цагууд шийдвэрлэнэ',
+        items: [
+          'Осолдогч буюу анх харсан хүн ажил олгогчид НЭН ДАРУЙ мэдэгдэнэ. (6.1)',
+          'Мэргэжлийн хяналтын байгууллагад бичгээр, утсаар мэдэгдэнэ. (6.2.1)',
+          'Анхны тусламж үзүүлж, эмнэлэгт хүргүүлнэ. (6.3)',
+          'Ажлын байрыг хамгаалалтад авна — нөхцөл байдлыг хэвээр хадгална. (6.4)'
+        ] }
+    ]
+  }
+];
+/* Хэн харах вэ — Гүйцэтгэх захирал, ХАБЭА-н алба, админ.
+   ⚠ ХАБЭА-н албыг АЛБААР нь таьна (албан тушаалаар биш) — тэр албаны
+     хэн ч зөвлөл, комиссын ажлыг хэрэгжүүлэхэд оролцдог. */
+function lawCanSeeBodies(emp) {
+  try { if (isAdmin()) return true; } catch (e) {}
+  /* ⚠ Регекс БИШ, indexOf ашиглав. Кирилл дээрх регексийг файл руу
+     бичихэд ард налуу (backslash) алдагдаж, /гүйцэтгэхs*захирал/ болж
+     ХЭЗЭЭ Ч таарахгүй байсан. indexOf нь тийм эрсдэлгүй. */
+  var p = String((emp && (emp.pos || emp.role)) || '').toLowerCase();
+  if (p.indexOf('гүйцэтгэх') > -1 && p.indexOf('захирал') > -1) return true;
+  var d = String((emp && emp.dept) || '').toLowerCase();
+  return d.indexOf('хөдөлмөрийн') > -1 && d.indexOf('аюулгүй') > -1;
+}
+
 /* Тухайн хүнд харагдах хуулийн багц.
    rights/duties — бүгдэд ижил (18 дугаар зүйл)
    employer     — түвшнээс хамаарна (28 дугаар зүйл), ажилтанд хоосон */
@@ -20059,6 +20149,43 @@ function lawDutiesFor(emp) {
     duties: LAW_DUTIES,
     employer: LAW_CEO_DUTIES.filter(function (x) { return pick[x.no]; })
   };
+}
+
+/* ⭐ ХАМТЫН БАЙГУУЛЛАГЫН ЭВХМЭЛ КАРТ — ХАБЭА зөвлөл, ҮОХХСБК.
+   ⚠ Анхнаасаа ЭВХЭЭСТЭЙ (details нь open биш) — өдөр тутам хардаг зүйл
+     биш, гэхдээ хэрэгтэй үедээ гараар хайхгүйгээр олдоно. */
+function lawBodyCardHTML(b, tones) {
+  var groups = b.groups.map(function (g) {
+    var tn = g.tone === 'setup' ? tones.S : g.tone === 'right' ? tones.R
+      : g.tone === 'alarm' ? tones.A : tones.D;
+    return '<div style="margin-bottom:13px">' +
+      '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:3px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:#334155">' + g.t + '</div>' +
+      '<div style="background:' + tn.pill + ';color:' + tn.fg + ';border-radius:20px;padding:1px 9px;' +
+      'font-size:11px;font-weight:800">' + g.items.length + '</div></div>' +
+      (g.s ? '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:7px">' + esc(g.s) + '</div>' : '') +
+      '<div class="emp-todo-grid">' + g.items.map(function (t, i) {
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid ' +
+          tn.br + ';border-radius:12px;background:' + tn.bg + '">' +
+          '<span style="flex-shrink:0;width:19px;height:19px;border-radius:50%;background:' + tn.pill +
+          ';color:' + tn.fg + ';font-size:10.5px;font-weight:800;display:flex;align-items:center;' +
+          'justify-content:center">' + (i + 1) + '</span>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#1E293B;line-height:1.55">' +
+          esc(t) + '</span></div>';
+      }).join('') + '</div></div>';
+  }).join('');
+
+  var n = b.groups.reduce(function (a, g) { return a + g.items.length; }, 0);
+  return '<details class="card" style="padding:0;margin-bottom:13px">' +
+    '<summary style="padding:15px 18px;cursor:pointer;display:flex;gap:11px;align-items:center;flex-wrap:wrap">' +
+    '<span style="flex:1;min-width:170px">' +
+    '<span style="font-size:14px;font-weight:800;color:#334155">🏛 ' + esc(b.name) + '</span>' +
+    '<span style="display:block;font-size:11.5px;color:#94A3B8;margin-top:2px">' + esc(b.full) + '</span></span>' +
+    '<span style="background:#EEF2FF;color:#3730A3;border-radius:20px;padding:2px 10px;font-size:12px;' +
+    'font-weight:800">' + n + '</span></summary>' +
+    '<div style="padding:0 18px 16px;border-top:1px solid #F1F5F9">' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin:11px 0 12px;line-height:1.5">' +
+    esc(b.src) + '</div>' + groups + '</div></details>';
 }
 
 /* ══ АДМИН/ХАРИУЦАГЧИЙН «Арга хэмжээ» хуудас ══════════════════════════ */
@@ -20224,6 +20351,8 @@ function renderMeasurePage(sec, embed) {
       '<div class="emp-todo-grid">' + list.map(function (x) { return lawRow(x, tone); }).join('') + '</div></div>';
   };
   var TONE_R = { br: '#BBF7D0', bg: '#F0FDF4', fg: '#166534', pill: '#DCFCE7' };  /* эрх — ногоон */
+  var TONE_S = { br: '#DDD6FE', bg: '#F5F3FF', fg: '#6D28D9', pill: '#EDE9FE' };  /* бүрдүүлэлт — ягаан */
+  var TONE_A = { br: '#FECACA', bg: '#FEF2F2', fg: '#B91C1C', pill: '#FEE2E2' };  /* осол — улаан */
   var TONE_D = { br: '#E0E7FF', bg: '#F8FAFF', fg: '#3730A3', pill: '#EEF2FF' };  /* үүрэг — ягаан */
   var TONE_E = { br: '#FDE68A', bg: '#FFFBEB', fg: '#92400E', pill: '#FEF3C7' };  /* удирдлага — шар */
 
@@ -20254,6 +20383,7 @@ function renderMeasurePage(sec, embed) {
 
       (rules.length
         ? '<details style="margin-top:2px">' +
+
           '<summary style="cursor:pointer;font-size:12.5px;color:#64748B">' +
           'Ажлын байрны эрсдэлээс гарсан дүрэм (' + rules.length + ')</summary>' +
           '<div style="padding-top:10px">' +
@@ -20264,6 +20394,7 @@ function renderMeasurePage(sec, embed) {
       '</div>';
   } else if (rules.length) {
     /* Бусад бүх хүн — ажлын байрны эрсдэлээс гарсан дүрэм (хуучин хэвээр) */
+
     rulesHTML = '<div class="card" style="padding:16px 18px;margin-bottom:13px">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
       '<div style="font-size:14px;font-weight:800;color:#334155">📌 Миний мөрдөх дүрэм</div>' +
@@ -20274,6 +20405,14 @@ function renderMeasurePage(sec, embed) {
       'эрсдэлтэй танилцаж <b>гарын үсэг зурснаараа</b> хүлээн зөвшөөрсөнд тооцогдоно.</div>' +
       ruleItemsHTML() +
       '</div>';
+  }
+
+  /* ⭐ ХАМТЫН БАЙГУУЛЛАГУУД — Гүйцэтгэх захирал ба ХАБЭА-н албанд.
+     Мөрдөх дүрмийн ДООР эвхмэл картаар нэмэгдэнэ. */
+  if (lawCanSeeBodies(me)) {
+    rulesHTML += LAW_BODIES.map(function (b) {
+      return lawBodyCardHTML(b, { S: TONE_S, D: TONE_D, R: TONE_R, A: TONE_A });
+    }).join('');
   }
 
   sec.innerHTML =
