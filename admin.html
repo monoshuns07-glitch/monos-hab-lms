@@ -1996,29 +1996,34 @@ window.togglePwd=function(btn){
   else{ btn.textContent='••••••'; btn.style.color='var(--muted)'; }
 }
 window.deleteUser = async id=>{
-  if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёроос ХОЁУЛАНГ устгана.')) return;
+  if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёулаас устгана.')) return;
+  /* ⚠ 2026-08-27: өмнө нь ажилтны ХАДГАЛСАН нууц үгээр нь secondary app-д
+     нэвтэрч устгадаг байв. Одоо ажилтан бүр өөрийн нууц үгээ зохиодог
+     болсон тул хадгалсан нууц үг хуучирч, тэр арга ажиллахаа больсон.
+     Одоо серверийн эрхээр (/api/delete-user) зөв аргаар устгана. */
   try{
-    // 1. Auth устгах — сервергүй арга: хадгалсан нууц үгээр нь secondary app-д нэвтэрч устгана
-    const u=(allUsers||[]).find(x=>x.id===id)||{};
-    if(u.email&&u.password){
-      try{
-        const cred=await secondaryAuth.signInWithEmailAndPassword(u.email,u.password);
-        await cred.user.delete();
-      }catch(authErr){
-        console.warn('Auth delete skipped:',authErr.message);
-      }finally{
-        try{ await secondaryAuth.signOut(); }catch(e2){}
+    const cu = auth.currentUser;
+    if(!cu){ toast("Дахин нэвтэрнэ үү","error"); return; }
+    const idToken = await cu.getIdToken();
+    const r = await fetch("/api/delete-user/",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ uid:id, idToken:idToken })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      if(j && j.notConfigured){
+        toast("Серверийн эрх тохируулаагүй байна — ХАБЭА-н админд хандана уу","error");
+      } else {
+        toast("Устгаж чадсангүй: "+((j&&j.error)||("HTTP "+r.status)),"error");
       }
+      return;
     }
-    // 2. Firestore устгах
-    await Promise.all([
-      db.collection('users').doc(id).delete(),
-      db.collection('allowed_users').doc(id).delete().catch(()=>{})
-    ]);
-    toast('Ажилтан устгагдлаа','success');
+    /* allowed_users нь серверт биш, энд цэвэрлэнэ */
+    try{ await db.collection("allowed_users").doc(id).delete(); }catch(e){}
+    toast("Ажилтан устгагдлаа","success");
     loadUsers();
   }
-  catch(e){ toast('Алдаа: '+e.message,'error'); }
+  catch(e){ toast("Алдаа: "+e.message,"error"); }
 };
 document.getElementById('userSearchInput').addEventListener('input',applyUserFilter);
 
