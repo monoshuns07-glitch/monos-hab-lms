@@ -325,10 +325,16 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--white);mi
 /* ===== TABLES ===== */
 .kb-table-wrap,.user-table-wrap{
   background:var(--card-bg);border:1px solid var(--card-border);
-  border-radius:18px;overflow:hidden;backdrop-filter:blur(20px);
+  border-radius:18px;backdrop-filter:blur(20px);
+  /* ⚠ Өмнө нь overflow:hidden байсан нь өргөн хүснэгтийг таслаад,
+     хажуу тийш гүйлгэх боломжгүй болгодог байв (2026-08-27). */
+  overflow-x:auto;-webkit-overflow-scrolling:touch;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
 }
 .kb-table,.user-table{width:100%;border-collapse:collapse;font-size:13px}
+/* 11 багана багтахын тулд доод өргөн — нарийн дэлгэцэд гүйлгэнэ */
+.user-table{min-width:1020px}
+.kb-table{min-width:760px}
 .kb-table thead th,.user-table thead th{
   background:rgba(255,255,255,.035);
   padding:13px 16px;text-align:left;
