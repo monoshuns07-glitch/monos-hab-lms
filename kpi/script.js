@@ -25714,38 +25714,6 @@ window.loadHabeaResultsPanel = loadHabeaResultsPanel;
   var ch;
   try { ch = new BroadcastChannel('monos-otp'); } catch (e) { return; }
 
-  function showCode(code, ttlMin) {
-    var old = document.getElementById('otpCodeBox');
-    if (old) old.remove();
-    var w = document.createElement('div');
-    w.id = 'otpCodeBox';
-    w.style.cssText = 'position:fixed;inset:0;z-index:2147483200;background:rgba(8,12,28,.66);' +
-      'backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px';
-    w.innerHTML =
-      '<div style="background:#fff;border-radius:22px;padding:26px 24px;max-width:380px;width:100%;' +
-      'text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
-        '<div style="font-size:13px;font-weight:700;color:#64748B;letter-spacing:.06em">ШАЛГАЛТЫН БАТАЛГААЖУУЛАХ КОД</div>' +
-        '<div style="font-size:44px;font-weight:800;letter-spacing:.14em;color:#0F1117;margin:14px 0 6px;' +
-        'font-variant-numeric:tabular-nums">' + esc(code) + '</div>' +
-        '<div id="otpCodeLeft" style="font-size:12.5px;color:#8A94A6"></div>' +
-        '<div style="font-size:13.5px;color:#374151;line-height:1.6;margin:16px 0 4px">' +
-        'Энэ кодыг <b>шалгалтын цонхонд</b> бичнэ үү.</div>' +
-        '<button id="otpCodeOk" style="margin-top:16px;width:100%;padding:13px;border:none;border-radius:12px;' +
-        'background:#4F46E5;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Хаах</button>' +
-      '</div>';
-    document.body.appendChild(w);
-    var left = Math.max(60, (ttlMin || 10) * 60);
-    var t = setInterval(function () {
-      left--;
-      var el = document.getElementById('otpCodeLeft');
-      if (!el) { clearInterval(t); return; }
-      if (left <= 0) { clearInterval(t); w.remove(); return; }
-      var m = Math.floor(left / 60), ss = left % 60;
-      el.textContent = 'Хүчинтэй хугацаа ' + m + ':' + (ss < 10 ? '0' : '') + ss;
-    }, 1000);
-    w.querySelector('#otpCodeOk').addEventListener('click', function () { clearInterval(t); w.remove(); });
-  }
-
   ch.addEventListener('message', function (ev) {
     var d = ev && ev.data;
     if (!d || d.type !== 'otp-req') return;
@@ -25762,8 +25730,11 @@ window.loadHabeaResultsPanel = loadHabeaResultsPanel;
         });
         var j = await r.json().catch(function () { return {}; });
         if (!r.ok || !j.ok || !j.code) return;   /* бүтэхгүй бол шалгалт и-мэйл рүү шилжинэ */
-        showCode(j.code, j.ttl);
-        ch.postMessage({ type: 'otp-id', id: j.id, ttl: j.ttl, email: mine });
+        /* ⚠ Кодыг ЭНД биш, ШАЛГАЛТЫН ЦОНХОНД харуулна. Утсан дээр апп таб
+           ард нуугдчихдаг тул ажилтан кодоо олж чаддаггүй байв (2026-08-27).
+           Аюулгүй байдал хэвээр: кодыг авахын тулд энэ нэвтэрсэн сесс
+           заавал байх ёстой, сервер и-мэйлийг шалгасаар байна. */
+        ch.postMessage({ type: 'otp-id', id: j.id, ttl: j.ttl, email: mine, code: j.code });
       } catch (e) {}
     })();
   });
