@@ -25172,6 +25172,10 @@ function establishSession() {
       if (!fbReady) { SESSION = { role: 'employee', email: email, uid: uid, dept: '' }; resolve(); return; }
       fdb.collection('users').doc(uid).get().then(function (snap) {
         var data = (snap.exists && snap.data()) || {};
+        /* ⚠ Анх удаа нэвтэрч буй эсэх: бүх ажилтан нэг ерөнхий түр нууц үгтэй
+           тул эхний нэвтрэлтэд ЗААВАЛ өөрийн нууц үгээ зохиох ёстой.
+           Сольсны дараа тэмдэг арилж, дахиж хэзээ ч асуухгүй. */
+        _MUST_PW = !!data.mustChangePw;
         // Admin эрхийг ЗӨВХӨН users/{uid}.role='admin' тодорхойлно (баталгаат эх сурвалж)
         var isAdminByDoc = (data.role === 'admin');
         var role = isAdminByDoc ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
@@ -25485,6 +25489,8 @@ async function init() {
   // Системийн эзэн админыг баталгаажуулна (Firestore role ямар ч байсан)
   if (SESSION.email && ADMIN_EMAILS.indexOf((SESSION.email || '').toLowerCase()) > -1) SESSION.role = 'admin';
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
+  /* ⚠ Анх удаа нэвтэрсэн бол нууц үгээ солих хүртэл цааш явуулахгүй */
+  try { setTimeout(mustChangePwShow, 900); } catch (e) {}
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
   // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
   // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд
@@ -25739,5 +25745,72 @@ window.loadHabeaResultsPanel = loadHabeaResultsPanel;
     })();
   });
 })();
+
+
+/* ══ АНХНЫ НЭВТРЭЛТЭД НУУЦ ҮГ СОЛИУЛАХ ═══════════════════════════════
+   Бүх ажилтан нэг ерөнхий түр нууц үгээр нэвтэрдэг тул эхний удаад
+   заавал өөрийн нууц үгээ зохиуулна. Цонх хаагдахгүй, алгасах
+   боломжгүй. Сольсны дараа users/{uid}.mustChangePw = false болж,
+   дахиж хэзээ ч гарахгүй. Шинэ нууц үгийг ХААНА Ч ХАДГАЛАХГҮЙ. */
+var _MUST_PW = false;
+function mustChangePwShow() {
+  if (!_MUST_PW || DEMO || !fbReady) return;
+  if (document.getElementById('pwChangeBox')) return;
+  var w = document.createElement('div');
+  w.id = 'pwChangeBox';
+  w.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(8,12,28,.82);' +
+    'backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px';
+  w.innerHTML =
+    '<div style="background:#fff;border-radius:22px;padding:28px 26px;max-width:420px;width:100%;' +
+    'box-shadow:0 24px 70px rgba(0,0,0,.4);font-family:inherit">' +
+      '<div style="font-size:20px;font-weight:800;color:#0F1117;margin-bottom:6px">Нууц үгээ солино уу</div>' +
+      '<div style="font-size:13.5px;color:#64748B;line-height:1.6;margin-bottom:18px">' +
+      'Та одоо бүх ажилтанд нийтлэг байсан түр нууц үгээр нэвтэрсэн байна. ' +
+      'Өөрийн гэсэн нууц үг зохиож, үргэлжлүүлнэ үү. Энэ нэг л удаа шаардагдана.</div>' +
+      '<input id="pw1" type="password" placeholder="Шинэ нууц үг" autocomplete="new-password" ' +
+      'style="width:100%;padding:13px 14px;border:1.5px solid #E2E8F0;border-radius:12px;font-size:15px;' +
+      'font-family:inherit;margin-bottom:10px;box-sizing:border-box">' +
+      '<input id="pw2" type="password" placeholder="Шинэ нууц үгээ давтна уу" autocomplete="new-password" ' +
+      'style="width:100%;padding:13px 14px;border:1.5px solid #E2E8F0;border-radius:12px;font-size:15px;' +
+      'font-family:inherit;box-sizing:border-box">' +
+      '<div id="pwErr" style="font-size:13px;color:#BE123C;min-height:19px;margin:9px 0 2px"></div>' +
+      '<button id="pwGo" style="width:100%;padding:14px;border:none;border-radius:12px;background:#4F46E5;' +
+      'color:#fff;font-weight:800;font-size:15px;font-family:inherit;cursor:pointer">Хадгалах</button>' +
+    '</div>';
+  document.body.appendChild(w);
+  var e1 = w.querySelector('#pw1'), e2 = w.querySelector('#pw2');
+  var er = w.querySelector('#pwErr'), go = w.querySelector('#pwGo');
+  setTimeout(function () { try { e1.focus(); } catch (e) {} }, 120);
+  function save() {
+    var a = (e1.value || ''), b = (e2.value || '');
+    if (a.length < 6) { er.textContent = 'Дор хаяж 6 тэмдэгт байх ёстой.'; return; }
+    if (a !== b) { er.textContent = 'Хоёр нууц үг таарахгүй байна.'; return; }
+    if (a === 'Monos2026') { er.textContent = 'Түр нууц үгээс өөр байх ёстой.'; return; }
+    er.textContent = ''; go.disabled = true; go.textContent = 'Хадгалж байна…';
+    var u = firebase.auth().currentUser;
+    if (!u) { er.textContent = 'Дахин нэвтэрнэ үү.'; go.disabled = false; go.textContent = 'Хадгалах'; return; }
+    u.updatePassword(a).then(function () {
+      /* Шинэ нууц үгийг ХАДГАЛАХГҮЙ — зөвхөн тугийг арилгана */
+      return fdb.collection('users').doc(u.uid).set(
+        { mustChangePw: false, pwChangedAt: new Date().toISOString() }, { merge: true });
+    }).then(function () {
+      _MUST_PW = false;
+      w.remove();
+      try { toast('✅ Нууц үг солигдлоо'); } catch (e) {}
+    }).catch(function (err) {
+      var c = (err && err.code) || '';
+      if (c.indexOf('requires-recent-login') > -1) {
+        er.textContent = 'Дахин нэвтэрч ороод солино уу.';
+      } else if (c.indexOf('weak-password') > -1) {
+        er.textContent = 'Нууц үг хэтэрхий энгийн байна.';
+      } else {
+        er.textContent = 'Хадгалж чадсангүй: ' + ((err && err.message) || '').slice(0, 60);
+      }
+      go.disabled = false; go.textContent = 'Хадгалах';
+    });
+  }
+  go.addEventListener('click', save);
+  e2.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') save(); });
+}
 
 })();
