@@ -351,9 +351,23 @@ function getHabeaDb() {
   if (_habeaDb !== null) return _habeaDb;
   try {
     var cfg = { apiKey: "AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E", authDomain: "habea-shalgalt.firebaseapp.com", projectId: "habea-shalgalt", storageBucket: "habea-shalgalt.firebasestorage.app", messagingSenderId: "910170773266", appId: "1:910170773266:web:38c7af5f7d0c352a5bc5cb" };
-    var app = (firebase.apps || []).filter(function (a) { return a.name === 'habea'; })[0] || firebase.initializeApp(cfg, 'habea');
+    var app = (firebase.apps || []).filter(function (a) { return a.name === 'habea'; })[0];
+    if (!app) {
+      /* ⚠ Хоёр газраас ЗЭРЭГ дуудагдвал хоёулаа «апп алга» гэж үзээд
+         initializeApp дуудна — хоёр дахь нь «app already exists» гэж
+         уначихдаг. Тэр үед бэлэн болсон аппыг нь аваад үргэлжлүүлнэ. */
+      try { app = firebase.initializeApp(cfg, 'habea'); }
+      catch (e2) { app = firebase.app('habea'); }
+    }
     _habeaDb = app.firestore();
-  } catch (e) { _habeaDb = false; }
+  } catch (e) {
+    /* ⚠ АЛДААГ КЭШЛЭХГҮЙ. Өмнө нь `_habeaDb = false` гэж хадгалдаг байсан
+       тул firebase SDK ачаалагдахаас өмнө нэг удаа дуудагдвал дараагийн
+       БҮХ дуудлага худал `false` авч, шалгалтын дүн «байхгүй» мэт
+       харагддаг байв (2026-08-28-нд амьд систем дээр илэрсэн). */
+    _habeaDb = null;
+    return null;
+  }
   return _habeaDb;
 }
 /* ХАБЭА шалгалтын дүнг имэйлээр индекслэнэ: { email: {pre, post, anyPassed} } */
@@ -18502,6 +18516,13 @@ async function msMyLoad() {
         emptyBox('Таны нэр дээр видео сургалтын бүртгэл олдсонгүй.') + '</div>';
   }
   box.innerHTML = top + modExamHTML(mx);
+  /* ⚠ Апп нь IIFE тул inline onclick дотоод функцийг ОЛОХГҮЙ —
+     сонсогчоор нь холбоно. */
+  var _rt = document.getElementById('modExRetry');
+  if (_rt) _rt.addEventListener('click', function () {
+    _rt.disabled = true; _rt.textContent = 'Ачаалж байна…';
+    msMyLoad();
+  });
 }
 
 function msMyHTML(row, pack) {
@@ -18610,9 +18631,19 @@ var MODEX_PASS = 60;          /* тэнцэх босго — habea-exam.html-и�
      Нэг ажилтанд тэр нь дэмий — и-мэйлээр нь шүүж 1-2 уншилтаар авна. */
 async function modExamLoad(email) {
   var em = String(email || '').toLowerCase().trim();
-  if (!em) return [];
+  /* ⚠ null = «уншиж чадсангүй», [] = «үнэхээр өгөөгүй». Хоёрыг ХОЛИХГҮЙ.
+     Өмнө нь алдааг [] гэж буцаадаг байсан тул бодит дүнтэй ажилтанд
+     «шалгалт өгөөгүй» гэж ХУДЛАА харуулж байв. */
+  if (!em) return null;
   try {
-    var hdb = getHabeaDb(); if (!hdb) return [];
+    /* Firebase бэлэн болтол богино хугацаанд хүлээнэ */
+    var hdb = null;
+    for (var i = 0; i < 4; i++) {
+      hdb = getHabeaDb();
+      if (hdb) break;
+      await new Promise(function (r) { setTimeout(r, 1200); });
+    }
+    if (!hdb) return null;
     var snap = await hdb.collection('habea_exam_results').where('email', '==', em).get();
     var out = [];
     snap.forEach(function (d) {
@@ -18710,7 +18741,11 @@ function modExamHTML(list) {
   if (list === null) {
     return '<div class="card" style="padding:18px 22px;margin-top:16px">' +
       '<div style="font-weight:700;margin-bottom:6px">Зааварчилгааны шалгалт</div>' +
-      '<div style="font-size:13px;color:#94A3B8">Дүн ачаалж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.</div></div>';
+      '<div style="font-size:13px;color:#94A3B8;line-height:1.6;margin-bottom:11px">' +
+      'Дүнг ачаалж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.</div>' +
+      '<button type="button" id="modExRetry" style="border:1.5px solid #E2E8F0;' +
+      'background:#fff;color:#334155;border-radius:10px;padding:9px 16px;cursor:pointer;' +
+      'font-family:inherit;font-weight:700;font-size:13px">Дахин оролдох</button></div>';
   }
   var mods = {};
   (list || []).forEach(function (x) {
