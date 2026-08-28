@@ -25831,14 +25831,35 @@ function showLoginScreen() {
   var btn = document.getElementById('loginBtn'),
       em = document.getElementById('loginEmail'),
       pw = document.getElementById('loginPass'),
-      err = document.getElementById('loginErr');
-  function fail(m) { if (err) err.textContent = m; if (btn) { btn.disabled = false; btn.textContent = 'Нэвтрэх'; } }
+      err = document.getElementById('loginErr'),
+      okEl = document.getElementById('loginOk'),
+      fgt = document.getElementById('loginForgot');
+  function fail(m) {
+    if (err) err.innerHTML = m;
+    if (okEl) okEl.textContent = '';
+    if (btn) { btn.disabled = false; btn.textContent = 'Нэвтрэх'; }
+  }
+  function okMsg(m) {
+    if (okEl) okEl.textContent = m;
+    if (err) err.textContent = '';
+  }
+  /* ⚠ Firebase нь олон удаа буруу нууц үг оруулбал дансыг ~30 минут хаадаг.
+     Ажилтан юу болсныг ойлгохгүй, хаана дарахаа мэдэхгүй үлддэг байв.
+     Тиймээс: (1) хаагдахаас ӨМНӨ сануулна, (2) хаагдвал ГАРЦЫГ нь хэлнэ. */
+  var _wrongN = 0;
+  function lockedMsg() {
+    return 'Хэт олон удаа буруу оруулсан тул аюулгүй байдлын үүднээс энэ данс ' +
+      '<b>түр хаагдлаа</b>.<br>Хүлээх шаардлагагүй — доорх ' +
+      '<b>«Нууц үгээ мартсан / түгжигдсэн үү?»</b> товчийг дарж и-мэйлээрээ шинэ ' +
+      'нууц үг тавибал шууд нээгдэнэ.';
+  }
   function doLogin() {
     var email = ((em && em.value) || '').trim().toLowerCase(), pass = (pw && pw.value) || '';
     if (!email || !pass) { fail('Gmail хаяг болон нууц үгээ оруулна уу'); return; }
     if (!fbReady) { fail('Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.'); return; }
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Нэвтэрч байна...'; }
     if (err) err.textContent = '';
+    if (okEl) okEl.textContent = '';
     fauth.signInWithEmailAndPassword(email, pass).then(function (cred) {
       // Имэйл+нууц үг зөв бол ОРУУЛНА. Эрх (admin/depthead/employee)-ийг establishSession
       // нь users/{uid}-ээс уншиж тодорхойлно (баримт байхгүй бол ажилтан). Хатуу хааж гаргахгүй.
@@ -25846,11 +25867,47 @@ function showLoginScreen() {
       location.reload();
     }).catch(function (e) {
       var code = (e && e.code) || '';
-      if (code.indexOf('wrong-password') > -1 || code.indexOf('invalid-credential') > -1 || code.indexOf('invalid-login') > -1) fail('Нууц үг буруу байна.');
-      else if (code.indexOf('user-not-found') > -1) fail('Ийм бүртгэлтэй хэрэглэгч олдсонгүй.');
+      if (code.indexOf('wrong-password') > -1 || code.indexOf('invalid-credential') > -1 || code.indexOf('invalid-login') > -1) {
+        _wrongN++;
+        if (_wrongN >= 3) {
+          fail('Нууц үг буруу байна (' + _wrongN + ' удаа).<br>' +
+            '<span style="opacity:.9">Дахиад буруу оруулбал данс түр хаагдана. ' +
+            'Санахгүй байвал доорх <b>«Нууц үгээ мартсан»</b> товчийг ашиглана уу.</span>');
+        } else {
+          fail('Нууц үг буруу байна.');
+        }
+      }
+      else if (code.indexOf('user-not-found') > -1) fail('Ийм бүртгэлтэй хэрэглэгч олдсонгүй. ХАБЭА-н албанд хандана уу.');
       else if (code.indexOf('invalid-email') > -1) fail('Gmail хаяг буруу байна.');
-      else if (code.indexOf('too-many-requests') > -1) fail('Хэт олон оролдлого. Түр хүлээгээд дахин оролдоно уу.');
+      else if (code.indexOf('too-many-requests') > -1) fail(lockedMsg());
+      else if (code.indexOf('network-request-failed') > -1) fail('Интернэт холболтоо шалгаад дахин оролдоно уу.');
       else fail('Нэвтрэхэд алдаа гарлаа. Дахин оролдоно уу.');
+    });
+  }
+  /* Нууц үг сэргээх — түгжээг ч НЭЭДЭГ цорын ганц зам */
+  if (fgt && !fgt._wired) {
+    fgt._wired = true;
+    fgt.addEventListener('click', function () {
+      var email = ((em && em.value) || '').trim().toLowerCase();
+      if (!email) {
+        fail('Эхлээд дээр Gmail хаягаа бичээд, дараа нь энэ товчийг дарна уу.');
+        try { em.focus(); } catch (e) {}
+        return;
+      }
+      if (!fbReady) { fail('Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.'); return; }
+      fgt.disabled = true; fgt.textContent = 'Илгээж байна…';
+      fauth.sendPasswordResetEmail(email).then(function () {
+        okMsg('✓ ' + email + ' руу сэргээх холбоос илгээлээ. И-мэйлээ нээж (Spam хавтсыг ч ' +
+          'хараарай) шинэ нууц үгээ тавина уу. Дараа нь шууд нэвтэрч чадна.');
+        fgt.textContent = 'Дахин илгээх';
+      }).catch(function (e) {
+        var c = (e && e.code) || '';
+        if (c.indexOf('user-not-found') > -1) fail('Энэ хаяг системд бүртгэлгүй байна. ХАБЭА-н албанд хандана уу.');
+        else if (c.indexOf('invalid-email') > -1) fail('И-мэйл хаяг буруу бичигдсэн байна.');
+        else if (c.indexOf('too-many-requests') > -1) fail('Хэт олон удаа илгээлээ. 30 минутын дараа дахин оролдоно уу.');
+        else fail('Илгээж чадсангүй. Интернэт холболтоо шалгана уу.');
+        fgt.textContent = 'Нууц үгээ мартсан / түгжигдсэн үү?';
+      }).then(function () { fgt.disabled = false; });
     });
   }
   if (btn && !btn._wired) {
@@ -26482,36 +26539,75 @@ function mustChangePwShow() {
   w.id = 'pwChangeBox';
   w.style.cssText = 'position:fixed;inset:0;z-index:2147483400;background:rgba(8,12,28,.82);' +
     'backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;padding:20px';
+  var _iSty = 'width:100%;padding:13px 14px;border:1.5px solid #E2E8F0;border-radius:12px;font-size:15px;' +
+    'font-family:inherit;box-sizing:border-box';
   w.innerHTML =
     '<div style="background:#fff;border-radius:22px;padding:28px 26px;max-width:420px;width:100%;' +
-    'box-shadow:0 24px 70px rgba(0,0,0,.4);font-family:inherit">' +
+    'max-height:calc(100vh - 40px);overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.4);font-family:inherit">' +
       '<div style="font-size:20px;font-weight:800;color:#0F1117;margin-bottom:6px">Нууц үгээ солино уу</div>' +
       '<div style="font-size:13.5px;color:#64748B;line-height:1.6;margin-bottom:18px">' +
       'Та одоо бүх ажилтанд нийтлэг байсан түр нууц үгээр нэвтэрсэн байна. ' +
       'Өөрийн гэсэн нууц үг зохиож, үргэлжлүүлнэ үү. Энэ нэг л удаа шаардагдана.</div>' +
-      '<input id="pw1" type="password" placeholder="Шинэ нууц үг" autocomplete="new-password" ' +
-      'style="width:100%;padding:13px 14px;border:1.5px solid #E2E8F0;border-radius:12px;font-size:15px;' +
-      'font-family:inherit;margin-bottom:10px;box-sizing:border-box">' +
-      '<input id="pw2" type="password" placeholder="Шинэ нууц үгээ давтна уу" autocomplete="new-password" ' +
-      'style="width:100%;padding:13px 14px;border:1.5px solid #E2E8F0;border-radius:12px;font-size:15px;' +
-      'font-family:inherit;box-sizing:border-box">' +
-      '<div id="pwErr" style="font-size:13px;color:#BE123C;min-height:19px;margin:9px 0 2px"></div>' +
+      /* ⚠ Firebase нь нэвтэрснээс хойш удвал нууц үг солиход «дахин нэвтэр» гэж
+         шаарддаг (requires-recent-login). Өмнө нь тэр үед ажилтан ГАЦДАГ байв:
+         цонх хаагдахгүй, гарах товч нь ард нь дарагдчихсан. Одоо энд одоогийн
+         нууц үгээ бичээд ЭНДЭЭСЭЭ үргэлжлүүлнэ — гарах шаардлагагүй. */
+      '<div id="pw0Wrap" style="display:none;margin-bottom:10px">' +
+        '<div style="font-size:12.5px;font-weight:700;color:#B45309;margin-bottom:6px">' +
+        'Аюулгүй байдлын үүднээс одоогийн нууц үгээ дахин баталгаажуулна уу</div>' +
+        '<input id="pw0" type="password" placeholder="Одоогийн нууц үг" autocomplete="current-password" style="' + _iSty + '">' +
+      '</div>' +
+      '<input id="pw1" type="password" placeholder="Шинэ нууц үг" autocomplete="new-password" style="' + _iSty + ';margin-bottom:10px">' +
+      '<input id="pw2" type="password" placeholder="Шинэ нууц үгээ давтна уу" autocomplete="new-password" style="' + _iSty + '">' +
+      '<div id="pwErr" style="font-size:13px;color:#BE123C;line-height:1.55;min-height:19px;margin:9px 0 2px"></div>' +
       '<button id="pwGo" style="width:100%;padding:14px;border:none;border-radius:12px;background:#4F46E5;' +
       'color:#fff;font-weight:800;font-size:15px;font-family:inherit;cursor:pointer">Хадгалах</button>' +
+      /* ⚠ ГАРАХ ТОВЧ — цонх нь бүх дэлгэцийг хаадаг тул аппын өөрийн гарах товч
+         дарагдаж, ажилтан ямар ч гарцгүй үлддэг байв. Одоо эндээс гарна. */
+      '<button id="pwOut" style="width:100%;margin-top:9px;padding:12px;border:1.5px solid #E2E8F0;' +
+      'border-radius:12px;background:#fff;color:#64748B;font-weight:700;font-size:13.5px;' +
+      'font-family:inherit;cursor:pointer">Гарах</button>' +
+      '<div style="font-size:12px;color:#94A3B8;line-height:1.55;margin-top:10px;text-align:center">' +
+      'Шинэ нууц үгээ зөвхөн та мэднэ — систем хадгалдаггүй.</div>' +
     '</div>';
   document.body.appendChild(w);
+  var e0 = w.querySelector('#pw0'), e0w = w.querySelector('#pw0Wrap');
   var e1 = w.querySelector('#pw1'), e2 = w.querySelector('#pw2');
-  var er = w.querySelector('#pwErr'), go = w.querySelector('#pwGo');
+  var er = w.querySelector('#pwErr'), go = w.querySelector('#pwGo'), out = w.querySelector('#pwOut');
   setTimeout(function () { try { e1.focus(); } catch (e) {} }, 120);
+
+  function busy(on, txt) {
+    go.disabled = !!on;
+    go.textContent = on ? (txt || 'Хадгалж байна…') : 'Хадгалах';
+  }
+  function needOld(msg) {
+    e0w.style.display = 'block';
+    er.textContent = msg;
+    try { e0.focus(); } catch (e) {}
+    busy(false);
+  }
+
   function save() {
     var a = (e1.value || ''), b = (e2.value || '');
     if (a.length < 6) { er.textContent = 'Дор хаяж 6 тэмдэгт байх ёстой.'; return; }
     if (a !== b) { er.textContent = 'Хоёр нууц үг таарахгүй байна.'; return; }
     if (a === 'Monos2026') { er.textContent = 'Түр нууц үгээс өөр байх ёстой.'; return; }
-    er.textContent = ''; go.disabled = true; go.textContent = 'Хадгалж байна…';
+    er.textContent = ''; busy(true);
     var u = firebase.auth().currentUser;
-    if (!u) { er.textContent = 'Дахин нэвтэрнэ үү.'; go.disabled = false; go.textContent = 'Хадгалах'; return; }
-    u.updatePassword(a).then(function () {
+    if (!u) { er.textContent = 'Холболт тасарсан байна. «Гарах» дараад дахин нэвтэрнэ үү.'; busy(false); return; }
+
+    /* Хэрэв одоогийн нууц үгээ бичсэн бол ЭХЛЭЭД баталгаажуулна */
+    var pre = Promise.resolve();
+    var old = (e0 && e0.value) || '';
+    if (e0w.style.display === 'block') {
+      if (old.length < 4) { needOld('Одоогийн нууц үгээ бичнэ үү.'); return; }
+      var cr = firebase.auth.EmailAuthProvider.credential(u.email, old);
+      pre = u.reauthenticateWithCredential(cr);
+    }
+
+    pre.then(function () {
+      return u.updatePassword(a);
+    }).then(function () {
       /* Шинэ нууц үгийг ХАДГАЛАХГҮЙ — зөвхөн тугийг арилгана */
       return fdb.collection('users').doc(u.uid).set(
         { mustChangePw: false, pwChangedAt: new Date().toISOString() }, { merge: true });
@@ -26522,17 +26618,31 @@ function mustChangePwShow() {
     }).catch(function (err) {
       var c = (err && err.code) || '';
       if (c.indexOf('requires-recent-login') > -1) {
-        er.textContent = 'Дахин нэвтэрч ороод солино уу.';
+        needOld('Нэвтэрснээс хойш хугацаа өнгөрсөн тул одоогийн нууц үгээ дахин бичнэ үү.');
+      } else if (c.indexOf('wrong-password') > -1 || c.indexOf('invalid-credential') > -1 || c.indexOf('invalid-login') > -1) {
+        needOld('Одоогийн нууц үг буруу байна. (Анх нэвтэрсэн нууц үг — ихэвчлэн Monos2026)');
       } else if (c.indexOf('weak-password') > -1) {
-        er.textContent = 'Нууц үг хэтэрхий энгийн байна.';
+        er.textContent = 'Нууц үг хэтэрхий энгийн байна. Өөр нууц үг зохионо уу.'; busy(false);
+      } else if (c.indexOf('too-many-requests') > -1) {
+        er.innerHTML = 'Хэт олон удаа оролдсон тул түр хаагдлаа. <b>«Гарах»</b> дараад ' +
+          'нэвтрэх дэлгэц дээрх <b>«Нууц үгээ мартсан»</b> товчоор шинэ нууц үг тавибал шууд нээгдэнэ.';
+        busy(false);
+      } else if (c.indexOf('network-request-failed') > -1) {
+        er.textContent = 'Интернэт холболтоо шалгаад дахин оролдоно уу.'; busy(false);
       } else {
-        er.textContent = 'Хадгалж чадсангүй: ' + ((err && err.message) || '').slice(0, 60);
+        er.textContent = 'Хадгалж чадсангүй. Дахин оролдоно уу.'; busy(false);
       }
-      go.disabled = false; go.textContent = 'Хадгалах';
     });
   }
+
   go.addEventListener('click', save);
   e2.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') save(); });
+  if (e0) e0.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { try { e1.focus(); } catch (e) {} } });
+  out.addEventListener('click', function () {
+    out.disabled = true; out.textContent = 'Гарч байна…';
+    try { localStorage.removeItem('monos_user'); } catch (e) {}
+    var done = function () { location.replace('/kpi/'); };
+    try { firebase.auth().signOut().then(done).catch(done); } catch (e) { done(); }
+  });
 }
-
 })();

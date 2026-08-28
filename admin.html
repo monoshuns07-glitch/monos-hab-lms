@@ -1967,7 +1967,7 @@ function renderUsersTable(){
       <td>${pwdCell}</td>
       <td style="color:var(--muted);font-size:12px">${dt}</td>
       <td style="color:var(--cyan);font-weight:600;font-size:13px">${timeStr}</td>
-      <td><div class="row-actions"><button class="action-btn" onclick="deleteUser('${u.id}')" title="Устгах"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div></td>
+      <td><div class="row-actions"><button class="action-btn" onclick="resetUserPw('${u.id}')" title="Нууц үг сэргээх холбоос илгээх"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></button><button class="action-btn" onclick="deleteUser('${u.id}')" title="Устгах"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div></td>
     </tr>`;
   }).join('')}</tbody></table>`;
 
@@ -2001,6 +2001,28 @@ window.togglePwd=function(btn){
   if(btn.textContent==='••••••'){ btn.textContent=pwd; btn.style.color='var(--cyan)'; }
   else{ btn.textContent='••••••'; btn.style.color='var(--muted)'; }
 }
+/* ⚠ Түгжигдсэн ажилтныг ЧӨЛӨӨЛӨХ зам (2026-08-28).
+   Firebase нь олон удаа буруу нууц үг оруулбал дансыг ~30 минут хаадаг.
+   Ажилтан ХАБЭА-н албанд залгахаас өөр аргагүй болдог байв. Нууц үгээ
+   АМЖИЛТТАЙ сэргээвэл тэр хаалт НЭН ДАРУЙ арилдаг тул энэ товч нь
+   «мартсан» болон «түгжигдсэн» хоёуланг нь шийднэ. */
+window.resetUserPw = async id=>{
+  const u = (allUsers||[]).find(x=>x.id===id);
+  const em = (u && (u.email||'')).trim().toLowerCase();
+  if(!em){ toast('Энэ ажилтны и-мэйл хаяг бүртгэгдээгүй байна','error'); return; }
+  if(!confirm(em + '\n\nЭнэ хаяг руу нууц үг сэргээх холбоос илгээх үү?\n\nАжилтан и-мэйлээ нээж шинэ нууц үгээ өөрөө тавина. Хэрэв данс нь түр хаагдсан байсан бол ШУУД нээгдэнэ — 30 минут хүлээх шаардлагагүй.')) return;
+  try{
+    await auth.sendPasswordResetEmail(em);
+    toast('✅ ' + em + ' руу илгээлээ. Spam хавтсыг ч шалгахыг хэлээрэй','success');
+  }catch(e){
+    const c = (e && e.code) || '';
+    toast(c.indexOf('user-not-found')>-1 ? 'Энэ хаяг Firebase дээр бүртгэлгүй байна'
+      : c.indexOf('invalid-email')>-1 ? 'И-мэйл хаяг буруу бичигдсэн байна'
+      : c.indexOf('too-many-requests')>-1 ? 'Хэт олон удаа илгээлээ. Түр хүлээгээд дахин оролдоно уу'
+      : 'Илгээж чадсангүй: ' + String(e.message||'').slice(0,60), 'error');
+  }
+};
+
 window.deleteUser = async id=>{
   if(!confirm('Энэ ажилтныг бүрмөсөн устгахдаа итгэлтэй байна уу?\n\nFirebase Auth + Firestore хоёулаас устгана.')) return;
   /* ⚠ 2026-08-27: өмнө нь ажилтны ХАДГАЛСАН нууц үгээр нь secondary app-д

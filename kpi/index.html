@@ -26,7 +26,7 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
 <link rel="stylesheet" href="/forest-theme.css">
-<link rel="stylesheet" href="style.css?v=326">
+<link rel="stylesheet" href="style.css?v=327">
 <style>
   /* Сургалтын шатлалт мод цэс */
   .nav-tree { display: block; }
@@ -208,6 +208,14 @@
       </div>
       <button class="login-btn" id="loginBtn">Нэвтрэх</button>
       <div class="login-err" id="loginErr"></div>
+      <div id="loginOk" style="font-size:13px;color:#15803D;line-height:1.6;margin-top:4px"></div>
+      <!-- ⚠ Түгжигдсэн ажилтны ГАРЦ. Firebase нь олон удаа буруу оруулбал дансыг
+           ~30 минут хаадаг. Нууц үгээ амжилттай сэргээвэл тэр хаалт НЭН ДАРУЙ
+           арилдаг — тиймээс хүлээх шаардлагагүй. -->
+      <button type="button" id="loginForgot" style="width:100%;margin-top:12px;padding:12px;
+        border:1.5px solid rgba(255,255,255,.28);background:transparent;color:inherit;opacity:.85;
+        border-radius:12px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer">
+        Нууц үгээ мартсан / түгжигдсэн үү?</button>
     </div>
   </div>
   <div class="login-footer">© 2025 МОНОС ХҮНС ХК — ХАБЭА-н алба &nbsp;·&nbsp; Зөвхөн бүртгэлтэй ажилтнууд нэвтрэх боломжтой</div>
@@ -923,6 +931,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=326"></script>
+<script src="script.js?v=327"></script>
 </body>
 </html>
