@@ -98,6 +98,11 @@
       "source": "/shalgalt/habea-exam.html",
       "destination": "/habea-exam.html",
       "permanent": false
+    },
+    {
+      "source": "/shalgalt/habea-admin.html",
+      "destination": "/habea-admin.html",
+      "permanent": false
     }
   ]
 }
