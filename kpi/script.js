@@ -18525,13 +18525,20 @@ async function msMyLoad() {
 
   /* Шалгалтын хэсэг — тусад нь, хугацааны хязгаартай */
   var slot = document.getElementById('modExSlot');
-  var mx;
-  try {
-    mx = await Promise.race([
-      modExamLoad(em),
-      new Promise(function (r) { setTimeout(function () { r(null); }, 20000); })
-    ]);
-  } catch (e) { mx = null; }
+  /* ⚠ Хоёр дахь Firebase төсөл рүү холбогдоход удаан. 20 секунд хүрэлцэхгүй
+     байсан тул НЭГ удаа өөрөө дахин оролдоно — ажилтан товч дарах хэрэггүй. */
+  var mx = null;
+  for (var _try = 0; _try < 2; _try++) {
+    try {
+      mx = await Promise.race([
+        modExamLoad(em),
+        new Promise(function (r) { setTimeout(function () { r(null); }, 30000); })
+      ]);
+    } catch (e) { mx = null; }
+    if (mx !== null) break;
+    if (!document.getElementById('modExSlot')) return;   /* өөр хуудас руу явсан */
+    await new Promise(function (r) { setTimeout(r, 2500); });
+  }
   slot = document.getElementById('modExSlot');
   if (!slot) return;                       /* хэрэглэгч өөр хуудас руу явчихсан */
   slot.innerHTML = modExamHTML(mx);
@@ -26618,6 +26625,10 @@ async function init() {
      аваагүй байна» гэдэг ХАРАГДДАГ болно. Дата ачаалагдсаны дараа.
      ⚠ Хэрэглэгчийг хүлээлгэхгүй: огт хүлээлгүй ард нь явна. */
   try { setTimeout(function () { sysReport(); }, 15000); } catch (e) {}
+  /* ⚠ Зааварчилгааны шалгалтын дүн ӨӨР Firebase төсөлд байдаг.
+     Тэр рүү холбогдох гар барилцаа удаан тул ажилтан «Миний явц»
+     дарахыг ХҮЛЭЭЛГҮЙ, одооноос эхлүүлж халаана. */
+  try { setTimeout(function () { try { getHabeaDb(); } catch (e2) {} }, 2500); } catch (e) {}
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
   // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
   // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд
