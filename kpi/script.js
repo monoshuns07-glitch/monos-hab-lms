@@ -18491,18 +18491,22 @@ async function msMyLoad() {
   /* ⚠ Хоёр өөр сургалтын систем бий:
        1. MiSkill видео хичээл  → R2 (msR2Load)
        2. Зааварчилгааны шалгалт → habea-shalgalt (урьдчилсан/дараах)
-     Хоёрыг ЗЭРЭГ татна. Нэг нь ирэхгүй байсан ч нөгөө нь харагдана —
-     өмнө нь MiSkill олдохгүй бол бүх хуудас хоосон болдог байв. */
+     ЭХЛЭЭД видео хэсгийг зураад, шалгалтын хэсгийг АРД нь дүүргэнэ.
+     Өмнө нь хоёуланг Promise.all-оор хүлээдэг байсан тул НЭГ нь гацахад
+     бүх хуудас «Ачаалж байна…» дээр зогсдог байв (2026-08-28 амьд
+     систем дээр илэрсэн). Одоо нэг нь унасан ч нөгөө нь харагдана. */
   var em = String((SESSION && SESSION.email) || '').toLowerCase();
-  var res = await Promise.all([
-    (async function () {
-      var pack = MSMY_PACK;
-      if (!pack) { try { pack = await msR2Load(); } catch (e) { pack = null; } MSMY_PACK = pack; }
-      return pack;
-    })(),
-    (async function () { try { return await modExamLoad(em); } catch (e) { return null; } })()
-  ]);
-  var pack = res[0], mx = res[1];
+
+  var pack = MSMY_PACK;
+  if (!pack) {
+    try {
+      pack = await Promise.race([
+        msR2Load(),
+        new Promise(function (r) { setTimeout(function () { r('__timeout__'); }, 25000); })
+      ]);
+    } catch (e) { pack = null; }
+    if (pack === '__timeout__') pack = null; else MSMY_PACK = pack;
+  }
   box = $('#msMyBody'); if (!box) return;
 
   var top;
@@ -18515,7 +18519,22 @@ async function msMyLoad() {
       : '<div class="card" style="padding:26px">' +
         emptyBox('Таны нэр дээр видео сургалтын бүртгэл олдсонгүй.') + '</div>';
   }
-  box.innerHTML = top + modExamHTML(mx);
+  box.innerHTML = top +
+    '<div id="modExSlot"><div class="card" style="padding:20px 22px;margin-top:16px;' +
+    'font-size:13px;color:#8A94A6">Зааварчилгааны шалгалтын дүнг ачаалж байна…</div></div>';
+
+  /* Шалгалтын хэсэг — тусад нь, хугацааны хязгаартай */
+  var slot = document.getElementById('modExSlot');
+  var mx;
+  try {
+    mx = await Promise.race([
+      modExamLoad(em),
+      new Promise(function (r) { setTimeout(function () { r(null); }, 20000); })
+    ]);
+  } catch (e) { mx = null; }
+  slot = document.getElementById('modExSlot');
+  if (!slot) return;                       /* хэрэглэгч өөр хуудас руу явчихсан */
+  slot.innerHTML = modExamHTML(mx);
   /* ⚠ Апп нь IIFE тул inline onclick дотоод функцийг ОЛОХГҮЙ —
      сонсогчоор нь холбоно. */
   var _rt = document.getElementById('modExRetry');
