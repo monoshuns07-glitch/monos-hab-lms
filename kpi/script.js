@@ -18653,49 +18653,89 @@ function msMyHTML(row, pack) {
 var MODEX_PASS = 60;          /* тэнцэх босго — habea-exam.html-ийн CFG.passPercent */
 
 /* Ажилтны ӨӨРИЙНХ нь бичлэгийг л уншина.
-   ⚠ readHabeaExamsByEmail() нь БҮХ бичлэгийг уншдаг (админд хэрэгтэй).
-     Нэг ажилтанд тэр нь дэмий — и-мэйлээр нь шүүж 1-2 уншилтаар авна. */
+   ⚠ ЯАГААД SDK-ГҮЙ ВЭ: зааварчилгааны шалгалтын дүн ӨӨР Firebase төсөлд
+     (habea-shalgalt) байдаг. Түүнийг compat SDK-ээр унших нь найдваргүй
+     байв (2026-08-28-нд амьд систем дээр гурван өөр алдаа гарсан):
+       · хоёр газраас зэрэг initializeApp дуудахад уналт
+       · сүлжээ бэлэн болоогүй үед КЭШЭЭС ХООСОН хариу → «шалгалт өгөөгүй»
+         гэж ХУДЛАА харагдана
+       · { source:'server' } нь холбогдоогүй үед 6 секундэд уначихдаг
+     REST дуудлага нь холболтын гар барилцаа шаарддаггүй, кэшгүй, шууд
+     хариу өгдөг тул эдгээр бүх асуудлыг үндсээр нь арилгана. */
+var MODEX_PROJ = 'habea-shalgalt';
+var MODEX_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
+
+/* Firestore REST-ийн утгыг энгийн утга болгоно */
+function modExVal(f) {
+  if (!f || typeof f !== 'object') return undefined;
+  if ('stringValue' in f) return f.stringValue;
+  if ('booleanValue' in f) return f.booleanValue;
+  if ('integerValue' in f) return Number(f.integerValue);
+  if ('doubleValue' in f) return Number(f.doubleValue);
+  if ('timestampValue' in f) return f.timestampValue;
+  if ('nullValue' in f) return null;
+  if ('arrayValue' in f) return (f.arrayValue.values || []).map(modExVal);
+  if ('mapValue' in f) {
+    var o = {}, m = (f.mapValue && f.mapValue.fields) || {};
+    Object.keys(m).forEach(function (k) { o[k] = modExVal(m[k]); });
+    return o;
+  }
+  return undefined;
+}
+
 async function modExamLoad(email) {
   var em = String(email || '').toLowerCase().trim();
   /* ⚠ null = «уншиж чадсангүй», [] = «үнэхээр өгөөгүй». Хоёрыг ХОЛИХГҮЙ.
-     Өмнө нь алдааг [] гэж буцаадаг байсан тул бодит дүнтэй ажилтанд
-     «шалгалт өгөөгүй» гэж ХУДЛАА харуулж байв. */
+     Алдааг [] гэж буцаавал бодит дүнтэй ажилтанд «шалгалт өгөөгүй» гэж
+     худлаа харагдана. */
   if (!em) return null;
-  try {
-    /* Firebase бэлэн болтол богино хугацаанд хүлээнэ */
-    var hdb = null;
-    for (var i = 0; i < 4; i++) {
-      hdb = getHabeaDb();
-      if (hdb) break;
-      await new Promise(function (r) { setTimeout(r, 1200); });
+  var url = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+    '/databases/(default)/documents:runQuery?key=' + MODEX_KEY;
+  var body = {
+    structuredQuery: {
+      from: [{ collectionId: 'habea_exam_results' }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: em }
+        }
+      }
     }
-    if (!hdb) return null;
-    /* ⚠ { source: 'server' } ЗААВАЛ хэрэгтэй. Firestore нь сүлжээ хараахан
-       холбогдоогүй байхад алдаа шидэхийн оронд КЭШЭЭС ХООСОН хариу буцаадаг.
-       Тэр үед бодит дүнтэй ажилтанд «шалгалт өгөөгүй» гэж ХУДЛАА харагдана
-       (амьд систем дээр 3 удаагийн 2-т нь давтагдсан, 2026-08-28).
-       Сервэрээс уншиж чадаагүй бол алдаа шиднэ → null → «ачаалж чадсангүй». */
-    var snap = await hdb.collection('habea_exam_results')
-      .where('email', '==', em).get({ source: 'server' });
-    var out = [];
-    snap.forEach(function (d) {
-      var x = d.data() || {};
-      var bd = x.breakdown || [];
-      var qOk = 0;
-      bd.forEach(function (b) {
-        var p = num(b && b.pts), e = num(b && b.earned);
-        if (p > 0 && e >= p) qOk++;
+  };
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      var r = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store', body: JSON.stringify(body)
       });
-      out.push({
-        key: x.examKey || '', title: x.examTitle || 'ХАБЭА шалгалт',
-        type: x.examType || '', percent: num(x.percent),
-        passed: !!x.passed, qs: bd.length, qOk: qOk,
-        ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var rows = await r.json();
+      if (!Array.isArray(rows)) throw new Error('хүлээгээгүй хариу');
+      var out = [];
+      rows.forEach(function (it) {
+        var d = it && it.document; if (!d) return;      /* хоосон илэрц */
+        var f = d.fields || {};
+        var bd = modExVal(f.breakdown) || [];
+        var qOk = 0;
+        bd.forEach(function (b) {
+          var pts = num(b && b.pts), earned = num(b && b.earned);
+          if (pts > 0 && earned >= pts) qOk++;
+        });
+        var ts = 0;
+        try { ts = Math.floor(new Date(modExVal(f.timestamp) || 0).getTime() / 1000) || 0; } catch (e) {}
+        out.push({
+          key: modExVal(f.examKey) || '', title: modExVal(f.examTitle) || 'ХАБЭА шалгалт',
+          type: modExVal(f.examType) || '', percent: num(modExVal(f.percent)),
+          passed: modExVal(f.passed) === true, qs: bd.length, qOk: qOk, ts: ts
+        });
       });
-    });
-    out.sort(function (a, b) { return b.ts - a.ts; });
-    return out;
-  } catch (e) { return null; }     /* null = уншиж чадсангүй (хоосон гэдэгтэй адилгүй) */
+      out.sort(function (a, b) { return b.ts - a.ts; });
+      return out;
+    } catch (e) {
+      if (attempt === 2) return null;
+      await new Promise(function (res) { setTimeout(res, 1500 * (attempt + 1)); });
+    }
+  }
+  return null;
 }
 
 function modExamDate(ts) {
