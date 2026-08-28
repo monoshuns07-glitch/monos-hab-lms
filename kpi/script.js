@@ -18663,7 +18663,13 @@ async function modExamLoad(email) {
       await new Promise(function (r) { setTimeout(r, 1200); });
     }
     if (!hdb) return null;
-    var snap = await hdb.collection('habea_exam_results').where('email', '==', em).get();
+    /* ⚠ { source: 'server' } ЗААВАЛ хэрэгтэй. Firestore нь сүлжээ хараахан
+       холбогдоогүй байхад алдаа шидэхийн оронд КЭШЭЭС ХООСОН хариу буцаадаг.
+       Тэр үед бодит дүнтэй ажилтанд «шалгалт өгөөгүй» гэж ХУДЛАА харагдана
+       (амьд систем дээр 3 удаагийн 2-т нь давтагдсан, 2026-08-28).
+       Сервэрээс уншиж чадаагүй бол алдаа шиднэ → null → «ачаалж чадсангүй». */
+    var snap = await hdb.collection('habea_exam_results')
+      .where('email', '==', em).get({ source: 'server' });
     var out = [];
     snap.forEach(function (d) {
       var x = d.data() || {};
