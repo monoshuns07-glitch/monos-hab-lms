@@ -568,6 +568,13 @@ async function buildEmployeesFromRealData() {
     docs.forEach(function (d) {
       var u = d.data() || {}; var uid = u.uid || d.id;
       if (u.role === 'admin' && !(u.firstName || u.lastName)) return; // нэргүй админ системийн бүртгэл алгасна
+      /* ⚠ ХООСОН БАРИМТЫГ АЛГАСНА. 2026-08-28-нд ажилтны жагсаалтад «Ажилтан»
+         гэсэн хуурамч мөр гарч ирсэн: users цуглуулгад и-мэйл ч, нэр ч байхгүй
+         хоосон баримт үүссэн байв (жинхэнэ ажилтны uid-ийн эхний 20 тэмдэгтээр).
+         Доорх name-ийн нөөц утга нь 'Ажилтан' тул хоосон баримт бүр нэг мөр
+         болж харагддаг. И-мэйлгүй БА нэргүй бол ажилтан байх боломжгүй. */
+      if (!String(u.email || '').trim() && !String(u.firstName || '').trim() &&
+          !String(u.lastName || '').trim()) return;
       var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
       var name = (ln + (u.firstName || '')).trim() || (u.email || '').split('@')[0] || 'Ажилтан';
       /* ⭐ Овог, нэрийг БҮТНЭЭР хадгална. Өмнө нь зөвхөн «С.» товчлол
