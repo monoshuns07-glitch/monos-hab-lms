@@ -19177,9 +19177,27 @@ async function renderTrnReport() {
 
 function trnReportHTML(sc, exams) {
   var key = TRN_MONTH;
-  var funnels = sc.depts.map(function (d) { return trnFunnel(d, key, exams); })
-    .filter(function (f) { return f.should > 0; })
-    .sort(function (a, b) { return (b.took / Math.max(1, b.should)) - (a.took / Math.max(1, a.should)); });
+  var all = sc.depts.map(function (d) { return trnFunnel(d, key, exams); })
+    .filter(function (f) { return f.should > 0; });
+
+  /* ⚠ ЭНЭ САРД АЛЬ АЛБА ХАМРАГДСАН БЭ — маш чухал ялгаа.
+     Давтан зааварчилгаанд БҮХ алба сар бүр хамрагддаггүй. Бүгдийг нь
+     нэг дор тооцвол хамрагдаагүй алба «0/67 · 0%» гэж бүтэлгүйтсэн мэт
+     харагдана — энэ нь ХУДАЛ.
+       · Админ хуваарь тэмдэглэсэн бол ТҮҮГЭЭР нь ялгана
+       · Тэмдэглээгүй бол шалгалт өгсөн албаар нь дүгнэнэ (+ сануулга) */
+  var sched = null;
+  try {
+    var m = (DB.davtanMonths || {})[key];
+    if (m && m.length) sched = m;
+  } catch (e) {}
+  var inScope = sched
+    ? all.filter(function (f) { return sched.some(function (d) { return trnSameDept(d, f.dept); }); })
+    : all.filter(function (f) { return f.took > 0; });
+  var outScope = all.filter(function (f) { return inScope.indexOf(f) < 0; });
+  var funnels = inScope.sort(function (a, b) {
+    return (b.took / Math.max(1, b.should)) - (a.took / Math.max(1, a.should));
+  });
 
   var tShould = funnels.reduce(function (s, f) { return s + f.should; }, 0);
   var tTook = funnels.reduce(function (s, f) { return s + f.took; }, 0);
@@ -19199,8 +19217,9 @@ function trnReportHTML(sc, exams) {
   var head =
     '<div class="card" style="padding:18px 20px;margin-bottom:16px">' +
     '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px">' +
-    '<div><div style="font-weight:700;font-size:15px">' + esc(sc.label) + ' · ' + funnels.length + ' алба</div>' +
-    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ээлжит давтан зааварчилгааны биелэлт</div></div>' +
+    '<div><div style="font-weight:700;font-size:15px">' + esc(sc.label) + ' · энэ сард ' + funnels.length + ' алба хамрагдсан</div>' +
+    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ээлжит давтан зааварчилгааны биелэлт' +
+    (sched ? '' : ' · хуваариар биш, шалгалт өгсөн албаар тооцов') + '</div></div>' +
     sel + '</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
     trnTile('СУУХ ЁСТОЙ', tShould, '', '#F8FAFC', '#E2E8F0', '#64748B', '#0F1117') +
@@ -19212,7 +19231,7 @@ function trnReportHTML(sc, exams) {
 
   if (!funnels.length) {
     return head + '<div class="card" style="padding:26px">' +
-      emptyBox('Энэ сард харьяа албадад ажилтан бүртгэгдээгүй байна.') + '</div>';
+      emptyBox('Энэ сард харьяа албадад давтан зааварчилгаа хийгдээгүй байна.') + '</div>';
   }
 
   var cards = funnels.map(function (f, i) {
@@ -19253,7 +19272,29 @@ function trnReportHTML(sc, exams) {
       '</div></details></div>';
   }).join('');
 
-  return head + trnLegend() + cards;
+  /* Хамрагдаагүй албадыг ЧИМЭЭГҮЙ жагсаана — 0% гэж буруутгахгүй */
+  var restHTML = outScope.length
+    ? '<div class="card" style="padding:14px 18px;font-size:12.5px;color:#94A3B8;line-height:1.7">' +
+      '<b style="color:#64748B">Энэ сард хамрагдаагүй ' + outScope.length + ' алба:</b> ' +
+      outScope.map(function (f) { return esc(f.dept); }).join(' · ') + '</div>'
+    : '';
+
+  /* ⚠ Хуваарь тэмдэглээгүй бол KPI-д ОРОХГҮЙ — үүнийг чимээгүй өнгөрөөхгүй.
+     (Ажилтан шалгалтаа өгсөн ч оноо нь тооцогдохгүй байсан гол шалтгаан.) */
+  var warn = '';
+  if (!sched && funnels.length && isAdmin()) {
+    var n = funnels.reduce(function (a, f) { return a + f.took; }, 0);
+    warn = '<div class="card" style="padding:15px 18px;margin-bottom:14px;background:#FFFBEB;' +
+      'border:1px solid #FDE68A">' +
+      '<div style="font-weight:700;font-size:13.5px;color:#92400E;margin-bottom:5px">' +
+      '⚠ Эдгээр оноо KPI-д ороогүй байна</div>' +
+      '<div style="font-size:12.5px;color:#B45309;line-height:1.65">' +
+      funnels.length + ' албаны <b>' + n + ' ажилтан</b> шалгалт өгсөн боловч ' +
+      '<b>Тохиргоо → Давтан зааварчилгааны хуваарь</b> дээр энэ сар тэмдэглэгдээгүй тул ' +
+      'KPI-д тооцогдохгүй байна. Тэмдэглэвэл оноо шууд орно.</div></div>';
+  }
+
+  return head + warn + trnLegend() + cards + restHTML;
 }
 
 function trnTile(label, val, sub, bg, bd, lc, vc) {
