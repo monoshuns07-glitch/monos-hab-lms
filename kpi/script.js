@@ -19294,7 +19294,25 @@ function trnReportHTML(sc, exams) {
       'KPI-д тооцогдохгүй байна. Тэмдэглэвэл оноо шууд орно.</div></div>';
   }
 
-  return head + warn + trnLegend() + cards + restHTML;
+  /* Хариуцагчдад илгээх — ЗӨВХӨН админд. Гадагш и-мэйл явдаг тул
+     эхлээд «хэнд очихыг» харуулж, дараа нь баталгаажуулж илгээнэ. */
+  var send = isAdmin()
+    ? '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:4px">Хариуцагчдад илгээх</div>' +
+      '<div style="font-size:12.5px;color:#8A94A6;line-height:1.6;margin-bottom:11px">' +
+      'Алба тус бүрийн дарга өөрийн албаны тоог, захирлууд харьяа албадаа, ' +
+      'гүйцэтгэх захирал бүгдийг и-мэйлээр авна. Сар бүрийн 25-нд автоматаар ч илгээгдэнэ.</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">' +
+      '<button type="button" id="trnDry" style="border:1.5px solid #E2E8F0;background:#fff;color:#334155;' +
+      'border-radius:10px;padding:10px 16px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">' +
+      'Хэнд очихыг харах</button>' +
+      '<button type="button" id="trnSend" style="border:none;background:#4F46E5;color:#fff;' +
+      'border-radius:10px;padding:10px 18px;cursor:pointer;font-family:inherit;font-weight:800;font-size:13px">' +
+      'Одоо илгээх</button></div>' +
+      '<div id="trnSendMsg" style="font-size:12.5px;color:#64748B;line-height:1.7;margin-top:11px"></div></div>'
+    : '';
+
+  return head + warn + trnLegend() + cards + restHTML + send;
 }
 
 function trnTile(label, val, sub, bg, bd, lc, vc) {
@@ -19320,7 +19338,48 @@ function trnEmpRow(r) {
     (r.passed ? '✓' : '✗') + '</span></span></div>';
 }
 
+async function trnDigest(dry) {
+  var msg = document.getElementById('trnSendMsg');
+  var d = document.getElementById('trnDry'), sd = document.getElementById('trnSend');
+  if (msg) msg.textContent = dry ? 'Тооцоолж байна…' : 'Илгээж байна…';
+  if (d) d.disabled = true; if (sd) sd.disabled = true;
+  try {
+    var u = firebase.auth().currentUser;
+    if (!u) throw new Error('Дахин нэвтэрнэ үү');
+    var t = await u.getIdToken();
+    var r = await fetch('/api/trn-digest/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: t, month: TRN_MONTH, dry: !!dry })
+    });
+    var j = await r.json().catch(function () { return {}; });
+    msg = document.getElementById('trnSendMsg'); if (!msg) return;
+    if (!r.ok || !j.ok) { msg.innerHTML = '<span style="color:#B91C1C">' + esc(j.error || ('Алдаа ' + r.status)) + '</span>'; return; }
+    if (dry) {
+      msg.innerHTML = '<b>' + j.wouldSend + ' хүнд очно:</b><br>' +
+        (j.plan || []).map(function (p) {
+          return '· ' + esc(p.name) + ' — ' + esc((p.depts || []).join(', '));
+        }).join('<br>');
+    } else {
+      msg.innerHTML = '<span style="color:#15803D;font-weight:700">✅ ' + j.sent + ' / ' + j.total + ' хүнд илгээлээ.</span>' +
+        ((j.failed && j.failed.length) ? '<br><span style="color:#B91C1C">Амжилтгүй: ' + esc(j.failed.join(' · ')) + '</span>' : '');
+    }
+  } catch (e) {
+    msg = document.getElementById('trnSendMsg');
+    if (msg) msg.innerHTML = '<span style="color:#B91C1C">' + esc(String(e.message || e).slice(0, 90)) + '</span>';
+  } finally {
+    d = document.getElementById('trnDry'); sd = document.getElementById('trnSend');
+    if (d) d.disabled = false; if (sd) sd.disabled = false;
+  }
+}
+
 function trnWire(sc, exams) {
+  var dry = document.getElementById('trnDry');
+  if (dry) dry.addEventListener('click', function () { trnDigest(true); });
+  var snd = document.getElementById('trnSend');
+  if (snd) snd.addEventListener('click', function () {
+    if (!confirm('Сургалтын биелэлтийн тайланг хариуцагч болон захирлууд руу И-МЭЙЛЭЭР илгээх үү?\n\nЭнэ нь гадагш явах үйлдэл. Эхлээд «Хэнд очихыг харах»-аар шалгахыг зөвлөж байна.')) return;
+    trnDigest(false);
+  });
   var m = document.getElementById('trnMonth');
   if (m) m.addEventListener('change', function () {
     TRN_MONTH = m.value;
