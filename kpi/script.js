@@ -3090,6 +3090,7 @@ function switchPage(pageId) {
   else if (pageId === 'hazards') renderHazards();
   else if (pageId === 'tasks') renderTasks();
   else if (pageId === 'myexams') renderMyExams();
+  else if (pageId === 'trn-report') renderTrnReport();
   else if (pageId === 'hrorder') renderHrOrders();
   else if (pageId === 'trn-mod') { try { renderTrainingModule(CURRENT_MOD); } catch (e2) {} }
 }
@@ -18942,6 +18943,361 @@ function modExamHTML(list) {
     legend + sum + '<div style="margin-top:12px">' + cards + todoHTML + '</div></div>';
 }
 
+
+/* ══════════ СУРГАЛТЫН БИЕЛЭЛТ — АЛБА / ЗАХИРАЛ / ГҮЙЦЭТГЭХ ЗАХИРАЛ ══════
+   Албаны хариуцагч, захирал, гүйцэтгэх захирал нар харьяа хүмүүсийнхээ
+   давтан зааварчилгааны биелэлтийг харна:
+     хэдэн хүн суух ёстой байсан → хэд нь суусан → хэд нь тэнцсэн
+
+   ⚠ ЭНЭ ШАТЛАЛ НЬ ЗӨВХӨН СУРГАЛТЫН ХЭСЭГТ ХАМААРНА.
+     Аппын үндсэн эрхийн загварт (SESSION.role, хуудасны нууцлал,
+     эрсдэлийн хамрах хүрээ) ОГТ ХҮРЭХГҮЙ. Энэ хуудас өөрөө хэн юу
+     харахыг тооцно.
+
+   ⚠ Дүнг habea-shalgalt-аас REST-ээр уншина, SDK-ээр БИШ — шалтгааныг
+     modExamLoad дээрх тайлбараас харна уу. */
+
+var TRN_OWN_FILE = 'training/owners.json';
+var TRN_OWN = null;                 /* { алба: [и-мэйл,…] } — гараар оноосон */
+var TRN_EXAMS = null;               /* бүх шалгалтын бичлэг (кэш) */
+var TRN_MONTH = '';                 /* харж буй цалингийн сар */
+var TRN_DAVTAN = ['davtan_eeljit', 'davtan_eeljit_bus', 'davtan_odor_tutmiin'];
+
+async function trnOwnLoad(force) {
+  if (TRN_OWN && !force) return TRN_OWN;
+  try {
+    var j = await riskR2GetJson(TRN_OWN_FILE, { fresh: !!force });
+    TRN_OWN = (j && j.map) || {};
+  } catch (e) { TRN_OWN = {}; }
+  return TRN_OWN;
+}
+
+/* Албаны нэрийг зөөлөн харьцуулна (бичиглэл бага зэрэг зөрж болно) */
+function trnSameDept(a, b) {
+  var x = String(a || '').trim().toLowerCase(), y = String(b || '').trim().toLowerCase();
+  if (!x || !y) return false;
+  return x === y || x.slice(0, 18) === y.slice(0, 18);
+}
+
+/* ── ХЭН ЮУ ХАРАХ ВЭ ────────────────────────────────────────────────
+   ① Гүйцэтгэх захирал, ХАБЭА-н алба (админ)  → бүх алба
+   ② Үйлдвэрлэл / Борлуулалт хариуцсан захирал → харьяа албад нь
+   ③ Албаны дарга, эсвэл гараар оноосон хариуцагч → өөрийн алба
+   ④ Бусад ажилтан → зөвхөн өөрийн дүн (энэ хуудас нээгдэхгүй) */
+function trnScope() {
+  var me = null;
+  try { me = myEmployeeRecord(); } catch (e) {}
+  var email = String((SESSION && SESSION.email) || '').toLowerCase();
+  var pos = String((me && (me.pos || me.role)) || '');
+  var dept = String((me && me.dept) || (SESSION && SESSION.dept) || '');
+  var all = [];
+  try {
+    var seen = {};
+    (DB.employees || []).forEach(function (e) { if (e.dept && !seen[e.dept]) { seen[e.dept] = 1; all.push(e.dept); } });
+    all.sort(function (a, b) { return a.localeCompare(b, 'mn'); });
+  } catch (e) {}
+
+  /* ① ХАБЭА-н алба (админ) ба гүйцэтгэх захирал — бүгд */
+  if (isAdmin() || /гүйцэтгэх\s*захирал/i.test(pos)) {
+    return { kind: 'all', depts: all, label: 'Бүх алба' };
+  }
+  /* ② Хамрах хүрээтэй захирал */
+  var sc = null;
+  try { sc = dirScopeOf(pos); } catch (e) {}
+  if (sc && sc.re) {
+    var mine = all.filter(function (d) { return sc.re.test(d); });
+    if (mine.length) return { kind: 'depts', depts: mine, label: 'Харьяа албад' };
+  }
+  /* ③ Гараар оноосон хариуцагч */
+  var own = TRN_OWN || {};
+  var byOwn = Object.keys(own).filter(function (d) {
+    return (own[d] || []).some(function (m) { return String(m).toLowerCase() === email; });
+  });
+  if (byOwn.length) return { kind: 'depts', depts: byOwn, label: 'Хариуцах алба' };
+  /* ④ Албан тушаалдаа «дарга» гэж бичигдсэн бол өөрийн алба */
+  if (dept && /дарга/i.test(pos)) {
+    return { kind: 'depts', depts: [dept], label: 'Миний алба' };
+  }
+  return { kind: 'self', depts: [], label: '' };
+}
+
+/* ── Шалгалтын бүх бичлэг (REST, хуудаслаж) ───────────────────────── */
+async function trnExamAll(force) {
+  if (TRN_EXAMS && !force) return TRN_EXAMS;
+  var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+    '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
+  var out = [], tok = '', guard = 0;
+  try {
+    do {
+      var r = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var j = await r.json();
+      (j.documents || []).forEach(function (d) {
+        var f = d.fields || {};
+        var bd = modExVal(f.breakdown) || [], qOk = 0;
+        bd.forEach(function (b) {
+          var p = num(b && b.pts), e2 = num(b && b.earned);
+          if (p > 0 && e2 >= p) qOk++;
+        });
+        var ts = 0;
+        try { ts = new Date(modExVal(f.timestamp) || 0).getTime() || 0; } catch (e3) {}
+        out.push({
+          email: String(modExVal(f.email) || '').toLowerCase(),
+          key: modExVal(f.examKey) || '', type: modExVal(f.examType) || '',
+          percent: num(modExVal(f.percent)), passed: modExVal(f.passed) === true,
+          qs: bd.length, qOk: qOk, at: ts
+        });
+      });
+      tok = j.nextPageToken || '';
+    } while (tok && ++guard < 20);
+    TRN_EXAMS = out;
+    return out;
+  } catch (e) { return null; }
+}
+
+/* ── Нэг албаны нэг сарын юүлүүр ──────────────────────────────────── */
+function trnFunnel(dept, key, exams) {
+  var staff = (DB.employees || []).filter(function (e) {
+    return trnSameDept(e.dept, dept) && !e.onLeave;
+  });
+  var byMail = {};
+  (exams || []).forEach(function (x) {
+    if (!x.email || TRN_DAVTAN.indexOf(x.key) < 0) return;
+    if (salaryMonthKey(new Date(x.at)) !== key) return;
+    (byMail[x.email] = byMail[x.email] || []).push(x);
+  });
+  var rows = staff.map(function (e) {
+    var list = byMail[String(e.email || '').toLowerCase()] || [];
+    var pre = null, post = null;
+    list.forEach(function (x) {
+      if (x.type === 'pre' && (!pre || x.at > pre.at)) pre = x;
+      if (x.type === 'post' && (!post || x.at > post.at)) post = x;
+    });
+    var last = post || pre || list[0] || null;
+    return {
+      name: e.name || e.email || '?', id: e.id,
+      took: !!list.length, tries: list.length,
+      pre: pre ? Math.round(pre.percent) : null,
+      post: post ? Math.round(post.percent) : null,
+      score: last ? Math.round(last.percent) : null,
+      passed: !!(last && last.passed),
+      qs: last ? last.qs : 0, qOk: last ? last.qOk : 0,
+      at: last ? last.at : 0
+    };
+  });
+  var took = rows.filter(function (r) { return r.took; });
+  var passed = took.filter(function (r) { return r.passed; });
+  var both = took.filter(function (r) { return r.pre != null && r.post != null; });
+  return {
+    dept: dept, should: staff.length, took: took.length, passed: passed.length,
+    avgScore: took.length ? Math.round(avg(took.map(function (r) { return r.score || 0; }))) : null,
+    avgGain: both.length ? Math.round(avg(both.map(function (r) { return r.post - r.pre; }))) : null,
+    rows: rows.sort(function (a, b) {
+      if (a.took !== b.took) return a.took ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), 'mn');
+    })
+  };
+}
+
+/* ── Юүлүүрийн зурвас: тэнцсэн / тэнцээгүй / суугаагүй ─────────────
+   ⚠ Гурван өнгө нь СТАТУС учиртай (ногоон=тэнцсэн, шар=тэнцээгүй,
+     саарал=суугаагүй). Ногоон↔шар нь протанопид ΔE 6.5 буюу зөвшөөрөгдөх
+     доод зурваст байгаа тул тоо, шошго, завсрыг ЗААВАЛ хамт өгнө —
+     өнгө ганцаараа мэдээлэл дамжуулахгүй. */
+function trnBar(f) {
+  var n = Math.max(1, f.should);
+  var seg = [
+    { v: f.passed, c: '#15803D', t: 'тэнцсэн' },
+    { v: Math.max(0, f.took - f.passed), c: '#D97706', t: 'тэнцээгүй' },
+    { v: Math.max(0, f.should - f.took), c: '#94A3B8', t: 'суугаагүй' }
+  ].filter(function (s) { return s.v > 0; });
+  return '<div style="display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;background:#F1F5F9">' +
+    seg.map(function (s) {
+      var w = (s.v / n * 100);
+      return '<div title="' + s.v + ' ' + s.t + '" style="width:' + w.toFixed(2) + '%;background:' + s.c +
+        ';display:flex;align-items:center;justify-content:center;min-width:0">' +
+        (w > 11 ? '<span style="font-size:11px;font-weight:800;color:#fff">' + s.v + '</span>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+}
+
+function trnLegend() {
+  var it = [['#15803D', 'тэнцсэн'], ['#D97706', 'суусан ч тэнцээгүй'], ['#94A3B8', 'суугаагүй']];
+  return '<div style="display:flex;flex-wrap:wrap;gap:13px;font-size:12px;color:#64748B;margin:2px 0 14px">' +
+    it.map(function (x) {
+      return '<span style="display:inline-flex;align-items:center;gap:6px">' +
+        '<span style="width:11px;height:11px;border-radius:3px;background:' + x[0] + ';flex-shrink:0"></span>' + x[1] + '</span>';
+    }).join('') + '</div>';
+}
+
+/* ── Сарын жагсаалт (сүүлийн 6 сар) ───────────────────────────────── */
+function trnMonths() {
+  var out = [], d = new Date();
+  for (var i = 0; i < 6; i++) {
+    out.push(salaryMonthKey(d));
+    d.setMonth(d.getMonth() - 1);
+  }
+  return out;
+}
+
+/* ── Хуудас зурах ──────────────────────────────────────────────────── */
+async function renderTrnReport() {
+  var sec = pageEl('trn-report'); if (!sec) return;
+  sec.style.padding = '';
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Сургалтын биелэлт</h1>' +
+    '<p class="page-subtitle">Давтан зааварчилгаанд хэд суух ёстой байснаас хэд суусан, хэд тэнцсэн</p></div></div>' +
+    '<div id="trnBody"><div class="card" style="padding:34px;text-align:center;color:#8A94A6">' +
+    '<i class="ti ti-loader-2"></i> Ачаалж байна…</div></div>';
+  await trnOwnLoad();
+  var sc = trnScope();
+  var box = $('#trnBody'); if (!box) return;
+  if (sc.kind === 'self') {
+    box.innerHTML = '<div class="card" style="padding:30px">' +
+      emptyBox('Танд албаны тайлан харах эрх байхгүй. Өөрийн дүнг «Миний сургалтын явц» хэсгээс харна уу.') + '</div>';
+    return;
+  }
+  var exams = await trnExamAll();
+  box = $('#trnBody'); if (!box) return;
+  if (exams === null) {
+    box.innerHTML = '<div class="card" style="padding:24px">' +
+      '<div style="font-size:13.5px;color:#94A3B8;line-height:1.6;margin-bottom:12px">' +
+      'Шалгалтын дүнг ачаалж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.</div>' +
+      '<button type="button" id="trnRetry" style="border:1.5px solid #E2E8F0;background:#fff;color:#334155;' +
+      'border-radius:10px;padding:9px 16px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">' +
+      'Дахин оролдох</button></div>';
+    var rt = document.getElementById('trnRetry');
+    if (rt) rt.addEventListener('click', function () { TRN_EXAMS = null; renderTrnReport(); });
+    return;
+  }
+  if (!TRN_MONTH) TRN_MONTH = currentSalaryKey();
+  box.innerHTML = trnReportHTML(sc, exams);
+  trnWire(sc, exams);
+}
+
+function trnReportHTML(sc, exams) {
+  var key = TRN_MONTH;
+  var funnels = sc.depts.map(function (d) { return trnFunnel(d, key, exams); })
+    .filter(function (f) { return f.should > 0; })
+    .sort(function (a, b) { return (b.took / Math.max(1, b.should)) - (a.took / Math.max(1, a.should)); });
+
+  var tShould = funnels.reduce(function (s, f) { return s + f.should; }, 0);
+  var tTook = funnels.reduce(function (s, f) { return s + f.took; }, 0);
+  var tPass = funnels.reduce(function (s, f) { return s + f.passed; }, 0);
+  var pct = tShould ? Math.round(tTook * 100 / tShould) : 0;
+  var passPct = tTook ? Math.round(tPass * 100 / tTook) : 0;
+
+  /* Сар сонгох */
+  var months = trnMonths();
+  var sel = '<select id="trnMonth" style="border:1.5px solid #E2E8F0;border-radius:10px;padding:9px 12px;' +
+    'font-family:inherit;font-size:13.5px;font-weight:700;color:#334155;background:#fff;cursor:pointer">' +
+    months.map(function (m) {
+      return '<option value="' + m + '"' + (m === key ? ' selected' : '') + '>' + esc(salaryKeyLabel(m)) + '</option>';
+    }).join('') + '</select>';
+
+  /* Нэгдсэн тоо */
+  var head =
+    '<div class="card" style="padding:18px 20px;margin-bottom:16px">' +
+    '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px">' +
+    '<div><div style="font-weight:700;font-size:15px">' + esc(sc.label) + ' · ' + funnels.length + ' алба</div>' +
+    '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">Ээлжит давтан зааварчилгааны биелэлт</div></div>' +
+    sel + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+    trnTile('СУУХ ЁСТОЙ', tShould, '', '#F8FAFC', '#E2E8F0', '#64748B', '#0F1117') +
+    trnTile('СУУСАН', tTook, pct + '%', pct >= 80 ? '#F0FDF4' : '#FFFBEB',
+      pct >= 80 ? '#BBF7D0' : '#FDE68A', pct >= 80 ? '#166534' : '#92400E',
+      pct >= 80 ? '#15803D' : '#B45309') +
+    trnTile('ТЭНЦСЭН', tPass, tTook ? passPct + '% (суусны)' : '', '#F0FDF4', '#BBF7D0', '#166534', '#15803D') +
+    '</div></div>';
+
+  if (!funnels.length) {
+    return head + '<div class="card" style="padding:26px">' +
+      emptyBox('Энэ сард харьяа албадад ажилтан бүртгэгдээгүй байна.') + '</div>';
+  }
+
+  var cards = funnels.map(function (f, i) {
+    var p = f.should ? Math.round(f.took * 100 / f.should) : 0;
+    var notTook = f.rows.filter(function (r) { return !r.took; });
+    var tookRows = f.rows.filter(function (r) { return r.took; });
+    return '<div class="card" style="padding:16px 18px;margin-bottom:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:9px">' +
+      '<div style="font-weight:700;font-size:14.5px;color:#0F1117;min-width:0">' + esc(f.dept) + '</div>' +
+      '<div style="flex-shrink:0;font-size:13px;font-weight:800;color:' +
+      (p >= 80 ? '#15803D' : p >= 40 ? '#B45309' : '#B91C1C') + '">' + f.took + ' / ' + f.should +
+      ' <span style="font-weight:700;color:#94A3B8">· ' + p + '%</span></div></div>' +
+      trnBar(f) +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:#64748B;margin-top:9px">' +
+      '<span>✓ Тэнцсэн <b style="color:#15803D">' + f.passed + '</b></span>' +
+      (f.took - f.passed > 0 ? '<span>✗ Тэнцээгүй <b style="color:#B45309">' + (f.took - f.passed) + '</b></span>' : '') +
+      (notTook.length ? '<span>Суугаагүй <b style="color:#475569">' + notTook.length + '</b></span>' : '') +
+      (f.avgScore != null ? '<span>Дундаж оноо <b style="color:#0F1117">' + f.avgScore + '%</b></span>' : '') +
+      (f.avgGain != null ? '<span>Ахиц <b style="color:' + (f.avgGain >= 0 ? '#15803D' : '#B91C1C') + '">' +
+        (f.avgGain > 0 ? '+' : '') + f.avgGain + '%</b></span>' : '') +
+      '</div>' +
+      '<details style="margin-top:11px"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;' +
+      'color:#4F46E5;list-style:none">Ажилтан бүрээр харах ▾</summary>' +
+      '<div style="margin-top:9px;border:1px solid #E2E8F0;border-radius:10px;overflow:hidden">' +
+      (tookRows.length
+        ? '<div style="background:#F8FAFC;padding:6px 11px;font-size:11.5px;font-weight:800;color:#475569;' +
+          'letter-spacing:.03em">СУУСАН · ' + tookRows.length + '</div>' +
+          tookRows.map(trnEmpRow).join('')
+        : '') +
+      (notTook.length
+        ? '<div style="background:#F8FAFC;padding:6px 11px;font-size:11.5px;font-weight:800;color:#475569;' +
+          'letter-spacing:.03em;border-top:1px solid #E2E8F0">СУУГААГҮЙ · ' + notTook.length + '</div>' +
+          notTook.map(function (r) {
+            return '<div style="padding:7px 11px;border-top:1px solid #F1F5F9;font-size:12.5px;color:#94A3B8">' +
+              esc(r.name) + '</div>';
+          }).join('')
+        : '') +
+      '</div></details></div>';
+  }).join('');
+
+  return head + trnLegend() + cards;
+}
+
+function trnTile(label, val, sub, bg, bd, lc, vc) {
+  return '<div style="flex:1;min-width:98px;background:' + bg + ';border:1px solid ' + bd +
+    ';border-radius:12px;padding:11px 13px">' +
+    '<div style="font-size:11px;font-weight:700;color:' + lc + ';letter-spacing:.03em">' + label + '</div>' +
+    '<div style="font-size:24px;font-weight:800;color:' + vc + ';line-height:1.25">' + val + '</div>' +
+    (sub ? '<div style="font-size:11.5px;color:' + lc + ';opacity:.85">' + sub + '</div>' : '') + '</div>';
+}
+
+function trnEmpRow(r) {
+  var arrow = (r.pre != null && r.post != null)
+    ? '<span style="color:#94A3B8">' + r.pre + '% → </span><b>' + r.post + '%</b>'
+    : '<b>' + (r.score == null ? '—' : r.score + '%') + '</b>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 11px;' +
+    'border-top:1px solid #F1F5F9;font-size:12.5px">' +
+    '<span style="color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+    esc(r.name) + '</span>' +
+    '<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:9px">' +
+    (r.qs ? '<span style="color:#94A3B8;font-size:11.5px">' + r.qOk + '/' + r.qs + '</span>' : '') +
+    '<span style="color:#475569">' + arrow + '</span>' +
+    '<span style="font-weight:800;color:' + (r.passed ? '#15803D' : '#B45309') + '">' +
+    (r.passed ? '✓' : '✗') + '</span></span></div>';
+}
+
+function trnWire(sc, exams) {
+  var m = document.getElementById('trnMonth');
+  if (m) m.addEventListener('change', function () {
+    TRN_MONTH = m.value;
+    var box = $('#trnBody'); if (!box) return;
+    box.innerHTML = trnReportHTML(sc, exams);
+    trnWire(sc, exams);
+  });
+}
+
+/* Цэсийг зөвхөн эрхтэй хүнд харуулна (сургалтын хэсэгт л хамаарна) */
+async function trnNavSync() {
+  var a = document.querySelector('.nav-item[data-page="trn-report"]');
+  if (!a) return;
+  try { await trnOwnLoad(); } catch (e) {}
+  var sc = trnScope();
+  a.style.display = (sc.kind === 'self') ? 'none' : '';
+}
+
 function mrFmt(ts) {
   try { if (ts && ts.toDate) { var d = ts.toDate(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); } } catch (e) {}
   if (ts) { try { var d2 = new Date(ts); if (!isNaN(d2.getTime())) return d2.toLocaleDateString('mn-MN'); } catch (e) {} }
@@ -26669,6 +27025,9 @@ async function init() {
      Тэр рүү холбогдох гар барилцаа удаан тул ажилтан «Миний явц»
      дарахыг ХҮЛЭЭЛГҮЙ, одооноос эхлүүлж халаана. */
   try { setTimeout(function () { try { getHabeaDb(); } catch (e2) {} }, 2500); } catch (e) {}
+  /* Сургалтын биелэлтийн цэс — зөвхөн албаны хариуцагч/захиралд.
+     ⚠ Энэ нь ЗӨВХӨН сургалтын хэсэгт хамаарна; аппын эрхийн загварт хүрэхгүй. */
+  try { setTimeout(function () { try { trnNavSync(); } catch (e2) {} }, 6000); } catch (e) {}
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
   // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
   // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд

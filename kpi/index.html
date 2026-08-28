@@ -26,7 +26,7 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
 <link rel="stylesheet" href="/forest-theme.css">
-<link rel="stylesheet" href="style.css?v=335">
+<link rel="stylesheet" href="style.css?v=336">
 <style>
   /* Сургалтын шатлалт мод цэс */
   .nav-tree { display: block; }
@@ -261,6 +261,8 @@
       </details>
       <a class="nav-item" data-page="daatgal"><i class="ti ti-shield-heart"></i><span>Даатгал</span></a>
       <a class="nav-item" data-page="myresults" data-emp="1"><i class="ti ti-chart-arcs"></i><span>Миний сургалтын явц</span></a>
+      <!-- Сургалтын биелэлт — зөвхөн албаны хариуцагч/захиралд харагдана (trnNavSync) -->
+      <a class="nav-item" data-page="trn-report" style="display:none"><i class="ti ti-report-analytics"></i><span>Сургалтын биелэлт</span></a>
       <a class="nav-item" data-page="myexams" data-emp="1"><i class="ti ti-pencil-check"></i><span>ХАБЭА Шалгалт</span></a>
       <a class="nav-item" data-page="adminpanel" data-admin="1"><i class="ti ti-settings-cog"></i><span>Контент удирдлага</span></a>
       <a class="nav-item" data-page="examadmin" data-admin="1"><i class="ti ti-clipboard-text"></i><span>Шалгалтын удирдлага</span></a>
@@ -883,6 +885,7 @@
 
   <!-- ============ PAGE: MYRESULTS (Сургалт + Шалгалтын дүн — апп дотор) ============ -->
   <section class="page" data-page="myresults"></section>
+  <section class="page" data-page="trn-report"></section>
 
   <!-- ============ PAGE: DAATGAL (Нөхөн төлбөрийн гарын авлага — апп дотор шингээсэн) ============ -->
   <section class="page" data-page="daatgal" style="padding:0"></section>
@@ -931,6 +934,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=335"></script>
+<script src="script.js?v=336"></script>
 </body>
 </html>
