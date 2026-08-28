@@ -2775,6 +2775,33 @@ var EXAM_PAGES = [
   { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт',    url: '/habea-eeljit.html',     icon: 'ti-refresh',        color: '#0891B2', bg: '#E0F2FE' },
   { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт',url: '/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
 ];
+/* ⚠ Шалгалтын хуудсанд кодыг ӨӨРТ НЬ авах богино эрх (15 мин).
+   Өмнө нь аппын ТАБААР дамжуулдаг байсан нь утсан дээр найдваргүй:
+   шалгалт шинэ табд нээгдэхэд аппын таб ард үлдэж, санах ой багатай
+   утсанд УСТДАГ тул код и-мэйл рүү шилждэг байв (2026-08-28). */
+var EXAM_VT = '', EXAM_VEXP = '';
+function examGrantFetch() {
+  if (examGrantFetch._busy) return;
+  if (EXAM_VEXP && Number(EXAM_VEXP) - Date.now() > 120000) return;   /* хүчинтэй хэвээр */
+  if (DEMO || !fbReady) return;
+  examGrantFetch._busy = true;
+  (async function () {
+    try {
+      var u = firebase.auth().currentUser; if (!u) return;
+      var idt = await u.getIdToken();
+      var r = await fetch('/api/file-token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'otp', idToken: idt })
+      });
+      var j = await r.json().catch(function () { return {}; });
+      if (r.ok && j.ok && j.token) {
+        EXAM_VT = j.token; EXAM_VEXP = j.exp;
+        try { renderMyExams(); } catch (e) {}
+      }
+    } catch (e) {} finally { examGrantFetch._busy = false; }
+  })();
+}
+
 function renderMyExams() {
   var sec = pageEl('myexams'); if (!sec) return;
 
@@ -2837,6 +2864,7 @@ function renderMyExams() {
     return;
   }
 
+  try { examGrantFetch(); } catch (e) {}
   var me = myEmployeeRecord();
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
   var name = encodeURIComponent((me && me.name) || '');
@@ -2861,6 +2889,7 @@ function renderMyExams() {
       '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') +
       (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
       (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
+    if (EXAM_VT) url += '&vt=' + encodeURIComponent(EXAM_VT) + '&vexp=' + encodeURIComponent(EXAM_VEXP);
     url = examBust(url);
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +

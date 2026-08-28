@@ -140,7 +140,23 @@ async function sendMail(to, subject, html, text) {
    нэвтэрсэн байдаг тул кодыг и-мэйлээр 2-3 минут хүлээхийн оронд
    аппаараа шууд авах боломж олгоно. Бусад бүх зүйл (зөвшөөрөл,
    гарын үсэг, дүн бүртгэх) ЯГ ХЭВЭЭР. */
+const _crypto = require('crypto');
 const FB_WEB_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
+/* Шалгалтын хуудсаас ирсэн богино эрх (file-token kind:'otp') зөв эсэх.
+   Аппын таб амьд байхыг шаардахгүй — утсан дээр найдвартай. */
+function otpGrantOk(email, token, exp) {
+  try {
+    const secret = process.env.SIGN_SECRET || '';
+    if (!secret || !token || !exp) return false;
+    if (Number(exp) < Date.now()) return false;
+    const c = require('crypto');
+    const want = c.createHmac('sha256', secret)
+      .update('otp|' + email + '|' + String(exp), 'utf8').digest('hex');
+    const a = Buffer.from(String(token)), b = Buffer.from(want);
+    return a.length === b.length && c.timingSafeEqual(a, b);
+  } catch (e) { return false; }
+}
+
 async function whoIs(idToken) {
   if (!idToken || String(idToken).length < 40) return null;
   try {
@@ -196,6 +212,11 @@ module.exports = async function handler(req, res) {
        и-мэйл нь таарч байвал кодыг ШУУД буцаана — и-мэйл илгээхгүй.
        Код өөрөө хэвээр: нэг удаагийн, хугацаатай, hash-аар шалгагдана. */
     if (String(body.channel || '') === 'app') {
+      /* 1) Богино эрх (URL-аар ирсэн) — аппын таб хэрэггүй */
+      if (otpGrantOk(email, body.vt, body.vexp)) {
+        return res.status(200).json({ ok: true, id, ttl: TTL_MIN, code, channel: 'app' });
+      }
+      /* 2) Эсвэл нэвтэрсэн аппаас шууд ирсэн бол */
       const who = await whoIs(body.idToken);
       if (who && who.email && who.email === email) {
         return res.status(200).json({ ok: true, id, ttl: TTL_MIN, code, channel: 'app' });

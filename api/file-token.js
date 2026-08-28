@@ -70,11 +70,16 @@ module.exports = async function handler(req, res) {
   }
 
   const body = await readBody(req);
-  const kind = body.kind === 'dl' ? 'dl' : 'up';
+  /* ⚠ 'otp' — шалгалтын хуудсанд кодыг ӨӨРТ НЬ авах богино эрх.
+     Өмнө нь аппын ТАБААР дамжуулдаг байсан нь утсан дээр найдваргүй:
+     шалгалт шинэ табд нээгдэхэд аппын таб ард үлдэж, санах ой багатай
+     утсанд УСТДАГ тул хариу өгөх код байхгүй болж, и-мэйл рүү шилждэг
+     байв (2026-08-28). Одоо энэ богино эрхийг URL-аар дамжуулна. */
+  const kind = body.kind === 'dl' ? 'dl' : (body.kind === 'otp' ? 'otp' : 'up');
   const keys = Array.isArray(body.keys) ? body.keys
              : (body.key ? [body.key] : []);
 
-  if (!keys.length) return res.status(400).json({ ok: false, error: 'key дутуу' });
+  if (kind !== 'otp' && !keys.length) return res.status(400).json({ ok: false, error: 'key дутуу' });
   if (keys.length > 60) return res.status(400).json({ ok: false, error: 'нэг удаад 60 хүртэл' });
   for (const k of keys) {
     if (typeof k !== 'string' || !k || k.length > 400) {
@@ -86,6 +91,12 @@ module.exports = async function handler(req, res) {
   if (!user) return res.status(401).json({ ok: false, error: 'Нэвтрээгүй байна' });
 
   const exp = String(Date.now() + (kind === 'dl' ? DL_TTL : UP_TTL));
+  if (kind === 'otp') {
+    /* 15 минут хүчинтэй, ЗӨВХӨН энэ и-мэйлд зориулсан */
+    return res.status(200).json({ ok: true, kind: 'otp', exp: exp,
+      email: user.email,
+      token: hmacHex(secret, 'otp|' + user.email + '|' + exp) });
+  }
   const tokens = {};
   for (const k of keys) tokens[k] = hmacHex(secret, kind + '|' + k + '|' + exp);
 

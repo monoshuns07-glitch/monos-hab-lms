@@ -1354,6 +1354,63 @@ function otpCountdown(sec){
 }
 
 var OTP_VIA_APP=false;
+/* Кодыг ЭНД, шалгалтын цонхонд харуулна. Өмнө нь аппын цонхонд гардаг
+   байсан нь утсан дээр ард нуугдаж, ажилтан олдоггүй байв. */
+function otpShowCode(d){
+  OTP_ID=d.id; OTP_VIA_APP=true;
+  try{
+      otpEl("otpBox").classList.add("on");
+      otpEl("otpIn").style.display="flex";
+      var b=otpEl("otpSend"); if(b) b.style.display="none";
+      var _h=otpEl("otpHint"); if(_h) _h.style.display="none";
+      var _p=otpEl("otpPaste"); if(_p) _p.style.display="none";
+      /* ⚠ Кодыг ЭНД, шалгалтын цонхонд харуулна. Өмнө нь аппын цонхонд
+         гардаг байсан нь утсан дээр ард нуугдаж, ажилтан олдоггүй байв. */
+      var _c=String(d.code||"");
+      var _sub=otpEl("otpSub");
+      if(_c && _sub){
+        _sub.innerHTML=
+          '<div style="font-size:12px;font-weight:700;color:#64748B;letter-spacing:.06em">ТАНЫ БАТАЛГААЖУУЛАХ КОД</div>'+
+          '<div style="font-size:34px;font-weight:800;letter-spacing:.16em;color:#0F1117;margin:6px 0 10px;font-variant-numeric:tabular-nums">'+_c+'</div>'+
+          '<button type="button" id="otpUseApp" style="width:100%;padding:12px;border:none;border-radius:12px;background:#4F46E5;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Кодыг оруулах</button>';
+        var _u=otpEl("otpUseApp");
+        if(_u) _u.addEventListener("click",function(){
+          otpFillBoxes(_c); otpCheckTyped();
+        });
+      } else if(_sub){
+        _sub.innerHTML="Код <b>аппын цонхонд</b> гарлаа. Тэндээс уншаад энд бичнэ үү.";
+      }
+      otpCountdown((d.ttl||10)*60);
+      otpStartPoll();
+  }catch(e){}
+}
+
+/* ⚡ 1-Р ЗАМ — URL-аар ирсэн БОГИНО ЭРХ (vt).
+   Аппаас шалгалт нээхэд 15 минутын хугацаатай эрх хамт ирнэ. Ингэснээр
+   код авахад аппын таб нээлттэй байх ШААРДЛАГАГҮЙ.
+   ⚠ Яагаад: өмнө нь зөвхөн BroadcastChannel-ээр аппын табаас асуудаг
+   байсан. Шалгалт шинэ табд нээгдэхэд аппын таб ард үлддэг ба санах ой
+   багатай утсанд түүнийг устгачихдаг → хариу ирэхгүй → код и-мэйл рүү
+   явдаг байв. Ажилтнуудын «код и-мэйл дээр ирнэ гэсээр байна» гэдгийн
+   учир нь энэ (2026-08-28). */
+async function otpTryGrant(em){
+  if(!QP.vt || !QP.vexp) return false;
+  if(Number(QP.vexp) < Date.now()) return false;      /* хугацаа дууссан */
+  try{
+    var r=await fetch("/api/send-otp/",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ email:em, channel:"app", vt:QP.vt, vexp:QP.vexp,
+        name:(typeof emp!=="undefined"&&emp&&emp.name)||"", examTitle:(QP.title||"") })
+    });
+    var j=await r.json().catch(function(){return {}});
+    if(r.ok && j.ok && j.id && j.code){
+      otpShowCode({ id:j.id, code:j.code, ttl:j.ttl });
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
 /* ⚡ Кодыг АППААР авах оролдлого. Ажилтан нэвтэрсэн апп (ижил домэйн)
    нээлттэй бол код тэнд шууд гарна — и-мэйл хүлээхгүй. Хариу ирэхгүй
    бол false буцааж, хуучин ёсоор и-мэйлээр илгээнэ.
@@ -1371,32 +1428,7 @@ function otpTryApp(em){
       if(done||!d||d.type!=="otp-id"||!d.id) return;
       if(String(d.email||"").toLowerCase()!==String(em).toLowerCase()) return;
       done=true; clearTimeout(t);
-      OTP_ID=d.id; OTP_VIA_APP=true;
-      try{
-        otpEl("otpBox").classList.add("on");
-        otpEl("otpIn").style.display="flex";
-        var b=otpEl("otpSend"); if(b) b.style.display="none";
-        var _h=otpEl("otpHint"); if(_h) _h.style.display="none";
-        var _p=otpEl("otpPaste"); if(_p) _p.style.display="none";
-        /* ⚠ Кодыг ЭНД, шалгалтын цонхонд харуулна. Өмнө нь аппын цонхонд
-           гардаг байсан нь утсан дээр ард нуугдаж, ажилтан олдоггүй байв. */
-        var _c=String(d.code||"");
-        var _sub=otpEl("otpSub");
-        if(_c && _sub){
-          _sub.innerHTML=
-            '<div style="font-size:12px;font-weight:700;color:#64748B;letter-spacing:.06em">ТАНЫ БАТАЛГААЖУУЛАХ КОД</div>'+
-            '<div style="font-size:34px;font-weight:800;letter-spacing:.16em;color:#0F1117;margin:6px 0 10px;font-variant-numeric:tabular-nums">'+_c+'</div>'+
-            '<button type="button" id="otpUseApp" style="width:100%;padding:12px;border:none;border-radius:12px;background:#4F46E5;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Кодыг оруулах</button>';
-          var _u=otpEl("otpUseApp");
-          if(_u) _u.addEventListener("click",function(){
-            otpFillBoxes(_c); otpCheckTyped();
-          });
-        } else if(_sub){
-          _sub.innerHTML="Код <b>аппын цонхонд</b> гарлаа. Тэндээс уншаад энд бичнэ үү.";
-        }
-        otpCountdown((d.ttl||10)*60);
-        otpStartPoll();
-      }catch(e){}
+      try{ otpShowCode(d); }catch(e){}
       try{ ch.close(); }catch(e){}
       resolve(true);
     });
@@ -1409,6 +1441,7 @@ async function otpSendCode(){
   if(!em){ otpMsg("И-мэйл хаяг олдсонгүй. ХАБЭА ажилтантай холбогдоно уу.","err"); return; }
   var btn=otpEl("otpSend");
   btn.disabled=true; btn.textContent="⏳ Илгээж байна…";
+  try{ if(await otpTryGrant(em)) return; }catch(e){}
   try{ if(await otpTryApp(em)) return; }catch(e){}
   try{
     var r=await fetch("/api/send-otp/",{
