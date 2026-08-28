@@ -3971,7 +3971,11 @@ function actionEditCourse(cat) {
 /* Модуль бүрийн өнгө/дүрс — зааварчилгаануудыг өнгөөр ялгана */
 var MOD_STYLE = {
   urdchilsan:          { c: '#4F46E5', bg: '#EEF2FF', icon: 'ti-clipboard-list' },
-  ankhan:              { c: '#059669', bg: '#ECFDF5', icon: 'ti-school' },
+  /* ⚠ #059669 (ногоон) нь davtan_eeljit-ийн #0891B2 (номин)-оос ялгарахгүй байв:
+     ΔE 11.8 — бүрэн хараатай хүнд ч ялгахад хэцүү (доод хязгаар 15). #65A30D
+     болгосноор таван модулийн өнгө бүгд шалгуур давлаа (хамгийн ойр хос 21.1).
+     Хэмжиж баталсан, нүдээр таамаглаагүй. */
+  ankhan:              { c: '#65A30D', bg: '#F7FEE7', icon: 'ti-school' },
   davtan_eeljit:       { c: '#0891B2', bg: '#ECFEFF', icon: 'ti-refresh' },
   davtan_eeljit_bus:   { c: '#7C3AED', bg: '#F5F3FF', icon: 'ti-bolt' },
   davtan_odor_tutmiin: { c: '#EA580C', bg: '#FFF7ED', icon: 'ti-calendar-event' }
@@ -18470,20 +18474,34 @@ function renderMyResults() {
 
 async function msMyLoad() {
   var box = $('#msMyBody'); if (!box) return;
-  var pack = MSMY_PACK;
-  if (!pack) { try { pack = await msR2Load(); } catch (e) { pack = null; } MSMY_PACK = pack; }
+  /* ⚠ Хоёр өөр сургалтын систем бий:
+       1. MiSkill видео хичээл  → R2 (msR2Load)
+       2. Зааварчилгааны шалгалт → habea-shalgalt (урьдчилсан/дараах)
+     Хоёрыг ЗЭРЭГ татна. Нэг нь ирэхгүй байсан ч нөгөө нь харагдана —
+     өмнө нь MiSkill олдохгүй бол бүх хуудас хоосон болдог байв. */
+  var em = String((SESSION && SESSION.email) || '').toLowerCase();
+  var res = await Promise.all([
+    (async function () {
+      var pack = MSMY_PACK;
+      if (!pack) { try { pack = await msR2Load(); } catch (e) { pack = null; } MSMY_PACK = pack; }
+      return pack;
+    })(),
+    (async function () { try { return await modExamLoad(em); } catch (e) { return null; } })()
+  ]);
+  var pack = res[0], mx = res[1];
+  box = $('#msMyBody'); if (!box) return;
+
+  var top;
   if (!pack) {
-    box.innerHTML = '<div class="card" style="padding:30px">' +
-      emptyBox('Сургалтын дата ачаалж чадсангүй. Дараа дахин оролдоно уу.') + '</div>';
-    return;
+    top = '<div class="card" style="padding:26px">' +
+      emptyBox('Видео сургалтын дата ачаалж чадсангүй. Дараа дахин оролдоно уу.') + '</div>';
+  } else {
+    var row = msMyFind(pack);
+    top = row ? msMyHTML(row, pack)
+      : '<div class="card" style="padding:26px">' +
+        emptyBox('Таны нэр дээр видео сургалтын бүртгэл олдсонгүй.') + '</div>';
   }
-  var row = msMyFind(pack);
-  if (!row) {
-    box.innerHTML = '<div class="card" style="padding:30px">' +
-      emptyBox('Таны нэр дээр сургалтын бүртгэл олдсонгүй. ХАБЭА-н албанд хандана уу.') + '</div>';
-    return;
-  }
-  box.innerHTML = msMyHTML(row, pack);
+  box.innerHTML = top + modExamHTML(mx);
 }
 
 function msMyHTML(row, pack) {
@@ -18562,6 +18580,259 @@ function msMyHTML(row, pack) {
     '<div class="card" style="padding:6px 22px 14px">' +
     '<div style="font-weight:700;padding:14px 0 4px">Видео хичээл ба шалгалт (' + train.length + ')</div>' +
     vids + '</div>' + todoHTML;
+}
+
+
+/* ══════════ ЗААВАРЧИЛГААНЫ ШАЛГАЛТ — ӨМНӨХ vs ДАРААХ ══════════════════
+   Ажилтанд өөрийнх нь урьдчилсан/дараах шалгалтын дүнг ХАРУУЛНА.
+
+   ХЭЛБЭР — «гантель» (dumbbell). Өмнөх ба дараах оноог НЭГ шулуун дээр
+   хоёр цэгээр тавина. Хоёр тусдаа баганаас илүү: цэг хоорондын ЗАЙ нь
+   ахиц өөрөө болж харагдана. (Өмнөх→дараах гэсэн даалгаварт зориулагдсан
+   стандарт хэлбэр нь энэ.)
+
+   ӨНГӨ — нүдээр таамаглаагүй, хэмжсэн:
+     · «Өмнө» цэг = #475569 саарал (ар талын контекст).
+       #94A3B8 байсан бол #0891B2-той ΔE 13.2 болж ялгагдахгүй байсан —
+       харин #475569 нь таван модулийн БҮХ өнгөнөөс 18.3+ зайтай.
+     · «Дараа» цэг = тухайн модулийн өнгө (гол өгүүлэмж нь энэ).
+     · Ахиц = ногоон/улаан/саарал СТАТУС өнгө, дүрс+бичигтэй хамт
+       (өнгөөр ганцаар мэдээлэл дамжуулахгүй).
+
+   ⚠ Асуултын АГУУЛГЫГ харуулахгүй — зөвхөн «11-ээс 8 зөв» гэсэн тоо.
+     Ажилтан дахин шалгалт өгөхөд хариултыг урьдчилан мэдэхгүй байх ёстой
+     (хэрэглэгчийн шийдвэр, 2026-08-28). */
+
+var MODEX_PASS = 60;          /* тэнцэх босго — habea-exam.html-ийн CFG.passPercent */
+
+/* Ажилтны ӨӨРИЙНХ нь бичлэгийг л уншина.
+   ⚠ readHabeaExamsByEmail() нь БҮХ бичлэгийг уншдаг (админд хэрэгтэй).
+     Нэг ажилтанд тэр нь дэмий — и-мэйлээр нь шүүж 1-2 уншилтаар авна. */
+async function modExamLoad(email) {
+  var em = String(email || '').toLowerCase().trim();
+  if (!em) return [];
+  try {
+    var hdb = getHabeaDb(); if (!hdb) return [];
+    var snap = await hdb.collection('habea_exam_results').where('email', '==', em).get();
+    var out = [];
+    snap.forEach(function (d) {
+      var x = d.data() || {};
+      var bd = x.breakdown || [];
+      var qOk = 0;
+      bd.forEach(function (b) {
+        var p = num(b && b.pts), e = num(b && b.earned);
+        if (p > 0 && e >= p) qOk++;
+      });
+      out.push({
+        key: x.examKey || '', title: x.examTitle || 'ХАБЭА шалгалт',
+        type: x.examType || '', percent: num(x.percent),
+        passed: !!x.passed, qs: bd.length, qOk: qOk,
+        ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0
+      });
+    });
+    out.sort(function (a, b) { return b.ts - a.ts; });
+    return out;
+  } catch (e) { return null; }     /* null = уншиж чадсангүй (хоосон гэдэгтэй адилгүй) */
+}
+
+function modExamDate(ts) {
+  if (!ts) return '';
+  var d = new Date(ts * 1000), p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+/* ── Гантель зураас (SVG) ───────────────────────────────────────────
+   viewBox тогтмол, өргөн 100% — цэгүүд дугуй хэвээрээ томорно. */
+function modExamTrack(pre, post, hue) {
+  var W = 320, H = 66, X0 = 26, X1 = 294, Y = 34, R = 6;
+  var x = function (v) { return X0 + (X1 - X0) * (Math.max(0, Math.min(100, v)) / 100); };
+  var px = (pre != null) ? x(pre) : null, qx = (post != null) ? x(post) : null;
+  var tx = x(MODEX_PASS);
+
+  /* Шошго мөргөлдөхөөс сэргийлнэ.
+     ⚠ «Хувийн зөрүү 20-оос бага бол» гэсэн энгийн дүрэм ХАНГАЛТГҮЙ байв:
+     «Дараа 100%» гэсэн урт шошго яг 20 хувийн зайд ч давхцаж байлаа.
+     Тиймээс ХУВИАР биш, шошгын БОДИТ ӨРГӨНӨӨР шийднэ. */
+  var wOf = function (t) { return String(t).length * 5.4; };   /* 10.5px үсгийн ойролцоо өргөн */
+  var lPre = 'Өмнө ' + pre + '%', lPost = 'Дараа ' + post + '%';
+  var near = (px != null && qx != null) &&
+    Math.abs(qx - px) < (wOf(lPre) + wOf(lPost)) / 2 + 8;       /* 8 = амьсгалах зай */
+  var preY = near ? 58 : 20, postY = 20;
+  var anch = function (v) { return v < 12 ? 'start' : (v > 88 ? 'end' : 'middle'); };
+
+  var g = '';
+  /* тэнхлэг — 1px, битүү, ар талд */
+  g += '<line x1="' + X0 + '" y1="' + Y + '" x2="' + X1 + '" y2="' + Y + '" stroke="#E2E8F0" stroke-width="1"/>';
+  /* тэнцэх босго */
+  g += '<line x1="' + tx.toFixed(1) + '" y1="' + (Y - 7) + '" x2="' + tx.toFixed(1) + '" y2="' + (Y + 7) + '" stroke="#CBD5E1" stroke-width="1"/>';
+  g += '<text x="' + tx.toFixed(1) + '" y="' + (Y + 18) + '" text-anchor="middle" font-size="8.5" fill="#94A3B8" font-family="inherit">босго ' + MODEX_PASS + '</text>';
+  /* ⚠ Тэнхлэгийн 0/100 шошгыг ЗОРИУДААР тавихгүй: 100%-ийн цэг нь «100»
+     бичгийг дарж байсан бөгөөд хоёр утга хоёулаа шууд шошготой тул
+     тэнхлэгийн тоо ямар ч мэдээлэл нэмэхгүй. */
+
+  /* холбоос — ахиц нь ЭНЭ уртаар харагдана */
+  if (px != null && qx != null) {
+    g += '<line x1="' + px.toFixed(1) + '" y1="' + Y + '" x2="' + qx.toFixed(1) + '" y2="' + Y + '" ' +
+      'stroke="' + hue + '" stroke-width="2" stroke-linecap="round" opacity=".35"/>';
+  }
+  /* цэгүүд — 2px цагаан цагираг, давхцсан ч уншигдана */
+  if (px != null) {
+    g += '<circle cx="' + px.toFixed(1) + '" cy="' + Y + '" r="' + R + '" fill="#475569" stroke="#fff" stroke-width="2">' +
+      '<title>Сургалтын өмнөх: ' + pre + '%</title></circle>';
+    g += '<text x="' + px.toFixed(1) + '" y="' + preY + '" text-anchor="' + anch(pre) + '" font-size="10.5" ' +
+      'font-weight="700" fill="#475569" font-family="inherit">' + lPre + '</text>';
+  }
+  if (qx != null) {
+    g += '<circle cx="' + qx.toFixed(1) + '" cy="' + Y + '" r="' + R + '" fill="' + hue + '" stroke="#fff" stroke-width="2">' +
+      '<title>Сургалтын дараах: ' + post + '%</title></circle>';
+    g += '<text x="' + qx.toFixed(1) + '" y="' + postY + '" text-anchor="' + anch(post) + '" font-size="10.5" ' +
+      'font-weight="700" fill="#0F1117" font-family="inherit">' + lPost + '</text>';
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;overflow:visible" ' +
+    'role="img" aria-label="Өмнөх ' + (pre == null ? 'өгөөгүй' : pre + ' хувь') +
+    ', дараах ' + (post == null ? 'өгөөгүй' : post + ' хувь') + '">' + g + '</svg>';
+}
+
+/* Ахицын шошго — СТАТУС өнгө, үргэлж дүрс+бичигтэй */
+function modExamDelta(pre, post) {
+  if (pre == null || post == null) return '';
+  var d = post - pre;
+  var st = d > 0 ? { c: '#15803D', bg: '#F0FDF4', i: '▲', t: 'Ахисан' }
+    : d < 0 ? { c: '#B91C1C', bg: '#FEF2F2', i: '▼', t: 'Буурсан' }
+      : { c: '#64748B', bg: '#F8FAFC', i: '=', t: 'Хэвээр' };
+  return '<span title="' + st.t + '" style="flex-shrink:0;display:inline-flex;align-items:center;gap:5px;' +
+    'background:' + st.bg + ';color:' + st.c + ';border-radius:9px;padding:4px 10px;font-size:12px;font-weight:800">' +
+    st.i + ' ' + (d > 0 ? '+' : '') + d + '%</span>';
+}
+
+/* ── Бүхэл хэсгийг зурна ─────────────────────────────────────────── */
+function modExamHTML(list) {
+  if (list === null) {
+    return '<div class="card" style="padding:18px 22px;margin-top:16px">' +
+      '<div style="font-weight:700;margin-bottom:6px">Зааварчилгааны шалгалт</div>' +
+      '<div style="font-size:13px;color:#94A3B8">Дүн ачаалж чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.</div></div>';
+  }
+  var mods = {};
+  (list || []).forEach(function (x) {
+    var k = x.key || x.title || '?';
+    var m = mods[k] || (mods[k] = { key: x.key || '', title: TRAINING_MODULES[x.key] || x.title || 'Шалгалт', pre: null, post: null, all: [], last: 0 });
+    m.all.push(x);
+    var slot = x.type === 'post' ? 'post' : (x.type === 'pre' ? 'pre' : null);
+    if (slot && (!m[slot] || (x.ts || 0) > (m[slot].ts || 0))) m[slot] = x;   /* сүүлийн оролдлого ялна */
+    if ((x.ts || 0) > m.last) m.last = x.ts || 0;
+  });
+  var groups = Object.keys(mods).map(function (k) { return mods[k]; })
+    .sort(function (a, b) { return b.last - a.last; });
+
+  /* Хараахан өгөөгүй модулиуд — доор чимээгүй жагсаана */
+  var doneKeys = {}; groups.forEach(function (m) { if (m.key) doneKeys[m.key] = 1; });
+  var todo = Object.keys(TRAINING_MODULES).filter(function (k) { return !doneKeys[k]; });
+
+  if (!groups.length) {
+    return '<div class="card" style="padding:20px 22px;margin-top:16px">' +
+      '<div style="font-weight:700;margin-bottom:6px">Зааварчилгааны шалгалт</div>' +
+      '<div style="font-size:13px;color:#8A94A6;line-height:1.6">Та хараахан зааварчилгааны шалгалт өгөөгүй байна. ' +
+      'Шалгалт нээгдэхэд «ХАБЭА Шалгалт» цэсэнд гарч ирнэ.</div></div>';
+  }
+
+  /* ── Тайлбар мөр (2 цэгийн утга) ── */
+  var legend =
+    '<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px;color:#64748B;margin-top:8px">' +
+    '<span style="display:inline-flex;align-items:center;gap:6px">' +
+    '<span style="width:11px;height:11px;border-radius:50%;background:#475569;flex-shrink:0"></span>Сургалтын өмнөх</span>' +
+    '<span style="display:inline-flex;align-items:center;gap:6px">' +
+    '<span style="width:11px;height:11px;border-radius:50%;background:#0891B2;flex-shrink:0"></span>Сургалтын дараах</span>' +
+    '<span style="color:#94A3B8">· цэг хоорондын зай = таны ахиц</span></div>';
+
+  /* ── Нэгдсэн үзүүлэлт ── */
+  var withBoth = groups.filter(function (m) { return m.pre && m.post; });
+  var passN = groups.filter(function (m) { return (m.post || m.pre || {}).passed; }).length;
+  var avgD = withBoth.length
+    ? Math.round(withBoth.reduce(function (s, m) { return s + (m.post.percent - m.pre.percent); }, 0) / withBoth.length)
+    : null;
+  /* ⚠ Нэг л модуль өгсөн ажилтанд (одоогоор 88-аас 86 нь) энэ мөр нь
+     доорх картыг үг үсэггүй давтдаг тул ХАРУУЛАХГҮЙ. */
+  var sum = (groups.length < 2) ? '' :
+    '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 4px">' +
+    '<div style="flex:1;min-width:96px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:11px 13px">' +
+    '<div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:.03em">ӨГСӨН</div>' +
+    '<div style="font-size:23px;font-weight:800;color:#0F1117;line-height:1.25">' + groups.length +
+    '<span style="font-size:13px;font-weight:700;color:#94A3B8"> / ' + Object.keys(TRAINING_MODULES).length + '</span></div></div>' +
+    '<div style="flex:1;min-width:96px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:11px 13px">' +
+    '<div style="font-size:11px;font-weight:700;color:#166534;letter-spacing:.03em">ТЭНЦСЭН</div>' +
+    '<div style="font-size:23px;font-weight:800;color:#15803D;line-height:1.25">' + passN +
+    '<span style="font-size:13px;font-weight:700;color:#86EFAC"> / ' + groups.length + '</span></div></div>' +
+    (avgD != null
+      ? '<div style="flex:1;min-width:96px;background:' + (avgD >= 0 ? '#F0FDF4' : '#FEF2F2') + ';border:1px solid ' +
+        (avgD >= 0 ? '#BBF7D0' : '#FECACA') + ';border-radius:12px;padding:11px 13px">' +
+        '<div style="font-size:11px;font-weight:700;color:' + (avgD >= 0 ? '#166534' : '#991B1B') + ';letter-spacing:.03em">ДУНДАЖ АХИЦ</div>' +
+        '<div style="font-size:23px;font-weight:800;color:' + (avgD >= 0 ? '#15803D' : '#B91C1C') + ';line-height:1.25">' +
+        (avgD > 0 ? '+' : '') + avgD + '%</div></div>'
+      : '') +
+    '</div>';
+
+  /* ── Модуль бүрийн карт ── */
+  var cards = groups.map(function (m) {
+    var st = modStyle(m.key);
+    var pre = m.pre ? Math.round(m.pre.percent) : null;
+    var post = m.post ? Math.round(m.post.percent) : null;
+    var latest = m.post || m.pre;
+    var qLine = (latest && latest.qs)
+      ? latest.qs + ' асуултаас <b>' + latest.qOk + ' зөв</b>'
+      : '';
+    var passHTML = latest
+      ? (latest.passed
+        ? '<span style="color:#15803D;font-weight:700">✓ Тэнцсэн</span>'
+        : '<span style="color:#B91C1C;font-weight:700">✗ Тэнцээгүй</span>')
+      : '';
+
+    /* Оролдлого бүрийн түүх — хүснэгт үүрэг ч гүйцэтгэнэ */
+    var hist = m.all.slice().sort(function (a, b) { return b.ts - a.ts; }).map(function (x) {
+      var lbl = x.type === 'post' ? 'Дараах' : (x.type === 'pre' ? 'Өмнөх' : 'Шалгалт');
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #F1F5F9;font-size:12.5px">' +
+        '<span style="color:#475569"><b>' + lbl + '</b>' + (x.ts ? ' · ' + modExamDate(x.ts) : '') + '</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:8px;flex-shrink:0">' +
+        (x.qs ? '<span style="color:#94A3B8;font-size:11.5px">' + x.qOk + '/' + x.qs + '</span>' : '') +
+        '<span style="color:' + (x.passed ? '#15803D' : '#B91C1C') + ';font-weight:800">' +
+        (x.passed ? '✓ ' : '✗ ') + Math.round(x.percent) + '%</span>' +
+        '</span></div>';
+    }).join('');
+
+    var missing = (pre == null)
+      ? '<div style="font-size:12px;color:#94A3B8;margin-top:2px">Урьдчилсан шалгалт өгөөгүй тул ахиц тооцоогүй.</div>'
+      : (post == null
+        ? '<div style="font-size:12px;color:#D97706;margin-top:2px;font-weight:600">Сургалтын дараах шалгалт хараахан өгөөгүй.</div>'
+        : '');
+
+    return '<div style="border:1px solid #E2E8F0;border-left:4px solid ' + st.c + ';border-radius:14px;' +
+      'background:#fff;margin-bottom:12px;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px;background:' + st.bg + '">' +
+      '<div style="display:flex;align-items:center;gap:9px;min-width:0">' +
+      '<i class="ti ' + st.icon + '" style="font-size:19px;color:' + st.c + ';flex-shrink:0"></i>' +
+      '<span style="font-weight:700;font-size:14px;color:#0F1117;min-width:0">' + esc(m.title) + '</span></div>' +
+      modExamDelta(pre, post) + '</div>' +
+      '<div style="padding:14px 15px 6px">' + modExamTrack(pre, post, st.c) + '</div>' +
+      '<div style="padding:2px 15px 12px">' +
+      '<div style="font-size:12.5px;color:#64748B">' + passHTML + (passHTML && qLine ? ' · ' : '') + qLine + '</div>' +
+      missing +
+      (m.all.length > 1 || hist
+        ? '<details style="margin-top:9px"><summary style="cursor:pointer;font-size:12.5px;color:#4F46E5;font-weight:600;' +
+          'list-style:none">Оролдлогын түүх (' + m.all.length + ') ▾</summary><div style="margin-top:2px">' + hist + '</div></details>'
+        : '') +
+      '</div></div>';
+  }).join('');
+
+  var todoHTML = todo.length
+    ? '<div style="font-size:12.5px;color:#94A3B8;line-height:1.7;padding:4px 2px 0">' +
+      '<b style="color:#64748B">Хараахан өгөөгүй:</b> ' +
+      todo.map(function (k) { return esc(TRAINING_MODULES[k]); }).join(' · ') + '</div>'
+    : '';
+
+  return '<div class="card" style="padding:18px 20px 16px;margin-top:16px">' +
+    '<div style="font-weight:700;font-size:15px;color:#0F1117">Зааварчилгааны шалгалт</div>' +
+    '<div style="font-size:12.5px;color:#8A94A6;margin-top:3px;line-height:1.6">' +
+    'Сургалтын өмнө ба дараа өгсөн шалгалтын дүн. Хоёрын зөрүү нь сургалтаас юу авсныг харуулна.</div>' +
+    legend + sum + '<div style="margin-top:12px">' + cards + todoHTML + '</div></div>';
 }
 
 function mrFmt(ts) {
