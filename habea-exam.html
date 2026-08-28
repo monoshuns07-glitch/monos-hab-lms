@@ -1393,21 +1393,27 @@ function otpShowCode(d){
    багатай утсанд түүнийг устгачихдаг → хариу ирэхгүй → код и-мэйл рүү
    явдаг байв. Ажилтнуудын «код и-мэйл дээр ирнэ гэсээр байна» гэдгийн
    учир нь энэ (2026-08-28). */
+var OTP_WHY='';
 async function otpTryGrant(em){
-  if(!QP.vt || !QP.vexp) return false;
-  if(Number(QP.vexp) < Date.now()) return false;      /* хугацаа дууссан */
+  if(!QP.vt || !QP.vexp){ OTP_WHY='эрхгүй холбоос'; return false; }
+  if(Number(QP.vexp) < Date.now()){ OTP_WHY='эрхийн хугацаа дууссан'; return false; }
   try{
     var r=await fetch("/api/send-otp/",{
       method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ email:em, channel:"app", vt:QP.vt, vexp:QP.vexp,
+      /* ⚠ QP.vem — эрхийг ХЭНД олгосон бэ. Аппын SESSION.email нь заримдаа
+         localStorage-оос ирдэг тул нэвтэрсэн хаягтай зөрж болно; тэр үед
+         em-ээр асуувал гарын үсэг таарахгүй. Эрхийн эзнээр нь асууна. */
+      body:JSON.stringify({ email:(QP.vem||em), channel:"app", vt:QP.vt, vexp:QP.vexp,
         name:(typeof emp!=="undefined"&&emp&&emp.name)||"", examTitle:(QP.title||"") })
     });
     var j=await r.json().catch(function(){return {}});
     if(r.ok && j.ok && j.id && j.code){
       otpShowCode({ id:j.id, code:j.code, ttl:j.ttl });
+      OTP_WHY='';
       return true;
     }
-  }catch(e){}
+    OTP_WHY='сервер '+r.status+' '+String(j.error||'').slice(0,40);
+  }catch(e){ OTP_WHY='сүлжээ: '+String(e.message||'').slice(0,40); }
   return false;
 }
 
@@ -1771,7 +1777,10 @@ async function finalSubmit(){ sigRelease();
   // ── Зөвшөөрөл ба өөрчлөгдөөгүйн нотолгоо ──
   doc.consent=true;
   doc.consentText=SIG_CONSENT_TEXT;
-  doc.otpChannel = OTP_VIA_APP ? "app" : "email";   /* аудитын мөр */
+  doc.otpChannel = OTP_VIA_APP ? "app" : "email";
+  /* ⚠ Аппын зам бүтэлгүйтсэн бол ШАЛТГААНЫГ хамт хадгална. Ингэснээр
+     «зарим хүнд и-мэйлээр ирдэг» гэдгийг дахин ТААМАГЛАХГҮЙ, харна. */
+  if (!OTP_VIA_APP && OTP_WHY) doc.otpWhy = String(OTP_WHY).slice(0, 60);   /* аудитын мөр */
   doc.consentAt=firebase.firestore.FieldValue.serverTimestamp();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);

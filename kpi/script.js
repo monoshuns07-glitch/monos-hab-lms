@@ -3085,7 +3085,12 @@ var EXAM_PAGES = [
    Өмнө нь аппын ТАБААР дамжуулдаг байсан нь утсан дээр найдваргүй:
    шалгалт шинэ табд нээгдэхэд аппын таб ард үлдэж, санах ой багатай
    утсанд УСТДАГ тул код и-мэйл рүү шилждэг байв (2026-08-28). */
-var EXAM_VT = '', EXAM_VEXP = '';
+var EXAM_VT = '', EXAM_VEXP = '', EXAM_VEM = '';
+/* ⚠ EXAM_VEM яагаад хэрэгтэй вэ: SESSION.email нь Firebase-ээс ирэхгүй үед
+   localStorage-д хадгалагдсан ХУУЧИН хаягаар нөхөгддөг (establishSession-ий
+   нөөц зам). Тэр хаяг нэвтэрсэн дансныхаас зөрвөл эрхийн гарын үсэг таарахгүй
+   бөгөөд ЗӨВХӨН ТЭР ажилтанд код и-мэйл рүү шилжинэ. Тиймээс эрхийг хэнд
+   олгосныг нь хамт дамжуулж, шалгалтын хуудас түүгээр асууна. */
 function examGrantFetch() {
   if (examGrantFetch._busy) return;
   if (EXAM_VEXP && Number(EXAM_VEXP) - Date.now() > 120000) return;   /* хүчинтэй хэвээр */
@@ -3101,7 +3106,7 @@ function examGrantFetch() {
       });
       var j = await r.json().catch(function () { return {}; });
       if (r.ok && j.ok && j.token) {
-        EXAM_VT = j.token; EXAM_VEXP = j.exp;
+        EXAM_VT = j.token; EXAM_VEXP = j.exp; EXAM_VEM = j.email || '';
         try { renderMyExams(); } catch (e) {}
       }
     } catch (e) {} finally { examGrantFetch._busy = false; }
@@ -26127,7 +26132,8 @@ function examBust(u) {
      модул, сургалтын ангилал) — бүгд эндүүр дамждаг тул ЭНД наавал
      аль ч замаар орсон ажилтанд адилхан ажиллана. */
   if (EXAM_VT && u.indexOf('&vt=') < 0) {
-    u += '&vt=' + encodeURIComponent(EXAM_VT) + '&vexp=' + encodeURIComponent(EXAM_VEXP);
+    u += '&vt=' + encodeURIComponent(EXAM_VT) + '&vexp=' + encodeURIComponent(EXAM_VEXP) +
+         (EXAM_VEM ? '&vem=' + encodeURIComponent(EXAM_VEM) : '');
   }
   return u;
 }
