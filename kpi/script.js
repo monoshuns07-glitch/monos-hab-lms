@@ -15185,14 +15185,15 @@ function wkAdminModal() {
   var node = elc('div', 'modal-info', '<div style="padding:20px;color:#94A3B8">Ачаалж байна…</div>');
   buildModal('Work order — тохиргоо', node, { width: 'min(760px, 96vw)' });
 
-  Promise.all([wkLocLoad(true), wkUrgLoad(true)]).then(function () {
+  Promise.all([wkLocLoad(true), wkUrgLoad(true), wkHazLoad(true)]).then(function () {
     var groups = JSON.parse(JSON.stringify(wkLocGroups()));
     var urg = JSON.parse(JSON.stringify(WK_URG || WK_URG_DEF));
+      var haz = JSON.parse(JSON.stringify(WK_HAZ_TYPES));
     var tab = 'loc';
 
     var draw = function () {
       var H = '<div style="display:flex;gap:7px;margin-bottom:14px">' +
-        [['loc', '📍 Байршил'], ['urg', '⏱ Хугацаа']].map(function (t) {
+        [['loc', '📍 Байршил'], ['urg', '⏱ Хугацаа'], ['haz', '⚠ Аюулын ангилал']].map(function (t) {
           var on = tab === t[0];
           return '<button data-wa-tab="' + t[0] + '" style="border:1.5px solid ' +
             (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#4F46E5' : '#fff') +
@@ -15200,6 +15201,23 @@ function wkAdminModal() {
             'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + t[1] + '</button>';
         }).join('') + '</div>';
 
+      if (tab === 'haz') {
+        H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
+          'Ажилтан «Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?» гэсэн асуултад ' +
+          'сонгох ангиллууд. Нэмж, нэрийг засаж, устгаж болно.<br>' +
+          '<b>Устгасан ангиллаар өмнө бүртгэгдсэн мэдээлэл хэвээр үлдэнэ.</b></div>';
+        H += haz.map(function (h, i) {
+          return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F1F5F9">' +
+            '<span style="width:15px;height:15px;border-radius:5px;flex-shrink:0;background:' + h.c + '"></span>' +
+            '<input data-wa-haz="' + i + '" value="' + esc(h.mn) + '" ' +
+            'style="flex:1;min-width:0;border:1.5px solid #E2E8F0;border-radius:9px;padding:8px 11px;font-family:inherit;font-size:13.5px">' +
+            '<button data-wa-hdel="' + i + '" style="border:none;background:#FEE2E2;color:#991B1B;border-radius:9px;padding:8px 12px;cursor:pointer;font-family:inherit;font-weight:800;font-size:13px">✕</button>' +
+            '</div>';
+        }).join('');
+        H += '<div style="display:flex;gap:8px;margin-top:14px">' +
+          '<input id="waNewH" placeholder="Шинэ ангиллын нэр" style="flex:1;min-width:0;border:1.5px solid #E2E8F0;border-radius:10px;padding:10px 12px;font-family:inherit;font-size:14px">' +
+          '<button id="waAddH" class="btn btn-secondary btn-sm">＋ Нэмэх</button></div>';
+      }
       if (tab === 'urg') {
         H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
           'Ажилтан <b>5</b> дарвал хэдэн цагийн дотор шийдвэрлэх ёстой вэ? ' +
@@ -15274,6 +15292,9 @@ function wkAdminModal() {
       Array.prototype.forEach.call(node.querySelectorAll('[data-wa-urg]'), function (el) {
         var v = parseInt(el.value, 10); if (v > 0) urg[+el.getAttribute('data-wa-urg')] = v;
       });
+      Array.prototype.forEach.call(node.querySelectorAll('[data-wa-haz]'), function (el) {
+        var v = el.value.trim(); if (v) haz[+el.getAttribute('data-wa-haz')].mn = v;
+      });
     };
 
     node.addEventListener('input', function (ev) {
@@ -15287,6 +15308,26 @@ function wkAdminModal() {
         var gi = +b.getAttribute('data-wa-gdel');
         if (!confirm('«' + groups[gi].name + '» бүлгийг устгах уу?')) return;
         groups.splice(gi, 1); draw(); return;
+      }
+      if ((b = ev.target.closest('[data-wa-hdel]'))) {
+        grab();
+        var hi = +b.getAttribute('data-wa-hdel');
+        if (haz.length <= 1) { toast('Дор хаяж нэг ангилал үлдэх ёстой', 'warn'); return; }
+        if (!confirm(haz[hi].mn + ' — устгах уу? Өмнө бүртгэгдсэн мэдээлэл хэвээр үлдэнэ.')) return;
+        haz.splice(hi, 1); draw(); return;
+      }
+      if (ev.target.closest('#waAddH')) {
+        grab();
+        var hn = node.querySelector('#waNewH');
+        var hv = hn ? hn.value.trim() : '';
+        if (hv.length < 2) { toast('Нэрийг бичнэ үү', 'warn'); return; }
+        if (haz.some(function (x) { return x.mn.toLowerCase() === hv.toLowerCase(); })) { toast('Ийм нэртэй ангилал бий', 'warn'); return; }
+        var used = {}; haz.forEach(function (x) { used[x.c] = 1; });
+        var col = null;
+        for (var ci = 0; ci < WK_HAZ_PALETTE.length; ci++) { if (!used[WK_HAZ_PALETTE[ci][0]]) { col = WK_HAZ_PALETTE[ci]; break; } }
+        if (!col) col = WK_HAZ_PALETTE[haz.length % WK_HAZ_PALETTE.length];
+        haz.push({ k: 'h' + Date.now().toString(36), mn: hv, c: col[0], bg: col[1] });
+        draw(); return;
       }
       if ((b = ev.target.closest('[data-wa-sdel]'))) {
         grab();
@@ -15316,7 +15357,11 @@ function wkAdminModal() {
         if (bad.length) { toast('Нэргүй бүлэг байна', 'warn'); return; }
         var btn = node.querySelector('#waSave');
         btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
-        Promise.all([wkLocSave(groups), wkUrgSave(urg)]).then(function () {
+        if (haz.some(function (x) { return !x.mn || x.mn.length < 2; })) {
+          toast('Нэргүй ангилал байна', 'warn'); btn.disabled = false;
+          btn.innerHTML = 'Хадгалах'; return; }
+        wkHazApply(haz);
+        Promise.all([wkLocSave(groups), wkUrgSave(urg), wkHazSave()]).then(function () {
           closeModal();
           toast('✓ Тохиргоо хадгалагдлаа', 'success');
           try { renderReportflow(); } catch (e) {}
