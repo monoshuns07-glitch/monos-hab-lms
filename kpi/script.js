@@ -1420,6 +1420,311 @@ async function riskR2PutJson(key, obj) {
   return out;
 }
 
+
+/* ══════════════════ СИСТЕМИЙН ЭРҮҮЛ МЭНД ══════════════════════════════
+   ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ (2026-08-28):
+   «Зарим ажилтанд шинэчлэлт ороогүй байна» гэсэн гомдол гарахад түүнийг
+   олоход удсан. Учир нь — ХЭН ямар хувилбар дээр байгааг, хэнд ямар
+   алдаа гарч байгааг ХАРАХ ЯМАР Ч АРГА БАЙГААГҮЙ.
+
+   Энэ кодод хэдэн зуун `catch (e) {}` бий. Тэд програмыг унахаас
+   хамгаалдаг ч алдааг БҮРЭН ЗАЛГИЧИХДАГ: ажилтны дэлгэц дээр цэс
+   эвдэрсэн ч админ огт мэдэхгүй өнгөрдөг. Гомдол ирж байж л мэднэ.
+
+   Тиймээс гурван зүйл нэмэв:
+     1. Ажилтан бүрийн хувилбар/төхөөрөмжийг R2-д тэмдэглэнэ
+     2. Баригдаагүй алдааг R2-д бүртгэнэ (давхардлыг нэгтгэж)
+     3. Админд «Системийн эрүүл мэнд» самбар дээр хоёуланг харуулна
+
+   Ингэснээр «яагаад зарим хүнд ажиллахгүй байна?» гэдэг ТААМАГ биш,
+   ХАРАГДАХ мэдээлэл болно. Цаашид ямар ч цэс дээр хөгжүүлэлт хийхэд
+   алдаа гарвал ЭНД шууд харагдана.
+
+   ⚠ R2-д хадгална — Firestore-д БИШ (квот дүүрдэг). */
+var SYS_CLI_FILE = 'sys/clients.json';    /* хэн ямар хувилбар дээр байна */
+var SYS_ERR_FILE = 'sys/errors.json';     /* сүүлийн алдаанууд */
+var SYS_ERR_MAX = 300;
+
+/* Одоо ажиллаж байгаа хувилбар — index.html доторх script.js?v=NNN-ээс */
+function sysRunVer() {
+  try {
+    var t = document.querySelector('script[src*="script.js?v="]');
+    var m = t && String(t.getAttribute('src') || '').match(/v=(\d+)/);
+    return m ? m[1] : '';
+  } catch (e) { return ''; }
+}
+
+/* Төхөөрөмжийн товч тайлбар. Бүтэн User-Agent хадгалахгүй — хэрэггүй урт. */
+function sysDev() {
+  var u = navigator.userAgent || '';
+  var os = /Android/i.test(u) ? 'Android'
+    : /iPhone|iPad|iPod/i.test(u) ? 'iOS'
+      : /Windows/i.test(u) ? 'Windows'
+        : /Mac OS X/i.test(u) ? 'Mac' : 'Бусад';
+  /* ⚠ Дараалал чухал: Facebook/Instagram-ийн дотоод хөтөч өөрийгөө
+     Chrome/Safari гэж бас нэрлэдэг тул ТЭДНИЙГ ЭХЭЛЖ шалгана. */
+  var br = /FBAN|FBAV|FB_IAB/.test(u) ? 'Facebook'
+    : /Instagram/.test(u) ? 'Instagram'
+      : /EdgA?\//.test(u) ? 'Edge'
+        : /SamsungBrowser/.test(u) ? 'Samsung'
+          : /CriOS|Chrome/.test(u) ? 'Chrome'
+            : /Firefox|FxiOS/.test(u) ? 'Firefox'
+              : /Safari/.test(u) ? 'Safari' : 'Бусад';
+  var pwa = false;
+  try {
+    pwa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || navigator.standalone === true;
+  } catch (e) {}
+  return { os: os, br: br, pwa: pwa };
+}
+
+/* R2 руу чимээгүй бичнэ — pulse дэгдээхгүй.
+   ⚠ riskR2PutJson-ыг ашиглаж БОЛОХГҮЙ: тэр бичих бүрд pulse тавьдаг тул
+   300 ажилтан нэвтрэхэд бүх хүний апп дэмий сэрнэ. */
+async function sysPut(key, obj) {
+  var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  blob.name = key.split('/').pop();
+  return await r2Put(blob, key);
+}
+
+/* ── 1. Хувилбарын тэмдэглэл ───────────────────────────────────────── */
+var SYS_REPORTED = false;
+async function sysReport() {
+  if (SYS_REPORTED || DEMO) return;
+  var em = String((SESSION && SESSION.email) || '').toLowerCase();
+  var ver = sysRunVer();
+  if (!em || !ver) return;
+  SYS_REPORTED = true;
+
+  /* ⚠ Хувилбар солигдоход, эсвэл 12 цагт нэг л удаа бичнэ. Ачаалал бүрд
+     бичвэл R2 дээр 300 ажилтан × өдөрт олон удаа = дэмий бичилт. */
+  var sig = em + '|' + ver, last = '', lastAt = 0;
+  try {
+    last = localStorage.getItem('mhSysSig') || '';
+    lastAt = Number(localStorage.getItem('mhSysAt') || 0);
+  } catch (e) {}
+  if (last === sig && (Date.now() - lastAt) < 12 * 3600 * 1000) return;
+
+  /* Олон хүн зэрэг нэвтрэхэд бичилт мөргөлдөхгүйн тулд санамсаргүй саатал */
+  await new Promise(function (r) { setTimeout(r, 1500 + Math.random() * 9000); });
+
+  try {
+    var all = await riskR2GetJson(SYS_CLI_FILE, { fresh: true }) || {};
+    var rows = all.rows || {};
+    var d = sysDev(), me = null;
+    try { me = myEmployeeRecord(); } catch (e) {}
+    rows[em] = {
+      v: ver, at: new Date().toISOString(),
+      n: (me && me.name) || '', dp: (me && me.dept) || '',
+      os: d.os, br: d.br, pwa: d.pwa ? 1 : 0
+    };
+    await sysPut(SYS_CLI_FILE, { updatedAt: new Date().toISOString(), rows: rows });
+    try {
+      localStorage.setItem('mhSysSig', sig);
+      localStorage.setItem('mhSysAt', String(Date.now()));
+    } catch (e) {}
+  } catch (e) {
+    SYS_REPORTED = false;      /* дараагийн ачаалалд дахин оролдоно */
+  }
+}
+
+/* ── 2. Алдааны бүртгэл ────────────────────────────────────────────── */
+var SYS_ERR_SEEN = {}, SYS_ERR_LAST = 0, SYS_ERR_N = 0;
+function sysErrLog(kind, msg, where) {
+  try {
+    if (DEMO) return;
+    msg = String(msg || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    if (!msg) return;
+    /* ⚠ Бидэнтэй хамаагүй чимээг оруулахгүй: өргөтгөл, сүлжээний тасалдал,
+       браузерын мэддэг хоосон алдаа. Тэднийг бүртгэвэл жинхэнэ алдаа
+       живнэ. */
+    if (/ResizeObserver loop|^Script error\.?$|chrome-extension:|moz-extension:|^Load failed$|NetworkError|^Failed to fetch$/i.test(msg)) return;
+    var w = String(where || '').slice(0, 140);
+    var sig = kind + '|' + msg + '|' + w;
+    if (SYS_ERR_SEEN[sig]) return;                       /* нэг сессэд нэг удаа */
+    SYS_ERR_SEEN[sig] = 1;
+    if (SYS_ERR_N >= 5) return;                          /* нэг сессэд дээд тал нь 5 */
+    if (Date.now() - SYS_ERR_LAST < 15000) return;       /* үер болгохгүй */
+    SYS_ERR_LAST = Date.now(); SYS_ERR_N++;
+
+    var d = sysDev();
+    var row = {
+      at: new Date().toISOString(), k: kind, m: msg, w: w,
+      e: String((SESSION && SESSION.email) || '').toLowerCase(),
+      v: sysRunVer(), os: d.os, br: d.br,
+      p: (function () { try { return location.pathname + location.hash; } catch (e2) { return ''; } })()
+    };
+    (async function () {
+      try {
+        await new Promise(function (r) { setTimeout(r, Math.random() * 4000); });
+        var all = await riskR2GetJson(SYS_ERR_FILE, { fresh: true }) || {};
+        var rows = all.rows || [];
+        /* Ижил алдаа аль хэдийн байвал тоолуурыг нь нэмнэ — жагсаалт
+           нэг хүний нэг алдаагаар дүүрэхгүй. */
+        var hit = null;
+        for (var i = 0; i < rows.length; i++) {
+          if (rows[i].k === row.k && rows[i].m === row.m && rows[i].w === row.w) { hit = rows[i]; break; }
+        }
+        if (hit) {
+          hit.c = (hit.c || 1) + 1; hit.at = row.at;
+          hit.u = hit.u || [];
+          if (row.e && hit.u.indexOf(row.e) < 0 && hit.u.length < 40) hit.u.push(row.e);
+        } else {
+          row.c = 1; row.u = row.e ? [row.e] : [];
+          rows.unshift(row);
+        }
+        rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+        if (rows.length > SYS_ERR_MAX) rows = rows.slice(0, SYS_ERR_MAX);
+        await sysPut(SYS_ERR_FILE, { updatedAt: new Date().toISOString(), rows: rows });
+      } catch (e2) {}
+    })();
+  } catch (e) {}
+}
+
+/* Баригдаагүй алдаа бүрийг барина */
+try {
+  window.addEventListener('error', function (ev) {
+    if (!ev) return;
+    /* Зураг/скрипт ачаалагдаагүй тохиолдол — өөр төрлөөр тэмдэглэнэ */
+    if (ev.target && ev.target !== window && (ev.target.src || ev.target.href)) {
+      sysErrLog('asset', 'Ачаалагдсангүй: ' + String(ev.target.src || ev.target.href).slice(0, 160), ev.target.tagName || '');
+      return;
+    }
+    sysErrLog('js', ev.message || '', (ev.filename || '') + ':' + (ev.lineno || ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    var st = '';
+    try { st = ((r && r.stack) || '').split('\n')[1] || ''; } catch (e) {}
+    sysErrLog('promise', (r && r.message) || String(r || ''), st.trim());
+  });
+} catch (e) {}
+
+/* ── 3. Админы самбар ──────────────────────────────────────────────── */
+function sysHealthMount(body) {
+  if (!body || !isAdmin() || body.querySelector('#sysHealthCard')) return;
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'sysHealthCard';
+  card.innerHTML = '<h3><i class="ti ti-activity-heartbeat" style="color:#0891B2;margin-right:6px"></i>Системийн эрүүл мэнд</h3>' +
+    '<p class="card-subtitle">Ажилтнууд ямар хувилбар дээр байна, ямар алдаа гарч байна — бодит байдлаар.</p>' +
+    '<div id="sysHealthBody" style="font-size:13px;color:#64748B;padding:8px 0">Ачаалж байна…</div>';
+  body.appendChild(card);
+  sysHealthDraw();
+}
+
+async function sysHealthDraw() {
+  var el = document.getElementById('sysHealthBody');
+  if (!el) return;
+  var latest = sysRunVer();
+  var cli = null, err = null;
+  try { cli = await riskR2GetJson(SYS_CLI_FILE, { fresh: true }); } catch (e) {}
+  try { err = await riskR2GetJson(SYS_ERR_FILE, { fresh: true }); } catch (e) {}
+  el = document.getElementById('sysHealthBody'); if (!el) return;
+
+  /* — Хувилбарын байдал — */
+  var rows = (cli && cli.rows) || {};
+  var vers = {}, stale = [], total = 0;
+  Object.keys(rows).forEach(function (em) {
+    var r = rows[em] || {};
+    var v = String(r.v || '?');
+    vers[v] = (vers[v] || 0) + 1; total++;
+    if (latest && v !== latest) stale.push({ em: em, n: r.n || em, v: v, at: r.at, dp: r.dp || '', os: r.os || '', br: r.br || '' });
+  });
+  var vlist = Object.keys(vers).sort(function (a, b) { return Number(b) - Number(a); });
+  var okN = vers[latest] || 0;
+  var pct = total ? Math.round(okN * 100 / total) : 0;
+
+  var h = '';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">';
+  h += '<div style="flex:1;min-width:120px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:12px 14px">' +
+    '<div style="font-size:11.5px;font-weight:700;color:#166534;letter-spacing:.04em">ШИНЭ ХУВИЛБАР ДЭЭР</div>' +
+    '<div style="font-size:26px;font-weight:800;color:#15803D;line-height:1.2">' + okN + ' <span style="font-size:14px;font-weight:700">/ ' + total + '</span></div>' +
+    '<div style="font-size:12px;color:#16A34A">v' + esc(latest) + ' · ' + pct + '%</div></div>';
+  h += '<div style="flex:1;min-width:120px;background:' + (stale.length ? '#FFFBEB' : '#F8FAFC') + ';border:1px solid ' + (stale.length ? '#FDE68A' : '#E2E8F0') + ';border-radius:12px;padding:12px 14px">' +
+    '<div style="font-size:11.5px;font-weight:700;color:' + (stale.length ? '#92400E' : '#64748B') + ';letter-spacing:.04em">ХУУЧИН ХУВИЛБАРТ</div>' +
+    '<div style="font-size:26px;font-weight:800;color:' + (stale.length ? '#B45309' : '#94A3B8') + ';line-height:1.2">' + stale.length + '</div>' +
+    '<div style="font-size:12px;color:' + (stale.length ? '#D97706' : '#94A3B8') + '">' + (stale.length ? 'дахин нээхэд засарна' : 'бүгд шинэ дээр ✓') + '</div></div>';
+  var eN = ((err && err.rows) || []).length;
+  h += '<div style="flex:1;min-width:120px;background:' + (eN ? '#FEF2F2' : '#F8FAFC') + ';border:1px solid ' + (eN ? '#FECACA' : '#E2E8F0') + ';border-radius:12px;padding:12px 14px">' +
+    '<div style="font-size:11.5px;font-weight:700;color:' + (eN ? '#991B1B' : '#64748B') + ';letter-spacing:.04em">БҮРТГЭГДСЭН АЛДАА</div>' +
+    '<div style="font-size:26px;font-weight:800;color:' + (eN ? '#B91C1C' : '#94A3B8') + ';line-height:1.2">' + eN + '</div>' +
+    '<div style="font-size:12px;color:' + (eN ? '#DC2626' : '#94A3B8') + '">' + (eN ? 'доор дэлгэрэнгүй' : 'алдаа алга ✓') + '</div></div>';
+  h += '</div>';
+
+  if (!total) {
+    h += '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:13px;font-size:12.5px;color:#64748B;line-height:1.6">' +
+      'Мэдээлэл хараахан цугараагүй байна. Ажилтнууд апп-даа нэвтрэх бүрд энд өөрөө нэмэгдэнэ ' +
+      '(хувилбар солигдоход, эсвэл 12 цагт нэг удаа).</div>';
+  } else {
+    h += '<div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:7px">Хувилбарын хуваарилалт</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px">';
+    vlist.forEach(function (v) {
+      var on = (v === latest);
+      h += '<span style="background:' + (on ? '#DCFCE7' : '#FEF3C7') + ';color:' + (on ? '#166534' : '#92400E') +
+        ';border-radius:8px;padding:5px 11px;font-size:12.5px;font-weight:700">v' + esc(v) + ' · ' + vers[v] + '</span>';
+    });
+    h += '</div>';
+  }
+
+  if (stale.length) {
+    stale.sort(function (a, b) { return String(a.n).localeCompare(String(b.n), 'mn'); });
+    h += '<details style="margin-bottom:14px"><summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:#B45309">' +
+      'Хуучин хувилбартай ' + stale.length + ' ажилтныг харах</summary>' +
+      '<div style="max-height:260px;overflow:auto;margin-top:9px;border:1px solid #FDE68A;border-radius:10px">';
+    stale.forEach(function (s) {
+      h += '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 11px;border-bottom:1px solid #FEF3C7;font-size:12.5px">' +
+        '<div style="min-width:0"><div style="font-weight:700;color:#0F1117;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(s.n) + '</div>' +
+        '<div style="color:#94A3B8;font-size:11.5px">' + esc(s.dp) + (s.dp ? ' · ' : '') + esc(s.os) + ' ' + esc(s.br) + '</div></div>' +
+        '<div style="text-align:right;flex-shrink:0"><div style="font-weight:800;color:#B45309">v' + esc(s.v) + '</div>' +
+        '<div style="color:#94A3B8;font-size:11.5px">' + esc(String(s.at || '').slice(0, 10)) + '</div></div></div>';
+    });
+    h += '</div></details>';
+    h += '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;padding:12px;font-size:12.5px;color:#92400E;line-height:1.65;margin-bottom:14px">' +
+      '<b>Санаа зовох хэрэггүй.</b> Апп нь 2 минут тутам өөрөө шалгаж шинэчилдэг. Энэ жагсаалт нь ' +
+      '<b>сүүлд нэвтэрсэн үеийн</b> байдал — тэр хүн дараа нь орохоороо шинэ хувилбар дээр очно. ' +
+      'Хэрэв нэг хүн олон өдөр хуучин дээр үлдэж байвал л асуудал.</div>';
+  }
+
+  var erows = (err && err.rows) || [];
+  if (erows.length) {
+    h += '<div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:7px">Сүүлийн алдаанууд</div>' +
+      '<div style="max-height:300px;overflow:auto;border:1px solid #FECACA;border-radius:10px">';
+    erows.slice(0, 40).forEach(function (r) {
+      h += '<div style="padding:9px 11px;border-bottom:1px solid #FEE2E2">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">' +
+        '<span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#991B1B;word-break:break-word">' + esc(r.m || '') + '</span>' +
+        '<span style="flex-shrink:0;background:#FEE2E2;color:#991B1B;border-radius:7px;padding:2px 7px;font-size:11px;font-weight:800">×' + (r.c || 1) + '</span></div>' +
+        '<div style="color:#94A3B8;font-size:11.5px;margin-top:3px;word-break:break-all">' +
+        esc(String(r.w || '')) + (r.w ? ' · ' : '') + 'v' + esc(r.v || '?') + ' · ' + esc(r.os || '') + ' ' + esc(r.br || '') +
+        ' · ' + ((r.u || []).length || 1) + ' хүн · ' + esc(String(r.at || '').slice(0, 16).replace('T', ' ')) + '</div></div>';
+    });
+    h += '</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:11px">' +
+      '<button class="btn btn-secondary" id="sysHClear" style="font-size:13px">Алдааны бүртгэл цэвэрлэх</button>' +
+      '<button class="btn btn-secondary" id="sysHRef" style="font-size:13px">Шинэчлэх</button></div>';
+  } else {
+    h += '<div style="display:flex;gap:8px"><button class="btn btn-secondary" id="sysHRef" style="font-size:13px">Шинэчлэх</button></div>';
+  }
+
+  el.innerHTML = h;
+  var rf = document.getElementById('sysHRef');
+  if (rf) rf.addEventListener('click', function () {
+    el.innerHTML = '<div style="padding:8px 0;color:#64748B">Ачаалж байна…</div>';
+    sysHealthDraw();
+  });
+  var cl = document.getElementById('sysHClear');
+  if (cl) cl.addEventListener('click', async function () {
+    if (!confirm('Бүртгэгдсэн алдааг цэвэрлэх үү? (Шинэ алдаа дахин бүртгэгдсээр байна)')) return;
+    cl.disabled = true; cl.textContent = 'Цэвэрлэж байна…';
+    try {
+      await sysPut(SYS_ERR_FILE, { updatedAt: new Date().toISOString(), rows: [] });
+      try { toast('✅ Алдааны бүртгэл цэвэрлэгдлээ'); } catch (e) {}
+    } catch (e) {}
+    sysHealthDraw();
+  });
+}
+
 /* Файлын албаны нэрийг СИСТЕМИЙН албаны нэр рүү хөрвүүлнэ.
    Ингэснээр цаашид яг таг тэнцүүгээр шүүх боломжтой болно. */
 var _cdCache = {}, _cdSig = null, _cdN = 0;
@@ -2736,6 +3041,7 @@ function switchPage(pageId) {
     switchPage._prev = pageId;
   } catch (e) {}
   try { rememberPage(pageId); } catch (e) {}   // refresh хийхэд энэ хуудсандаа үлдэнэ
+  try { examGrantFetch(); } catch (e) {}   // шалгалтын эрхийг бэлэн байлгана
   $$('.nav-item').forEach(function (it) {
     it.classList.toggle('active', it.getAttribute('data-page') === pageId);
   });
@@ -2889,7 +3195,6 @@ function renderMyExams() {
       '&email=' + email + '&name=' + name + (me ? '&eid=' + encodeURIComponent(me.id) : '') +
       (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
       (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
-    if (EXAM_VT) url += '&vt=' + encodeURIComponent(EXAM_VT) + '&vexp=' + encodeURIComponent(EXAM_VEXP);
     url = examBust(url);
     return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
@@ -3582,7 +3887,12 @@ function renderCourse(cat, skipRefresh) {
     if (meRec) myResults = (meRec.habeaExams || []).filter(function (x) { return x.title === cat || x.key === key; });
   }
   var examOpen = DB.settings && DB.settings.examOpen ? DB.settings.examOpen[key] !== false : true;
-  var examUrl = examBust('/shalgalt/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
+  /* ⚠ '/shalgalt/habea-exam.html' нь ХУУЧИН ХУУЛБАР байсан (2026-08-18-нд
+     зогссон). Тэр замаар орсон ажилтан сүүлийн засваруудыг (хариултаа
+     алдахгүй болсон, код шууд гарч ирдэг болсон) АВДАГГҮЙ байв — «зарим
+     ажилтанд шинэчлэлт ороогүй» гэдгийн бас нэг шалтгаан нь энэ.
+     Одооноос БҮГД ганц хуудас руу орно. */
+  var examUrl = examBust('/habea-exam.html?exam=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cat) +
     '&email=' + encodeURIComponent(s.email || '') + '&name=' + encodeURIComponent(USER.name || ''));
   var videoHtml = '';
   if (c.video) {
@@ -17435,6 +17745,8 @@ function renderSettings() {
         if (charts.radar) renderCharts();
       });
     }
+    /* Системийн эрүүл мэнд — хамгийн доор */
+    try { sysHealthMount(body); } catch (e) {}
   }, 0);
 }
 function updateConfigSums() {
@@ -25809,7 +26121,15 @@ var NAV_AWAY_PAGES = { daatgal: 1 };
    (Хуучин хувилбар үлдэж, зассан алдаа дахин гарахаас сэргийлнэ.) */
 function examBust(u) {
   var v = Math.floor(Date.now() / 600000);   // 10 минут тутам шинэчилнэ
-  return u + (u.indexOf('?') >= 0 ? '&' : '?') + '_v=' + v;
+  u = u + (u.indexOf('?') >= 0 ? '&' : '?') + '_v=' + v;
+  /* ⚠ Нэг удаагийн кодыг шалгалтын хуудас ӨӨРӨӨ авах богино эрх.
+     Шалгалт руу гурван өөр газраас ордог (Миний шалгалт, дотоод сургалтын
+     модул, сургалтын ангилал) — бүгд эндүүр дамждаг тул ЭНД наавал
+     аль ч замаар орсон ажилтанд адилхан ажиллана. */
+  if (EXAM_VT && u.indexOf('&vt=') < 0) {
+    u += '&vt=' + encodeURIComponent(EXAM_VT) + '&vexp=' + encodeURIComponent(EXAM_VEXP);
+  }
+  return u;
 }
 
 function rememberPage(pageId) {
@@ -25883,6 +26203,10 @@ async function init() {
   var loginEl = document.getElementById('loginScreen'); if (loginEl) loginEl.style.display = 'none';
   /* ⚠ Анх удаа нэвтэрсэн бол нууц үгээ солих хүртэл цааш явуулахгүй */
   try { setTimeout(mustChangePwShow, 900); } catch (e) {}
+  /* Хувилбар/төхөөрөмжөө чимээгүй тэмдэглэнэ — админд «хэн шинэчлэлт
+     аваагүй байна» гэдэг ХАРАГДДАГ болно. Дата ачаалагдсаны дараа.
+     ⚠ Хэрэглэгчийг хүлээлгэхгүй: огт хүлээлгүй ард нь явна. */
+  try { setTimeout(function () { sysReport(); }, 15000); } catch (e) {}
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
   // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
   // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд

@@ -47,12 +47,31 @@
                 history.replaceState(null, '', u.pathname + (u.search === '?' ? '' : u.search) + u.hash);
               }
               sessionStorage.removeItem('mhVerTry');
+              sessionStorage.removeItem('mhVerNuke');
             } catch (e) {}
             return;
           }
           var tried = '';
           try { tried = sessionStorage.getItem('mhVerTry') || ''; } catch (e) {}
-          if (tried === latest) { banner(latest); return; }   /* нэг л удаа оролдоно */
+          if (tried === latest) {
+            /* ⚠ Нэг удаа цэвэрлээд ч засарсангүй — хамгийн сүүлийн арга:
+               service worker-ийг БҮРЭН устгана. Эвдэрсэн эсвэл гацсан SW
+               хуучин файлыг зөрүүдлэн өгсөөр байх тохиолдол бий.
+               Устгасны дараа хуудас өөрөө дахин бүртгүүлнэ. */
+            var nuked = false;
+            try { nuked = sessionStorage.getItem('mhVerNuke') === latest; } catch (e) {}
+            if (!nuked && navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              try { sessionStorage.setItem('mhVerNuke', latest); } catch (e) {}
+              navigator.serviceWorker.getRegistrations().then(function (rs) {
+                return Promise.all(rs.map(function (r) { return r.unregister().catch(function () {}); }));
+              }).catch(function () {}).then(function () {
+                try { sessionStorage.removeItem('mhVerTry'); } catch (e) {}
+                location.reload();
+              });
+              return;
+            }
+            banner(latest); return;
+          }
           try { sessionStorage.setItem('mhVerTry', latest); } catch (e) {}
 
           /* Кэш + service worker-ийг цэвэрлээд дахин ачаална */
@@ -113,7 +132,10 @@
   // ── 1. Service worker ──
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('/sw.js').catch(function () {});
+      /* ⚠ updateViaCache:'none' — эс бөгөөс хөтөч sw.js-ийг өөрөө кэшлээд
+         шинэ service worker хэзээ ч ирэхгүй байх эрсдэлтэй. */
+      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+        .catch(function () {});
     });
   }
 
