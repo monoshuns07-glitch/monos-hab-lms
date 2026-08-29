@@ -4537,8 +4537,12 @@ function renderEmployeeDashboard() {
       '<div style="font-size:12.5px;color:#64748B;margin-top:9px">Өмнөх <b>' + e.examPrev + '%</b> → дараах <b>' + e.examScore + '%</b>' +
       (improved > 0 ? ' — мэдлэг ахисан 👏' : '') + '</div></div>' : '') +
 
-    /* ⑦ Шалгалтын дүн */
-    habeaExamsHTML(e) +
+    /* ⑦ Шалгалтын дүн
+       ⚠ habeaExamsHTML(e) нь e.habeaExams буюу ХУВААЛЦСАН КЭШЭЭС уншдаг.
+         Тэр кэш нь найдваргүй SDK замаар л дүүрдэг тул ажилтны дүн энд
+         ОГТ ХАРАГДАХГҮЙ байв («Миний гүйцэтгэл» цэс). Одоо доорх байрыг
+         ажилтны ӨӨРИЙНХ нь бичлэгээр (REST) шууд дүүргэнэ. */
+    '<div id="dashExamLive">' + habeaExamsHTML(e) + '</div>' +
 
     '</div></div>';   /* ← баруун багана + emp-cols дуусав */
 
@@ -4551,6 +4555,32 @@ function renderEmployeeDashboard() {
     });
   }
   try { pushWireOnce(); pushSyncState(); } catch (er) {}
+  try { dashLiveScore(); } catch (er) {}
+}
+
+/* «Миний гүйцэтгэл» дэх шалгалтын дүнг ШУУД эх сурвалжаас нөхнө.
+   ⚠ Кэшнээс хамаарахгүй тул саяхан шалгалт өгсөн ажилтанд ч харагдана. */
+async function dashLiveScore() {
+  var slot = document.getElementById('dashExamLive');
+  if (!slot) return;
+  var em = String((SESSION && SESSION.email) || '').toLowerCase();
+  if (!em) return;
+  /* Хоосон бол «ачаалж байна» гэж мэдэгдэнэ — чимээгүй хоосон үлдэхгүй */
+  if (!slot.innerHTML.trim()) {
+    slot.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:18px;' +
+      'font-size:12.5px;color:#94A3B8">Шалгалтын дүнг ачаалж байна…</div>';
+  }
+  var list = null;
+  try { list = await modExamLoad(em); } catch (e) { list = null; }
+  slot = document.getElementById('dashExamLive');
+  if (!slot) return;
+  if (list === null) {
+    slot.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:18px;' +
+      'font-size:12.5px;color:#94A3B8">Шалгалтын дүнг ачаалж чадсангүй.</div>';
+    return;
+  }
+  if (!list.length) { slot.innerHTML = ''; return; }   /* үнэхээр өгөөгүй бол чимээгүй */
+  slot.innerHTML = modExamHTML(list);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
