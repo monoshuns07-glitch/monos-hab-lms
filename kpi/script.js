@@ -16593,12 +16593,14 @@ function rfSeeAll() {
 /* Гүйцэтгэх захирал / чиглэл хариуцсан захирал мөн эсэх.
    ⚠ Тэд ХҮЛЭЭЖ АВАХГҮЙ — зөвхөн ХАРНА + шаардана (wkMyGate нь '' тул
      «Хүлээж авах» товч өөрөө гарахгүй). */
+var IS_DIRECTOR = false;      /* establishSession-д тавигдана */
 function wkIsDirector() {
   try {
+    if (IS_DIRECTOR) return true;              /* хамгийн найдвартай эх сурвалж */
     var pos = '';
     try { var me = myEmp(); if (me) pos = String(me.pos || me.role || ''); } catch (e) {}
     if (!pos && SESSION) pos = String(SESSION.pos || '');
-    return /захирал/i.test(pos) && !/орлогч\s*дарга/i.test(pos);
+    return /захирал/i.test(pos);
   } catch (e) { return false; }
 }
 function rfNeedAllRows() {
@@ -27333,6 +27335,10 @@ function establishSession() {
            ӨМНӨ (Firestore хүсэлт угсрах үед) захирал мөн эсэхийг мэдэх
            шаардлагатай — эс бөгөөс захиралд ажлын захиалга татагдахгүй. */
         var pos = data.position || data.pos || '';
+        /* ⚠ Тодорхой ТУГ. myEmp()/SESSION.pos-оос тааж унших нь ачаалалтын
+           дараалалаас хамаарч найдваргүй байсан (захиралд ажлын захиалга
+           огт татагдахгүй байв). Энд шууд тавьснаар эргэлзээ үлдэхгүй. */
+        try { IS_DIRECTOR = /захирал/i.test(pos); } catch (e2) {}
         // Админ олгосон user_roles/{email} override шалгана (зөвхөн depthead/employee, admin ОЛГОХГҮЙ)
         if (email) {
           // localStorage-с depthead override шалгана (admin эрх localStorage-аар огт олгогдохгүй)
