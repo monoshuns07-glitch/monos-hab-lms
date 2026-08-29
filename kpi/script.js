@@ -86,7 +86,7 @@ function rand4() { return String(Math.floor(1000 + Math.random() * 9000)); }
 
 var pageLabels = {
   dashboard: 'Хяналтын самбар', employees: 'Ажилтнууд', kpi: 'KPI үнэлгээ',
-  reportflow: 'Work order', hazards: 'Эрсдэлийн үнэлгээ', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
+  reportflow: 'Аюул мэдээлэх · Ажлын захиалга', hazards: 'Эрсдэлийн үнэлгээ', incidents: 'Осол, гэмтэл', inspections: 'Шалгалт',
   suggestions: 'Сайжруулалтын санал', training: 'Сургалт', health: 'Эрүүл мэндийн үзлэг',
   ppe: 'ХХХ хяналт', teams: 'Teams интеграц',
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
@@ -14214,7 +14214,7 @@ function rfExportXlsx(all) {
       /* 2. Бүх мэдээлэл */
       var rows = [['Огноо', 'Дугаар', 'Төрөл', 'Яаралтай зэрэг', 'Хугацаа (цаг)', 'Дуусах хугацаа',
         'Хариуцах алба', 'Байршил', 'Алба', 'Мэдээлсэн', 'Албан тушаал', 'Тайлбар',
-        'Төлөв', 'Work order төлөв', 'Хүлээж авсан', 'Гүйцэтгэсэн огноо', 'Батлагдсан', 'Зураг']];
+        'Төлөв', 'Ажлын захиалгын төлөв', 'Хүлээж авсан', 'Гүйцэтгэсэн огноо', 'Батлагдсан', 'Зураг']];
       d.rows.slice().sort(function (a, b) {
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       }).forEach(function (r) {
@@ -15113,7 +15113,7 @@ function wkNewModal() {
     }
   });
 
-  buildModal('Work order — шинэ мэдээлэл', node, { width: 'min(680px, 96vw)' });
+  buildModal('Аюул мэдээлэх · Ажлын захиалга', node, { width: 'min(680px, 96vw)' });
   /* Тохиргоо ирээгүй бол татаад дахин зурна */
   if (!WK_LOC_OK || !WK_URG_OK) {
     Promise.all([wkLocLoad(), wkUrgLoad()]).then(draw).catch(function () { draw(); });
@@ -15695,7 +15695,7 @@ function wkListHTML(all) {
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
-    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Work order</div>' +
+    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Аюул мэдээлэх · Ажлын захиалга</div>' +
     '<div style="font-size:12px;color:#94A3B8">Мэдээл → хүлээн ав → гүйцэтгэ → батал</div></div>' +
     '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
     '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button>' +
@@ -15730,7 +15730,7 @@ function wkListHTML(all) {
 function wkAdminModal() {
   if (!isAdmin() && !isDeptHead()) { toast('Зөвхөн админ тохируулна', 'error'); return; }
   var node = elc('div', 'modal-info', '<div style="padding:20px;color:#94A3B8">Ачаалж байна…</div>');
-  buildModal('Work order — тохиргоо', node, { width: 'min(760px, 96vw)' });
+  buildModal('Ажлын захиалга — тохиргоо', node, { width: 'min(760px, 96vw)' });
 
   Promise.all([wkLocLoad(true), wkUrgLoad(true), wkHazLoad(true)]).then(function () {
     var groups = JSON.parse(JSON.stringify(wkLocGroups()));
@@ -16566,7 +16566,7 @@ function openReportDetail(id) {
       '<i class="ti ti-file-spreadsheet"></i> Excel татах</button>' +
       (r.wkKind === 'job'
         ? '<button class="btn btn-secondary" data-wk-xl="' + esc(r.id) + '" ' +
-          'title="Инженерийн албан ёсны Work order маягт">' +
+          'title="Инженерийн албан ёсны ажлын захиалгын маягт">' +
           '<i class="ti ti-file-text"></i> Албан ёсны маягт</button>' : '') +
       '</div>';
   }
@@ -16924,7 +16924,7 @@ function woNewModal(fromReport) {
       return;
     }
   });
-  buildModal('Шинэ ажлын захиалга — Work order', node, { width: 'min(720px, 96vw)' });
+  buildModal('Шинэ ажлын захиалга', node, { width: 'min(720px, 96vw)' });
   paintKind(); paintUnit();
 }
 
@@ -17252,7 +17252,7 @@ function woListHTML(onlyMine) {
   return '<div class="card" style="padding:17px 19px;margin-bottom:13px">' +
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
     '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Ажлын захиалга</div>' +
-    '<div style="font-size:12.5px;color:#64748B">Work order — засварын хүсэлт, гүйцэтгэл, хүлээлгэн өгөлт</div></div>' +
+    '<div style="font-size:12.5px;color:#64748B">Засварын хүсэлт, гүйцэтгэл, хүлээлгэн өгөлт</div></div>' +
     /* ⚠ ГОЛ зам нь аюулын мэдээллээс эхэлдэг тул энэ товч ХОЁРДОГЧ.
        Төлөвлөгөөт засвар (PM), аюултай холбоогүй ажилд л хэрэглэнэ. */
     '<button class="btn btn-secondary btn-sm" data-wo-new="1" style="margin-left:auto"' +
@@ -17401,7 +17401,7 @@ function woDetailModal(id) {
 
   var node = elc('div', 'modal-info', body);
   woWireNode(node);
-  buildModal('Ажлын захиалга — Work order', node, { width: 'min(860px, 96vw)' });
+  buildModal('Ажлын захиалга', node, { width: 'min(860px, 96vw)' });
 }
 
 /* ══ EXCEL — цаасан маягтын байрлалаар ══
@@ -17533,7 +17533,7 @@ function woOneExcelPlain(wo) {
   };
   var perf = woEmpByUid(wo.perfUid);
   var A = [
-    ['Monos', '', '', '', '', 'Work order', '', '', '', '', '', '', '', 'WO number:', wo.id],
+    ['Monos', '', '', '', '', 'Ажлын захиалга', '', '', '', '', '', '', '', 'Дугаар:', wo.id],
     ['', '', '', '', '', 'Ажлын захиалгын хуудас', '', '', '', '', '', '', '',
      'Төрөл / Type:', k.en + ' · ' + k.mn],
     ['', '', '', '', '', '', '', '', '', '', '', '', '',
@@ -17581,7 +17581,7 @@ function woOneExcelPlain(wo) {
                  { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
                  { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 22 }, { wch: 20 }];
   var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Work order');
+  XLSX.utils.book_append_sheet(wb, ws, 'Ажлын захиалга');
   XLSX.writeFile(wb, wo.id + '.xlsx');
   toast('Excel татагдлаа', 'success');
 }
@@ -17661,7 +17661,7 @@ function renderReportflow() {
   if (!admin) { var me = currentReporter(); var meEmp = (DB.employees || []).filter(function (e) { return (me.uid && e.uid === me.uid) || (me.id && e.id === me.id); })[0]; if (meEmp) myBonus = empBonusPoints(meEmp); }
 
   var woMineN = 0; try { woMineN = woMine().length; } catch (e) {}
-  var html = '<div class="page-header"><div><h1>Work order</h1>' +
+  var html = '<div class="page-header"><div><h1>Аюул мэдээлэх · Ажлын захиалга</h1>' +
     '<p class="page-subtitle">Осол, аюул, ажлын захиалга — бүгд эндээс</p></div>' +
     /* ⚠ Толгойн «Аюул мэдээлэх» товчийг АВСАН — улаан хөвөгч товч бүх
        хуудсанд байдаг тул энэ хуудсанд яг ижил товч ХОЁР удаа гарч байв. */
@@ -17706,7 +17706,7 @@ function rfTabsHTML(woN) {
      мэдээлэл хоёр газар харагдаж эргэлзээ төрүүлдэг байв. Хуучин бичлэгүүд
      Work order-ийн жагсаалтад нэгдэж орно. */
   t = t.concat([
-    { k: 'wk', ic: 'ti-clipboard-plus', l: 'Work order', n: wkN || null,
+    { k: 'wk', ic: 'ti-clipboard-plus', l: 'Аюул / Ажлын захиалга', n: wkN || null,
       tone: wkN ? '#DC2626' : '' }
   ]);
   /* Ганц таб байвал огт харуулахгүй — хуудасны толгой аль хэдийн «Work order»
@@ -26067,7 +26067,7 @@ function tourSteps() {
       'Урьдчилсан болон дараах шалгалтаа энд өгнө. Сүүлийн дүн тооцогдоно.');
     add('.nav-item[data-page="tasks"]', 'Даалгавар',
       'ХАБЭА ажилтнаас өгсөн даалгавар. Биелүүлээд тэмдэглэнэ.');
-    add('#hazardFab', 'Work order',
+    add('#hazardFab', 'Аюул мэдээлэх · Ажлын захиалга',
       'Аюултай зүйл харвал энд дарж мэдээлнэ. Батлагдсан бүрт БОНУС оноо нэмэгдэнэ — хэзээ ч хасагдахгүй.');
     add('.nav-item[data-page="hazards"]', 'Эрсдэлийн үнэлгээ',
       'Таны албаны эрсдэлийн үнэлгээний дашбоард.');
@@ -26086,7 +26086,7 @@ function tourSteps() {
       'Бүх ажилтны KPI оноо, сургалт/шалгалтын биелэлт.');
     add('.nav-item[data-page="kpi"]', 'KPI үнэлгээ',
       'Оноо хэрхэн тооцогдож байгаа арга зүй, албадын харьцуулалт.');
-    add('.nav-item[data-page="reportflow"]', 'Аюул/Near-miss',
+    add('.nav-item[data-page="reportflow"]', 'Аюул мэдээлэх · Ажлын захиалга',
       'Ажилтнуудын мэдээлсэн аюул. Баталгаажуулсны дараа бонус тооцогдоно.');
     add('.nav-item[data-page="violations"]', 'Осол/зөрчлийн бүртгэл',
       'Зөрчил бүртгэвэл тухайн ажилтны босго оноо хасагдана.');
@@ -26276,7 +26276,7 @@ function hintCandidates() {
       var pend = (DB.reports || []).filter(function (r) { return r.status !== 'verified' && r.status !== 'rejected'; }).length;
       if (pend) list.push({ sel: '.nav-item[data-page="reportflow"]', txt: pend + ' мэдээлэл хүлээгдэж байна' });
     } catch (err) {}
-    list.push({ sel: '#hazardFab', txt: 'Work order' });
+    list.push({ sel: '#hazardFab', txt: 'Аюул мэдээлэх · Ажлын захиалга' });
   }
   return list;
 }
@@ -26375,7 +26375,7 @@ function openHelp() {
       helpRow('ti-player-play', '#C2410C', 'Видео сургалт (MiSkill)', 'Оногдсон хичээлүүд. Үзэж дуусгаснаар оноо нэмэгдэнэ.') +
       helpRow('ti-pencil-check', '#0891B2', 'ХАБЭА шалгалт', 'Урьдчилсан/дараах шалгалт. Хэд дахин өгөхийг админ тохируулна.') +
       helpRow('ti-checkbox', '#16A34A', 'Даалгавар', 'Танд оногдсон ажил. Биелүүлээд тэмдэглэнэ.') +
-      helpRow('ti-flag-2', '#E11D48', 'Аюул мэдээлэх', 'Улаан хөвөгч товч — бүх хуудсанд байна. Бонус авах хамгийн хялбар зам.') +
+      helpRow('ti-flag-2', '#E11D48', 'Аюул мэдээлэх · Ажлын захиалга', 'Улаан хөвөгч товч — бүх хуудсанд байна. Аюул мэдээлэх ба ажлын захиалга өгөх хоёулаа энд. Бонус авах хамгийн хялбар зам.') +
       helpRow('ti-chart-pie-2', '#7C3AED', 'Эрсдэлийн үнэлгээ', 'Таны албаны эрсдэлийн дашбоард.') +
       helpRow('ti-shield-heart', '#0EA5E9', 'Даатгал', 'Нөхөн төлбөрийн гарын авлага.') +
       '<h4>Оноо хэрхэн бүрддэг вэ</h4>' +
@@ -27101,9 +27101,10 @@ function applyRole() {
     // "Хяналтын самбар" → "Миний гүйцэтгэл"
     var dashNav = document.querySelector('.nav-item[data-page="dashboard"] span');
     if (dashNav) dashNav.textContent = 'Миний гүйцэтгэл';
-    // "Аюул/Near-miss мэдээлэл" → "Аюул мэдээллэх"
-    var rfNav = document.querySelector('.nav-item[data-page="reportflow"] span');
-    if (rfNav) rfNav.textContent = 'Аюул мэдээллэх';
+    /* ⚠ Энд ажилтанд ӨӨР нэр өгдөг байсныг АВСАН. Цэс нь «Аюул мэдээлэх»
+       гэж л харагддаг байсан тул ажлын захиалга өгөх боломжтой гэдэг нь
+       мэдэгдэхгүй байв. Одоо бүх хүнд, бүх газарт ИЖИЛ нэртэй:
+       «Аюул мэдээлэх · Ажлын захиалга» (хэрэглэгчийн хүсэлт, 2026-08-29). */
     // chatbot хуудсыг нуух
     var cbNav = document.querySelector('.nav-item[data-page="chatbot"]');
     if (cbNav) cbNav.style.display = 'none';
@@ -27285,8 +27286,8 @@ function injectHazardFab() {
   var b = document.createElement('button');
   b.id = 'hazardFab';
   b.type = 'button';
-  b.title = 'Work order — осолд дөхсөн, аюул, ажлын захиалга';
-  b.innerHTML = '<i class="ti ti-clipboard-plus"></i><span>Work order</span>';
+  b.title = 'Аюул мэдээлэх · Ажлын захиалга — Аюул, осолд дөхсөн тохиолдлыг мэдээлэх БОЛОН засвар/ажлын захиалга өгөх — хоёулаа энд.';
+  b.innerHTML = '<i class="ti ti-clipboard-plus"></i><span>Аюул мэдээлэх · Ажлын захиалга</span>';
   b.addEventListener('click', function () {
     /* ⭐ Ажилтан ЯМАР Ч хуудаснаас нэг товчоор эхэлнэ */
     try { wkNewModal(); }

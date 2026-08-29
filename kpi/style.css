@@ -2244,8 +2244,8 @@ body.modal-open #hazardFab { display: none; }
   #hazardFab { right: 14px; bottom: 14px; padding: 13px 17px; font-size: 13px; }
   #hazardFab i { font-size: 18px; }
 }
-/* Маш жижиг дэлгэц — зөвхөн дүрс (дугуй) */
-@media (max-width: 420px) {
+/* Жижиг дэлгэц (нэр урт тул 560px хүртэл) — зөвхөн дүрс (дугуй) */
+@media (max-width: 560px) {
   #hazardFab { padding: 0; width: 56px; height: 56px; justify-content: center; }
   #hazardFab span { display: none; }
   #hazardFab i { font-size: 24px; }
