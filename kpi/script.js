@@ -3160,11 +3160,16 @@ function switchPage(pageId) {
 
 /* ============ Sidebar badge-ууд ============ */
 /* ============ ХАБЭА Шалгалт — ажилтны шалгалт сонголтын хуудас ============ */
+/* ⚠ Эдгээрийн url нь одоо ҮНДСЭН шалгалтын хуудсыг заана.
+   Өмнө нь habea-eeljit.html гэх мэт ТУСДАА хуулбарууд байсан бөгөөд
+   2026-08-17-нд зогсчихсон — сүүлийн засварууд (хариултаа алдахгүй,
+   код шууд гарах) тэдэнд ОГТ ороогүй. Кодоос дуудагдахгүй байсан ч
+   хаягаараа нээгдсээр байсан тул чиглүүлэлт тавьж, файлыг устгав. */
 var EXAM_PAGES = [
-  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',       url: '/habea-urdchilsan.html', icon: 'ti-clipboard-list', color: '#4F46E5', bg: '#EEF2FF' },
+  { key: 'urdchilsan',       label: 'Урьдчилсан зааварчилгааны шалгалт',       url: '/habea-exam.html?exam=urdchilsan', icon: 'ti-clipboard-list', color: '#4F46E5', bg: '#EEF2FF' },
   { key: 'ankhan',           label: 'Анхан шатны зааварчилгааны шалгалт',      url: '/habea-ankhan.html',     icon: 'ti-school',         color: '#059669', bg: '#D1FAE5' },
   { key: 'davtan_eeljit',    label: 'Ээлжит давтан зааварчилгааны шалгалт',    url: '/habea-eeljit.html',     icon: 'ti-refresh',        color: '#0891B2', bg: '#E0F2FE' },
-  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт',url: '/habea-eeljit-bus.html', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
+  { key: 'davtan_eeljit_bus',label: 'Ээлжит бус давтан зааварчилгааны шалгалт',url: '/habea-exam.html?exam=davtan_eeljit_bus', icon: 'ti-bolt',           color: '#7C3AED', bg: '#F5F3FF' }
 ];
 /* ⚠ Шалгалтын хуудсанд кодыг ӨӨРТ НЬ авах богино эрх (15 мин).
    Өмнө нь аппын ТАБААР дамжуулдаг байсан нь утсан дээр найдваргүй:

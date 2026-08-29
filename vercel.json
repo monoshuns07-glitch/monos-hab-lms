@@ -107,6 +107,36 @@
       "source": "/shalgalt/habea-admin.html",
       "destination": "/habea-admin.html",
       "permanent": false
+    },
+    {
+      "source": "/habea-urdchilsan.html",
+      "destination": "/habea-exam.html?exam=urdchilsan",
+      "permanent": false
+    },
+    {
+      "source": "/habea-ankhan.html",
+      "destination": "/habea-exam.html?exam=ankhan",
+      "permanent": false
+    },
+    {
+      "source": "/habea-eeljit.html",
+      "destination": "/habea-exam.html?exam=davtan_eeljit",
+      "permanent": false
+    },
+    {
+      "source": "/habea-eeljit-bus.html",
+      "destination": "/habea-exam.html?exam=davtan_eeljit_bus",
+      "permanent": false
+    },
+    {
+      "source": "/my-results.html",
+      "destination": "/kpi/",
+      "permanent": false
+    },
+    {
+      "source": "/test.html",
+      "destination": "/kpi/",
+      "permanent": false
     }
   ]
 }
