@@ -16000,15 +16000,35 @@ function wkListHTML(all) {
   var toAccept = mineRep.filter(function (r) { return wkStatus(r) === 'executed'; });
   var done = rows.filter(function (r) { return wkStatus(r) === 'closed'; });
 
+  /* ⚠ ЗАХИРАЛ, АДМИН — «Бүх ажил» таб.
+     Өмнө нь тэдэнд «Ирсэн» таб байдаггүй (myGate === '') тул хувийн
+     «Миний мэдээлсэн» таб дээр буудаг байсан. Дата нь татагдсан хэрнээ
+     0 мөр харагдаж, «захиралд ажлын захиалга харагдахгүй» гэсэн дүр
+     зураг үүсдэг байв (2026-08-29-нд бодитоор илэрсэн). */
+  var seeAll = isAdmin() || wkIsDirector();
+  var allOpen = rows.filter(function (r) { return wkStatus(r) !== 'closed'; });
+  /* Хамгийн шаардлагатайг нь дээр нь: хугацаа хэтэрсэн → аваагүй → зэрэг */
+  allOpen.sort(function (a, b) {
+    var la = (wkTime(a) || {}).late ? 1 : 0, lb = (wkTime(b) || {}).late ? 1 : 0;
+    if (la !== lb) return lb - la;
+    var na = wkStatus(a) === 'new' ? 1 : 0, nb = wkStatus(b) === 'new' ? 1 : 0;
+    if (na !== nb) return nb - na;
+    return wkUrg(b) - wkUrg(a);
+  });
+  var lateN = allOpen.filter(function (r) { return (wkTime(r) || {}).late; }).length;
+
   var tabs = [];
+  if (seeAll) tabs.push({ k: 'all', l: 'Бүх ажил', n: allOpen.length,
+    tone: lateN ? '#C81E3A' : (allOpen.length ? '#4F46E5' : '') });
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
   if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
   tabs.push({ k: 'rep', l: 'Миний мэдээлсэн', n: toAccept.length, tone: toAccept.length ? '#4F46E5' : '' });
   tabs.push({ k: 'done', l: 'Дууссан', n: done.length });
-  if (!myGate && WK_TAB === 'in') WK_TAB = 'rep';
-  if (!myGate && WK_TAB === 'my') WK_TAB = 'rep';
+  /* Байхгүй таб дээр гацахгүй — эхний боломжит руу шилжинэ */
+  var okTabs = tabs.map(function (t) { return t.k; });
+  if (okTabs.indexOf(WK_TAB) < 0) WK_TAB = okTabs[0] || 'rep';
 
-  var list = WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
+  var list = WK_TAB === 'all' ? allOpen : WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
     : WK_TAB === 'done' ? done : mineRep;
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
@@ -16035,7 +16055,8 @@ function wkListHTML(all) {
     return H + '<div class="card" style="padding:30px;text-align:center">' +
       '<div style="font-size:28px">📋</div>' +
       '<div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:6px">' +
-      (WK_TAB === 'in' ? 'Танай албанд шинэ зүйл алга'
+      (WK_TAB === 'all' ? 'Нээлттэй ажил алга — бүгд дууссан байна'
+        : WK_TAB === 'in' ? 'Танай албанд шинэ зүйл алга'
         : WK_TAB === 'my' ? 'Та ажил хүлээж аваагүй байна'
           : WK_TAB === 'done' ? 'Дууссан зүйл алга' : 'Та мэдээлэл илгээгээгүй байна') + '</div>' +
       (WK_TAB === 'rep' ? '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px">' +
