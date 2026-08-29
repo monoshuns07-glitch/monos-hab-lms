@@ -345,7 +345,13 @@ function seedDB() {
   };
 }
 
-/* ===== ХАБЭА шалгалтын систем (habea-shalgalt project) — cross-project унших ===== */
+/* ===== ХАБЭА шалгалтын систем (habea-shalgalt project) =====
+   ⚠⚠ getHabeaDb()-Г ШИНЭЭР БҮҮ ХЭРЭГЛЭ. Өөр Firebase төслийг хоёрдогч
+   compat апп-аар унших нь найдваргүй: сүлжээ бэлэн болоогүй үед алдаа
+   шидэхийн оронд КЭШЭЭС ХООСОН хариу буцаадаг тул бодит дата «байхгүй»
+   мэт харагдана. 2026-08-29-нд бүх уншилтыг REST рүү шилжүүлсэн
+   (readHabeaExamsByEmail, modExamLoad, ackVerifyOtp, админы самбар).
+   Энэ функц зөвхөн нийцлийн төлөө үлдсэн. ===== */
 var _habeaDb = null;
 function getHabeaDb() {
   if (_habeaDb !== null) return _habeaDb;
@@ -370,32 +376,89 @@ function getHabeaDb() {
   }
   return _habeaDb;
 }
-/* ХАБЭА шалгалтын дүнг имэйлээр индекслэнэ: { email: {pre, post, anyPassed} } */
-async function readHabeaExamsByEmail() {
-  var map = {};
-  try {
-    var hdb = getHabeaDb(); if (!hdb) return null;
-    var snap = await hdb.collection('habea_exam_results').get();
-    snap.forEach(function (d) {
-      var x = d.data() || {};
-      var email = String(x.email || '').toLowerCase().trim();
-      if (!email) return;
-      var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
-      var pct = num(x.percent);
-      if (x.passed) rec.anyPassed = true;
-      rec.list.push({ title: x.examTitle || 'ХАБЭА шалгалт', key: x.examKey || '', type: x.examType || '', percent: pct, passed: !!x.passed, ts: (x.timestamp && x.timestamp.seconds) ? x.timestamp.seconds : 0 });
-    });
-    Object.keys(map).forEach(function (k) {
-      var rec = map[k];
-      rec.list.sort(function (a, b) { return b.ts - a.ts; }); // сүүлийнх нь эхэнд
-      for (var i = 0; i < rec.list.length; i++) { // pre/post — СҮҮЛИЙН оролдлогоор
-        var it = rec.list[i];
-        if (it.type === 'pre') { if (rec.pre == null) rec.pre = it.percent; }
-        else if (it.type === 'post') { if (rec.post == null) rec.post = it.percent; }
+/* Шалгалтын дүн ӨӨР Firebase төсөлд. Уншихдаа ЗӨВХӨН REST ашиглана
+   — шалтгааныг доорх readHabeaExamsByEmail дээрх тайлбараас харна уу. */
+var MODEX_PROJ = 'habea-shalgalt';
+var MODEX_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
+
+/* ХАБЭА шалгалтын дүнг имэйлээр индекслэнэ: { email: {pre, post, anyPassed, list} }
+   ══════════════════════════════════════════════════════════════════════
+   ⚠ ЯАГААД SDK-ГҮЙ ВЭ — энэ бол системийн ГОЛ засвар (2026-08-29).
+   Шалгалтын дүн ӨӨР Firebase төсөлд (habea-shalgalt) байдаг. Түүнийг
+   compat SDK-ийн хоёрдогч апп-аар уншихад ГУРВАН алдаа гардаг байв:
+     1. Хоёр газраас зэрэг initializeApp → «app already exists» уналт
+     2. Сүлжээ бэлэн болоогүй үед алдаа шидэхийн оронд КЭШЭЭС ХООСОН
+        хариу буцаана → бодит дүнтэй ажилтанд «шалгалт өгөөгүй» гэж
+        ХУДЛАА харагдана
+     3. { source:'server' } нь холбогдоогүй үед 6 секундэд уначихдаг
+   Энэ функцийн үр дүнг 5 газар хэрэглэдэг (ажилтны бүртгэл, KPI,
+   empProgress синк, нүүр хуудас, сургалтын хуудас) тул НЭГ Л алдаа
+   бүх системд тархдаг байлаа.
+
+   REST дуудлага нь холболтын гар барилцаа шаарддаггүй, кэшгүй, шууд
+   хариу өгдөг. Мөн нэг сессэд НЭГ Л УДАА татаж, дараа нь санах ойноос
+   өгнө — өмнө нь 5 удаа бүтэн цуглуулга уншдаг байсан.
+   ══════════════════════════════════════════════════════════════════════ */
+var _habCache = null, _habAt = 0, _habFly = null;
+var HAB_TTL = 90000;          /* 90 секунд — нэг сессийн доторх дахин дуудлагад */
+
+async function readHabeaExamsByEmail(force) {
+  if (!force && _habCache && (Date.now() - _habAt) < HAB_TTL) return _habCache;
+  if (_habFly) return await _habFly;          /* зэрэг дуудлагыг нэгтгэнэ */
+  _habFly = (async function () {
+    var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+      '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
+    var map = {}, tok = '', guard = 0;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        map = {}; tok = ''; guard = 0;
+        do {
+          var r = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          var j = await r.json();
+          (j.documents || []).forEach(function (d) {
+            var f = d.fields || {};
+            var email = String(modExVal(f.email) || '').toLowerCase().trim();
+            if (!email) return;
+            var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
+            var passed = modExVal(f.passed) === true;
+            if (passed) rec.anyPassed = true;
+            var ts = 0;
+            try { ts = Math.floor(new Date(modExVal(f.timestamp) || 0).getTime() / 1000) || 0; } catch (e2) {}
+            var bd = modExVal(f.breakdown) || [], qOk = 0;
+            bd.forEach(function (b) {
+              var p = num(b && b.pts), e3 = num(b && b.earned);
+              if (p > 0 && e3 >= p) qOk++;
+            });
+            rec.list.push({
+              title: modExVal(f.examTitle) || 'ХАБЭА шалгалт',
+              key: modExVal(f.examKey) || '', type: modExVal(f.examType) || '',
+              percent: num(modExVal(f.percent)), passed: passed,
+              qs: bd.length, qOk: qOk, ts: ts
+            });
+          });
+          tok = j.nextPageToken || '';
+        } while (tok && ++guard < 20);
+
+        Object.keys(map).forEach(function (k) {
+          var rec = map[k];
+          rec.list.sort(function (a, b) { return b.ts - a.ts; });   /* сүүлийнх нь эхэнд */
+          for (var i = 0; i < rec.list.length; i++) {               /* pre/post — СҮҮЛИЙН оролдлогоор */
+            var it = rec.list[i];
+            if (it.type === 'pre') { if (rec.pre == null) rec.pre = it.percent; }
+            else if (it.type === 'post') { if (rec.post == null) rec.post = it.percent; }
+          }
+        });
+        _habCache = map; _habAt = Date.now();
+        return map;
+      } catch (e) {
+        if (attempt === 2) return null;       /* null = уншиж чадсангүй (хоосонтой адилгүй) */
+        await new Promise(function (res) { setTimeout(res, 1200 * (attempt + 1)); });
       }
-    });
-    return map;
-  } catch (e) { return null; } // алдаа — null (дуудагч өгөгдлийг арилгахгүй)
+    }
+    return null;
+  })();
+  try { return await _habFly; } finally { _habFly = null; }
 }
 
 /* habea exam дүнг KPI-ийн empProgress-д бичих (examKey → training module key тааруулна) */
@@ -7451,20 +7514,46 @@ async function ackVerifyOtp(id, code, email) {
   var cd = String(code || '').trim();
   if (!/^\d{4,8}$/.test(cd)) return { ok: false, error: 'Код буруу форматтай байна' };
   /* ⚠ OTP нь ШАЛГАЛТЫН төсөлд (habea-shalgalt) хадгалагддаг — KPI-ийн
-     Firestore биш. Тиймээс тусдаа холболтоор уншина. */
-  var hdb = null; try { hdb = getHabeaDb(); } catch (e) {}
-  if (!hdb) return { ok: false, error: 'Баталгаажуулах сервертэй холбогдож чадсангүй' };
+     Firestore биш. REST-ээр уншина, SDK-ээр БИШ: хоёрдогч SDK нь сүлжээ
+     бэлэн болоогүй үед «баримт олдсонгүй» гэж КЭШЭЭС хариу буцаадаг тул
+     хүчинтэй код «олдсонгүй» гэж бууж болзошгүй. Энэ код нь ГАРЫН ҮСГИЙН
+     үүрэг гүйцэтгэдэг учир алдаа гаргаж болохгүй. */
+  var docUrl = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+    '/databases/(default)/documents/habea_otp/' + encodeURIComponent(id) + '?key=' + MODEX_KEY;
   try {
-    var snap = await hdb.collection('habea_otp').doc(id).get();
-    if (!snap || !snap.exists) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
-    var d = snap.data() || {};
+    var rr = null;
+    for (var a = 0; a < 3; a++) {
+      try {
+        rr = await fetch(docUrl, { cache: 'no-store' });
+        if (rr.status === 404) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
+        if (rr.ok) break;
+        throw new Error('HTTP ' + rr.status);
+      } catch (e1) {
+        if (a === 2) return { ok: false, error: 'Баталгаажуулах сервертэй холбогдож чадсангүй' };
+        await new Promise(function (res) { setTimeout(res, 900 * (a + 1)); });
+      }
+    }
+    var raw = await rr.json();
+    var ff = (raw && raw.fields) || null;
+    if (!ff) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
+    var d = {};
+    Object.keys(ff).forEach(function (k) { d[k] = modExVal(ff[k]); });
     if (d.used) return { ok: false, error: 'Энэ код аль хэдийн ашиглагдсан' };
     if (d.expiresAt && new Date(d.expiresAt) < new Date()) return { ok: false, error: 'Кодын хугацаа дууссан' };
     var stored = String(d.email || '').toLowerCase();
     if (stored && em && stored !== em) return { ok: false, error: 'И-мэйл таарахгүй байна' };
     var mine = await _sha256Hex(cd + '|' + id + '|' + (stored || em));
     if (mine !== d.hash) return { ok: false, error: 'Код буруу байна' };
-    try { await hdb.collection('habea_otp').doc(id).set({ used: true, verified: true, usedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
+    /* Ашигласан гэж тэмдэглэнэ (бүтэлгүйтвэл ч шалгалт нь аль хэдийн зөв) */
+    try {
+      await fetch(docUrl + '&updateMask.fieldPaths=used&updateMask.fieldPaths=verified' +
+        '&updateMask.fieldPaths=usedAt', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          used: { booleanValue: true }, verified: { booleanValue: true },
+          usedAt: { stringValue: new Date().toISOString() } } })
+      });
+    } catch (e) {}
     return { ok: true };
   } catch (e) {
     return { ok: false, error: 'Шалгаж чадсангүй: ' + ((e && e.message) || e) };
@@ -18750,8 +18839,6 @@ var MODEX_PASS = 60;          /* тэнцэх босго — habea-exam.html-и�
        · { source:'server' } нь холбогдоогүй үед 6 секундэд уначихдаг
      REST дуудлага нь холболтын гар барилцаа шаарддаггүй, кэшгүй, шууд
      хариу өгдөг тул эдгээр бүх асуудлыг үндсээр нь арилгана. */
-var MODEX_PROJ = 'habea-shalgalt';
-var MODEX_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
 
 /* Firestore REST-ийн утгыг энгийн утга болгоно */
 function modExVal(f) {
@@ -19691,16 +19778,30 @@ async function loadHabeaResultsPanel() {
   if (!panel) return;
   panel.innerHTML = '<div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div>';
   try {
-    var hdb = getHabeaDb();
-    if (!hdb) throw new Error('Firebase холбогдсонгүй');
-    var snap = await hdb.collection('habea_exam_results').get();
+    /* ⚠ SDK-ээр БИШ, REST-ээр уншина — өөр төслийн SDK нь сүлжээ бэлэн
+       болоогүй үед кэшээс ХООСОН хариу буцаадаг (доорх
+       readHabeaExamsByEmail дээрх тайлбарыг харна уу). */
     var rows = [];
-    snap.forEach(function (d) {
-      var x = d.data() || {};
-      var ts = x.timestamp;
-      var tsMs = ts ? (ts.seconds ? ts.seconds * 1000 : (typeof ts === 'number' ? ts : 0)) : 0;
-      rows.push({ id: d.id, name: x.name || '—', dept: x.department || '—', pos: x.position || '—', pct: x.percent || 0, passed: !!x.passed, tsMs: tsMs });
-    });
+    var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+      '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
+    var tok = '', guard = 0;
+    do {
+      var rr = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
+      if (!rr.ok) throw new Error('HTTP ' + rr.status);
+      var jj = await rr.json();
+      (jj.documents || []).forEach(function (d) {
+        var f = d.fields || {};
+        var tsMs = 0;
+        try { tsMs = new Date(modExVal(f.timestamp) || 0).getTime() || 0; } catch (e2) {}
+        rows.push({
+          id: String(d.name || '').split('/').pop(),
+          name: modExVal(f.name) || '—', dept: modExVal(f.department) || '—',
+          pos: modExVal(f.position) || '—', pct: num(modExVal(f.percent)),
+          passed: modExVal(f.passed) === true, tsMs: tsMs
+        });
+      });
+      tok = jj.nextPageToken || '';
+    } while (tok && ++guard < 20);
     rows.sort(function (a, b) { return b.tsMs - a.tsMs; });
     if (!rows.length) {
       panel.innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Шалгалт байхгүй</div></div>';
@@ -19732,8 +19833,12 @@ async function loadHabeaResultsPanel() {
 async function deleteHabeaResult(id) {
   if (!confirm('Энэ шалгалтын бичлэгийг устгахдаа итгэлтэй байна уу?')) return;
   try {
-    var hdb = getHabeaDb(); if (!hdb) throw new Error('db');
-    await hdb.collection('habea_exam_results').doc(id).delete();
+    /* REST-ээр — өөр төслийн SDK-аас бүрэн салсан */
+    var du = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
+      '/databases/(default)/documents/habea_exam_results/' + encodeURIComponent(id) + '?key=' + MODEX_KEY;
+    var dr = await fetch(du, { method: 'DELETE' });
+    if (!dr.ok) throw new Error('HTTP ' + dr.status);
+    _habCache = null;                      /* кэшийг хүчингүй болгоно */
     toast('Устгагдлаа ✓', 'success');
     loadHabeaResultsPanel();
   } catch (e) { toast('Алдаа гарлаа', 'err'); }
@@ -27208,10 +27313,10 @@ async function init() {
      аваагүй байна» гэдэг ХАРАГДДАГ болно. Дата ачаалагдсаны дараа.
      ⚠ Хэрэглэгчийг хүлээлгэхгүй: огт хүлээлгүй ард нь явна. */
   try { setTimeout(function () { sysReport(); }, 15000); } catch (e) {}
-  /* ⚠ Зааварчилгааны шалгалтын дүн ӨӨР Firebase төсөлд байдаг.
-     Тэр рүү холбогдох гар барилцаа удаан тул ажилтан «Миний явц»
-     дарахыг ХҮЛЭЭЛГҮЙ, одооноос эхлүүлж халаана. */
-  try { setTimeout(function () { try { getHabeaDb(); } catch (e2) {} }, 2500); } catch (e) {}
+  /* ⚠ Шалгалтын дүнг одоо REST-ээр уншдаг тул SDK халаах шаардлагагүй
+     болсон (v342). Оронд нь датаг нь урьдчилан татаж кэшлэнэ — эхний
+     хуудас нээхэд шууд бэлэн байна. */
+  try { setTimeout(function () { try { readHabeaExamsByEmail(); } catch (e2) {} }, 2500); } catch (e) {}
   /* Сургалтын биелэлтийн цэс — зөвхөн албаны хариуцагч/захиралд.
      ⚠ Энэ нь ЗӨВХӨН сургалтын хэсэгт хамаарна; аппын эрхийн загварт хүрэхгүй. */
   try { setTimeout(function () { try { trnNavSync(); } catch (e2) {} }, 6000); } catch (e) {}
