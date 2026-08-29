@@ -18545,64 +18545,68 @@ async function msMyLoad() {
   /* ⚠ Хоёр өөр сургалтын систем бий:
        1. MiSkill видео хичээл  → R2 (msR2Load)
        2. Зааварчилгааны шалгалт → habea-shalgalt (урьдчилсан/дараах)
-     ЭХЛЭЭД видео хэсгийг зураад, шалгалтын хэсгийг АРД нь дүүргэнэ.
-     Өмнө нь хоёуланг Promise.all-оор хүлээдэг байсан тул НЭГ нь гацахад
-     бүх хуудас «Ачаалж байна…» дээр зогсдог байв (2026-08-28 амьд
-     систем дээр илэрсэн). Одоо нэг нь унасан ч нөгөө нь харагдана. */
+     ХОЁУЛАНГ НЬ ЗЭРЭГ эхлүүлж, тус тусын байрандаа бөглөнө.
+     Өмнө нь видеог хүлээж байж шалгалтыг эхлүүлдэг байсан тул хүйтэн
+     ачаалалт дээр шалгалтын дүн 45+ секунд гарч ирдэггүй байв
+     (2026-08-29-нд гурван ажилтны нэг дээр давтагдсан). */
   var em = String((SESSION && SESSION.email) || '').toLowerCase();
 
-  var pack = MSMY_PACK;
-  if (!pack) {
-    try {
-      pack = await Promise.race([
-        msR2Load(),
-        new Promise(function (r) { setTimeout(function () { r('__timeout__'); }, 25000); })
-      ]);
-    } catch (e) { pack = null; }
-    if (pack === '__timeout__') pack = null; else MSMY_PACK = pack;
-  }
-  box = $('#msMyBody'); if (!box) return;
-
-  var top;
-  if (!pack) {
-    top = '<div class="card" style="padding:26px">' +
-      emptyBox('Видео сургалтын дата ачаалж чадсангүй. Дараа дахин оролдоно уу.') + '</div>';
-  } else {
-    var row = msMyFind(pack);
-    top = row ? msMyHTML(row, pack)
-      : '<div class="card" style="padding:26px">' +
-        emptyBox('Таны нэр дээр видео сургалтын бүртгэл олдсонгүй.') + '</div>';
-  }
-  box.innerHTML = top +
+  /* Хоёр байрыг ШУУД зурна — хэрэглэгч хоосон дэлгэц харахгүй */
+  box.innerHTML =
+    '<div id="msVidSlot"><div class="card" style="padding:30px;text-align:center;color:#8A94A6">' +
+    '<i class="ti ti-loader-2"></i> Видео сургалтын мэдээллийг ачаалж байна…</div></div>' +
     '<div id="modExSlot"><div class="card" style="padding:20px 22px;margin-top:16px;' +
     'font-size:13px;color:#8A94A6">Зааварчилгааны шалгалтын дүнг ачаалж байна…</div></div>';
 
-  /* Шалгалтын хэсэг — тусад нь, хугацааны хязгаартай */
-  var slot = document.getElementById('modExSlot');
-  /* ⚠ Хоёр дахь Firebase төсөл рүү холбогдоход удаан. 20 секунд хүрэлцэхгүй
-     байсан тул НЭГ удаа өөрөө дахин оролдоно — ажилтан товч дарах хэрэггүй. */
-  var mx = null;
-  for (var _try = 0; _try < 2; _try++) {
-    try {
-      mx = await Promise.race([
-        modExamLoad(em),
-        new Promise(function (r) { setTimeout(function () { r(null); }, 30000); })
-      ]);
-    } catch (e) { mx = null; }
-    if (mx !== null) break;
-    if (!document.getElementById('modExSlot')) return;   /* өөр хуудас руу явсан */
-    await new Promise(function (r) { setTimeout(r, 2500); });
-  }
-  slot = document.getElementById('modExSlot');
-  if (!slot) return;                       /* хэрэглэгч өөр хуудас руу явчихсан */
-  slot.innerHTML = modExamHTML(mx);
-  /* ⚠ Апп нь IIFE тул inline onclick дотоод функцийг ОЛОХГҮЙ —
-     сонсогчоор нь холбоно. */
-  var _rt = document.getElementById('modExRetry');
-  if (_rt) _rt.addEventListener('click', function () {
-    _rt.disabled = true; _rt.textContent = 'Ачаалж байна…';
-    msMyLoad();
-  });
+  /* ── Шалгалтын дүн (ихэвчлэн хурдан ирдэг) ── */
+  (async function () {
+    var mx = null;
+    for (var t = 0; t < 2; t++) {
+      try {
+        mx = await Promise.race([
+          modExamLoad(em),
+          new Promise(function (r) { setTimeout(function () { r(null); }, 30000); })
+        ]);
+      } catch (e) { mx = null; }
+      if (mx !== null) break;
+      if (!document.getElementById('modExSlot')) return;
+      await new Promise(function (r) { setTimeout(r, 2500); });
+    }
+    var slot = document.getElementById('modExSlot');
+    if (!slot) return;
+    slot.innerHTML = modExamHTML(mx);
+    /* ⚠ Апп нь IIFE тул inline onclick дотоод функцийг ОЛОХГҮЙ */
+    var rt = document.getElementById('modExRetry');
+    if (rt) rt.addEventListener('click', function () {
+      rt.disabled = true; rt.textContent = 'Ачаалж байна…';
+      msMyLoad();
+    });
+  })();
+
+  /* ── Видео сургалт ── */
+  (async function () {
+    var pack = MSMY_PACK;
+    if (!pack) {
+      try {
+        pack = await Promise.race([
+          msR2Load(),
+          new Promise(function (r) { setTimeout(function () { r('__timeout__'); }, 25000); })
+        ]);
+      } catch (e) { pack = null; }
+      if (pack === '__timeout__') pack = null; else MSMY_PACK = pack;
+    }
+    var vs = document.getElementById('msVidSlot');
+    if (!vs) return;
+    if (!pack) {
+      vs.innerHTML = '<div class="card" style="padding:26px">' +
+        emptyBox('Видео сургалтын дата ачаалж чадсангүй. Дараа дахин оролдоно уу.') + '</div>';
+      return;
+    }
+    var row = msMyFind(pack);
+    vs.innerHTML = row ? msMyHTML(row, pack)
+      : '<div class="card" style="padding:26px">' +
+        emptyBox('Таны нэр дээр видео сургалтын бүртгэл олдсонгүй.') + '</div>';
+  })();
 }
 
 function msMyHTML(row, pack) {
