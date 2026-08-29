@@ -7485,23 +7485,45 @@ function ackSignedMap(store, version) {
 }
 
 /* ── OTP: код илгээх ── */
-async function ackSendOtp(emp) {
+async function ackSendOtp(emp, title) {
   var email = String((emp && emp.email) || '').trim().toLowerCase();
   if (!email) return { ok: false, error: 'И-мэйл хаяг бүртгэгдээгүй байна' };
+  var mine = String((SESSION && SESSION.email) || '').toLowerCase() === email;
   try {
+    /* ⚠ ӨӨРИЙНХӨӨ гарын үсгийг зурж байгаа бол кодыг АППЫН ДОТОР ШУУД
+       гаргана — и-мэйл хүлээхгүй. Шалгалтын кодтой ЯГ ИЖИЛ механизм
+       (хэрэглэгчийн хүсэлт: «шалгалтынхтай адилхан ажилладаг болго»).
+       Өөр хүнийх бол хуучин ёсоороо и-мэйлээр явна. */
+    var idt = '';
+    if (mine) {
+      try { var u = firebase.auth().currentUser; if (u) idt = await u.getIdToken(); } catch (e) {}
+    }
+    var body = {
+      email: email, name: emp.name || '',
+      examTitle: title || 'Эрсдэлийн үнэлгээтэй танилцах баталгаажуулалт',
+      origin: location.origin
+    };
+    if (mine && idt) { body.channel = 'app'; body.idToken = idt; }
     var r = await fetch('/api/send-otp/', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: email, name: emp.name || '',
-        examTitle: 'Эрсдэлийн үнэлгээтэй танилцах баталгаажуулалт',
-        origin: location.origin
-      })
+      body: JSON.stringify(body)
     });
     var j = null; try { j = await r.json(); } catch (e) {}
     if (!r.ok || !j || !j.id) {
+      /* Аппын зам бүтсэнгүй бол и-мэйлээр дахин оролдоно */
+      if (mine && idt) {
+        delete body.channel; delete body.idToken;
+        var r2 = await fetch('/api/send-otp/', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var j2 = null; try { j2 = await r2.json(); } catch (e) {}
+        if (r2.ok && j2 && j2.id) return { ok: true, id: j2.id, ttl: j2.ttl || 10, via: 'email' };
+      }
       return { ok: false, error: (j && j.error) || ('Илгээж чадсангүй (' + r.status + ')') };
     }
-    return { ok: true, id: j.id, ttl: j.ttl || 10 };
+    return { ok: true, id: j.id, ttl: j.ttl || 10,
+      code: j.code || '', via: j.code ? 'app' : 'email' };
   } catch (e) {
     return { ok: false, error: 'Сүлжээ: ' + ((e && e.message) || e) };
   }
@@ -8484,7 +8506,7 @@ function ackOpenModal(rows, after) {
 
   var send = async function (btn) {
     var old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Илгээж байна…';
-    say('И-мэйл илгээж байна…');
+    say('Код бэлдэж байна…');
     var r = await ackSendOtp(A.me);
     btn.disabled = false; btn.innerHTML = old;
     if (!r.ok) { say('⚠️ ' + esc(r.error || 'Илгээж чадсангүй'), '#B91C1C'); return; }
@@ -8492,7 +8514,15 @@ function ackOpenModal(rows, after) {
     node.querySelector('#ackStep1').style.display = 'none';
     node.querySelector('#ackStep2').style.display = '';
     node.querySelector('#ackCode').focus();
-    say('✉️ Код илгээгдлээ. ' + (r.ttl || 10) + ' минут хүчинтэй. Spam/Junk хавтсаа ч шалгана уу.', '#047857');
+    /* Кодыг аппын дотор ШУУД харуулна — и-мэйл хүлээхгүй (шалгалттай ижил) */
+    if (r.code) {
+      say('<div style="font-size:11.5px;font-weight:800;color:#3730A3;letter-spacing:.05em">ТАНЫ КОД</div>' +
+        '<div style="font-size:30px;font-weight:800;letter-spacing:.18em;color:#0F1117;' +
+        'font-variant-numeric:tabular-nums;margin:2px 0">' + esc(r.code) + '</div>' +
+        '<div style="font-size:12px;color:#4F46E5">Дээр бичээд баталгаажуулна уу</div>', '#3730A3');
+    } else {
+      say('✉️ Код илгээгдлээ. ' + (r.ttl || 10) + ' минут хүчинтэй. Spam/Junk хавтсаа ч шалгана уу.', '#047857');
+    }
   };
   node.querySelector('#ackSend').addEventListener('click', function () { send(this); });
   node.querySelector('#ackResend').addEventListener('click', function () { send(this); });
@@ -17407,7 +17437,7 @@ function woSignModal(id, key) {
 
     if (!state.sent) {
       btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Илгээж байна…';
-      var r = await ackSendOtp(who);
+      var r = await ackSendOtp(who, 'Ажлын захиалгын гарын үсэг');
       btn.disabled = false;
       if (!r.ok) {
         btn.innerHTML = '<i class="ti ti-mail"></i> Дахин илгээх';
@@ -17415,10 +17445,16 @@ function woSignModal(id, key) {
       }
       state.otpId = r.id; state.sent = true;
       node.querySelector('#woCodeWrap').style.display = 'block';
-      node.querySelector('#woOtpBox').innerHTML =
-        '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;' +
-        'font-size:12.5px;color:#166534"><b>✓ Код илгээгдлээ:</b> ' + esc(email) + '<br>' +
-        'Ирсэн 6 оронтой кодоо доор бичнэ үү (' + (r.ttl || 10) + ' минут хүчинтэй).</div>';
+      node.querySelector('#woOtpBox').innerHTML = r.code
+        ? ('<div style="background:#EEF2FF;border:1.5px solid #C7D2FE;border-radius:11px;' +
+           'padding:12px 14px;text-align:center">' +
+           '<div style="font-size:11.5px;font-weight:800;color:#3730A3;letter-spacing:.05em">ТАНЫ КОД</div>' +
+           '<div style="font-size:30px;font-weight:800;letter-spacing:.18em;color:#0F1117;' +
+           'font-variant-numeric:tabular-nums;margin:3px 0 2px">' + esc(r.code) + '</div>' +
+           '<div style="font-size:12px;color:#4F46E5">Доор бичээд гарын үсгээ баталгаажуулна уу</div></div>')
+        : ('<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:11px;padding:12px 14px;' +
+           'font-size:12.5px;color:#166534"><b>✓ Код илгээгдлээ:</b> ' + esc(email) + '<br>' +
+           'Ирсэн 6 оронтой кодоо доор бичнэ үү (' + (r.ttl || 10) + ' минут хүчинтэй).</div>');
       btn.innerHTML = '<i class="ti ti-writing-sign"></i> Баталгаажуулж гарын үсэг зурах';
       try { node.querySelector('#woCode').focus(); } catch (e) {}
       return;
