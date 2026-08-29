@@ -163,6 +163,11 @@ module.exports = async function handler(req, res) {
     if (claimed && pct >= 0.5 && pct < 1 && !e.half) jobs.push({ r: r, k: 'half' });
     if (pct >= 1 && !e.due) jobs.push({ r: r, k: 'due' });
     if (pct >= 2 && !e.late2) jobs.push({ r: r, k: 'late2' });
+    /* ⚠ ОНООЛТ нь сэрэмжлүүлэгээс ТУСДАА. esc.due аль хэдийн
+       илгээгдсэн хуучин ажлууд ч эзэнгүй хэвээр байж болно
+       (бодит датанд 8 хоног хэвтсэн ажил байсан). */
+    if (pct >= 1 && !claimed && !r.autoAssign && (r.leads || []).length)
+      jobs.push({ r: r, k: 'assign' });
   }
   if (!jobs.length) {
     return res.status(200).json({ ok: true, rows: rows.length, sent: 0, note: 'босго давсан зүйл алга' });
@@ -184,8 +189,21 @@ module.exports = async function handler(req, res) {
       const left = Math.max(0, (new Date(r.createdAt).getTime() + Number(r.hours) * 3600000 - now) / 3600000);
       title = '⏳ Хугацааны тал өнгөрлөө — ' + hoursText(left) + ' үлдсэн';
       r.esc.half = stamp;
+    } else if (j.k === 'assign') {
+      const lead1 = (r.leads || [])[0];
+      r.autoAssign = { uid: lead1.uid, name: lead1.name || '', at: stamp };
+      to = [lead1];
+      title = '📌 Хугацаа хэтэрсэн ажил танд автоматаар оноогдлоо — ' + (r.gateAb || '');
     } else if (j.k === 'due') {
       to = r.leads || [];
+      /* ⚠ ХУГАЦАА ДУУСААД ХЭН Ч АВААГҮЙ бол ажил ЭЗЭНГҮЙ үлдэхгүй —
+         албаны дарга дээр АВТОМАТААР онооно. Бодит датанд 8 хоног хэн ч
+         аваагүй ажил хэвтэж байсан: сэрэмжлүүлэг гурвуулаа илгээгдсэн ч
+         хүлээж авах нь сайн дурын байсан тул хэн ч хариуцахгүй өнгөрдөг
+         байв (2026-08-29). Дарга дараа нь өөр хүнд шилжүүлж болно.
+         ⚠ Энэ серверт Firebase түлхүүр БАЙХГҮЙ тул шууд бичихгүй —
+         тольд тэмдэглэнэ, хөтөч дараагийн ачаалалтад Firestore руу
+         буулгана (esc тэмдгүүдтэй яг ижил механизм). */
       title = '🔴 ХУГАЦАА ДУУСЛАА — ' + (r.gateAb || '') +
         ' (' + ((r.claimer && r.claimer.name) || 'хэн ч аваагүй') + ')';
       r.esc.due = stamp;

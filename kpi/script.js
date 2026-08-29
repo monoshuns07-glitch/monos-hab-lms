@@ -15822,6 +15822,8 @@ function wkNextStep(r) {
   }
   if (st === 'claimed') {
     var nm = (r.wkClaimBy && r.wkClaimBy.name) || 'хүлээж авсан ажилтан';
+    if (r.wkClaimBy && r.wkClaimBy.auto) nm += ' — хугацаа дуусахад автоматаар оноогдсон';
+    else if (r.wkClaimBy && r.wkClaimBy.assignedBy) nm += ' — ' + r.wkClaimBy.assignedBy + ' томилсон';
     return {
       do: 'Ажлыг гүйцэтгээд «Гүйцэтгэсэн» товчийг дарна',
       who: nm + ' (хүлээж авсан хүн)',
@@ -16339,6 +16341,13 @@ async function wkMirrorPull(all) {
       var f = WK_ESC_KEYS[k];
       if (m.esc[k] && !r[f]) { r[f] = m.esc[k]; ch = true; }
     });
+    /* ⚠ Сервер хугацаа дуусахад даргад АВТОМАТААР оноосон бол энд
+       Firestore руу буулгана. Хэн нэг нь аль хэдийн авсан бол ХҮРЭХГҮЙ. */
+    if (m.autoAssign && m.autoAssign.uid && !(r.wkClaimBy && r.wkClaimBy.uid)) {
+      r.wkClaimBy = { uid: m.autoAssign.uid, name: m.autoAssign.name || '',
+        pos: '', at: m.autoAssign.at || new Date().toISOString(), auto: true };
+      ch = true;
+    }
     if (ch) { n++; try { reportPushToServer(r); } catch (e) {} }
   });
   if (n) { try { saveDB(); } catch (e) {} }
@@ -16406,6 +16415,7 @@ async function wkMirrorPush(all, full) {
       var n = mineIds[x.id];
       if (!n) { merged.push(x); return; }        /* бусдынх — хэвээр */
       n.esc = x.esc || n.esc;                    /* серверийн тэмдгийг хадгална */
+      if (x.autoAssign) n.autoAssign = x.autoAssign;   /* автомат оноолтыг ч */
       merged.push(n);
       delete mineIds[x.id];
     });
