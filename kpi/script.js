@@ -15352,30 +15352,100 @@ function wkMoveModal(id) {
   if (!r) return;
   var to = r.wkGate === 'hab' ? 'ita' : 'hab';
   var g = wkGate(to);
+  var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
+  var myMail = String((emp && emp.email) || (SESSION && SESSION.email) || '').toLowerCase();
+
+  /* ⚠ Шилжүүлэх нь ХАРИУЦЛАГА ӨӨР АЛБА РУУ ШИЛЖИХ үйлдэл тул нэг
+     удаагийн кодоор баталгаажуулна — шалгалтынхтай ЯГ ИЖИЛ механизм
+     (гарын үсгийн үүрэг). Код нь аппын дотор ШУУД гарч ирнэ, и-мэйл
+     хүлээх шаардлагагүй (хэрэглэгчийн хүсэлт, 2026-08-29). */
+  var OTP = { id: '', code: '', ok: false };
+
   var node = elc('div', 'modal-info',
     '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
     'Энэ мэдээллийг <b>' + esc(g.ab) + '</b> руу шилжүүлэх гэж байна.<br>' +
     'Тэр албаны бүх ажилтанд мэдэгдэнэ.</div>' +
     '<div class="rf-field"><label style="font-weight:700;font-size:12.5px">Яагаад шилжүүлж байна вэ?</label>' +
-    '<textarea id="wkWhy" class="rf-input" rows="2" placeholder="ж: Энэ бол тоног төхөөрөмжийн засвар"></textarea></div>' +
-    '<button class="btn btn-primary btn-block" id="wkMoveGo" style="margin-top:11px">' +
+    '<textarea id="wkWhy" class="rf-input" rows="2" placeholder="ж: Энэ бол тоног төхөөрөмжийн засвар тул ИТА хариуцна"></textarea></div>' +
+    '<div id="wkOtpBox" style="margin-top:12px;background:#F8FAFC;border:1.5px solid #E2E8F0;' +
+    'border-radius:12px;padding:13px 15px">' +
+    '<div style="font-size:11.5px;font-weight:900;color:#475569;letter-spacing:.04em;margin-bottom:6px">' +
+    '🔐 БАТАЛГААЖУУЛАЛТ</div>' +
+    '<div id="wkOtpMsg" style="font-size:12.5px;color:#64748B;line-height:1.6">' +
+    'Хариуцлага өөр алба руу шилжих тул нэг удаагийн кодоор баталгаажуулна.</div>' +
+    '<button type="button" class="btn btn-secondary btn-block" id="wkOtpGet" style="margin-top:9px">' +
+    'Код авах</button>' +
+    '<div id="wkOtpIn" style="display:none;margin-top:10px">' +
+    '<input id="wkOtpCode" inputmode="numeric" maxlength="6" placeholder="6 оронтой код" ' +
+    'style="width:100%;padding:12px 14px;border:1.5px solid #E2E8F0;border-radius:11px;' +
+    'font-family:inherit;font-size:19px;font-weight:800;letter-spacing:.28em;text-align:center;' +
+    'box-sizing:border-box"></div></div>' +
+    '<button class="btn btn-primary btn-block" id="wkMoveGo" style="margin-top:12px" disabled>' +
     '<i class="ti ti-arrow-right"></i> ' + esc(g.ab) + ' руу шилжүүлэх</button>');
-  node.addEventListener('click', function (ev) {
-    if (!ev.target.closest('#wkMoveGo')) return;
+
+  var msg = node.querySelector('#wkOtpMsg');
+  var getB = node.querySelector('#wkOtpGet');
+  var inBox = node.querySelector('#wkOtpIn');
+  var codeEl = node.querySelector('#wkOtpCode');
+  var goB = node.querySelector('#wkMoveGo');
+
+  function lock(on) { goB.disabled = !on; }
+
+  getB.addEventListener('click', async function () {
+    if (!myMail) { msg.innerHTML = '<span style="color:#B91C1C">И-мэйл хаяг олдсонгүй.</span>'; return; }
+    getB.disabled = true; getB.textContent = 'Авч байна…';
+    try {
+      var idt = '';
+      try { var u = firebase.auth().currentUser; if (u) idt = await u.getIdToken(); } catch (e) {}
+      var res = await fetch('/api/send-otp/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: myMail, channel: 'app', idToken: idt,
+          name: (emp && emp.name) || '', examTitle: 'Ажлын захиалга шилжүүлэх' })
+      });
+      var j = await res.json().catch(function () { return {}; });
+      if (res.ok && j.ok && j.id && j.code) {
+        OTP.id = j.id; OTP.code = String(j.code);
+        msg.innerHTML = '<div style="font-size:11.5px;color:#64748B">ТАНЫ КОД</div>' +
+          '<div style="font-size:28px;font-weight:800;letter-spacing:.16em;color:#0F1117;' +
+          'font-variant-numeric:tabular-nums;margin:2px 0 4px">' + esc(OTP.code) + '</div>' +
+          '<div style="font-size:12px;color:#64748B">Доор бичээд шилжүүлнэ үү.</div>';
+        getB.style.display = 'none';
+        inBox.style.display = 'block';
+        try { codeEl.focus(); } catch (e) {}
+      } else {
+        msg.innerHTML = '<span style="color:#B91C1C">Код авч чадсангүй. Дахин оролдоно уу.</span>';
+        getB.disabled = false; getB.textContent = 'Код авах';
+      }
+    } catch (e) {
+      msg.innerHTML = '<span style="color:#B91C1C">Сүлжээгээ шалгана уу.</span>';
+      getB.disabled = false; getB.textContent = 'Код авах';
+    }
+  });
+
+  codeEl.addEventListener('input', function () {
+    codeEl.value = (codeEl.value || '').replace(/\D/g, '').slice(0, 6);
+    OTP.ok = (codeEl.value.length === 6 && codeEl.value === OTP.code);
+    codeEl.style.borderColor = codeEl.value.length === 6 ? (OTP.ok ? '#16A34A' : '#DC2626') : '#E2E8F0';
+    lock(OTP.ok);
+  });
+
+  goB.addEventListener('click', function () {
+    if (!OTP.ok) { toast('Эхлээд кодоо баталгаажуулна уу', 'warn'); return; }
     var why = (node.querySelector('#wkWhy').value || '').trim();
-    var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
     closeModal();
     var rr = wkPatch(id, function (x) {
       x.wkGateLog = (x.wkGateLog || []).concat([{
         from: x.wkGate, to: to, why: why,
         byUid: me && me.uid, byName: empFullName(emp) || (me && me.name) || '',
-        at: new Date().toISOString()
+        at: new Date().toISOString(),
+        otpId: OTP.id                      /* аудитын мөр — хэн баталгаажуулсан */
       }]);
       x.wkGate = to;
       x.wkClaimBy = null;              /* шинэ алба дахин хүлээж авна */
     }, '↪ ' + g.ab + ' руу шилжүүллээ');
     if (rr) wkNotifyGate(rr, 'moved');
   });
+
   buildModal('Өөр алба руу шилжүүлэх', node, { width: 'min(520px, 96vw)' });
 }
 
@@ -15586,6 +15656,248 @@ function wkHazChipsHTML(r) {
     '</div>';
 }
 
+
+
+/* ══════════ ХҮН ТОМИЛОХ ба ЯАРАЛТАЙ ШААРДАХ ═══════════════════════
+   ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ: бодит датанд 8 хоног ХЭН Ч хүлээж аваагүй
+   ажил хэвтэж байсан. Сэрэмжлүүлэг гурвуулаа илгээгдсэн ч ажил
+   эзэнгүй хэвээр. Хүлээж авах нь САЙН ДУРЫН байсан тул хэн ч
+   хариуцахгүй өнгөрдөг байв (2026-08-29).
+     · Дарга/админ ГАРААР хүн томилж чадна
+     · Захирал «Яаралтай шаардах»-аар албаны хүмүүсийг сэрээнэ
+     · Хугацаа дуусахад сервер ӨӨРӨӨ даргад оноодог (wk-escalate) */
+
+/* Томилох эрхтэй юу */
+function wkCanAssign(r) {
+  try {
+    if (isAdmin()) return true;
+    if (wkIsDirector()) return true;
+    if (!wkGateHas(r, wkMyGate())) return false;
+    var pos = '';
+    try { var me = myEmp(); if (me) pos = String(me.pos || me.role || ''); } catch (e) {}
+    if (!pos && SESSION) pos = String(SESSION.pos || '');
+    return /дарга|ахлах|менежер/i.test(pos);
+  } catch (e) { return false; }
+}
+
+/* Тухайн хаалтын (албаны) ажилтнууд */
+function wkGateStaff(r) {
+  var g = (r && r.wkGate) || 'hab';
+  var res = [];
+  try {
+    (DB.employees || []).forEach(function (e) {
+      if (e.onLeave || !e.uid) return;
+      var d = String(e.dept || '');
+      var isHab = /Хөдөлмөрийн\s*аюулгүй/i.test(d);
+      var isIta = /нженер\s*техник/i.test(d);
+      if (g === 'both' ? (isHab || isIta) : (g === 'ita' ? isIta : isHab)) res.push(e);
+    });
+  } catch (e) {}
+  res.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
+  return res;
+}
+
+/* ── Хүн томилох цонх ── */
+function wkAssignModal(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  if (!wkCanAssign(r)) { toast('Танд томилох эрх байхгүй', 'warn'); return; }
+  var staff = wkGateStaff(r);
+  if (!staff.length) { toast('Тухайн албаны ажилтны жагсаалт ачаалагдаагүй байна', 'warn'); return; }
+
+  var node = elc('div', '');
+  node.innerHTML =
+    '<div style="font-size:13px;color:#64748B;line-height:1.6;margin-bottom:12px">' +
+    'Энэ ажлыг хэн хийхийг сонгоно уу. Томилогдсон хүнд мэдэгдэл очиж, ажил нь ' +
+    '«Хийгдэж байна» төлөвт шилжинэ.</div>' +
+    '<input id="wkAsQ" placeholder="Нэрээр хайх…" style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;' +
+    'border-radius:11px;font-family:inherit;font-size:14px;margin-bottom:10px;box-sizing:border-box">' +
+    '<div id="wkAsList" style="max-height:340px;overflow:auto;border:1px solid #E2E8F0;border-radius:11px">' +
+    staff.map(function (e) {
+      return '<div data-wk-as-pick="' + esc(e.uid) + '" style="display:flex;justify-content:space-between;' +
+        'align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid #F1F5F9;cursor:pointer" ' +
+        'data-name="' + esc(String(e.name || '').toLowerCase()) + '">' +
+        '<div style="min-width:0"><div style="font-weight:700;font-size:13.5px;color:#0F1117">' + esc(e.name) + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8">' + esc(e.pos || e.role || '') + '</div></div>' +
+        '<span style="flex-shrink:0;color:#4F46E5;font-size:12.5px;font-weight:800">Томилох →</span></div>';
+    }).join('') + '</div>';
+
+  var q = node.querySelector('#wkAsQ');
+  q.addEventListener('input', function () {
+    var v = (q.value || '').toLowerCase().trim();
+    node.querySelectorAll('[data-wk-as-pick]').forEach(function (row) {
+      row.style.display = (!v || (row.getAttribute('data-name') || '').indexOf(v) >= 0) ? '' : 'none';
+    });
+  });
+  node.addEventListener('click', function (ev) {
+    var pick = ev.target.closest('[data-wk-as-pick]');
+    if (!pick) return;
+    var uid = pick.getAttribute('data-wk-as-pick');
+    var emp = staff.filter(function (e) { return e.uid === uid; })[0];
+    if (!emp) return;
+    var byName = '';
+    try { var me2 = myEmp(); byName = (me2 && me2.name) || (SESSION && SESSION.email) || ''; } catch (e) {}
+    wkPatch(id, function (x) {
+      x.wkClaimBy = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
+        at: new Date().toISOString(), assignedBy: byName };
+    }, '✓ ' + emp.name + ' -д томиллоо');
+    try {
+      ntfSend([emp], { kind: 'wk', url: '/kpi/?page=reportflow',
+        title: '📌 Танд ажил томилогдлоо',
+        body: (byName ? byName + ' томиллоо · ' : '') + String(r.desc || '').slice(0, 80) });
+    } catch (e) {}
+    try { closeModal(); } catch (e) {}
+  });
+  buildModal('Хүн томилох', node, { width: 'min(520px, 96vw)' });
+}
+
+/* ── Яаралтай шаардах (захирал) ── */
+function wkDemand(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return;
+  if (!(isAdmin() || wkIsDirector())) { toast('Танд энэ эрх байхгүй', 'warn'); return; }
+  var staff = wkGateStaff(r);
+  var heads = staff.filter(function (e) { return /дарга|ахлах|менежер/i.test(String(e.pos || e.role || '')); });
+  var to = heads.length ? heads : staff;
+  if (!to.length) { toast('Хүлээн авагч олдсонгүй', 'warn'); return; }
+  var who = '';
+  try { var me = myEmp(); who = (me && (me.name + ' (' + (me.pos || '') + ')')) || ''; } catch (e) {}
+  if (!confirm('«' + String(r.desc || '').slice(0, 60) + '»\n\n' +
+    to.length + ' хүнд ЯАРАЛТАЙ ШААРДЛАГА илгээх үү?\n\nМэдэгдэл болон и-мэйл очно.')) return;
+  try {
+    ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow',
+      title: '⚠ Захирлаас яаралтай шаардлага',
+      body: (who ? who + ': ' : '') + String(r.desc || '').slice(0, 90) + ' — нэн даруй хүлээж авна уу' });
+    wkPatch(id, function (x) {
+      x.wkDemand = { by: who, at: new Date().toISOString(), n: (x.wkDemand && x.wkDemand.n || 0) + 1 };
+    }, '✓ ' + to.length + ' хүнд шаардлага илгээлээ');
+  } catch (e) { toast('Илгээж чадсангүй', 'error'); }
+}
+
+/* ══════════ АЖЛЫН ЗАХИАЛГА — ЯВЦ БА ДАРААГИЙН АЛХАМ ══════════════════
+   Ажил ямар шатанд явж байгааг, ДАРААГИЙН ШАТ РУУ ОРОХЫН ТУЛД юуг,
+   ХЭН хийх ёстойг ил хэлнэ.
+
+   ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ: өмнө нь зөвхөн «Хүлээж аваагүй» гэсэн шошго
+   байсан. Мэдээлсэн хүн ч, захирал ч «одоо юу болох ёстой вэ, хэн
+   хийх ёстой вэ» гэдгийг мэдэхгүй байв. Бодит датанд 8 хоног хэн ч
+   хүлээж аваагүй ажил хэвтэж байсан (2026-08-29). */
+
+/* Тухайн хаалтад (алба) хэдэн хүн байгаа вэ */
+function wkGateSize(gate) {
+  try {
+    var re = gate === 'ita' ? /нженер\s*техник/i : /Хөдөлмөрийн\s*аюулгүй/i;
+    var n = (DB.employees || []).filter(function (e) {
+      return re.test(String(e.dept || '')) && !e.onLeave;
+    }).length;
+    return n > 1 ? n : 0;      /* 1 бол ажилтны шүүсэн жагсаалт — тоо нь утгагүй */
+  } catch (e) { return 0; }
+}
+
+/* Хэдэн хоног/цаг хүлээгдэж байна */
+function wkWaitText(r) {
+  try {
+    var from = r.wkClaimBy && r.wkClaimBy.at ? r.wkClaimBy.at : r.createdAt;
+    if (!from) return '';
+    var h = (Date.now() - new Date(from).getTime()) / 3600000;
+    if (h < 1) return Math.max(1, Math.round(h * 60)) + ' минут';
+    if (h < 48) return Math.round(h) + ' цаг';
+    return Math.round(h / 24) + ' хоног';
+  } catch (e) { return ''; }
+}
+
+/* ДАРААГИЙН АЛХАМ — юу, хэн, хэзээ */
+function wkNextStep(r) {
+  var st = wkStatus(r);
+  var g = r.wkGate || 'hab';
+  var gateName = g === 'both' ? 'ХАБЭА эсвэл ИТА-н алба'
+    : (g === 'ita' ? 'Инженер техникийн алба' : 'ХАБЭА-н алба');
+  var n = g === 'both' ? (wkGateSize('hab') + wkGateSize('ita')) : wkGateSize(g);
+  if (st === 'new') {
+    return {
+      do: '«Хүлээж авах» товчийг дарна',
+      who: gateName + (n ? ' — ' + n + ' хүний хэн нь ч болно' : '-ны хэн нэг нь'),
+      tone: 'wait'
+    };
+  }
+  if (st === 'claimed') {
+    var nm = (r.wkClaimBy && r.wkClaimBy.name) || 'хүлээж авсан ажилтан';
+    return {
+      do: 'Ажлыг гүйцэтгээд «Гүйцэтгэсэн» товчийг дарна',
+      who: nm + ' (хүлээж авсан хүн)',
+      tone: 'work'
+    };
+  }
+  if (st === 'executed') {
+    return {
+      do: 'Ажил хийгдсэн эсэхийг шалгаад «Шалгаж батлах» дарна',
+      who: (r.reporterFull || r.reporterName || 'мэдээлсэн хүн') + ' (мэдээлсэн хүн)',
+      tone: 'check'
+    };
+  }
+  return { do: '', who: '', tone: 'done' };
+}
+
+/* ── Явцын зурвас + дараагийн алхмын хайрцаг ───────────────────────── */
+function wkFlowHTML(r) {
+  if (!r || !r.wkKind) return '';        /* зөвхөн ажлын захиалга/аюулын урсгалд */
+  var st = wkStatus(r);
+  var order = ['new', 'claimed', 'executed', 'closed'];
+  var at = order.indexOf(st);
+  var steps = [
+    { l: 'Мэдээлсэн', sub: r.reporterName || '' },
+    { l: 'Хүлээж авсан', sub: (r.wkClaimBy && r.wkClaimBy.name) || '' },
+    { l: 'Гүйцэтгэсэн', sub: r.wkExecAt ? String(r.wkExecAt).slice(0, 10) : '' },
+    { l: 'Баталсан', sub: r.wkAccept === 'done' ? 'дууссан' : '' }
+  ];
+  /* Мэдээлсэн нь үргэлж хийгдсэн; дараагийнхыг wkStatus-аар */
+  var doneN = at + 1;                     /* new=1 (мэдээлсэн), claimed=2 … */
+
+  var bar = '<div style="display:flex;align-items:flex-start;margin:2px 0 12px">' +
+    steps.map(function (x, i) {
+      var done = i < doneN, cur = i === doneN;
+      var col = done ? '#16A34A' : cur ? '#4F46E5' : '#CBD5E1';
+      return '<div style="flex:1;text-align:center;position:relative;min-width:0">' +
+        (i > 0 ? '<div style="position:absolute;left:-50%;top:11px;width:100%;height:2.5px;background:' +
+          (done ? '#86EFAC' : '#E2E8F0') + '"></div>' : '') +
+        '<div style="position:relative;width:23px;height:23px;margin:0 auto;border-radius:50%;background:' + col +
+        ';color:#fff;font-size:11.5px;font-weight:900;display:flex;align-items:center;justify-content:center' +
+        (cur ? ';box-shadow:0 0 0 4px #E0E7FF' : '') + '">' +
+        (done ? '✓' : (i + 1)) + '</div>' +
+        '<div style="font-size:10.5px;font-weight:' + (done || cur ? '800' : '600') + ';color:' +
+        (done ? '#15803D' : cur ? '#4F46E5' : '#B6BECC') + ';margin-top:5px;line-height:1.3">' + esc(x.l) + '</div>' +
+        (x.sub ? '<div style="font-size:9.5px;color:#94A3B8;margin-top:1px;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap">' + esc(x.sub) + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+
+  if (st === 'closed') {
+    return bar + '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;' +
+      'padding:12px 15px;margin-bottom:13px">' +
+      '<div style="font-size:13px;font-weight:800;color:#15803D">✅ Ажил бүрэн дууссан</div>' +
+      '<div style="font-size:12.5px;color:#166534;margin-top:3px">Хийх зүйл үлдээгүй.</div></div>';
+  }
+
+  var nx = wkNextStep(r);
+  var t = wkTime(r);
+  var late = t && t.late;
+  var wait = wkWaitText(r);
+  var bg = late ? '#FEF2F2' : '#FFFBEB', bd = late ? '#FECACA' : '#FDE68A';
+  var ink = late ? '#991B1B' : '#92400E', ink2 = late ? '#B91C1C' : '#B45309';
+
+  return bar +
+    '<div style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:12px;' +
+    'padding:13px 15px;margin-bottom:13px">' +
+    '<div style="font-size:11px;font-weight:900;color:' + ink + ';letter-spacing:.05em;margin-bottom:6px">' +
+    (late ? '⏰ ХУГАЦАА ХЭТЭРСЭН — ДАРААГИЙН АЛХАМ' : '➜ ДАРААГИЙН АЛХАМ') + '</div>' +
+    '<div style="font-size:14px;font-weight:800;color:#0F1117;line-height:1.45">' + esc(nx.do) + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;font-size:12.5px;color:' + ink2 + '">' +
+    '<span><b style="color:' + ink + '">Хэн:</b> ' + esc(nx.who) + '</span>' +
+    (t ? '<span><b style="color:' + ink + '">Хугацаа:</b> ' + esc(t.text) + '</span>' : '') +
+    (wait ? '<span><b style="color:' + ink + '">Хүлээгдэж буй:</b> ' + esc(wait) + '</span>' : '') +
+    '</div></div>';
+}
+
 function wkRowHTML(r) {
   var me = reqMe() || {};
   var k = wkKindOf(r), st = wkStatus(r), S = WK_STATUS[st];
@@ -15599,6 +15911,12 @@ function wkRowHTML(r) {
   var acts = [];
   if (inMyGate && st === 'new')
     acts.push(['wk-claim', 'Хүлээж авах', '#4F46E5', 'ti-hand-grab']);
+  /* Дарга/админ/захирал — хэн ч аваагүй бол ГАРААР хүн томилно */
+  if (st === 'new' && wkCanAssign(r))
+    acts.push(['wk-assign', 'Хүн томилох', '#0891B2', 'ti-user-plus']);
+  /* Захирал — хүлээж авахгүй байгааг сэрээнэ */
+  if ((isAdmin() || wkIsDirector()) && st !== 'closed')
+    acts.push(['wk-demand', 'Яаралтай шаардах', '#B91C1C', 'ti-alert-triangle']);
   /* ⚠ «Өөр алба руу» нь ЗӨВХӨН хуучин, нэг албанд илгээгдсэн бичлэгт.
      Шинэ бичлэг хоёуланд нь очдог тул шилжүүлэх утгагүй. */
   if (inMyGate && st === 'new' && r.wkGate !== 'both')
@@ -16272,9 +16590,21 @@ function rfSeeAll() {
 }
 /* Сервер талаас БҮХ бичлэгийг татах шаардлагатай эсэх (SESSION-оор шийднэ —
    ажилтны жагсаалт ирээгүй байж болзошгүй). */
+/* Гүйцэтгэх захирал / чиглэл хариуцсан захирал мөн эсэх.
+   ⚠ Тэд ХҮЛЭЭЖ АВАХГҮЙ — зөвхөн ХАРНА + шаардана (wkMyGate нь '' тул
+     «Хүлээж авах» товч өөрөө гарахгүй). */
+function wkIsDirector() {
+  try {
+    var pos = '';
+    try { var me = myEmp(); if (me) pos = String(me.pos || me.role || ''); } catch (e) {}
+    if (!pos && SESSION) pos = String(SESSION.pos || '');
+    return /захирал/i.test(pos) && !/орлогч\s*дарга/i.test(pos);
+  } catch (e) { return false; }
+}
 function rfNeedAllRows() {
   try {
     if (isAdmin()) return true;
+    if (wkIsDirector()) return true;      /* захирлууд бүх ажлыг ХАРНА */
     var d = (SESSION && SESSION.dept) || '';
     return /Хөдөлмөрийн\s*аюулгүй/i.test(d) || /нженер\s*техник/i.test(d);
   } catch (e) { return false; }
@@ -16532,7 +16862,8 @@ function openReportDetail(id) {
   var admin = isAdmin();
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
-  var html = reportFlowHTML(r) + reportRepairHTML(r) + photo + sig + '<div class="detail-grid">' +
+  /* ⭐ Ажлын захиалга бол ЯВЦ + ДАРААГИЙН АЛХМЫГ хамгийн дээр нь */
+  var html = wkFlowHTML(r) + reportFlowHTML(r) + reportRepairHTML(r) + photo + sig + '<div class="detail-grid">' +
     '<div class="detail-row"><span>Төрөл</span><b>' + reportTypeLabel(r.type) + '</b></div>' +
     '<div class="detail-row"><span>Эрсдэл</span><b>' + riskTag(r.risk_level) + '</b></div>' +
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
@@ -17767,6 +18098,10 @@ function rfAfter(sec, admin, pending) {
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     var wc = ev.target.closest('[data-wk-claim]');
     if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
+    var was = ev.target.closest('[data-wk-assign]');
+    if (was) { ev.stopPropagation(); wkAssignModal(was.getAttribute('data-wk-assign')); return; }
+    var wdm = ev.target.closest('[data-wk-demand]');
+    if (wdm) { ev.stopPropagation(); wkDemand(wdm.getAttribute('data-wk-demand')); return; }
     var wm = ev.target.closest('[data-wk-move]');
     if (wm) { ev.stopPropagation(); wkMoveModal(wm.getAttribute('data-wk-move')); return; }
     var wh = ev.target.closest('[data-wk-hazfix]');
@@ -26994,6 +27329,10 @@ function establishSession() {
         var isAdminByDoc = (data.role === 'admin');
         var role = isAdminByDoc ? 'admin' : (data.role === 'depthead' ? 'depthead' : 'employee');
         var dept = data.department || '';
+        /* ⚠ Албан тушаалыг SESSION-д хадгална. Ажилтны жагсаалт ачаалагдахаас
+           ӨМНӨ (Firestore хүсэлт угсрах үед) захирал мөн эсэхийг мэдэх
+           шаардлагатай — эс бөгөөс захиралд ажлын захиалга татагдахгүй. */
+        var pos = data.position || data.pos || '';
         // Админ олгосон user_roles/{email} override шалгана (зөвхөн depthead/employee, admin ОЛГОХГҮЙ)
         if (email) {
           // localStorage-с depthead override шалгана (admin эрх localStorage-аар огт олгогдохгүй)
@@ -27005,15 +27344,15 @@ function establishSession() {
               if (!isAdminByDoc && (rd.role === 'depthead' || rd.role === 'employee')) role = rd.role;
               if (rd.department) dept = rd.department;
             }
-            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept, pos: pos };
             resolve();
           }).catch(function () {
             // Firestore user_roles уншихад алдаа — localStorage-с авсан role ашиглана
-            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+            SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept, pos: pos };
             resolve();
           });
         } else {
-          SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept };
+          SESSION = { role: role, email: email, uid: uid, empId: null, dept: dept, pos: pos };
           resolve();
         }
       }).catch(function () {
