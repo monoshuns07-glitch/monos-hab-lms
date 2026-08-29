@@ -134,11 +134,29 @@ function hoursText(h) {
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
+  /* ⚠⚠ АЮУЛГҮЙ БАЙДЛЫН ЗАСВАР (2026-08-29).
+     ӨМНӨ НЬ: `isCron = !cs || ...` буюу CRON_SECRET тохируулаагүй бол
+     ХЭН Ч энэ цэгийг дуудаж, ажилтнууд руу мэдэгдэл/push илгээж чаддаг
+     байв. Бодитоор шалгахад эрхгүй POST → 200 буцааж байсан.
+     ОДОО: нууц үг тохируулаагүй бол ажиллуулахгүй (fail-closed).
+
+     ⚠ Мөн `dry` нь ЗӨВХӨН URL-ээс уншигддаг байсан тул {"dry":true} гэж
+     биед явуулбал ЖИНХЭНЭЭР ажиллаж, санамсаргүй мэдэгдэл илгээдэг байв.
+     Одоо биеэс ч уншина. */
   const cs = process.env.CRON_SECRET || '';
   const auth = String(req.headers.authorization || '');
-  const isCron = !cs || auth === 'Bearer ' + cs;
-  const dry = String((req.query && req.query.dry) || '') === '1';
-  if (!isCron && !dry) return res.status(401).json({ ok: false, error: 'Зөвшөөрөлгүй' });
+  const isCron = !!cs && auth === 'Bearer ' + cs;
+  let body = {};
+  try {
+    if (req.body && typeof req.body === 'object') body = req.body;
+    else if (typeof req.body === 'string') body = JSON.parse(req.body || '{}');
+  } catch (e) { body = {}; }
+  const dry = String((req.query && req.query.dry) || '') === '1' || body.dry === true;
+  if (!isCron && !dry) {
+    return res.status(401).json({ ok: false,
+      error: cs ? 'Зөвшөөрөлгүй' : 'CRON_SECRET тохируулаагүй байна — Vercel дээр нэмнэ үү',
+      notConfigured: !cs });
+  }
   if (!process.env.SIGN_SECRET) {
     return res.status(503).json({ ok: false, error: 'SIGN_SECRET тохируулаагүй', notConfigured: true });
   }

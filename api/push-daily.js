@@ -233,8 +233,14 @@ module.exports = async function handler(req, res) {
     if (!u) return res.status(401).json({ ok: false, error: 'Нэвтрээгүй байна' });
     onlyUid = u.uid;
   } else {
-    /* Cron / админ. CRON_SECRET тохируулсан бол ЗӨВХӨН түүнтэй л дуудна. */
+    /* ⚠⚠ АЮУЛГҮЙ БАЙДАЛ (2026-08-29): өмнө нь CRON_SECRET тохируулаагүй
+       бол ХЭН Ч энэ цэгийг дуудаж бүх ажилтанд push илгээж чаддаг байв.
+       Одоо нууц үг заавал шаардана (fail-closed). */
     const cs = process.env.CRON_SECRET || '';
+    if (!cs) {
+      return res.status(401).json({ ok: false, notConfigured: true,
+        error: 'CRON_SECRET тохируулаагүй байна — Vercel дээр нэмнэ үү' });
+    }
     if (cs) {
       const got = String(req.headers.authorization || '');
       if (got !== 'Bearer ' + cs) {
