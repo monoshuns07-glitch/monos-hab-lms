@@ -3643,6 +3643,7 @@ function renderModEmployee(sec, key, mod, title, me) {
       (canTake
         ? '<button class="btn btn-primary" style="padding:10px 28px" data-modact="takeexam" data-modkey="' + esc(key) + '" data-empid="' + esc(me.id) + '"><i class="ti ti-pencil"></i> ' + (prog.examTaken ? 'Дахин шалгалт өгөх' : 'Шалгалт өгөх') + '</button>'
         : '<button class="btn" disabled style="padding:10px 28px;background:#F1F5F9;color:#94A3B8;border:1.5px solid #E2E8F0;cursor:not-allowed"><i class="ti ti-lock"></i> Боломжит оролдлого дууссан</button>') +
+      '<div id="modExamLive"></div>' +
       '</div>';
   } else {
     examSection =
@@ -3650,6 +3651,8 @@ function renderModEmployee(sec, key, mod, title, me) {
       '<div style="width:56px;height:56px;border-radius:14px;background:#F1F5F9;color:#94A3B8;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 12px"><i class="ti ti-lock"></i></div>' +
       '<h3 style="margin:0 0 6px;color:#475569">Шалгалт хаалттай байна</h3>' +
       '<p style="color:#94A3B8;margin:0;font-size:13px">Сургалтыг бүрэн үзэж дуусгах эсвэл ХАБЭА мэргэжилтэн нээх үед шалгалт нээгдэнэ.</p>' +
+      /* Шалгалт хаалттай байсан ч ӨМНӨ өгсөн дүн нь харагдах ёстой */
+      '<div id="modExamLive"></div>' +
       '</div>';
   }
 
@@ -3669,6 +3672,56 @@ function renderModEmployee(sec, key, mod, title, me) {
 
     examSection +
     '</div>';
+
+  /* ⚠ Дээрх оноо нь DB.empProgress буюу ХУВААЛЦСАН КЭШЭЭС ирдэг. Тэр кэш нь
+     зөвхөн хэн нэгний сесс амжилттай синк хийхэд шинэчлэгддэг тул саяхан
+     шалгалт өгсөн ажилтанд өөрийнх нь дүн ГАРЧ ИРДЭГГҮЙ байв.
+     Тиймээс ажилтны ӨӨРИЙНХ нь бичлэгийг шууд (REST-ээр) татаж нөхнө —
+     ингэснээр дүн нь ҮРГЭЛЖ харагдана. */
+  try { modLiveScore(key); } catch (e) {}
+}
+
+/* Ажилтны өөрийн дүнг шууд эх сурвалжаас нөхөж харуулна */
+async function modLiveScore(key) {
+  var slot = document.getElementById('modExamLive');
+  if (!slot) return;
+  var em = String((SESSION && SESSION.email) || '').toLowerCase();
+  if (!em) return;
+  var list = null;
+  try { list = await modExamLoad(em); } catch (e) { list = null; }
+  slot = document.getElementById('modExamLive');
+  if (!slot || !list || !list.length) return;
+  var mine = list.filter(function (x) { return x.key === key; });
+  if (!mine.length) return;
+  var pre = null, post = null;
+  mine.forEach(function (x) {
+    if (x.type === 'pre' && (!pre || x.ts > pre.ts)) pre = x;
+    if (x.type === 'post' && (!post || x.ts > post.ts)) post = x;
+  });
+  var last = post || pre || mine[0];
+  var rows = mine.slice().sort(function (a, b) { return b.ts - a.ts; }).map(function (x) {
+    var lbl = x.type === 'post' ? 'Сургалтын дараах' : (x.type === 'pre' ? 'Сургалтын өмнөх' : 'Шалгалт');
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;' +
+      'padding:7px 0;border-top:1px solid #E2E8F0;font-size:12.5px">' +
+      '<span style="color:#475569"><b>' + lbl + '</b>' + (x.ts ? ' · ' + modExamDate(x.ts) : '') + '</span>' +
+      '<span style="display:inline-flex;align-items:center;gap:8px;flex-shrink:0">' +
+      (x.qs ? '<span style="color:#94A3B8;font-size:11.5px">' + x.qOk + '/' + x.qs + '</span>' : '') +
+      '<span style="font-weight:800;color:' + (x.passed ? '#15803D' : '#B45309') + '">' +
+      (x.passed ? '✓ ' : '✗ ') + Math.round(x.percent) + '%</span></span></div>';
+  }).join('');
+  var gain = (pre && post) ? (Math.round(post.percent) - Math.round(pre.percent)) : null;
+  slot.innerHTML =
+    '<div style="margin-top:16px;padding-top:14px;border-top:1px solid #D1FAE5;text-align:left">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:2px">' +
+    '<span style="font-weight:800;font-size:13.5px;color:#065F46">Таны дүн</span>' +
+    (gain != null
+      ? '<span style="font-size:12px;font-weight:800;color:' + (gain >= 0 ? '#15803D' : '#B91C1C') + '">' +
+        (gain > 0 ? '▲ +' : (gain < 0 ? '▼ ' : '= ')) + gain + '%</span>'
+      : '') + '</div>' +
+    rows +
+    '<div style="font-size:11.5px;color:#64748B;margin-top:8px">' +
+    (last.passed ? 'Сүүлийн шалгалтад тэнцсэн ✓' : 'Сүүлийн шалгалтад тэнцээгүй') +
+    ((last.qs) ? ' · ' + last.qs + ' асуултаас ' + last.qOk + ' зөв' : '') + '</div></div>';
 }
 
 /* ========== Үндсэн dispatcher ========== */
