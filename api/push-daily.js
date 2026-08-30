@@ -313,6 +313,7 @@ module.exports = async function handler(req, res) {
   let sent = 0, skipped = 0, failed = 0;
   const drop = {};
   let mailed = 0;
+  let touched = false;   // бичлэг өөрчлөгдсөн эсэх — файлыг хадгалах эсэхийг шийднэ
 
   for (const rec of list) {
     if (!rec || !rec.endpoint || !rec.keys || !rec.keys.p256dh || !rec.keys.auth) { skipped++; continue; }
@@ -333,20 +334,26 @@ module.exports = async function handler(req, res) {
     }
 
     let st = 0;
-    try { st = await sendPush(rec, msg, vk); }
-    catch (e) { st = 0; }
+    if (rec.dead && !onlyUid) {
+      st = 0;                                   // дахин оролдохгүй — шууд и-мэйл рүү
+    } else {
+      try { st = await sendPush(rec, msg, vk); }
+      catch (e) { st = 0; }
+    }
 
     /* ⭐ Push хүрээгүй бол сануулга алдагдахгүй — и-мэйлээр очно.
        Өдөрт нэг л удаа (rec.lp) тул давхардахгүй. */
     if (!(st >= 200 && st < 300)) {
       var to = mailOf[rec.uid] || (onlyUid ? testerMail : '');
-      if (await mailFallback(to, msg)) { mailed++; if (!onlyUid) rec.lp = today; }
+      if (await mailFallback(to, msg)) { mailed++; if (!onlyUid) { rec.lp = today; touched = true; } }
     }
     if (st >= 200 && st < 300) {
       sent++;
-      if (!onlyUid) { rec.lp = today; delete rec.err; delete rec.errN; delete rec.errAt; }
+      if (!onlyUid) { rec.lp = today; delete rec.err; delete rec.errN; delete rec.errAt; delete rec.dead; touched = true; }
     } else if (st === 404 || st === 410) {
-      drop[rec.endpoint] = 1;                                  // төхөөрөмж хүчингүй болсон
+      /* Төхөөрөмж бүртгэлээ цуцалсан. Мөн адил хаяхгүй — и-мэйлээр
+         сануулсаар байна. */
+      if (!onlyUid) { rec.dead = 1; rec.err = st; rec.errAt = today; touched = true; }
       failed++;
     } else {
       /* ⚠⚠ 2026-08-30: 401/403 нь «түлхүүр таарахгүй» гэсэн үг —
@@ -358,14 +365,20 @@ module.exports = async function handler(req, res) {
       failed++;
       if (!onlyUid) {
         rec.err = st; rec.errAt = today; rec.errN = (rec.errN || 0) + 1;
-        if (rec.errN >= 3) drop[rec.endpoint] = 1;
+        /* ⚠ БҮРТГЭЛИЙГ ХАЯХГҮЙ. Хаявал энэ хүн жагсаалтаас гарч,
+           и-мэйлээр нөхөх ч боломжгүй болж, БҮР МӨСӨН чимээгүй болно.
+           Оронд нь «үхсэн» гэж тэмдэглээд push оролдохоо болино —
+           сануулга нь и-мэйлээр үргэлжилнэ. Ажилтан аппаа нээхэд
+           клиент энэ бичлэгийг шинэ, ажилладаг бүртгэлээр дарж бичнэ. */
+        if (rec.errN >= 3) rec.dead = 1;
+        touched = true;
       }
     }
   }
 
   /* Файлыг шинэчилнэ: хүчингүй бүртгэлийг хаяж, сануулсан огноог тэмдэглэнэ */
   let saved = false;
-  if (sent || mailed || Object.keys(drop).length) {
+  if (touched || Object.keys(drop).length) {
     try {
       const next = list.filter(function (x) { return x && !drop[x.endpoint]; });
       saved = await r2PutJson(SUBS_KEY, { updatedAt: new Date().toISOString(), list: next });
