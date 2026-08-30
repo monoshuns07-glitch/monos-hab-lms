@@ -19407,56 +19407,60 @@ function modExamDate(ts) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
-/* ── Гантель зураас (SVG) ───────────────────────────────────────────
-   viewBox тогтмол, өргөн 100% — цэгүүд дугуй хэвээрээ томорно. */
+/* ── Гантель зураас (HTML/CSS) ───────────────────────────────────────
+   ⚠ ӨМНӨ НЬ SVG байсан бөгөөд viewBox нь `width:100%`-аар сунадаг тул
+   КАРТ ӨРГӨССӨН ТУСАМ үсэг, цэг нь ТОМОРДОГ байв — өргөн дэлгэц дээр
+   шошго нь 23px болж «муухай том» харагдаж, нэг картад 145px өндөр
+   зай эзэлдэг байсан (2026-08-29).
+   Одоо HTML/CSS: үсэг нь ҮРГЭЛЖ 12.5px, зураас нь 26px өндөр —
+   өргөнөөс хамаарахгүй. Нийт өндөр ~3 дахин багассан. */
 function modExamTrack(pre, post, hue) {
-  var W = 320, H = 66, X0 = 26, X1 = 294, Y = 34, R = 6;
-  var x = function (v) { return X0 + (X1 - X0) * (Math.max(0, Math.min(100, v)) / 100); };
-  var px = (pre != null) ? x(pre) : null, qx = (post != null) ? x(post) : null;
-  var tx = x(MODEX_PASS);
+  var pct = function (v) { return Math.max(0, Math.min(100, v)); };
+  var px = (pre != null) ? pct(pre) : null;
+  var qx = (post != null) ? pct(post) : null;
 
-  /* Шошго мөргөлдөхөөс сэргийлнэ.
-     ⚠ «Хувийн зөрүү 20-оос бага бол» гэсэн энгийн дүрэм ХАНГАЛТГҮЙ байв:
-     «Дараа 100%» гэсэн урт шошго яг 20 хувийн зайд ч давхцаж байлаа.
-     Тиймээс ХУВИАР биш, шошгын БОДИТ ӨРГӨНӨӨР шийднэ. */
-  var wOf = function (t) { return String(t).length * 5.4; };   /* 10.5px үсгийн ойролцоо өргөн */
-  var lPre = 'Өмнө ' + pre + '%', lPost = 'Дараа ' + post + '%';
-  var near = (px != null && qx != null) &&
-    Math.abs(qx - px) < (wOf(lPre) + wOf(lPost)) / 2 + 8;       /* 8 = амьсгалах зай */
-  var preY = near ? 58 : 20, postY = 20;
-  var anch = function (v) { return v < 12 ? 'start' : (v > 88 ? 'end' : 'middle'); };
+  /* Утгын мөр — цэгээс тусад нь, тогтмол хэмжээтэй */
+  var vals = '<div style="display:flex;align-items:baseline;gap:8px;font-size:12.5px;' +
+    'color:#64748B;margin-bottom:5px;flex-wrap:wrap">' +
+    (px != null
+      ? '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;' +
+        'background:#475569;margin-right:5px"></span>Өмнө <b style="color:#334155">' + pre + '%</b></span>'
+      : '') +
+    (px != null && qx != null ? '<span style="color:#CBD5E1">→</span>' : '') +
+    (qx != null
+      ? '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;' +
+        'background:' + hue + ';margin-right:5px"></span>Дараа <b style="color:#0F1117">' + post + '%</b></span>'
+      : '') +
+    '</div>';
 
-  var g = '';
-  /* тэнхлэг — 1px, битүү, ар талд */
-  g += '<line x1="' + X0 + '" y1="' + Y + '" x2="' + X1 + '" y2="' + Y + '" stroke="#E2E8F0" stroke-width="1"/>';
-  /* тэнцэх босго */
-  g += '<line x1="' + tx.toFixed(1) + '" y1="' + (Y - 7) + '" x2="' + tx.toFixed(1) + '" y2="' + (Y + 7) + '" stroke="#CBD5E1" stroke-width="1"/>';
-  g += '<text x="' + tx.toFixed(1) + '" y="' + (Y + 18) + '" text-anchor="middle" font-size="8.5" fill="#94A3B8" font-family="inherit">босго ' + MODEX_PASS + '</text>';
-  /* ⚠ Тэнхлэгийн 0/100 шошгыг ЗОРИУДААР тавихгүй: 100%-ийн цэг нь «100»
-     бичгийг дарж байсан бөгөөд хоёр утга хоёулаа шууд шошготой тул
-     тэнхлэгийн тоо ямар ч мэдээлэл нэмэхгүй. */
+  /* Зураас — 26px өндөр, цэг 11px, хэзээ ч томрохгүй */
+  var lo = (px != null && qx != null) ? Math.min(px, qx) : null;
+  var hi = (px != null && qx != null) ? Math.max(px, qx) : null;
+  var dot = function (v, col, title) {
+    return '<span title="' + title + '" style="position:absolute;left:' + v.toFixed(1) + '%;top:50%;' +
+      'width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:' + col +
+      ';box-shadow:0 0 0 2px #fff"></span>';
+  };
+  /* ⚠ Өргөнийг хязгаарлана — эс бөгөөс өргөн дэлгэц дээр зураас 1400px
+     хүртэл сунаж, хоёр цэг хоорондоо хэт хол болж харьцуулахад хэцүү болно. */
+  var bar = '<div style="position:relative;height:26px;margin:0 6px 2px;max-width:460px">' +
+    '<div style="position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;' +
+    'background:#E9EDF2;border-radius:2px"></div>' +
+    /* тэнцэх босго */
+    '<span title="Тэнцэх босго" style="position:absolute;left:' + MODEX_PASS + '%;top:5px;' +
+    'width:1.5px;height:16px;margin-left:-0.75px;background:#CBD5E1"></span>' +
+    (lo != null
+      ? '<div style="position:absolute;left:' + lo.toFixed(1) + '%;width:' + (hi - lo).toFixed(1) + '%;' +
+        'top:50%;height:2px;margin-top:-1px;background:' + hue + ';opacity:.4;border-radius:2px"></div>'
+      : '') +
+    (px != null ? dot(px, '#475569', 'Сургалтын өмнөх: ' + pre + '%') : '') +
+    (qx != null ? dot(qx, hue, 'Сургалтын дараах: ' + post + '%') : '') +
+    '</div>' +
+    '<div style="position:relative;height:11px;margin:0 6px;max-width:460px">' +
+    '<span style="position:absolute;left:' + MODEX_PASS + '%;transform:translateX(-50%);' +
+    'font-size:9.5px;color:#B6BECC;white-space:nowrap">босго ' + MODEX_PASS + '</span></div>';
 
-  /* холбоос — ахиц нь ЭНЭ уртаар харагдана */
-  if (px != null && qx != null) {
-    g += '<line x1="' + px.toFixed(1) + '" y1="' + Y + '" x2="' + qx.toFixed(1) + '" y2="' + Y + '" ' +
-      'stroke="' + hue + '" stroke-width="2" stroke-linecap="round" opacity=".35"/>';
-  }
-  /* цэгүүд — 2px цагаан цагираг, давхцсан ч уншигдана */
-  if (px != null) {
-    g += '<circle cx="' + px.toFixed(1) + '" cy="' + Y + '" r="' + R + '" fill="#475569" stroke="#fff" stroke-width="2">' +
-      '<title>Сургалтын өмнөх: ' + pre + '%</title></circle>';
-    g += '<text x="' + px.toFixed(1) + '" y="' + preY + '" text-anchor="' + anch(pre) + '" font-size="10.5" ' +
-      'font-weight="700" fill="#475569" font-family="inherit">' + lPre + '</text>';
-  }
-  if (qx != null) {
-    g += '<circle cx="' + qx.toFixed(1) + '" cy="' + Y + '" r="' + R + '" fill="' + hue + '" stroke="#fff" stroke-width="2">' +
-      '<title>Сургалтын дараах: ' + post + '%</title></circle>';
-    g += '<text x="' + qx.toFixed(1) + '" y="' + postY + '" text-anchor="' + anch(post) + '" font-size="10.5" ' +
-      'font-weight="700" fill="#0F1117" font-family="inherit">' + lPost + '</text>';
-  }
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;overflow:visible" ' +
-    'role="img" aria-label="Өмнөх ' + (pre == null ? 'өгөөгүй' : pre + ' хувь') +
-    ', дараах ' + (post == null ? 'өгөөгүй' : post + ' хувь') + '">' + g + '</svg>';
+  return vals + bar;
 }
 
 /* Ахицын шошго — СТАТУС өнгө, үргэлж дүрс+бичигтэй */
@@ -19524,17 +19528,17 @@ function modExamHTML(list) {
      доорх картыг үг үсэггүй давтдаг тул ХАРУУЛАХГҮЙ. */
   var sum = (groups.length < 2) ? '' :
     '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 4px">' +
-    '<div style="flex:1;min-width:96px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:11px 13px">' +
+    '<div style="flex:1;min-width:96px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:9px 12px">' +
     '<div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:.03em">ӨГСӨН</div>' +
-    '<div style="font-size:23px;font-weight:800;color:#0F1117;line-height:1.25">' + groups.length +
+    '<div style="font-size:20px;font-weight:800;color:#0F1117;line-height:1.2">' + groups.length +
     '<span style="font-size:13px;font-weight:700;color:#94A3B8"> / ' + Object.keys(TRAINING_MODULES).length + '</span></div></div>' +
-    '<div style="flex:1;min-width:96px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:11px 13px">' +
+    '<div style="flex:1;min-width:96px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:11px;padding:9px 12px">' +
     '<div style="font-size:11px;font-weight:700;color:#166534;letter-spacing:.03em">ТЭНЦСЭН</div>' +
-    '<div style="font-size:23px;font-weight:800;color:#15803D;line-height:1.25">' + passN +
+    '<div style="font-size:20px;font-weight:800;color:#15803D;line-height:1.2">' + passN +
     '<span style="font-size:13px;font-weight:700;color:#86EFAC"> / ' + groups.length + '</span></div></div>' +
     (avgD != null
       ? '<div style="flex:1;min-width:96px;background:' + (avgD >= 0 ? '#F0FDF4' : '#FEF2F2') + ';border:1px solid ' +
-        (avgD >= 0 ? '#BBF7D0' : '#FECACA') + ';border-radius:12px;padding:11px 13px">' +
+        (avgD >= 0 ? '#BBF7D0' : '#FECACA') + ';border-radius:11px;padding:9px 12px">' +
         '<div style="font-size:11px;font-weight:700;color:' + (avgD >= 0 ? '#166534' : '#991B1B') + ';letter-spacing:.03em">ДУНДАЖ АХИЦ</div>' +
         '<div style="font-size:23px;font-weight:800;color:' + (avgD >= 0 ? '#15803D' : '#B91C1C') + ';line-height:1.25">' +
         (avgD > 0 ? '+' : '') + avgD + '%</div></div>'
@@ -19574,15 +19578,15 @@ function modExamHTML(list) {
         ? '<div style="font-size:12px;color:#D97706;margin-top:2px;font-weight:600">Сургалтын дараах шалгалт хараахан өгөөгүй.</div>'
         : '');
 
-    return '<div style="border:1px solid #E2E8F0;border-left:4px solid ' + st.c + ';border-radius:14px;' +
-      'background:#fff;margin-bottom:12px;overflow:hidden">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 15px;background:' + st.bg + '">' +
+    return '<div style="border:1px solid #E2E8F0;border-left:4px solid ' + st.c + ';border-radius:13px;' +
+      'background:#fff;margin-bottom:9px;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;background:' + st.bg + '">' +
       '<div style="display:flex;align-items:center;gap:9px;min-width:0">' +
       '<i class="ti ' + st.icon + '" style="font-size:19px;color:' + st.c + ';flex-shrink:0"></i>' +
       '<span style="font-weight:700;font-size:14px;color:#0F1117;min-width:0">' + esc(m.title) + '</span></div>' +
       modExamDelta(pre, post) + '</div>' +
       '<div style="padding:14px 15px 6px">' + modExamTrack(pre, post, st.c) + '</div>' +
-      '<div style="padding:2px 15px 12px">' +
+      '<div style="padding:0 14px 11px">' +
       '<div style="font-size:12.5px;color:#64748B">' + passHTML + (passHTML && qLine ? ' · ' : '') + qLine + '</div>' +
       missing +
       (m.all.length > 1 || hist
@@ -19598,7 +19602,7 @@ function modExamHTML(list) {
       todo.map(function (k) { return esc(TRAINING_MODULES[k]); }).join(' · ') + '</div>'
     : '';
 
-  return '<div class="card" style="padding:18px 20px 16px;margin-top:16px">' +
+  return '<div class="card" style="padding:15px 17px 13px;margin-top:14px">' +
     '<div style="font-weight:700;font-size:15px;color:#0F1117">Зааварчилгааны шалгалт</div>' +
     '<div style="font-size:12.5px;color:#8A94A6;margin-top:3px;line-height:1.6">' +
     'Сургалтын өмнө ба дараа өгсөн шалгалтын дүн. Хоёрын зөрүү нь сургалтаас юу авсныг харуулна.</div>' +
@@ -19979,7 +19983,7 @@ function trnReportHTML(sc, exams) {
 
 function trnTile(label, val, sub, bg, bd, lc, vc) {
   return '<div style="flex:1;min-width:98px;background:' + bg + ';border:1px solid ' + bd +
-    ';border-radius:12px;padding:11px 13px">' +
+    ';border-radius:11px;padding:9px 12px">' +
     '<div style="font-size:11px;font-weight:700;color:' + lc + ';letter-spacing:.03em">' + label + '</div>' +
     '<div style="font-size:24px;font-weight:800;color:' + vc + ';line-height:1.25">' + val + '</div>' +
     (sub ? '<div style="font-size:11.5px;color:' + lc + ';opacity:.85">' + sub + '</div>' : '') + '</div>';
