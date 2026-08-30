@@ -1452,9 +1452,26 @@ function riskDirDepts(emp) {
   else sc = riskDirScope();
   return riskDeptsForScope(sc);
 }
-/* Эрсдэл нэмэх эрхтэй юу — админ, албаны дарга, ХЭСЭГ ОНООСОН ажилтан */
+/* ⚠ Албан тушаалаараа удирдах ажилтан мөн эсэх.
+   Систем «албаны дарга»-г ГАРААР олгосон эрхээр (user_roles) таньдаг байсан
+   бөгөөд тэр бүртгэл БҮРЭН ХООСОН байв — 53 дарга/ахлах/менежерийн зөвхөн 4
+   нь (ack хэсэг оноосон) эрсдэл нэмж чаддаг байлаа (2026-08-29).
+   Одоо албан тушаалаас нь шууд таньна. ⚠ Энэ нь ЗӨВХӨН эрсдэлийн хэсэгт
+   хамаарна — аппын үндсэн эрхийн загварт (isDeptHead, хуудасны нууцлал)
+   хүрэхгүй. */
+function riskIsBoss() {
+  try {
+    var pos = '';
+    try { var me = myEmp(); if (me) pos = String(me.pos || me.role || ''); } catch (e) {}
+    if (!pos && SESSION) pos = String(SESSION.pos || '');
+    return /дарга|ахлах|менежер|эрхлэгч/i.test(pos);
+  } catch (e) { return false; }
+}
+/* Эрсдэл нэмэх эрхтэй юу — админ, албаны дарга, албан тушаалын удирдлага,
+   эсвэл ХЭСЭГ ОНООСОН ажилтан */
 function riskCanAdd() {
   if (isAdmin() || isDeptHead()) return true;
+  if (riskIsBoss()) return true;
   try { return !!ackSecOf(myEmp()); } catch (e) { return false; }
 }
 
@@ -2157,8 +2174,12 @@ function actionRiskAdd() {
   var mySec = '', meAdd = null;
   try { meAdd = myEmp(); } catch (e) {}
   if (!isAdmin() && !isDeptHead()) { try { mySec = ackSecOf(meAdd) || ''; } catch (e) {} }
+  /* ⚠ Албаа ЗААВАЛ түгжинэ. Албан тушаалаараа эрхтэй болсон дарга нар
+     өмнө нь ямар ч албанд эрсдэл нэмэх боломжтой болох байсан —
+     хэрэглэгчийн шийдвэр: ЗӨВХӨН өөрийн алба (2026-08-29). */
+  var myDeptAdd = riskCanonDept(meAdd && meAdd.dept) || (meAdd && meAdd.dept) || '';
   var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '')
-    : (mySec ? (riskCanonDept(meAdd && meAdd.dept) || (meAdd && meAdd.dept) || '') : '');
+    : ((mySec || riskIsBoss()) ? myDeptAdd : '');
   var depts = deptList();
   var emps = (DB.employees || []).filter(function (e) {
     return !lockDept || riskSameDept(lockDept, e.dept);
