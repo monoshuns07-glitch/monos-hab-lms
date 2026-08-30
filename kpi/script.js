@@ -2177,9 +2177,19 @@ function actionRiskAdd() {
   /* ⚠ Албаа ЗААВАЛ түгжинэ. Албан тушаалаараа эрхтэй болсон дарга нар
      өмнө нь ямар ч албанд эрсдэл нэмэх боломжтой болох байсан —
      хэрэглэгчийн шийдвэр: ЗӨВХӨН өөрийн алба (2026-08-29). */
-  var myDeptAdd = riskCanonDept(meAdd && meAdd.dept) || (meAdd && meAdd.dept) || '';
+  /* ⚠ Ажилтны жагсаалт хараахан ачаалагдаагүй бол myEmp() null буцаана —
+     тэр үед SESSION-оос авна. Аль нь ч олдохгүй бол ТҮГЖЭЭГ НЭЭХГҮЙ,
+     харин нэмэхийг зогсооно (эс бөгөөс ямар ч албанд нэмэх боломжтой
+     болчихно). */
+  var myDeptAdd = riskCanonDept(meAdd && meAdd.dept) || (meAdd && meAdd.dept) ||
+    ((SESSION && SESSION.dept) || '');
+  var bossAdd = riskIsBoss();
+  if (!isAdmin() && !isDeptHead() && (mySec || bossAdd) && !myDeptAdd) {
+    toast('Таны алба тодорхойлогдсонгүй. Хуудсаа шинэчлээд дахин оролдоно уу.', 'warn');
+    return;
+  }
   var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '')
-    : ((mySec || riskIsBoss()) ? myDeptAdd : '');
+    : ((mySec || bossAdd) ? myDeptAdd : '');
   var depts = deptList();
   var emps = (DB.employees || []).filter(function (e) {
     return !lockDept || riskSameDept(lockDept, e.dept);
