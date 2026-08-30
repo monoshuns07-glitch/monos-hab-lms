@@ -4385,7 +4385,10 @@ function renderEmployeeDashboard() {
   if (mst.late) {
     todoList.unshift({ icon: 'ti-alarm', color: '#DC2626',
       txt: mst.late + ' арга хэмжээ ХУГАЦАА ХЭТЭРСЭН',
-      sub: 'Яаралтай гүйцэтгээд зураг/файлаа хавсаргана уу', page: 'tasks',
+      /* ⚠ Арга хэмжээ нь «Даалгавар» цэсэнд БИШ — Эрсдэлийн үнэлгээ хуудасны
+         «Миний арга хэмжээ, мөрдөх дүрэм» таб дээр байдаг. Өмнө нь бүх хүнийг
+         Даалгавар руу аваачдаг байсан тул хоосон хуудас гарч байв (2026-08-29). */
+      sub: 'Яаралтай гүйцэтгээд зураг/файлаа хавсаргана уу', page: 'hazards', tab: 'mea',
       gain: gainOf(_f(w.task), kpiMeasure(e) || 0) });
   }
   /* ⭐ ХУВЦАС, ХХХ-ИЙН ХҮСЭЛТ — миний шийдвэрийг хүлээж байгаа нь.
@@ -4410,7 +4413,7 @@ function renderEmployeeDashboard() {
   if (_mPend > 0) {
     todoList.push({ icon: 'ti-checkbox', color: '#16A34A',
       txt: _mPend + ' арга хэмжээ хүлээгдэж байна',
-      sub: 'Гүйцэтгээд баримтаа хавсаргавал биелсэнд тооцно', page: 'tasks',
+      sub: 'Гүйцэтгээд баримтаа хавсаргавал биелсэнд тооцно', page: 'hazards', tab: 'mea',
       gain: gainOf(_f(w.task), kpiMeasure(e) || 0) });
   }
   if (mst.total && mst.done >= mst.total) {
@@ -4507,7 +4510,7 @@ function renderEmployeeDashboard() {
         '<p style="font-size:12.5px;color:#8A94A6;margin:0 0 13px">Доорхыг хийвэл таны оноо нэмэгдэнэ. Дарж шууд орно уу.</p>' : '') +
       '<div class="emp-todo-grid">' +
       todoList.map(function (s) {
-        return '<div class="emp-step" data-gopage="' + s.page + '" style="display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #F1F5F9;border-radius:13px;cursor:pointer;background:#fff">' +
+        return '<div class="emp-step" data-gopage="' + s.page + '"' + (s.tab ? ' data-gotab="' + s.tab + '"' : '') + ' style="display:flex;align-items:center;gap:12px;padding:13px;border:1px solid #F1F5F9;border-radius:13px;cursor:pointer;background:#fff">' +
           '<div style="width:38px;height:38px;border-radius:11px;flex-shrink:0;background:' + s.color + '18;color:' + s.color + ';display:flex;align-items:center;justify-content:center"><i class="ti ' + s.icon + '" style="font-size:19px"></i></div>' +
           '<div style="flex:1;min-width:0">' +
           '<div style="font-size:14px;font-weight:700;color:#1E293B;line-height:1.35">' + s.txt + '</div>' +
@@ -4619,7 +4622,12 @@ function renderEmployeeDashboard() {
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('[data-goreport]')) { switchPage('reportflow'); return; }
       var st = ev.target.closest('[data-gopage]');
-      if (st) switchPage(st.getAttribute('data-gopage'));
+      if (st) {
+        /* Хуудас дотор ЯМАР таб нээхийг ч заана — эс бөгөөс буруу таб дээр буудаг */
+        var _tb = st.getAttribute('data-gotab');
+        if (_tb) { try { RISK_TAB = _tb; } catch (e2) {} }
+        switchPage(st.getAttribute('data-gopage'));
+      }
     });
   }
   try { pushWireOnce(); pushSyncState(); } catch (er) {}
