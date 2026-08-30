@@ -285,6 +285,12 @@ module.exports = async function handler(req, res) {
       if (e && e.uid && e.email) mailOf[e.uid] = String(e.email).trim();
     });
   } catch (e) {}
+  /* Толь дээрх и-мэйл нь ажилтны жагсаалтад байхгүй хүнийг ч нөхнө */
+  rows.forEach(function (r) {
+    [].concat(r.leads || [], r.director || [], r.claimer || []).forEach(function (x) {
+      if (x && x.uid && x.email && !mailOf[x.uid]) mailOf[x.uid] = String(x.email).trim();
+    });
+  });
 
   let subs = [];
   let vk = null;

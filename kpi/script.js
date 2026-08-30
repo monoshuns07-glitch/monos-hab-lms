@@ -15358,7 +15358,10 @@ function wkClaim(id) {
   var emp = woEmpByUid(me.uid) || me;
   wkPatch(id, function (x) {
     x.wkClaimBy = { uid: me.uid, name: empFullName(emp) || me.name || '',
-      pos: emp.pos || emp.role || '', at: new Date().toISOString() };
+      pos: emp.pos || emp.role || '',
+      /* И-мэйл нь сервер сэрэмжлүүлгийг нөхөж илгээхэд хэрэгтэй */
+      email: emp.email || (SESSION && SESSION.email) || '',
+      at: new Date().toISOString() };
   }, '✓ Та энэ ажлыг хүлээж авлаа');
   try {
     var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
@@ -16542,7 +16545,17 @@ async function wkMirrorPull(all) {
 async function wkMirrorPush(all, full) {
   var dir = null;
   try { dir = ackDirector('prod') || ackDirector('ceo'); } catch (e) {}
-  var slim = function (e) { return e && e.uid ? { uid: e.uid, name: e.name || '' } : null; };
+  /* ⚠ И-МЭЙЛИЙГ ч тольд бичнэ. Сервер (wk-escalate) нь мэдэгдэл
+     хүрээгүй хүнд сэрэмжлүүлгийг и-мэйлээр илгээдэг боловч и-мэйлийг
+     employees/all.json-оос л олдог байв. Тэр жагсаалтад байхгүй хүн
+     (жишээ нь админ) ажил хүлээвэл сэрэмжлүүлэг ОГТ хүрэхгүй байсан. */
+  var slim = function (e) {
+    if (!e || !e.uid) return null;
+    var o = { uid: e.uid, name: e.name || '' };
+    var em = e.email || e.mail || '';
+    if (em) o.email = String(em).trim();
+    return o;
+  };
   var leadCache = {};
   var list = [];
   (all || []).forEach(function (r) {
@@ -16568,7 +16581,8 @@ async function wkMirrorPush(all, full) {
       },
       leads: leadCache[g],
       claimer: cl || ((r.wkClaimBy && r.wkClaimBy.uid)
-        ? { uid: r.wkClaimBy.uid, name: r.wkClaimBy.name || '' } : null),
+        ? { uid: r.wkClaimBy.uid, name: r.wkClaimBy.name || '',
+            email: (r.wkClaimBy.email || '') } : null),
       director: slim(dir)
     });
   });
