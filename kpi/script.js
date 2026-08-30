@@ -15688,6 +15688,69 @@ function wkHazChipsHTML(r) {
 
 
 
+
+/* ══════════ БҮРМӨСӨН УСТГАХ — ЗӨВХӨН АДМИН ═══════════════════════
+   ⚠ Туршилтын болон алдаатай бичлэгийг цэвэрлэх боломж байгаагүй тул
+   хог бичлэгүүд «Ирсэн» хайрцагт үүрд хуримтлагдаж, хугацаа хэтэрсэн
+   сэрэмжлүүлэг өгсөөр байв (2026-08-29).
+
+   ⚠ ЭНЭ НЬ ЭРГЭЖ БУЦАХГҮЙ. Дөрвөн газраас бүгдийг нь устгана:
+     1. Firestore  kpi_reports/{id}      — үндсэн бичлэг
+     2. R2         workorders/_all.json  — холбоотой ажлын захиалга
+     3. R2         workflow/_open.json   — сэрэмжлүүлэгийн толь
+     4. Локал DB   DB.reports            — дэлгэц дээрээс шууд алга болно */
+async function reportDeleteHard(id) {
+  if (!isAdmin()) { toast('Зөвхөн ХАБЭА админ устгана', 'warn'); return false; }
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) { toast('Бичлэг олдсонгүй', 'error'); return false; }
+  var wo = null; try { wo = woForReport(id); } catch (e) {}
+
+  var what = String(r.desc || r.id).slice(0, 70);
+  if (!confirm('БҮРМӨСӨН УСТГАХ УУ?\n\n«' + what + '»\n' +
+    (r.reporterName ? 'Мэдээлсэн: ' + r.reporterName + '\n' : '') +
+    (wo ? 'Холбоотой ажлын захиалга ' + wo.id + ' ч устана.\n' : '') +
+    '\n⚠ Энэ үйлдэл ЭРГЭЖ БУЦАХГҮЙ.')) return false;
+
+  var okAll = true;
+
+  /* 1. Firestore */
+  try {
+    if (fbReady && fdb) await colRef('reports').doc(String(id)).delete();
+  } catch (e) { okAll = false; console.error('[del] firestore', e); }
+
+  /* 2. Холбоотой ажлын захиалга */
+  if (wo && wo.id) {
+    try {
+      await woSaveMerge(function (list) {
+        return list.filter(function (w) { return w && w.id !== wo.id; });
+      });
+    } catch (e) { console.error('[del] wo', e); }
+  }
+
+  /* 3. Сэрэмжлүүлэгийн толь — эс бөгөөс cron сэрэмжлүүлсээр байна */
+  try {
+    var mir = await riskR2GetJson(WK_OPEN_FILE, { fresh: true });
+    if (mir && Array.isArray(mir.list)) {
+      var left = mir.list.filter(function (m) { return m && m.id !== id; });
+      if (left.length !== mir.list.length) {
+        await riskR2PutJson(WK_OPEN_FILE, { updatedAt: new Date().toISOString(), by: 'admin-delete', list: left });
+      }
+    }
+  } catch (e) { console.error('[del] mirror', e); }
+
+  /* 4. Локал */
+  try {
+    DB.reports = (DB.reports || []).filter(function (x) { return x.id !== id; });
+    saveDB();
+  } catch (e) {}
+
+  toast(okAll ? '🗑 Бүрмөсөн устгагдлаа' : '⚠ Хэсэгчлэн устлаа — дахин оролдоно уу',
+    okAll ? 'success' : 'warn');
+  try { pulseBump('report'); } catch (e) {}
+  try { renderReportflow(); } catch (e) {}
+  return okAll;
+}
+
 /* ══════════ ХҮН ТОМИЛОХ ба ЯАРАЛТАЙ ШААРДАХ ═══════════════════════
    ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ: бодит датанд 8 хоног ХЭН Ч хүлээж аваагүй
    ажил хэвтэж байсан. Сэрэмжлүүлэг гурвуулаа илгээгдсэн ч ажил
@@ -15949,6 +16012,9 @@ function wkRowHTML(r) {
   /* Захирал — хүлээж авахгүй байгааг сэрээнэ */
   if ((isAdmin() || wkIsDirector()) && st !== 'closed')
     acts.push(['wk-demand', 'Яаралтай шаардах', '#B91C1C', 'ti-alert-triangle']);
+  /* ⚠ Зөвхөн админ — туршилтын/алдаатай бичлэгийг БҮРМӨСӨН устгана */
+  if (isAdmin())
+    acts.push(['wk-del', 'Устгах', '#7F1D1D', 'ti-trash']);
   /* ⚠ «Өөр алба руу» нь ЗӨВХӨН хуучин, нэг албанд илгээгдсэн бичлэгт.
      Шинэ бичлэг хоёуланд нь очдог тул шилжүүлэх утгагүй. */
   if (inMyGate && st === 'new' && r.wkGate !== 'both')
@@ -16964,6 +17030,16 @@ function openReportDetail(id) {
           '<i class="ti ti-file-text"></i> Албан ёсны маягт</button>' : '') +
       '</div>';
   }
+  /* ⚠ Зөвхөн админ — бүрмөсөн устгах. Хамгийн доор, улаанаар: санамсаргүй
+     дарахаас сэргийлж бусад товчноос тусгаарлав. */
+  if (isAdmin()) {
+    html += '<div style="margin-top:16px;padding-top:13px;border-top:1px solid #FEE2E2">' +
+      '<button class="btn" data-rddel="1" style="width:100%;background:#fff;color:#B91C1C;' +
+      'border:1.5px solid #FECACA;font-weight:700">' +
+      '<i class="ti ti-trash"></i> Энэ бичлэгийг бүрмөсөн устгах</button>' +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px;text-align:center">' +
+      'Эргэж буцахгүй. Холбоотой ажлын захиалга ч устана.</div></div>';
+  }
   var node = elc('div', 'modal-info', html), pickedRisk = r.risk_level;
   woWireNode(node);
   node.addEventListener('click', function (ev) {
@@ -16975,6 +17051,7 @@ function openReportDetail(id) {
     if (chip) { $$('#rdRisk .rf-chip', node).forEach(function (c) { c.classList.remove('active'); }); chip.classList.add('active'); pickedRisk = chip.getAttribute('data-val'); return; }
     if (ev.target.closest('[data-rdverify]')) { closeModal(); verifyReport(r.id, 'verify', pickedRisk); return; }
     if (ev.target.closest('[data-rdreject]')) { closeModal(); verifyReport(r.id, 'reject'); return; }
+    if (ev.target.closest('[data-rddel]')) { closeModal(); reportDeleteHard(r.id); return; }
   });
   buildModal('Мэдээллийн дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
@@ -18167,6 +18244,8 @@ function rfAfter(sec, admin, pending) {
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     var wc = ev.target.closest('[data-wk-claim]');
     if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
+    var wdl = ev.target.closest('[data-wk-del]');
+    if (wdl) { ev.stopPropagation(); reportDeleteHard(wdl.getAttribute('data-wk-del')); return; }
     var was = ev.target.closest('[data-wk-assign]');
     if (was) { ev.stopPropagation(); wkAssignModal(was.getAttribute('data-wk-assign')); return; }
     var wdm = ev.target.closest('[data-wk-demand]');
