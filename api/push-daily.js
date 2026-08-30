@@ -233,7 +233,7 @@ async function verifyIdToken(idToken) {
     const j = await r.json();
     const u = j && j.users && j.users[0];
     if (!u || !u.localId || u.disabled === true) return null;
-    return { uid: u.localId };
+    return { uid: u.localId, email: u.email || '' };
   } catch (e) { return null; }
 }
 
@@ -260,11 +260,15 @@ module.exports = async function handler(req, res) {
   /* Хэн дуудаж байна? */
   const body = req.method === 'POST' ? await readBody(req) : {};
   let onlyUid = null;
+  let testerMail = '';
 
   if (body && body.test) {
     const u = await verifyIdToken(body.idToken);
     if (!u) return res.status(401).json({ ok: false, error: 'Нэвтрээгүй байна' });
     onlyUid = u.uid;
+    /* Туршилтад push унавал и-мэйл нь ТУРШИГЧ рүү очно — ингэснээр
+       нөхөх сувгаа бодитоор шалгаж болно. */
+    testerMail = u.email || '';
   } else {
     /* ⚠⚠ АЮУЛГҮЙ БАЙДАЛ (2026-08-29): өмнө нь CRON_SECRET тохируулаагүй
        бол ХЭН Ч энэ цэгийг дуудаж бүх ажилтанд push илгээж чаддаг байв.
@@ -335,7 +339,8 @@ module.exports = async function handler(req, res) {
     /* ⭐ Push хүрээгүй бол сануулга алдагдахгүй — и-мэйлээр очно.
        Өдөрт нэг л удаа (rec.lp) тул давхардахгүй. */
     if (!(st >= 200 && st < 300)) {
-      if (await mailFallback(mailOf[rec.uid], msg)) { mailed++; if (!onlyUid) rec.lp = today; }
+      var to = mailOf[rec.uid] || (onlyUid ? testerMail : '');
+      if (await mailFallback(to, msg)) { mailed++; if (!onlyUid) rec.lp = today; }
     }
     if (st >= 200 && st < 300) {
       sent++;
