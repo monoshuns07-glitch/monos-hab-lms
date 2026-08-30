@@ -14745,7 +14745,8 @@ function wkHazManage() {
     nw.addEventListener('keydown', function (e) { if (e.key === 'Enter') doAdd(); });
     w.querySelector('#hzCancel').addEventListener('click', function () {
       w.remove();
-      wkHazLoad(true).then(function () { try { renderReportFlow(); } catch (e) {} });
+      wkHazLoad(true).then(function () { try { renderReportFlow(); } catch (e) {}
+        try { wkHazMountDraw(); } catch (e) {} });
     });
     w.querySelector('#hzSave').addEventListener('click', function () {
       var bad = false;
@@ -14762,6 +14763,7 @@ function wkHazManage() {
         w.remove();
         try { toast('✅ Ангилал шинэчлэгдлээ'); } catch (e) {}
         try { renderReportFlow(); } catch (e) {}
+        try { wkHazMountDraw(); } catch (e) {}
       }).catch(function (e2) {
         err('Хадгалж чадсангүй: ' + String((e2 && e2.message) || '').slice(0, 60));
         sb.disabled = false; sb.textContent = 'Хадгалах';
@@ -14772,6 +14774,42 @@ function wkHazManage() {
   draw();
   w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
   document.body.appendChild(w);
+}
+
+/* ── Тохиргоо хуудасны «Аюулын ангилал» карт ─────────────────────────
+   ⚠ Өмнө нь энэ засварлагч ЗӨВХӨН аюул мэдээлэх маягтын дотор байсан.
+   Гэтэл маягт нь ажилтны бүртгэл (reqMe) шаарддаг тул ажилтны
+   бүртгэлгүй админ маягтаа нээж чаддаггүй → ангиллаа огт засаж
+   чаддаггүй байв. Тиймээс Тохиргоо хуудсанд бие даасан карт болгов. */
+function wkHazMount(body) {
+  if (!body || !isAdmin() || body.querySelector('#hazTypeCard')) return;
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'hazTypeCard';
+  card.innerHTML = '<h3><i class="ti ti-alert-triangle" style="color:#D97706;margin-right:6px"></i>Аюулын ангилал</h3>' +
+    '<p class="card-subtitle">Ажлын захиалга өгөхөд ажилтны сонгодог ангиллууд. Энд нэмж, нэрийг нь засаж, устгана.</p>' +
+    '<div id="hazTypeBody" style="padding:6px 0"></div>';
+  body.appendChild(card);
+  wkHazLoad().then(function () { wkHazMountDraw(); }).catch(function () { wkHazMountDraw(); });
+}
+
+function wkHazMountDraw() {
+  var el = document.getElementById('hazTypeBody');
+  if (!el) return;
+  var chips = (WK_HAZ_TYPES || []).map(function (h) {
+    return '<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid ' + h.c +
+      ';background:' + h.bg + ';color:' + h.c + ';border-radius:10px;padding:6px 11px;' +
+      'font-size:12.5px;font-weight:700">' +
+      '<span style="width:9px;height:9px;border-radius:3px;background:' + h.c + '"></span>' +
+      esc(h.mn) + '</span>';
+  }).join('');
+  el.innerHTML = '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">' +
+    (chips || '<span style="font-size:13px;color:#94A3B8">Ангилал алга</span>') + '</div>' +
+    '<button type="button" id="hazTypeEdit" style="border:2px dashed #CBD5E1;background:#fff;' +
+    'color:#334155;border-radius:11px;padding:9px 14px;cursor:pointer;font-family:inherit;' +
+    'font-size:13px;font-weight:700">✏️ Ангилал засах</button>';
+  var b = document.getElementById('hazTypeEdit');
+  if (b) b.addEventListener('click', function () { wkHazManage(); });
 }
 
 function wkHazType(k) {
@@ -18479,7 +18517,8 @@ function renderSettings() {
         if (charts.radar) renderCharts();
       });
     }
-    /* Системийн эрүүл мэнд — хамгийн доор */
+    /* Аюулын ангилал, дараа нь системийн эрүүл мэнд — хамгийн доор */
+    try { wkHazMount(body); } catch (e) {}
     try { sysHealthMount(body); } catch (e) {}
   }, 0);
 }
