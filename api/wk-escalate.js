@@ -28,6 +28,7 @@
    Гараар шалгах: /api/wk-escalate/?dry=1  (юу ч илгээхгүй, зөвхөн харуулна)
    ========================================================================== */
 const crypto = require('crypto');
+const { sendViaGmail } = require('./_smtp.js');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
 const OPEN_KEY = 'workflow/_open.json';
@@ -103,9 +104,16 @@ function vapidHeader(aud, vk) {
   const sig = crypto.sign('sha256', Buffer.from(h + '.' + p), { key: vk.key, dsaEncoding: 'ieee-p1363' });
   return 'vapid t=' + h + '.' + p + '.' + b64u(sig) + ', k=' + vk.pub;
 }
+/* Хэнд push хүрснийг БУЦААНА — хүрээгүй хүнд и-мэйлээр нөхнө.
+   ⚠ 2026-08-30-нд илэрсэн: ажлын захиалгын сэрэмжлүүлэг авах ёстой
+   4 хүний НЭГЭНД Ч push хүрдэггүй байв (3 нь огт бүртгүүлээгүй, 1-ийнх
+   нь хуучин түлхүүрт уяатай). Тэд зөвхөн аппын хонх харах боломжтой
+   байсан — өөрөөр хэлбэл аппаа нээхгүй бол хугацаа хэтэрсэн ажил
+   чимээгүй өнгөрнө. Энэ нь сэрэмжлүүлгийн бүх зорилгыг үгүй хийж байв. */
 async function pushTo(uids, msg, vk, subs) {
-  if (!vk || !uids.length) return 0;
-  const targets = subs.filter(x => x && x.endpoint && x.keys && uids.indexOf(x.uid) >= 0);
+  const okUids = [];
+  if (!vk || !uids.length) return { sent: 0, okUids: okUids };
+  const targets = subs.filter(x => x && x.endpoint && x.keys && !x.dead && uids.indexOf(x.uid) >= 0);
   let sent = 0;
   for (const rec of targets) {
     try {
@@ -118,10 +126,36 @@ async function pushTo(uids, msg, vk, subs) {
         },
         body: encryptPayload(rec.keys.p256dh, rec.keys.auth, JSON.stringify(msg))
       });
-      if (r.status >= 200 && r.status < 300) sent++;
+      if (r.status >= 200 && r.status < 300) { sent++; okUids.push(rec.uid); }
     } catch (e) {}
   }
-  return sent;
+  return { sent: sent, okUids: okUids };
+}
+
+/* Push хүрээгүй хүнд сэрэмжлүүлгийг И-МЭЙЛЭЭР хүргэнэ */
+async function mailTo(email, title, body) {
+  const user = process.env.GMAIL_USER || '';
+  const pass = process.env.GMAIL_APP_PASSWORD || '';
+  if (!user || !pass || !email) return false;
+  const link = 'https://monos-hab.vercel.app' + KPI_URL;
+  const html =
+    '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;' +
+    'padding:22px;color:#0F1117">' +
+    '<div style="font-size:17px;font-weight:700;margin-bottom:8px">' + title + '</div>' +
+    '<div style="font-size:14px;color:#475569;line-height:1.65;margin-bottom:18px">' + body + '</div>' +
+    '<a href="' + link + '" style="display:inline-block;background:#0F1117;color:#fff;' +
+    'text-decoration:none;border-radius:10px;padding:12px 22px;font-weight:700;' +
+    'font-size:14px">Ажлын захиалгыг нээх</a>' +
+    '<div style="font-size:12px;color:#94A3B8;margin-top:22px;line-height:1.6">' +
+    'Утсандаа мэдэгдэл авмаар байвал аппын Тохиргооноос «Сануулга» асаана уу.' +
+    '</div></div>';
+  try {
+    await sendViaGmail({ user: user, pass: pass, to: email,
+      fromName: process.env.OTP_FROM_NAME || 'Монос Хүнс — ХАБЭА',
+      subject: title, html: html,
+      text: title + String.fromCharCode(10) + body + String.fromCharCode(10) + link });
+    return true;
+  } catch (e) { return false; }
 }
 
 function hoursText(h) {
@@ -235,7 +269,41 @@ module.exports = async function handler(req, res) {
     if (uids.length) out.push({ uids: uids, title: title, body: body, id: r.id, k: j.k });
   }
 
-  if (dry) return res.status(200).json({ ok: true, dry: true, rows: rows.length, would: out });
+  let pushed = 0, mailed = 0, note = '';
+  const priv = process.env.VAPID_PRIVATE_KEY || '';
+  /* uid → и-мэйл (нөхөж илгээхэд) */
+  const mailOf = {};
+  try {
+    const emp = await getJson('employees/all.json');
+    ((emp && (emp.rows || emp.employees)) || []).forEach(function (e) {
+      if (e && e.uid && e.email) mailOf[e.uid] = String(e.email).trim();
+    });
+  } catch (e) {}
+
+  let subs = [];
+  let vk = null;
+  if (priv) {
+    try {
+      vk = vapidKeys(priv);
+      const sf = await getJson(SUBS_KEY);
+      subs = (sf && Array.isArray(sf.list)) ? sf.list : [];
+    } catch (e) { note = e.message; }
+  } else {
+    note = 'VAPID_PRIVATE_KEY тохируулаагүй';
+  }
+
+  /* Хуурай горим: ХЭНД, ЯМАР СУВГААР хүрэхийг илгээхгүйгээр харуулна */
+  if (dry) {
+    const canPush = {};
+    subs.forEach(function (x) { if (x && x.endpoint && x.keys && !x.dead) canPush[x.uid] = 1; });
+    return res.status(200).json({ ok: true, dry: true, rows: rows.length,
+      would: out.map(function (o) {
+        return { id: o.id, k: o.k, title: o.title,
+          push: o.uids.filter(function (u) { return canPush[u]; }),
+          mail: o.uids.filter(function (u) { return !canPush[u] && mailOf[u]; }),
+          none: o.uids.filter(function (u) { return !canPush[u] && !mailOf[u]; }) };
+      }) });
+  }
 
   /* ① Аппын хонх — НЭГ удаа бичнэ (зэрэг бичвэл бие биенээ дарна) */
   const ntf = await getJson(NTF_KEY);
@@ -249,20 +317,25 @@ module.exports = async function handler(req, res) {
   }
   const ntfOk = await putJson(NTF_KEY, { updatedAt: stamp, list: list.slice(-800) });
 
-  /* ② Push */
-  let pushed = 0, note = '';
-  const priv = process.env.VAPID_PRIVATE_KEY || '';
-  if (priv) {
-    try {
-      const vk = vapidKeys(priv);
-      const sf = await getJson(SUBS_KEY);
-      const subs = (sf && Array.isArray(sf.list)) ? sf.list : [];
-      for (const o of out) {
-        pushed += await pushTo(o.uids, { title: o.title, body: o.body, url: KPI_URL, tag: 'monos-wk' }, vk, subs);
-      }
-    } catch (e) { note = e.message; }
-  } else {
-    note = 'VAPID_PRIVATE_KEY тохируулаагүй — зөвхөн аппын хонхонд очлоо';
+  /* ② Push, дараа нь хүрээгүй хүнд И-МЭЙЛ */
+
+  /* Нэг хүнд нэг сэрэмжлүүлгээр НЭГ л и-мэйл — давхардуулахгүй */
+  const mailedTo = {};
+  for (const o of out) {
+    let okUids = [];
+    if (vk) {
+      const r = await pushTo(o.uids, { title: o.title, body: o.body, url: KPI_URL, tag: 'monos-wk' }, vk, subs);
+      pushed += r.sent; okUids = r.okUids;
+    }
+    /* ⭐ Мэдэгдэл хүрээгүй хүн бүрд и-мэйлээр очно. Аппын хонх нь
+       ажилтан аппаа нээхээс нааш харагдахгүй тул ганцаараа хангалтгүй. */
+    for (const uid of o.uids) {
+      if (okUids.indexOf(uid) >= 0) continue;
+      const key = uid + '|' + o.id + '|' + o.k;
+      if (mailedTo[key]) continue;
+      mailedTo[key] = 1;
+      if (await mailTo(mailOf[uid], o.title, o.body)) mailed++;
+    }
   }
 
   /* ③ Тэмдгийг тольд бичнэ */
@@ -270,7 +343,7 @@ module.exports = async function handler(req, res) {
 
   return res.status(200).json({
     ok: true, rows: rows.length, sent: out.length,
-    bell: ntfOk, push: pushed, mirror: mirOk, note: note,
+    bell: ntfOk, push: pushed, mailed: mailed, mirror: mirOk, note: note,
     items: out.map(function (o) { return { id: o.id, k: o.k, to: o.uids.length, title: o.title }; })
   });
 };
