@@ -22,7 +22,9 @@
 const crypto = require('crypto');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
+const { sendViaGmail } = require('./_smtp.js');
 const SUBS_KEY = 'push/subs.json';
+const NLX = String.fromCharCode(10);
 const VAPID_SUB = 'mailto:buynt666@gmail.com';
 const KPI_URL = '/kpi/?page=tasks';
 const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
@@ -188,6 +190,37 @@ function messageFor(rec, weekday) {
   return null;
 }
 
+/* ── Push хүрэхгүй бол И-МЭЙЛЭЭР нөхнө ─────────────────────────────
+   ⚠ 2026-08-30: хоёр ажилтны төхөөрөмж хуучин VAPID түлхүүрт уяатай
+   тул push нь 401 болж, сануулга ХЭЗЭЭ Ч хүрдэггүй байв. Төхөөрөмжийг
+   сервер талаас засах БОЛОМЖГҮЙ (зөвхөн хөтөч өөрөө дахин бүртгүүлнэ).
+   Тиймээс сануулга нь алдагдахгүйн тулд и-мэйлээр давхар илгээнэ.
+   Ажилтан аппаа дараа нээхэд клиент өөрөө бүртгэлээ шинэчилнэ. */
+async function mailFallback(email, msg) {
+  const user = process.env.GMAIL_USER || '';
+  const pass = process.env.GMAIL_APP_PASSWORD || '';
+  if (!user || !pass || !email) return false;
+  const link = 'https://monos-hab.vercel.app' + (msg.url || KPI_URL);
+  const html =
+    '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;' +
+    'padding:22px;color:#0F1117">' +
+    '<div style="font-size:17px;font-weight:700;margin-bottom:8px">' + msg.title + '</div>' +
+    '<div style="font-size:14px;color:#475569;line-height:1.65;margin-bottom:18px">' +
+    msg.body + '</div>' +
+    '<a href="' + link + '" style="display:inline-block;background:#0F1117;color:#fff;' +
+    'text-decoration:none;border-radius:10px;padding:12px 22px;font-weight:700;' +
+    'font-size:14px">Нээх</a>' +
+    '<div style="font-size:12px;color:#94A3B8;margin-top:22px;line-height:1.6">' +
+    'Энэ сануулга и-мэйлээр ирсэн шалтгаан: таны төхөөрөмжийн мэдэгдэл ' +
+    'ажиллахгүй байна. Аппаа нэг удаа нээхэд өөрөө засагдана.</div></div>';
+  try {
+    await sendViaGmail({ user: user, pass: pass, to: email,
+      fromName: process.env.OTP_FROM_NAME || 'Монос Хүнс — ХАБЭА',
+      subject: msg.title, html: html, text: msg.title + NLX + msg.body + NLX + link });
+    return true;
+  } catch (e) { return false; }
+}
+
 /* ── Firebase ID token шалгах (гараар туршихад) ── */
 async function verifyIdToken(idToken) {
   if (!idToken || idToken.length < 40) return null;
@@ -264,8 +297,18 @@ module.exports = async function handler(req, res) {
 
   const today = ubDate();
   const weekday = ubWeekday();
+
+  /* uid → и-мэйл (push унасан үед нөхөж илгээхэд хэрэгтэй) */
+  const mailOf = {};
+  try {
+    const emp = await r2Get('employees/all.json');
+    ((emp && (emp.rows || emp.employees)) || []).forEach(function (e) {
+      if (e && e.uid && e.email) mailOf[e.uid] = String(e.email).trim();
+    });
+  } catch (e) { /* и-мэйл нөхөлтгүйгээр үргэлжилнэ */ }
   let sent = 0, skipped = 0, failed = 0;
   const drop = {};
+  let mailed = 0;
 
   for (const rec of list) {
     if (!rec || !rec.endpoint || !rec.keys || !rec.keys.p256dh || !rec.keys.auth) { skipped++; continue; }
@@ -289,20 +332,35 @@ module.exports = async function handler(req, res) {
     try { st = await sendPush(rec, msg, vk); }
     catch (e) { st = 0; }
 
+    /* ⭐ Push хүрээгүй бол сануулга алдагдахгүй — и-мэйлээр очно.
+       Өдөрт нэг л удаа (rec.lp) тул давхардахгүй. */
+    if (!(st >= 200 && st < 300)) {
+      if (await mailFallback(mailOf[rec.uid], msg)) { mailed++; if (!onlyUid) rec.lp = today; }
+    }
     if (st >= 200 && st < 300) {
       sent++;
-      if (!onlyUid) rec.lp = today;
+      if (!onlyUid) { rec.lp = today; delete rec.err; delete rec.errN; delete rec.errAt; }
     } else if (st === 404 || st === 410) {
       drop[rec.endpoint] = 1;                                  // төхөөрөмж хүчингүй болсон
       failed++;
     } else {
+      /* ⚠⚠ 2026-08-30: 401/403 нь «түлхүүр таарахгүй» гэсэн үг —
+         төхөөрөмж хуучин VAPID түлхүүрээр бүртгүүлсэн. Өмнө нь энэ нь
+         зүгээр `failed++` болоод ҮҮРД дахин оролдож, сануулга нь ХЭЗЭЭ Ч
+         хүрдэггүй, хэн ч мэддэггүй байв. Одоо тэмдэглэж, 3 удаа дараалан
+         унасны дараа хаяна — клиент дараагийн орох үедээ өөрөө
+         шинээр бүртгүүлнэ (pushKeyOk). */
       failed++;
+      if (!onlyUid) {
+        rec.err = st; rec.errAt = today; rec.errN = (rec.errN || 0) + 1;
+        if (rec.errN >= 3) drop[rec.endpoint] = 1;
+      }
     }
   }
 
   /* Файлыг шинэчилнэ: хүчингүй бүртгэлийг хаяж, сануулсан огноог тэмдэглэнэ */
   let saved = false;
-  if (sent || Object.keys(drop).length) {
+  if (sent || mailed || Object.keys(drop).length) {
     try {
       const next = list.filter(function (x) { return x && !drop[x.endpoint]; });
       saved = await r2PutJson(SUBS_KEY, { updatedAt: new Date().toISOString(), list: next });
@@ -327,7 +385,7 @@ module.exports = async function handler(req, res) {
 
   return res.status(200).json({
     ok: true, date: today, weekday: weekday, total: list.length,
-    sent: sent, skipped: skipped, failed: failed,
+    sent: sent, skipped: skipped, failed: failed, mailed: mailed,
     dropped: Object.keys(drop).length, saved: saved,
     wkEscalate: esc,
     why: sent ? '' : 'Сануулах шаардлагатай хүн олдсонгүй'

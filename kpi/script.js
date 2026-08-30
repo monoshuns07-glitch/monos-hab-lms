@@ -22508,6 +22508,22 @@ async function pushSubsMerge(mutate, verifyUid) {
   return false;
 }
 
+/* ── Бүртгэл ОДООГИЙН сервер түлхүүрээр хийгдсэн эсэх ───────────────
+   ⚠ 2026-08-30-нд илэрсэн: VAPID түлхүүрийг 08-27-нд сольсон боловч
+   түүнээс ӨМНӨ бүртгүүлсэн төхөөрөмжүүд ХУУЧИН түлхүүрт уяатай хэвээр
+   үлдсэн. Push үйлчилгээ (WNS) тэдгээрт 401 буцааж, сануулга ХЭЗЭЭ Ч
+   хүрдэггүй байв — хэн ч мэдэхгүй. Одоо апп ачаалах бүрд шалгаж,
+   таарахгүй бол ЧИМЭЭГҮЙ дахин бүртгүүлнэ. */
+function pushKeyOk(sub) {
+  try {
+    var cur = new Uint8Array(sub.options.applicationServerKey || []);
+    var want = pushB64ToU8(PUSH_PUB);
+    if (cur.length !== want.length) return false;
+    for (var i = 0; i < want.length; i++) if (cur[i] !== want[i]) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
 /* Сануулга ЭХЛҮҮЛЭХ (ажилтан товч дарсны дараа) */
 async function pushEnable() {
   if (!pushSupported()) throw new Error('Таны хөтөч сануулгыг дэмжихгүй байна');
@@ -22525,14 +22541,7 @@ async function pushEnable() {
   var sub = await reg.pushManager.getSubscription();
   if (sub) {
     /* Сервер түлхүүр солигдсон бол хуучин бүртгэл ажиллахгүй — шинэчилнэ */
-    var same = false;
-    try {
-      var cur = new Uint8Array(sub.options.applicationServerKey || []);
-      var want = pushB64ToU8(PUSH_PUB);
-      same = cur.length === want.length;
-      for (var i = 0; same && i < want.length; i++) if (cur[i] !== want[i]) same = false;
-    } catch (e) { same = false; }
-    if (!same) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
+    if (!pushKeyOk(sub)) { try { await sub.unsubscribe(); } catch (e) {} sub = null; }
   }
   if (!sub) {
     sub = await reg.pushManager.subscribe({
@@ -22585,7 +22594,9 @@ function pushSyncState() {
   var stale = !loc.syncedAt || (Date.now() - loc.syncedAt) > 3 * 24 * 3600 * 1000;
   var changed = (s.late !== loc.late) || (s.pending !== loc.pending) ||
     ((s.ackDue || 0) !== (loc.ackDue || 0)) || ((s.reqN || 0) !== (loc.reqN || 0));
-  if (!changed && !stale) return;
+  /* ⚠ Түлхүүрийн шалгалт нь `changed`/`stale`-аас ХАМААРАХГҮЙ. Хуучин
+     түлхүүртэй бүртгэл нь ямар ч өөрчлөлтгүй тул өмнө нь энэ мөрөнд
+     таслагдаж, ХЭЗЭЭ Ч засагддаггүй байв. */
   if (pushSyncState._busy) return;
   pushSyncState._busy = true;
   (async function () {
@@ -22593,13 +22604,23 @@ function pushSyncState() {
       var reg = await navigator.serviceWorker.ready;
       var sub = await reg.pushManager.getSubscription();
       if (!sub) { pushLocalSet({ on: 0 }); return; }      // хэрэглэгч хөтчөөс хаасан
+      /* Сервер түлхүүр солигдсон бол ЧИМЭЭГҮЙ дахин бүртгүүлнэ */
+      var fixed = false;
+      if (!pushKeyOk(sub)) {
+        try { await sub.unsubscribe(); } catch (e) {}
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true, applicationServerKey: pushB64ToU8(PUSH_PUB) });
+        fixed = true;
+        console.warn('[push] хуучин түлхүүртэй бүртгэлийг шинэчлэв');
+      }
+      if (!changed && !stale && !fixed) return;
       var j = sub.toJSON();
       var rec = { uid: s.uid, endpoint: j.endpoint, keys: j.keys,
         late: s.late, pending: s.pending, ackDue: s.ackDue || 0, reqN: s.reqN || 0,
         at: new Date().toISOString() };
       await pushSubsMerge(function (list) {
         var mine = list.filter(function (x) { return x && x.uid === rec.uid; })[0];
-        if (mine && !changed && mine.endpoint === rec.endpoint) return null;   // бүх зүйл байрандаа
+        if (mine && !changed && !fixed && mine.endpoint === rec.endpoint) return null;   // бүх зүйл байрандаа
         return list.filter(function (x) {
           return x && x.uid !== rec.uid && x.endpoint !== rec.endpoint;
         }).concat([rec]);
