@@ -133,16 +133,22 @@ async function pushTo(uids, msg, vk, subs) {
 }
 
 /* Push хүрээгүй хүнд сэрэмжлүүлгийг И-МЭЙЛЭЭР хүргэнэ */
-async function mailTo(email, title, body) {
+async function mailTo(email, subject, items) {
   const user = process.env.GMAIL_USER || '';
   const pass = process.env.GMAIL_APP_PASSWORD || '';
   if (!user || !pass || !email) return false;
   const link = 'https://monos-hab.vercel.app' + KPI_URL;
+  const rows = (Array.isArray(items) ? items : [items]).map(function (x) {
+    return '<div style="border-left:3px solid #0F1117;padding:2px 0 2px 12px;margin-bottom:14px">' +
+      '<div style="font-size:15px;font-weight:700;margin-bottom:4px">' + x.title + '</div>' +
+      '<div style="font-size:13.5px;color:#475569;line-height:1.6">' + x.body + '</div></div>';
+  }).join('');
+  const txt = (Array.isArray(items) ? items : [items])
+    .map(function (x) { return x.title + String.fromCharCode(10) + x.body; })
+    .join(String.fromCharCode(10) + String.fromCharCode(10));
   const html =
     '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:0 auto;' +
-    'padding:22px;color:#0F1117">' +
-    '<div style="font-size:17px;font-weight:700;margin-bottom:8px">' + title + '</div>' +
-    '<div style="font-size:14px;color:#475569;line-height:1.65;margin-bottom:18px">' + body + '</div>' +
+    'padding:22px;color:#0F1117">' + rows +
     '<a href="' + link + '" style="display:inline-block;background:#0F1117;color:#fff;' +
     'text-decoration:none;border-radius:10px;padding:12px 22px;font-weight:700;' +
     'font-size:14px">Ажлын захиалгыг нээх</a>' +
@@ -152,8 +158,8 @@ async function mailTo(email, title, body) {
   try {
     await sendViaGmail({ user: user, pass: pass, to: email,
       fromName: process.env.OTP_FROM_NAME || 'Монос Хүнс — ХАБЭА',
-      subject: title, html: html,
-      text: title + String.fromCharCode(10) + body + String.fromCharCode(10) + link });
+      subject: subject, html: html,
+      text: txt + String.fromCharCode(10) + link });
     return true;
   } catch (e) { return false; }
 }
@@ -319,23 +325,28 @@ module.exports = async function handler(req, res) {
 
   /* ② Push, дараа нь хүрээгүй хүнд И-МЭЙЛ */
 
-  /* Нэг хүнд нэг сэрэмжлүүлгээр НЭГ л и-мэйл — давхардуулахгүй */
-  const mailedTo = {};
+  /* ⭐ Мэдэгдэл хүрээгүй хүнийг цуглуулна. Аппын хонх нь ажилтан
+     аппаа нээхээс нааш харагдахгүй тул ганцаараа хангалтгүй.
+     ⚠ Нэг хүнд нэг ажлаар 3 сэрэмжлүүлэг зэрэг үүсэж болно
+     (аваагүй + хугацаа дуусав + автоматаар оноов). Гурван тусдаа
+     и-мэйл явуулбал хогийн сав руу орно — НЭГ и-мэйлд нэгтгэнэ. */
+  const pend = {};                      // uid -> [{title, body}]
   for (const o of out) {
     let okUids = [];
     if (vk) {
       const r = await pushTo(o.uids, { title: o.title, body: o.body, url: KPI_URL, tag: 'monos-wk' }, vk, subs);
       pushed += r.sent; okUids = r.okUids;
     }
-    /* ⭐ Мэдэгдэл хүрээгүй хүн бүрд и-мэйлээр очно. Аппын хонх нь
-       ажилтан аппаа нээхээс нааш харагдахгүй тул ганцаараа хангалтгүй. */
     for (const uid of o.uids) {
       if (okUids.indexOf(uid) >= 0) continue;
-      const key = uid + '|' + o.id + '|' + o.k;
-      if (mailedTo[key]) continue;
-      mailedTo[key] = 1;
-      if (await mailTo(mailOf[uid], o.title, o.body)) mailed++;
+      (pend[uid] = pend[uid] || []).push({ title: o.title, body: o.body });
     }
+  }
+  for (const uid of Object.keys(pend)) {
+    const items = pend[uid];
+    const subject = items.length === 1 ? items[0].title
+      : items.length + ' ажлын захиалга таны анхаарлыг хүлээж байна';
+    if (await mailTo(mailOf[uid], subject, items)) mailed++;
   }
 
   /* ③ Тэмдгийг тольд бичнэ */
