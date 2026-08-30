@@ -4644,7 +4644,11 @@ function renderEmployeeDashboard() {
          Тэр кэш нь найдваргүй SDK замаар л дүүрдэг тул ажилтны дүн энд
          ОГТ ХАРАГДАХГҮЙ байв («Миний гүйцэтгэл» цэс). Одоо доорх байрыг
          ажилтны ӨӨРИЙНХ нь бичлэгээр (REST) шууд дүүргэнэ. */
-    '<div id="dashExamLive">' + habeaExamsHTML(e) + '</div>' +
+    /* ⚠ habeaExamsHTML(e)-г УРЬДЧИЛАН зурахаа болив. v342-оос хойш кэш
+       найдвартай болсон тул тэр нь дүүрч, ХУУЧИН ТОМ загвар эхлээд
+       гараад дараа нь шинэ нягт загвар руу үсэрдэг байв — хоёр өөр
+       харагдац анивчина. Одоо зөвхөн dashLiveScore() нэг л удаа зурна. */
+    '<div id="dashExamLive"></div>' +
 
     '</div></div>';   /* ← баруун багана + emp-cols дуусав */
 
@@ -26146,7 +26150,11 @@ function openEmployeeDetail(id) {
     '<div style="flex:1"><div style="font-weight:600">Нэмэгдэх бонус</div>' +
     '<div style="font-size:12px;color:#64748B">Баталгаажсан аюул / near-miss мэдээллээс</div></div>' +
     '<div style="font-weight:700;color:#16A34A;font-size:18px">+' + bp + '</div></div>' +
-    habeaExamsHTML(e) +
+    /* ⚠ Ажилтны профайл (админ хардаг) — ШИНЭ нягт загвараар.
+       e.habeaExams нь v342-оос хойш modExamHTML-ийн хүлээдэг бүтэцтэй
+       (qs/qOk нэмэгдсэн) тул шууд дамжуулж болно. Ингэснээр бүх газарт
+       НЭГ ижил харагдац болно. */
+    modExamHTML((e && e.habeaExams) || []) +
     // Энэ цалингийн сарын зөрчлүүд (босго онооноос хасагдсан)
     (function () {
       var vlist = empViolations(e);
