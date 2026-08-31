@@ -20688,7 +20688,10 @@ function tdShalgalt(s) {
   s.people.forEach(function (p, idx) {
     var rec = p.post || p.pre;
     if (!rec) return;
-    if (idx) ws.getRow(r).addPageBreak();
+    /* ⚠ addPageBreak() нь тухайн мөрийн ДООР тасалбар тавьдаг. Гарчгийн
+       мөр дээр дуудвал гарчиг өмнөх хуудсанд үлдэнэ — өмнөх хүний
+       сүүлийн мөр дээр тавина. */
+    if (idx) ws.getRow(r - 1).addPageBreak();
     ws.mergeCells(r, 1, r, 4);
     tdSet(ws, r, 1, 'ХАБЭА-н ШАЛГАЛТЫН ХУУДАС',
       { size: 12, bold: true, h: 'center', noBorder: true });
