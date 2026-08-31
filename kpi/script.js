@@ -1024,6 +1024,8 @@ async function loadDB() {
     try { applyEmpOverrides(); } catch (e) {}
     // Ажилтан бол DB-г зөвхөн өөрийнхөөр шүүнэ (admin бүгдийг хардаг)
     try { scopeDataForEmployee(); } catch (e) {}
+    /* Админ устгасныг ЯМАР Ч кэшээс хасна */
+    try { await delTombApply(); } catch (e) {}
   } else {
     try { var raw2 = localStorage.getItem(LSKEY); if (raw2) { DB = JSON.parse(raw2); if (!DB || !DB.settings) { DB = seedDB(); fresh = true; } } else { DB = seedDB(); fresh = true; } }
     catch (e) { DB = seedDB(); fresh = true; }
@@ -1342,9 +1344,13 @@ async function loadCols(opt) {
   }));
   res.forEach(function (r) {
     if (!r.arr) return;                                        // уншилт нурсан — бүү хөндөх
-    /* Хоосон ирсэн ч санах ойд/үндсэн баримтад дата байвал БҮҮ ДАР
-       (шилжилтийн үед хуучин дата алдагдахаас хамгаална) */
-    if (!r.arr.length && Array.isArray(DB[r.k]) && DB[r.k].length) return;
+    /* ⚠⚠ 2026-08-31: ӨМНӨ НЬ энд «хоосон ирвэл хуучин датаг бүү дар»
+       гэсэн хамгаалалт байв. Гэтэл `arr === null` нь аль хэдийн «уншилт
+       нурсан»-ыг илэрхийлдэг тул хоосон массив нь ЖИНХЭНЭ хариу —
+       «танд бичлэг байхгүй» гэсэн үг. Тэр хамгаалалтын улмаас админ
+       бичлэгийг устгасан ч, тухайн ажилтны цорын ганц бичлэг тэр байсан
+       бол Firestore 0 буцааж, ХУУЧИН КЭШ хэвээр үлдэж, устгасан ажлын
+       захиалга ХЭЗЭЭ Ч алга болдоггүй байв. */
     DB[r.k] = r.arr;
   });
   snapshotCols();
@@ -15783,6 +15789,47 @@ function wkHazChipsHTML(r) {
      2. R2         workorders/_all.json  — холбоотой ажлын захиалга
      3. R2         workflow/_open.json   — сэрэмжлүүлэгийн толь
      4. Локал DB   DB.reports            — дэлгэц дээрээс шууд алга болно */
+/* ── УСТГАСНЫ ТЭМДЭГЛЭЛ ──────────────────────────────────────────────
+   Админ устгасан ч ажилтны хөтөч дээр хуучин хуулбар үлдэж болно
+   (сүлжээгүй, кэшээс уншсан, эсвэл Firestore шүүлт хоосон буцсан).
+   Тиймээс устгасан дугааруудыг R2-д жагсааж, апп ачаалах бүрд
+   тэдгээрийг ЯМАР Ч эх сурвалжаас хассаны дараа зурна. */
+var WK_DEL_FILE = 'workflow/_deleted.json';
+
+async function delTombAdd(ids) {
+  try {
+    var cur = await riskR2GetJson(WK_DEL_FILE, { fresh: true });
+    var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+    var at = new Date().toISOString();
+    (ids || []).forEach(function (x) {
+      if (x && !list.some(function (y) { return y && y.id === x; })) list.push({ id: x, at: at });
+    });
+    await riskR2PutJson(WK_DEL_FILE, { updatedAt: at, list: list.slice(-800) });
+    return true;
+  } catch (e) { console.error('[del] tomb', e); return false; }
+}
+
+/* Устгасан бичлэгийг ЯМАР Ч кэшээс хасна. Апп ачаалах бүрд дуудагдана. */
+async function delTombApply() {
+  try {
+    var f = await riskR2GetJson(WK_DEL_FILE, { fresh: true });
+    var list = (f && Array.isArray(f.list)) ? f.list : [];
+    if (!list.length) return 0;
+    var gone = {}; list.forEach(function (x) { if (x && x.id) gone[String(x.id)] = 1; });
+    var n = 0;
+    ['reports', 'workOrders', 'tasks'].forEach(function (k) {
+      if (!Array.isArray(DB[k])) return;
+      var before = DB[k].length;
+      DB[k] = DB[k].filter(function (x) {
+        return !(x && (gone[String(x.id)] || gone[String(x.reportId)]));
+      });
+      n += before - DB[k].length;
+    });
+    if (n) { try { dbCacheSave('устгасныг хасав'); } catch (e) {} }
+    return n;
+  } catch (e) { return 0; }
+}
+
 async function reportDeleteHard(id) {
   if (!isAdmin()) { toast('Зөвхөн ХАБЭА админ устгана', 'warn'); return false; }
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
@@ -15822,9 +15869,16 @@ async function reportDeleteHard(id) {
     }
   } catch (e) { console.error('[del] mirror', e); }
 
-  /* 4. Локал */
+  /* 4. Устгасны тэмдэглэл — ажилтны хөтөч дээрх хуучин хуулбарыг ч устгана */
+  try { await delTombAdd([String(id)].concat(wo && wo.id ? [String(wo.id)] : [])); }
+  catch (e) { console.error('[del] tomb', e); }
+
+  /* 5. Локал */
   try {
     DB.reports = (DB.reports || []).filter(function (x) { return x.id !== id; });
+    if (Array.isArray(DB.workOrders) && wo && wo.id) {
+      DB.workOrders = DB.workOrders.filter(function (w) { return w && w.id !== wo.id; });
+    }
     saveDB();
   } catch (e) {}
 
