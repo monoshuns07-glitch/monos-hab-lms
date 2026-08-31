@@ -1162,7 +1162,39 @@ var COL_KEYS = ['tasks', 'reports', 'violations', 'hrorders', 'hazards', 'sugges
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
   'extTrainings', 'externalTrainings', 'miskillStats'];
 var COL_PREFIX = 'kpi_';
-function colRef(key) { return fdb.collection(COL_PREFIX + key); }
+/* ══════════════════════════════════════════════════════════════════════
+   FIREBASE-ИЙН ХЯЗГААР — ЗӨВХӨН АЖИЛТНЫ БҮРТГЭЛ
+   ----------------------------------------------------------------------
+   ⚠⚠ ДҮРЭМ: Firebase-ээс ЗӨВХӨН нэвтрэлт ба ажилтны бүртгэл (users,
+   user_roles) уншина. БУСАД БҮХ ДАТА R2-д (эрсдэл, даалгавар, шалгалт,
+   аюул, ажлын захиалга, сургалт…).
+
+   ЯАГААД: Firestore-ийн үнэгүй квот баримт БҮРЭЭР тоологддог. Ажилтан
+   олон, апп байнга нээгддэг тул нэг л газар «бүх бичлэгийг тат» гэж
+   бичихэд өдрийн квот дүүрч, сервер HTTP 429 буцааж, дата ХООСОН
+   харагдана. Шалгалтын дүн «гарч ирээд алга болдог» асуудал яг ингэж
+   үүссэн бөгөөд шалтгааныг олох хүртэл 5 удаа дэмий зассан (2026-08-31).
+
+   Доорх шалгагч нь дүрэм зөрчсөн уншилтыг ЗААВАЛ ХАРАГДУУЛНА —
+   консолд анхааруулаад, админд эрүүл мэндийн самбарт мэдэгдэнэ.
+   Хэрэв шинэ код Firestore руу хандвал энэ нь чимээгүй өнгөрөхгүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var FB_ALLOWED = ['users', 'user_roles'];    /* ЗӨВХӨН эдгээр */
+var FB_VIOLATIONS = [];                      /* дүрэм зөрчсөн уншилтууд */
+
+function fbGuard(name, why) {
+  var n = String(name || '');
+  if (FB_ALLOWED.indexOf(n) >= 0) return;
+  var hit = FB_VIOLATIONS.filter(function (x) { return x.col === n; })[0];
+  if (hit) { hit.n++; return; }
+  FB_VIOLATIONS.push({ col: n, n: 1, why: why || '' });
+  try {
+    console.warn('[Firebase дүрэм] «' + n + '» цуглуулгыг Firestore-оос уншиж байна. ' +
+      'Ажилтны бүртгэлээс бусад БҮХ дата R2-д байх ёстой. ' + (why || ''));
+  } catch (e) {}
+}
+
+function colRef(key) { fbGuard(COL_PREFIX + key, 'colRef(' + key + ')'); return fdb.collection(COL_PREFIX + key); }
 /* Хамгаалалт: түлхүүр ямар ч шалтгаанаар массив биш болсон бол хоосон гэж үзнэ */
 function colArr(k) { return Array.isArray(DB[k]) ? DB[k] : []; }
 function isColKey(k) { return COL_KEYS.indexOf(k) >= 0 && Array.isArray(DB[k]); }
@@ -1617,7 +1649,9 @@ async function sysReport() {
     rows[em] = {
       v: ver, at: new Date().toISOString(),
       n: (me && me.name) || '', dp: (me && me.dept) || '',
-      os: d.os, br: d.br, pwa: d.pwa ? 1 : 0
+      os: d.os, br: d.br, pwa: d.pwa ? 1 : 0,
+      /* Firebase-ийн дүрэм зөрчсөн уншилт — админд харагдана */
+      fb: FB_VIOLATIONS.length ? FB_VIOLATIONS.map(function (x) { return x.col; }).join(',') : ''
     };
     await sysPut(SYS_CLI_FILE, { updatedAt: new Date().toISOString(), rows: rows });
     try {
@@ -1725,12 +1759,13 @@ async function sysHealthDraw() {
 
   /* — Хувилбарын байдал — */
   var rows = (cli && cli.rows) || {};
-  var vers = {}, stale = [], total = 0;
+  var vers = {}, stale = [], total = 0, fbBad = [];
   Object.keys(rows).forEach(function (em) {
     var r = rows[em] || {};
     var v = String(r.v || '?');
     vers[v] = (vers[v] || 0) + 1; total++;
     if (latest && v !== latest) stale.push({ em: em, n: r.n || em, v: v, at: r.at, dp: r.dp || '', os: r.os || '', br: r.br || '' });
+    if (r.fb) fbBad.push({ n: r.n || em, cols: r.fb });
   });
   var vlist = Object.keys(vers).sort(function (a, b) { return Number(b) - Number(a); });
   var okN = vers[latest] || 0;
@@ -1766,6 +1801,21 @@ async function sysHealthDraw() {
         ';border-radius:8px;padding:5px 11px;font-size:12.5px;font-weight:700">v' + esc(v) + ' · ' + vers[v] + '</span>';
     });
     h += '</div>';
+  }
+
+  /* ⚠ Firebase-ийн дүрэм зөрчсөн уншилт — ЧИМЭЭГҮЙ өнгөрөхгүй.
+     Ажилтны бүртгэлээс бусад дата Firestore-оос уншигдаж байвал энд гарна. */
+  if (fbBad.length) {
+    var cols = {};
+    fbBad.forEach(function (x) { String(x.cols).split(',').forEach(function (c) { if (c) cols[c] = (cols[c] || 0) + 1; }); });
+    h += '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;' +
+      'padding:12px 14px;margin-bottom:14px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:#991B1B;margin-bottom:5px">' +
+      '⚠ Firebase-ийн дүрэм зөрчигдөж байна</div>' +
+      '<div style="font-size:12px;color:#7F1D1D;line-height:1.6">' +
+      'Ажилтны бүртгэлээс бусад дата Firestore-оос уншигдаж байна: <b>' +
+      esc(Object.keys(cols).join(', ')) + '</b>. Энэ нь квот дүүргэж, дата хоосон ' +
+      'харагдах шалтгаан болдог — R2 руу шилжүүлэх шаардлагатай. (' + fbBad.length + ' ажилтан дээр илэрсэн)</div></div>';
   }
 
   if (stale.length) {
@@ -6680,6 +6730,7 @@ function loadRiskDashboard(dept, cb) {
     return;
   }
   if (!fbReady || !fdb) { cb(null); return; }
+  fbGuard(RISK_COL, 'эрсдэл — R2 нурсан үеийн нөөц зам');
   fdb.collection(RISK_COL).doc(dept).get()
     .then(function (snap) {
       if (!snap.exists) { cb(null); return; }
