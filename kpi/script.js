@@ -416,7 +416,9 @@ async function readHabeaExamsByEmail(force) {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
         var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
-        if (r.status === 404) { _habCache = {}; _habAt = Date.now(); return {}; }
+        /* ⚠ Толь үүсээгүйг «хэн ч шалгалт өгөөгүй» гэж ОЙЛГОХГҮЙ —
+           тэгвэл KPI оноо худлаа тэг болно. */
+        if (r.status === 404) return null;
         if (!r.ok) throw new Error('HTTP ' + r.status);
         var jj = await r.json();
         var rows = (jj && Array.isArray(jj.list)) ? jj.list : [];
@@ -19927,7 +19929,11 @@ async function trnExamAll(force) {
   if (!force && TRN_EXAMS) return TRN_EXAMS;
   try {
     var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
-    if (r.status === 404) { TRN_EXAMS = []; return TRN_EXAMS; }
+    /* ⚠ Толь хараахан үүсээгүй нь «шалгалт өгөөгүй» гэсэн үг БИШ.
+       [] буцаавал тайлан «0 хамрагдсан» гэж ХУДЛАА харуулна — дарга нар
+       хэн ч сургалтад суугаагүй гэж ойлгоно. Мэдэхгүй бол мэдэхгүй гэ.
+       (2026-08-31) */
+    if (r.status === 404) return null;
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var j = await r.json();
     var rows = (j && Array.isArray(j.list)) ? j.list : [];
