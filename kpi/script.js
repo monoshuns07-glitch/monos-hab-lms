@@ -548,6 +548,7 @@ async function buildEmployeesFromRealData() {
     /* ⚠ Уншилт унасан ч ЭНД ЗОГСОХГҮЙ — доор өөрийн бүртгэл ба нөөц хуулбар бий */
     var docs = [], readErr = null;
     try {
+      try { fbCount('users'); } catch (e) {}
       var usersSnap = await fdb.collection('users').get();
       usersSnap.forEach(function (d) {
         var x = d.data() || {};
@@ -574,7 +575,8 @@ async function buildEmployeesFromRealData() {
          татаж НЭМНЭ. Ингэснээр ажилтан «олдсонгүй» болж, эрсдэл нь алга болохгүй. */
       if (!found && sUid) {
         try {
-          var own = await fdb.collection('users').doc(sUid).get();
+          try { fbCount('users'); } catch (e) {}
+      var own = await fdb.collection('users').doc(sUid).get();
           if (own && own.exists) {
             var ox = own.data() || {};
             if (!ox.uid) ox.uid = sUid;
@@ -1182,7 +1184,19 @@ var COL_PREFIX = 'kpi_';
 var FB_ALLOWED = ['users', 'user_roles'];    /* ЗӨВХӨН эдгээр */
 var FB_VIOLATIONS = [];                      /* дүрэм зөрчсөн уншилтууд */
 
+/* Бодитоор хэмжихийн тулд ил гаргана — хөтчийн консолоос
+   window.__fb гэж бичихэд Firestore руу ХЭДЭН удаа хандсаныг харна. */
+var FB_READS = { allowed: 0, blocked: 0, detail: {} };
+try { window.__fb = FB_READS; window.__fbBad = FB_VIOLATIONS; } catch (e) {}
+
+function fbCount(name) {
+  var n = String(name || '');
+  FB_READS.detail[n] = (FB_READS.detail[n] || 0) + 1;
+  if (FB_ALLOWED.indexOf(n) >= 0) FB_READS.allowed++; else FB_READS.blocked++;
+}
+
 function fbGuard(name, why) {
+  fbCount(name);
   var n = String(name || '');
   if (FB_ALLOWED.indexOf(n) >= 0) return;
   var hit = FB_VIOLATIONS.filter(function (x) { return x.col === n; })[0];
@@ -27776,6 +27790,7 @@ function establishSession() {
       try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: uid })); } catch (e) {}
       // Firebase холбогдоогүй бол эрх баталгаажуулах боломжгүй тул admin эрх ОЛГОХГҮЙ (аюулгүйн бодлого)
       if (!fbReady) { SESSION = { role: 'employee', email: email, uid: uid, dept: '' }; resolve(); return; }
+      try { fbCount('users'); } catch (e) {}
       fdb.collection('users').doc(uid).get().then(function (snap) {
         var data = (snap.exists && snap.data()) || {};
         /* ⚠ Анх удаа нэвтэрч буй эсэх: бүх ажилтан нэг ерөнхий түр нууц үгтэй
@@ -27798,6 +27813,7 @@ function establishSession() {
         if (email) {
           // localStorage-с depthead override шалгана (admin эрх localStorage-аар огт олгогдохгүй)
           try { var lrole = _swRolesGet()[email]; if (!isAdminByDoc && lrole && lrole.role === 'depthead') { role = 'depthead'; dept = lrole.department || dept; } } catch (e2) {}
+          try { fbCount('user_roles'); } catch (e) {}
           fdb.collection('user_roles').doc(email).get().then(function (rSnap) {
             if (rSnap.exists) {
               var rd = rSnap.data() || {};
