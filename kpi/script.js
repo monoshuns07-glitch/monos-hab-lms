@@ -3302,6 +3302,7 @@ function switchPage(pageId) {
   else if (pageId === 'tasks') renderTasks();
   else if (pageId === 'myexams') renderMyExams();
   else if (pageId === 'trn-report') renderTrnReport();
+  else if (pageId === 'trn-docs') renderTrnDocs();
   else if (pageId === 'hrorder') renderHrOrders();
   else if (pageId === 'trn-mod') { try { renderTrainingModule(CURRENT_MOD); } catch (e2) {} }
 }
@@ -20405,13 +20406,467 @@ function trnWire(sc, exams) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   СУРГАЛТЫН БАРИМТ  —  шалгалтын бичлэгээс баримтыг ӨӨРӨӨ үүсгэнэ
+   ----------------------------------------------------------------------
+   ⚠ ЯАГААД: сургалт бүрийн дараа ХАБЭА-н алба дараах цаасыг ГАРААР
+   бөглөж, гарын үсэг цуглуулж, сканнердаж, фолдерт хийдэг байв:
+       · Ирцийн бүртгэл (Хавсралт №07)
+       · Зааварчилгааны дэвтрийн хуудас
+       · Дүнгийн жагсаалт
+       · Шалгалтын хуудас (хүн бүрээр)
+   Гэтэл шалгалт нь цахимаар авагддаг тул ДӨРВҮҮЛЭНГ НЬ бүрдүүлэх бүх
+   мэдээлэл системд аль хэдийн бий — нэр, алба, албан тушаал, оноо,
+   асуулт тус бүрийн хариулт, OTP-ийн баталгаа, огноо.
+
+   Энэ хэсэг нь тэдгээрийг R2 тольноос уншиж, сургалт бүрээр бүлэглэж,
+   ExcelJS-ээр 4 баримт үүсгэн JSZip-ээр нэг архив болгож татуулна.
+   Firestore руу ОГТ ХАНДАХГҮЙ.
+   ══════════════════════════════════════════════════════════════════════ */
+var TRNDOC_ALL = null;          /* exams/_all.json */
+var TRNDOC_QS = null;           /* exams/_questions.json */
+var TRNDOC_SES = null;          /* бүлэглэсэн сургалтууд */
+var TRNDOC_TITLES = {
+  urdchilsan: 'Урьдчилсан зааварчилгаа',
+  ankhan: 'Анхан шатны зааварчилгаа',
+  davtan_eeljit: 'Ээлжит давтан зааварчилгаа',
+  davtan_eeljit_bus: 'Ээлжит бус давтан зааварчилгаа',
+  davtan_odor_tutmiin: 'Өдөр дутмын зааварчилгаа'
+};
+var TRNDOC_AGUULGA =
+  'ХАБЭА-н тухай хууль, дүрэм журам · Ажлын байрны эрсдэл · ' +
+  'Хувийн хамгаалах хэрэгсэл · Осол, гэмтлээс урьдчилан сэргийлэх · ' +
+  'Гал түймэр, онцгой байдал';
+
+/* ── Хэн юу харах вэ ──────────────────────────────────────────────────
+   ХАБЭА-н алба ба админ — бүгд. Захирал — бүгд. Албаны дарга — өөрийн
+   алба. Бусад ажилтан — энэ цэс огт харагдахгүй. */
+function trndocScope() {
+  try {
+    if (isAdmin()) return { all: true, why: 'админ' };
+    var me = null; try { me = myEmp(); } catch (e) {}
+    var dept = String((me && me.dept) || (SESSION && SESSION.dept) || '');
+    if (/Хөдөлмөрийн\s*аюулгүй/i.test(dept)) return { all: true, why: 'ХАБЭА-н алба' };
+    try { if (wkIsDirector()) return { all: true, why: 'захирал' }; } catch (e) {}
+    if (isDeptHead() && dept) return { all: false, dept: dept, why: 'албаны дарга' };
+  } catch (e) {}
+  return null;
+}
+
+async function trndocLoad(force) {
+  if (TRNDOC_ALL && TRNDOC_QS && !force) return true;
+  try {
+    var a = await riskR2GetJson('exams/_all.json', { fresh: !!force });
+    var q = await riskR2GetJson('exams/_questions.json', { fresh: !!force });
+    TRNDOC_ALL = (a && Array.isArray(a.list)) ? a.list : null;
+    TRNDOC_QS = (q && Array.isArray(q.list)) ? q.list : [];
+    return !!TRNDOC_ALL;
+  } catch (e) { return false; }
+}
+
+/* Огноо × алба × сургалтын төрлөөр бүлэглэнэ.
+   ⚠ Сургалтын төрлийг оруулахгүй бол нэг өдөр нэг албанд орсон
+   давтан ба урьдчилсан хоёр НИЙЛЖ, буруу баримт үүснэ. */
+function trndocGroup() {
+  var g = {};
+  (TRNDOC_ALL || []).forEach(function (x) {
+    var day = x.ts ? new Date(x.ts * 1000).toISOString().slice(0, 10) : '';
+    if (!day) return;
+    var dept = x.dept || '(алба тодорхойгүй)';
+    var key = x.key || '';
+    var id = day + '|' + dept + '|' + key;
+    var s = g[id] || (g[id] = {
+      id: id, day: day, dstr: day.replace(/-/g, '.'), dept: dept, key: key,
+      title: TRNDOC_TITLES[key] || x.title || 'ХАБЭА сургалт', ppl: {}
+    });
+    var who = x.eid || x.email || x.name;
+    var p = s.ppl[who] || (s.ppl[who] = {
+      name: x.name || '', pos: x.pos || '', dept: dept, pre: null, post: null, sig: null
+    });
+    if (x.type === 'pre') p.pre = x; else if (x.type === 'post') p.post = x;
+    if ((x.otpAt || x.signedAt) && !p.sig) p.sig = x;
+  });
+  var out = Object.keys(g).map(function (k) {
+    var s = g[k];
+    s.people = Object.keys(s.ppl).map(function (u) { return s.ppl[u]; })
+      .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
+    s.n = s.people.length;
+    s.ok = s.people.filter(function (p) { return (p.post || p.pre || {}).passed; }).length;
+    return s;
+  });
+  out.sort(function (a, b) { return b.day.localeCompare(a.day) || String(a.dept).localeCompare(String(b.dept), 'mn'); });
+  return out;
+}
+
+/* Гарын үсгийн баталгааг бичвэр болгоно */
+function trndocSign(rec, name, twoLine) {
+  if (!rec) return '';
+  var s = '';
+  if (rec.otpAt) {
+    s = '✓ OTP-ээр баталгаажсан\n' + String(rec.otpAt).replace('T', ' ').slice(0, 16).replace(/-/g, '.');
+    if (rec.code) s += ' · код ' + rec.code;
+  } else if (rec.signedAt) {
+    s = '✓ Гарын үсэг зурсан\n' + String(rec.signedAt).replace('T', ' ').slice(0, 16).replace(/-/g, '.');
+  } else return '';
+  return (name && twoLine) ? (name + '\n' + s) : s;
+}
+
+/* Ажилтны хариултыг уншигдахуйц болгоно */
+function trndocAnswer(q, a) {
+  if (a == null || a === '') return '(хариулаагүй)';
+  var opt = function (id) {
+    var o = (q.options || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    return o ? String(o.text || '') : String(id);
+  };
+  if (q.type === 'single') return opt(a);
+  if (q.type === 'multi') return Array.isArray(a) ? a.map(opt).join(' · ') : opt(a);
+  if (q.type === 'matching' && a && typeof a === 'object' && !Array.isArray(a)) {
+    return Object.keys(a).sort().map(function (k) { return k + ' → ' + a[k]; }).join(' · ');
+  }
+  if (Array.isArray(a)) return a.join(' · ');
+  if (a && typeof a === 'object') {
+    return Object.keys(a).sort().map(function (k) { return k + ': ' + a[k]; }).join(' · ');
+  }
+  return String(a);
+}
+
+/* ── Excel туслахууд ─────────────────────────────────────────────── */
+var TD_THIN = { style: 'thin', color: { argb: 'FF000000' } };
+var TD_BOX = { top: TD_THIN, left: TD_THIN, bottom: TD_THIN, right: TD_THIN };
+function tdMm(mm) { return Math.max(2.2, (mm / 25.4 * 96 - 5) / 7); }
+function tdSet(ws, r, c, v, o) {
+  var cell = ws.getCell(r, c);
+  cell.value = v;
+  o = o || {};
+  cell.font = { name: 'Calibri', size: o.size || 8.5, bold: !!o.bold,
+    color: { argb: o.color || 'FF000000' } };
+  cell.alignment = { horizontal: o.h || 'left', vertical: o.v || 'middle', wrapText: true };
+  if (!o.noBorder) cell.border = TD_BOX;
+  if (o.fill) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: o.fill } };
+  return cell;
+}
+function tdPage(ws, land, widthsMm) {
+  ws.pageSetup = {
+    paperSize: 9, orientation: land ? 'landscape' : 'portrait',
+    fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+    margins: { left: 0.5, right: 0.5, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.2 }
+  };
+  ws.columns = widthsMm.map(function (mm) { return { width: tdMm(mm) }; });
+}
+function tdTitle(ws, n, title, sub) {
+  ws.mergeCells(1, 1, 1, n);
+  tdSet(ws, 1, 1, title, { size: 12.5, bold: true, h: 'center', noBorder: true });
+  ws.getRow(1).height = 22;
+  ws.mergeCells(2, 1, 2, n);
+  tdSet(ws, 2, 1, sub, { size: 9, h: 'center', noBorder: true });
+  ws.getRow(2).height = 16;
+  ws.getRow(3).height = 5;
+}
+function tdHead(ws, row, hdrs) {
+  hdrs.forEach(function (h, i) {
+    tdSet(ws, row, i + 1, h, { size: 8, bold: true, h: 'center', fill: 'FFF2F2F2' });
+  });
+  ws.getRow(row).height = 30;
+}
+
+/* ── ① Ирцийн бүртгэл (Хавсралт №07) ── */
+function tdIrts(s) {
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet('Ирц');
+  var W = [6, 31.5, 30.5, 37.5, 22, 42.5];        /* нийт 170 мм */
+  tdPage(ws, false, W);
+  tdTitle(ws, 6, 'СУРГАЛТЫН ҮЙЛ АЖИЛЛАГААНД ОРОЛЦОГЧДЫН ИРЦИЙН БҮРТГЭЛ',
+    'Огноо: ' + s.dstr + '   ·   Алба: ' + s.dept + '   ·   Сургалт: ' + s.title);
+  tdHead(ws, 4, ['№', 'НЭР', 'АЛБА', 'АЛБАН ТУШААЛ', 'ЧӨЛӨӨ\n(шалтгаан)', 'ГАРЫН ҮСЭГ']);
+  s.people.forEach(function (p, k) {
+    var r = 5 + k;
+    tdSet(ws, r, 1, k + 1, { h: 'center' });
+    tdSet(ws, r, 2, p.name);
+    tdSet(ws, r, 3, p.dept);
+    tdSet(ws, r, 4, p.pos);
+    tdSet(ws, r, 5, '', { h: 'center' });
+    tdSet(ws, r, 6, trndocSign(p.sig, '', false), { size: 6.5, h: 'center', color: 'FF1F5C8B' });
+    ws.getRow(r).height = 24;
+  });
+  var end = 4 + s.people.length;
+  [['Хамрагдвал зохих ажилтны тоо:', ''], ['Хамрагдсан ажилтны тоо:', s.people.length]]
+    .forEach(function (pair, i) {
+      var r = end + 1 + i;
+      ws.mergeCells(r, 1, r, 5);
+      tdSet(ws, r, 1, pair[0], { h: 'right' });
+      tdSet(ws, r, 6, pair[1], { h: 'center' });
+      ws.getRow(r).height = 17;
+    });
+  var rs = end + 4;
+  tdSet(ws, rs, 1, 'БҮРТГЭЛ ХИЙСЭН:', { bold: true, noBorder: true });
+  ws.mergeCells(rs, 2, rs, 4);
+  ws.getCell(rs, 2).border = { bottom: TD_THIN };
+  ws.getRow(rs).height = 22;
+  return wb;
+}
+
+/* ── ② Зааварчилгааны дэвтрийн хуудас ── */
+function tdDevter(s) {
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet('Дэвтэр');
+  var W = [10.7, 34.7, 18.7, 30.7, 13.4, 33.4, 52, 37.4, 36];   /* 267 мм */
+  tdPage(ws, true, W);
+  tdTitle(ws, 9, 'ЗААВАРЧИЛГААНЫ БҮРТГЭЛ',
+    'Алба: ' + s.dept + '   ·   Сургалт: ' + s.title + '   ·   Огноо: ' + s.dstr);
+  tdHead(ws, 4, ['№', 'Овог нэр', 'Он, сар,\nөдөр', 'Мэргэжил', 'Зэрэг', 'Хийгдэх ажил',
+    'Хөдөлмөр хамгаалал, аюулгүй\nажиллагааны зааварчилгаа',
+    'Зааварчилгаа авсан\nхүний гарын үсэг', 'Зааварчилгаа өгсөн\nхүний гарын үсэг']);
+  var hse = '';
+  try { var me = myEmp(); hse = (me && me.name) || ''; } catch (e) {}
+  if (!hse) hse = 'ХАБЭА-н менежер';
+  var hseCell = hse + '\n✓ ХАБЭА-н алба\n' + s.dstr;
+  s.people.forEach(function (p, k) {
+    var r = 5 + k;
+    tdSet(ws, r, 1, k + 1, { h: 'center', size: 8 });
+    tdSet(ws, r, 2, p.name, { size: 8 });
+    tdSet(ws, r, 3, s.dstr, { h: 'center', size: 8 });
+    tdSet(ws, r, 4, p.pos, { size: 8 });
+    tdSet(ws, r, 5, '', { h: 'center' });
+    tdSet(ws, r, 6, s.title, { size: 8 });
+    tdSet(ws, r, 7, TRNDOC_AGUULGA, { size: 7, v: 'top' });
+    tdSet(ws, r, 8, trndocSign(p.sig, p.name, true), { size: 6.5, h: 'center', color: 'FF1F5C8B' });
+    tdSet(ws, r, 9, hseCell, { size: 6.5, h: 'center', color: 'FF1F5C8B' });
+    ws.getRow(r).height = 30;
+  });
+  return wb;
+}
+
+/* ── ③ Дүнгийн жагсаалт ── */
+function tdDun(s) {
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet('Дүн');
+  var W = [9, 45, 39.6, 21.6, 21.6, 16.2, 27];    /* 180 мм */
+  tdPage(ws, false, W);
+  tdTitle(ws, 7, 'ШАЛГАЛТЫН ДҮНГИЙН ЖАГСААЛТ',
+    'Алба: ' + s.dept + '   ·   Сургалт: ' + s.title + '   ·   Огноо: ' + s.dstr);
+  tdHead(ws, 4, ['№', 'Овог, нэр', 'Албан тушаал', 'Сургалтын\nөмнөх',
+    'Сургалтын\nдараах', 'Ахиц', 'Тэнцсэн эсэх']);
+  s.people.forEach(function (p, k) {
+    var r = 5 + k;
+    var pre = p.pre ? num(p.pre.percent) : null;
+    var post = p.post ? num(p.post.percent) : null;
+    var adv = (pre != null && post != null) ? (post - pre) : null;
+    var ok = !!(p.post || p.pre || {}).passed;
+    tdSet(ws, r, 1, k + 1, { h: 'center' });
+    tdSet(ws, r, 2, p.name);
+    tdSet(ws, r, 3, p.pos);
+    tdSet(ws, r, 4, pre != null ? pre + '%' : '—', { h: 'center' });
+    tdSet(ws, r, 5, post != null ? post + '%' : '—', { h: 'center' });
+    tdSet(ws, r, 6, adv != null ? ((adv >= 0 ? '+' : '') + adv + '%') : '—', { h: 'center' });
+    tdSet(ws, r, 7, ok ? 'Тэнцсэн' : 'Тэнцээгүй',
+      { h: 'center', bold: true, color: ok ? 'FF1B7A4B' : 'FFB5322A' });
+    ws.getRow(r).height = 18;
+  });
+  var end = 4 + s.people.length;
+  ws.mergeCells(end + 1, 1, end + 1, 7);
+  tdSet(ws, end + 1, 1, 'Нийт ' + s.n + ' ажилтан  ·  Тэнцсэн ' + s.ok +
+    '  ·  Тэнцээгүй ' + (s.n - s.ok), { bold: true, size: 9, noBorder: true });
+  return wb;
+}
+
+/* ── ④ Шалгалтын хуудас — хүн бүр тусдаа хуудсанд ── */
+function tdShalgalt(s) {
+  var wb = new ExcelJS.Workbook();
+  var ws = wb.addWorksheet('Шалгалт');
+  var W = [9.9, 89.1, 56.7, 24.3];                /* 180 мм */
+  tdPage(ws, false, W);
+  var r = 1;
+  s.people.forEach(function (p, idx) {
+    var rec = p.post || p.pre;
+    if (!rec) return;
+    if (idx) ws.getRow(r).addPageBreak();
+    ws.mergeCells(r, 1, r, 4);
+    tdSet(ws, r, 1, 'ХАБЭА-н ШАЛГАЛТЫН ХУУДАС',
+      { size: 12, bold: true, h: 'center', noBorder: true });
+    ws.getRow(r).height = 20; r++;
+    ws.mergeCells(r, 1, r, 4);
+    tdSet(ws, r, 1, [p.name, p.pos, s.dept, s.title, s.dstr].filter(Boolean).join('  ·  '),
+      { size: 9, h: 'center', noBorder: true });
+    ws.getRow(r).height = 15; r += 2;
+    tdHead(ws, r, ['№', 'Асуулт', 'Ажилтны хариулт', 'Оноо']);
+    ws.getRow(r).height = 18; r++;
+    var bd = {};
+    (rec.bd || []).forEach(function (b) { bd[String(b.id)] = b; });
+    (TRNDOC_QS || []).forEach(function (q) {
+      var qid = String(q.id);
+      var b = bd[qid] || {};
+      var qt = String(q.question || '').trim();
+      var at = trndocAnswer(q, (rec.ans || {})[qid]);
+      var good = (b.pts != null && num(b.earned) >= num(b.pts));
+      tdSet(ws, r, 1, qid, { h: 'center', size: 8 });
+      tdSet(ws, r, 2, qt, { size: 8, v: 'top' });
+      tdSet(ws, r, 3, at, { size: 8, v: 'top' });
+      tdSet(ws, r, 4, b.pts != null ? (b.earned + ' / ' + b.pts) : '—',
+        { h: 'center', size: 8, color: good ? 'FF1B7A4B' : 'FF000000' });
+      /* ⚠ Урт задгай хариулт таслагдахгүйн тулд мөрийн өндрийг тооцно */
+      var lines = Math.max(Math.ceil(qt.length / 62), Math.ceil(at.length / 40), 1);
+      ws.getRow(r).height = Math.max(24, Math.min(96, 11 + lines * 12));
+      r++;
+    });
+    ws.mergeCells(r, 1, r, 3);
+    tdSet(ws, r, 1, 'НИЙТ ОНОО · Тэнцсэн эсэх', { bold: true, size: 9, h: 'right' });
+    tdSet(ws, r, 4, num(rec.percent) + '%  ' + (rec.passed ? 'Тэнцсэн' : 'Тэнцээгүй'),
+      { bold: true, size: 9, h: 'center', color: rec.passed ? 'FF1B7A4B' : 'FFB5322A' });
+    ws.getRow(r).height = 20; r += 2;
+    ws.mergeCells(r, 1, r, 4);
+    tdSet(ws, r, 1, trndocSign(p.sig, p.name, false).replace('\n', '   '),
+      { size: 8, color: 'FF1F5C8B', noBorder: true });
+    ws.getRow(r).height = 16; r += 2;
+  });
+  return wb;
+}
+
+/* ── Архив болгож татах ────────────────────────────────────────────── */
+function trndocDownload(id) {
+  var s = (TRNDOC_SES || []).filter(function (x) { return x.id === id; })[0];
+  if (!s) { toast('Сургалт олдсонгүй', 'error'); return; }
+  var btn = document.querySelector('[data-td-zip="' + id + '"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Бэлдэж байна…'; }
+  var done = function (msg, bad) {
+    if (btn) { btn.disabled = false; btn.textContent = '⬇ Архив татах'; }
+    if (msg) toast(msg, bad ? 'error' : 'success');
+  };
+  woLoadExcelJS(function (okX) {
+    if (!okX) { done('Excel үүсгэгч ачаалагдсангүй', true); return; }
+    riskLoadZip(function (okZ) {
+      if (!okZ) { done('Архивлагч ачаалагдсангүй', true); return; }
+      var base = s.dstr + ' ' + s.dept.replace(/[\\/:*?"<>|]/g, '-') + ' — ' + s.title;
+      var docs = [
+        ['1. Ирцийн бүртгэл — ' + base + '.xlsx', tdIrts(s)],
+        ['2. Дэвтрийн хуудас — ' + base + '.xlsx', tdDevter(s)],
+        ['3. Дүнгийн жагсаалт — ' + base + '.xlsx', tdDun(s)],
+        ['4. Шалгалтын хуудас — ' + base + '.xlsx', tdShalgalt(s)]
+      ];
+      Promise.all(docs.map(function (d) { return d[1].xlsx.writeBuffer(); }))
+        .then(function (bufs) {
+          var zip = new JSZip();
+          var f = zip.folder(base);
+          bufs.forEach(function (b, i) { f.file(docs[i][0], b); });
+          return zip.generateAsync({ type: 'blob' });
+        })
+        .then(function (blob) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = base + '.zip';
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+          done('📦 ' + s.n + ' ажилтны 4 баримт татагдлаа');
+        })
+        .catch(function (e) { done('Үүсгэж чадсангүй: ' + String(e && e.message).slice(0, 60), true); });
+    });
+  });
+}
+
+/* ── Хуудас зурах ──────────────────────────────────────────────────── */
+async function renderTrnDocs() {
+  var sec = pageEl('trn-docs'); if (!sec) return;
+  sec.style.padding = '';
+  sec.innerHTML =
+    '<div class="page-header"><div><h1>Сургалтын баримт</h1>' +
+    '<p class="page-subtitle">Шалгалтын бичлэгээс ирц, дэвтрийн хуудас, дүн, шалгалтын хуудсыг өөрөө үүсгэнэ</p></div></div>' +
+    '<div id="tdBody"><div class="card" style="padding:34px;text-align:center;color:#8A94A6">' +
+    '<i class="ti ti-loader-2"></i> Ачаалж байна…</div></div>';
+
+  var sc = trndocScope();
+  var box = function () { return $('#tdBody'); };
+  if (!sc) {
+    if (box()) box().innerHTML = '<div class="card" style="padding:30px">' +
+      emptyBox('Танд сургалтын баримт харах эрх байхгүй.') + '</div>';
+    return;
+  }
+  var ok = await trndocLoad();
+  if (!box()) return;
+  if (!ok) {
+    box().innerHTML = '<div class="card" style="padding:24px">' +
+      '<div style="font-size:13.5px;color:#94A3B8;line-height:1.6;margin-bottom:12px">' +
+      'Шалгалтын мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.</div>' +
+      '<button type="button" id="tdRetry" style="border:1.5px solid #E2E8F0;background:#fff;' +
+      'color:#334155;border-radius:10px;padding:9px 16px;cursor:pointer;font-family:inherit;' +
+      'font-weight:700;font-size:13px">Дахин оролдох</button></div>';
+    var rt = document.getElementById('tdRetry');
+    if (rt) rt.addEventListener('click', function () { TRNDOC_ALL = null; renderTrnDocs(); });
+    return;
+  }
+
+  TRNDOC_SES = trndocGroup().filter(function (s) {
+    return sc.all || (sc.dept && riskSameDept && riskSameDept(s.dept, sc.dept)) || s.dept === sc.dept;
+  });
+
+  if (!TRNDOC_SES.length) {
+    box().innerHTML = '<div class="card" style="padding:30px">' +
+      emptyBox('Хараахан цахим шалгалт бүртгэгдээгүй байна.') + '</div>';
+    return;
+  }
+
+  var byMonth = {};
+  TRNDOC_SES.forEach(function (s) { (byMonth[s.day.slice(0, 7)] = byMonth[s.day.slice(0, 7)] || []).push(s); });
+  var months = Object.keys(byMonth).sort().reverse();
+  var totalPeople = TRNDOC_SES.reduce(function (a, s) { return a + s.n; }, 0);
+
+  var h =
+    '<div class="card" style="padding:16px 18px;margin-bottom:14px;display:flex;' +
+    'flex-wrap:wrap;gap:22px;align-items:center">' +
+    '<div><div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:.04em">СУРГАЛТ</div>' +
+    '<div style="font-size:20px;font-weight:800">' + TRNDOC_SES.length + '</div></div>' +
+    '<div><div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:.04em">АЖИЛТАН</div>' +
+    '<div style="font-size:20px;font-weight:800">' + totalPeople + '</div></div>' +
+    '<div style="flex:1;min-width:180px;font-size:12.5px;color:#8A94A6;line-height:1.6">' +
+    'Архив дотор 4 баримт: ирцийн бүртгэл, дэвтрийн хуудас, дүнгийн жагсаалт, ' +
+    'шалгалтын хуудас (хүн бүрээр).</div>' +
+    (sc.all ? '' : '<span class="tag tag-warn">' + esc(sc.dept) + '</span>') +
+    '</div>';
+
+  months.forEach(function (m) {
+    var mn = Number(m.slice(5, 7));
+    h += '<div style="font-size:12px;font-weight:800;color:#64748B;letter-spacing:.05em;' +
+      'margin:18px 0 8px">' + m.slice(0, 4) + ' оны ' + mn + '-р сар</div>';
+    byMonth[m].forEach(function (s) {
+      var pct = s.n ? Math.round(s.ok / s.n * 100) : 0;
+      h += '<div class="card" style="padding:14px 16px;margin-bottom:9px;display:flex;' +
+        'flex-wrap:wrap;gap:14px;align-items:center">' +
+        '<div style="flex:1;min-width:230px">' +
+        '<div style="font-weight:700;font-size:14.5px">' + esc(s.dept) + '</div>' +
+        '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">' +
+        s.dstr + ' · ' + esc(s.title) + '</div></div>' +
+        '<div style="text-align:center;min-width:74px">' +
+        '<div style="font-size:17px;font-weight:800">' + s.n + '</div>' +
+        '<div style="font-size:11px;color:#8A94A6">ажилтан</div></div>' +
+        '<div style="text-align:center;min-width:84px">' +
+        '<div style="font-size:17px;font-weight:800;color:' + (pct >= 80 ? '#15803D' : '#D97706') + '">' +
+        s.ok + '</div><div style="font-size:11px;color:#8A94A6">тэнцсэн · ' + pct + '%</div></div>' +
+        '<button type="button" data-td-zip="' + esc(s.id) + '" ' +
+        'style="border:none;background:#0F1117;color:#fff;border-radius:10px;padding:10px 16px;' +
+        'cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">⬇ Архив татах</button>' +
+        '</div>';
+    });
+  });
+
+  box().innerHTML = h;
+  if (!sec._tdWired) {
+    sec._tdWired = true;
+    sec.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-td-zip]');
+      if (b) trndocDownload(b.getAttribute('data-td-zip'));
+    });
+  }
+}
+
 /* Цэсийг зөвхөн эрхтэй хүнд харуулна (сургалтын хэсэгт л хамаарна) */
 async function trnNavSync() {
   var a = document.querySelector('.nav-item[data-page="trn-report"]');
-  if (!a) return;
-  try { await trnOwnLoad(); } catch (e) {}
-  var sc = trnScope();
-  a.style.display = (sc.kind === 'self') ? 'none' : '';
+  if (a) {
+    try { await trnOwnLoad(); } catch (e) {}
+    var sc = trnScope();
+    a.style.display = (sc.kind === 'self') ? 'none' : '';
+  }
+  /* «Сургалтын баримт» — ХАБЭА-н алба, админ, захирал, албаны дарга */
+  var b = document.querySelector('.nav-item[data-page="trn-docs"]');
+  if (b) b.style.display = trndocScope() ? '' : 'none';
 }
 
 function mrFmt(ts) {
