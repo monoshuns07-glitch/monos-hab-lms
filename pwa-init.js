@@ -147,6 +147,129 @@
 
   var deferred = null;
 
+  /* ── Хаалтын хугацаа ─────────────────────────────────────────────
+     ⚠ 2026-08-31: өмнө нь «Ойлголоо» дарвал тэмдэглэл ҮҮРД үлдэж,
+     хөвөгч товч дахиж ГАРДАГГҮЙ байв. Аппын дотор суулгах өөр зам ч
+     байгаагүй тул ажилтан апп суулгах БОЛОМЖГҮЙ болдог байсан.
+     Одоо 14 хоногийн дараа дахин санал болгоно. */
+  var HINT_DAYS = 14;
+  function hintOff(key) {
+    try {
+      var v = localStorage.getItem(key);
+      if (!v) return false;
+      if (v === 'off') { localStorage.setItem(key, String(Date.now())); return true; }
+      var t = Number(v) || 0;
+      if (Date.now() - t > HINT_DAYS * 86400000) { localStorage.removeItem(key); return false; }
+      return true;
+    } catch (e) { return false; }
+  }
+  function hintSet(key) { try { localStorage.setItem(key, String(Date.now())); } catch (e) {} }
+
+  /* Ямар хөтөч вэ — заавар нь үүнээс шалтгаална */
+  function envKind() {
+    var ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
+    if (/FBAN|FBAV|FB_IAB|Instagram|Line\/|WhatsApp|Zalo|MicroMessenger|TwitterAndroid|; wv\)/i.test(ua)) return 'inapp';
+    if (/SamsungBrowser/i.test(ua)) return 'samsung';
+    if (/Android/i.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  /* ⭐ ХААНААС Ч дуудаж болох НЭГ цэг — цэсний товч ч үүнийг дуудна */
+  window.pwaInstall = function () {
+    if (deferred) {
+      deferred.prompt();
+      deferred.userChoice.finally(function () {
+        deferred = null;
+        var el = document.getElementById('pwaInstallBtn');
+        if (el) el.remove();
+      });
+      return;
+    }
+    pwaShowHelp();
+  };
+  /* Хөтөч тус бүрийн ГАРЫН АВЛАГЫН заавар — нэг л газарт */
+  function pwaHelpText() {
+    var k = envKind();
+    if (k === 'ios') return { head: 'Утсанд суулгах', chrome: false, steps:
+      '1. Доод талын <b>Хуваалцах</b> товч <b>&#x2934;</b> дарна<br>' +
+      '2. <b>«Нүүр дэлгэцэд нэмэх»</b> (Add to Home Screen) сонгоно<br>' +
+      '3. <b>Нэмэх</b> дарна — апп нүүр дэлгэцэд суулаа' };
+    if (k === 'inapp') return { head: 'Chrome хөтчөөр нээнэ үү', chrome: true, steps:
+      'Та энэ хуудсыг чат аппын дотоод хөтчөөр нээсэн байна. Тэндээс апп суулгах боломжгүй.<br><br>' +
+      '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
+      '2. <b>«Chrome-оор нээх»</b> (Open in Chrome) сонгоно<br>' +
+      '3. Chrome дээр нээгдмэгц <b>«Апп суулгах»</b> товч гарч ирнэ' };
+    if (k === 'samsung') return { head: 'Утсанд суулгах', chrome: false, steps:
+      '1. Доод талын <b>&#8801;</b> цэс дарна<br>' +
+      '2. <b>«Add page to»</b> сонгоно<br>' +
+      '3. <b>«Home screen»</b> дарна — апп нүүр дэлгэцэд суулаа' };
+    if (k === 'android') return { head: 'Утсанд суулгах', chrome: false, steps:
+      '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
+      '2. <b>«Апп суулгах»</b> эсвэл <b>«Нүүр дэлгэцэд нэмэх»</b> сонгоно<br>' +
+      '3. <b>Суулгах</b> дарна — апп нүүр дэлгэцэд суулаа<br><br>' +
+      '<span style="color:#6B7280;font-size:13px">Заавар олдохгүй бол хуудсаа ' +
+      '<b>Chrome</b> хөтчөөр нээж үзнэ үү.</span>' };
+    return { head: 'Компьютерт суулгах', chrome: false, steps:
+      '1. Хаягийн мөрний баруун талын <b>&#8681;</b> (суулгах) тэмдэг дарна<br>' +
+      '2. <b>Суулгах</b> дарна<br><br>' +
+      '<span style="color:#6B7280;font-size:13px">Тэмдэг харагдахгүй бол ' +
+      'баруун дээд булангийн <b>&#8942;</b> цэс → <b>Cast, save and share</b> → ' +
+      '<b>Install page as app</b>.</span>' };
+  }
+
+  function pwaShowHelp() {
+    if (document.getElementById('pwaHelpBox')) return;
+    var h = pwaHelpText();
+    var w = document.createElement('div');
+    w.id = 'pwaHelpBox';
+    w.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:rgba(8,12,28,.62);' +
+      'backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:18px';
+    w.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;' +
+      'max-height:calc(100vh - 36px);display:flex;flex-direction:column;' +
+      'box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+        '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">' + h.head + '</div>' +
+        '<div style="font-size:14px;color:#374151;line-height:1.75;flex:1 1 auto;' +
+        'overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch">' + h.steps + '</div>' +
+        (h.chrome ? '<button id="pwaOpenChrome" style="flex:0 0 auto;margin-top:14px;width:100%;' +
+          'padding:13px;border:none;border-radius:12px;background:#0F1117;color:#fff;font-weight:800;' +
+          'font-size:14px;font-family:inherit;cursor:pointer">Chrome-оор нээх</button>' : '') +
+        '<button id="pwaHintOk" style="flex:0 0 auto;margin-top:10px;width:100%;padding:13px;' +
+        'border:none;border-radius:12px;background:#E30613;color:#fff;font-weight:800;font-size:14px;' +
+        'font-family:inherit;cursor:pointer">Ойлголоо</button>' +
+      '</div>';
+    var oc = w.querySelector('#pwaOpenChrome');
+    if (oc) oc.addEventListener('click', function () {
+      location.href = 'intent://' + location.host + location.pathname +
+        '#Intent;scheme=https;package=com.android.chrome;end';
+    });
+    w.querySelector('#pwaHintOk').addEventListener('click', function () {
+      hintSet(envKind() === 'ios' ? 'pwa_ios_hint' : 'pwa_and_hint');
+      w.remove();
+      var el = document.getElementById('pwaInstallBtn');
+      if (el) el.remove();
+    });
+    w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
+    document.body.appendChild(w);
+  }
+
+  /* Цэсэн дэх байнгын товчийг холбоно (аппын дотор ҮРГЭЛЖ байна) */
+  function wireMenuBtn() {
+    var b = document.getElementById('kpiInstallBtn');
+    if (!b || b._wired) return;
+    b._wired = true;
+    if (isInstalled()) { b.classList.add('is-installed'); return; }
+    b.addEventListener('click', function () { window.pwaInstall(); });
+  }
+  document.addEventListener('DOMContentLoaded', wireMenuBtn);
+  setTimeout(wireMenuBtn, 1500);
+  setTimeout(wireMenuBtn, 6000);
+  setTimeout(wireMenuBtn, 15000);
+
+  window.pwaCanInstall = function () { return !!deferred; };
+  window.pwaIsInstalled = function () { return isInstalled(); };
+
   function makeBtn(label, onClick) {
     var b = document.createElement('button');
     b.id = 'pwaInstallBtn';
@@ -194,102 +317,27 @@
 
   // ── 3. iPhone / iPad (Safari) — гарын авлагын заавар ──
   document.addEventListener('DOMContentLoaded', function () {
+    if (envKind() !== 'ios' || isInstalled()) return;
     var ua = navigator.userAgent || '';
-    var isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
-    var isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
-    if (!isIOS || !isSafari || isInstalled()) return;
-    try { if (localStorage.getItem('pwa_ios_hint') === 'off') return; } catch (e) {}
-
-    makeBtn('Утсанд суулгах', function () {
-      var w = document.createElement('div');
-      w.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:rgba(8,12,28,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:18px';
-      w.innerHTML =
-        '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;max-height:calc(100vh - 36px);display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
-          '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">Утсанд суулгах</div>' +
-          '<div style="font-size:14px;color:#374151;line-height:1.75;flex:1 1 auto;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch">' +
-            '1. Доод талын <b>Хуваалцах</b> товч <b>&#x2934;</b> дарна<br>' +
-            '2. <b>«Нүүр дэлгэцэд нэмэх»</b> (Add to Home Screen) сонгоно<br>' +
-            '3. <b>Нэмэх</b> дарна — апп нүүр дэлгэцэд суулаа' +
-          '</div>' +
-          '<button style="flex:0 0 auto;margin-top:16px;width:100%;padding:13px;border:none;border-radius:12px;background:#E30613;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Ойлголоо</button>' +
-        '</div>';
-      w.querySelector('button').addEventListener('click', function () {
-        try { localStorage.setItem('pwa_ios_hint', 'off'); } catch (e) {}
-        w.remove();
-        var el = document.getElementById('pwaInstallBtn');
-        if (el) el.remove();
-      });
-      w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
-      document.body.appendChild(w);
-    });
+    if (/CriOS|FxiOS|EdgiOS/.test(ua)) return;          // зөвхөн Safari-д суудаг
+    if (hintOff('pwa_ios_hint')) return;
+    makeBtn('Утсанд суулгах', pwaShowHelp);
   });
 
-  // ── 4. Android — «Суулгах» товч ГАРААГҮЙ үеийн нөөц зам ──
-  /* ⚠ ЯАГААД: Chrome-ын `beforeinstallprompt` тохиолдол дараах үед ОГТ
-     ажилладаггүй — Messenger/Facebook/Instagram зэргийн дотоод хөтөч
-     (чатаас QR уншуулбал ихэвчлэн ингэж нээгддэг), Samsung Internet,
-     Firefox, MIUI. Тэр үед ажилтан ямар ч товч харахгүй тул «апп суухгүй
-     байна» гэж ойлгодог байв (2026-08-26). Одоо гарын авлагын заавар
-     харуулна, дотоод хөтөч бол Chrome-оор нээхийг санал болгоно. */
+  // ── 4. «Суулгах» товч ГАРААГҮЙ үеийн нөөц зам ──
+  /* ⚠ ЯАГААД: Chrome-ын `beforeinstallprompt` дараах үед ОГТ ажилладаггүй —
+     Messenger/Instagram зэргийн дотоод хөтөч, Samsung Internet, Firefox,
+     MIUI. МӨН хэрэглэгч Chrome-ын жинхэнэ цонхыг нэг удаа татгалзвал
+     Chrome үүнийг ~90 хоног дарангуйлдаг. Тэр үед ажилтан ямар ч товч
+     харахгүй тул «апп суухгүй байна» гэж ойлгодог байв. */
   document.addEventListener('DOMContentLoaded', function () {
-    var ua = navigator.userAgent || '';
-    if (!/Android/i.test(ua) || isInstalled()) return;
+    var k = envKind();
+    if (k === 'ios' || isInstalled()) return;
     setTimeout(function () {
-      if (deferred) return;                                   // жинхэнэ товч гарсан
+      if (deferred) return;                             // жинхэнэ товч гарсан
       if (document.getElementById('pwaInstallBtn')) return;
-      try { if (localStorage.getItem('pwa_and_hint') === 'off') return; } catch (e) {}
-
-      var inApp = /FBAN|FBAV|FB_IAB|Instagram|Line\/|WhatsApp|Zalo|MicroMessenger|TwitterAndroid|EdgA?\/.*wv|; wv\)/i.test(ua);
-      var samsung = /SamsungBrowser/i.test(ua);
-      var steps, head;
-      if (inApp) {
-        head = 'Chrome хөтчөөр нээнэ үү';
-        steps = 'Та энэ хуудсыг чат аппын дотоод хөтчөөр нээсэн байна. ' +
-                'Тэндээс апп суулгах боломжгүй.<br><br>' +
-                '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
-                '2. <b>«Chrome-оор нээх»</b> (Open in Chrome / Browser) сонгоно<br>' +
-                '3. Chrome дээр нээгдмэгц <b>«Апп суулгах»</b> товч гарч ирнэ';
-      } else if (samsung) {
-        head = 'Утсанд суулгах';
-        steps = '1. Доод талын <b>&#8801;</b> цэс дарна<br>' +
-                '2. <b>«Add page to»</b> сонгоно<br>' +
-                '3. <b>«Home screen»</b> дарна — апп нүүр дэлгэцэд суулаа';
-      } else {
-        head = 'Утсанд суулгах';
-        steps = '1. Баруун дээд булангийн <b>&#8942;</b> цэс дарна<br>' +
-                '2. <b>«Апп суулгах»</b> эсвэл <b>«Нүүр дэлгэцэд нэмэх»</b> сонгоно<br>' +
-                '3. <b>Суулгах</b> дарна — апп нүүр дэлгэцэд суулаа<br><br>' +
-                '<span style="color:#6B7280;font-size:13px">Заавар олдохгүй бол хуудсаа ' +
-                '<b>Chrome</b> хөтчөөр нээж үзнэ үү.</span>';
-      }
-
-      makeBtn('Утсанд суулгах', function () {
-        var w = document.createElement('div');
-        w.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:rgba(8,12,28,.62);backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;padding:18px';
-        var chromeBtn = inApp
-          ? '<button id="pwaOpenChrome" style="flex:0 0 auto;margin-top:14px;width:100%;padding:13px;border:none;border-radius:12px;background:#0F1117;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Chrome-оор нээх</button>'
-          : '';
-        w.innerHTML =
-          '<div style="background:#fff;border-radius:20px;padding:22px 20px;max-width:420px;width:100%;max-height:calc(100vh - 36px);display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
-            '<div style="font-size:17px;font-weight:800;color:#0F1117;margin-bottom:10px">' + head + '</div>' +
-            '<div style="font-size:14px;color:#374151;line-height:1.75;flex:1 1 auto;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch">' + steps + '</div>' +
-            chromeBtn +
-            '<button id="pwaHintOk" style="flex:0 0 auto;margin-top:10px;width:100%;padding:13px;border:none;border-radius:12px;background:#E30613;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">Ойлголоо</button>' +
-          '</div>';
-        var oc = w.querySelector('#pwaOpenChrome');
-        if (oc) oc.addEventListener('click', function () {
-          var host = location.host + location.pathname;
-          location.href = 'intent://' + host + '#Intent;scheme=https;package=com.android.chrome;end';
-        });
-        w.querySelector('#pwaHintOk').addEventListener('click', function () {
-          try { localStorage.setItem('pwa_and_hint', 'off'); } catch (e) {}
-          w.remove();
-          var el = document.getElementById('pwaInstallBtn');
-          if (el) el.remove();
-        });
-        w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
-        document.body.appendChild(w);
-      });
+      if (hintOff('pwa_and_hint')) return;
+      makeBtn(k === 'desktop' ? 'Апп суулгах' : 'Утсанд суулгах', pwaShowHelp);
     }, 3500);
   });
 })();

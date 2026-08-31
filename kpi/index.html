@@ -26,7 +26,7 @@
 <link rel="stylesheet" href="vendor/fonts.css">
 <link rel="stylesheet" href="vendor/tabler-icons.min.css">
 <link rel="stylesheet" href="/forest-theme.css">
-<link rel="stylesheet" href="style.css?v=364">
+<link rel="stylesheet" href="style.css?v=365">
 <style>
   /* Сургалтын шатлалт мод цэс */
   .nav-tree { display: block; }
@@ -44,6 +44,11 @@
   .kpi-logout-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 11px 14px; background: #fff; color: #E11D48; border: 1.5px solid rgba(225,29,72,.22); border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; font-family: inherit; }
   .kpi-logout-btn:hover { background: #E11D48; color: #fff; border-color: #E11D48; box-shadow: 0 6px 16px rgba(225,29,72,.26); }
   .kpi-logout-btn i { font-size: 16px; }
+  /* Апп суулгах товч */
+  .kpi-install-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; padding: 11px 14px; background: linear-gradient(135deg,#C10010,#E30613 55%,#FF2535); color: #fff; border: none; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all .15s; font-family: inherit; box-shadow: 0 6px 16px rgba(227,6,19,.26); }
+  .kpi-install-btn:hover { transform: translateY(-1px); box-shadow: 0 9px 22px rgba(227,6,19,.34); }
+  .kpi-install-btn i { font-size: 16px; }
+  .kpi-install-btn.is-installed { display: none; }
   /* ══════════ НЭВТРЭХ ДЭЛГЭЦ — МОНОС видео нүүр (үндсэн сайттай ЯГ ИЖИЛ) ══════════ */
   @property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
   #loginScreen{
@@ -310,6 +315,9 @@
       </div>
       <i class="ti ti-chevron-up user-menu"></i>
     </div>
+    <!-- Апп суулгах — ҮРГЭЛЖ энд байна. Хөвөгч товчийг нэг удаа хаачихвал
+         дахиж гардаггүй тул суулгах ЯМАР Ч зам үлддэггүй байв. -->
+    <button class="kpi-install-btn" id="kpiInstallBtn"><i class="ti ti-device-mobile-down"></i><span>Апп суулгах</span></button>
     <button class="kpi-logout-btn" id="kpiLogoutBtn"><i class="ti ti-logout"></i><span>Гарах</span></button>
   </div>
 </aside>
@@ -934,6 +942,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="vendor/chart.min.js"></script>
 <script src="/forest-scene.js"></script>
-<script src="script.js?v=364"></script>
+<script src="script.js?v=365"></script>
 </body>
 </html>
