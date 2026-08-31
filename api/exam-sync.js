@@ -57,8 +57,23 @@ function rowFrom(doc) {
   });
   let ts = 0;
   try { ts = Math.floor(new Date(String(val(f.timestamp) || 0)).getTime() / 1000) || 0; } catch (e) {}
+  /* ⚠ Баримт (ирц, дэвтэр, шалгалтын хуудас) үүсгэхэд шаардагдах БҮХ
+     талбарыг тольд авчирна. Зурсан гарын үсгийн ЗУРГИЙГ авчрахгүй
+     (50 KB × 200 = хэт том) — зөвхөн зурсан эсэх, хэзээ зурсныг авна. */
+  const ansRaw = val(f.answers) || {};
+  const ans = {};
+  Object.keys(ansRaw).forEach(function (k) {
+    const v = ansRaw[k];
+    ans[k] = (v && typeof v === 'object' && !Array.isArray(v))
+      ? Object.keys(v).reduce(function (o2, kk) { o2[kk] = String(v[kk]); return o2; }, {})
+      : (Array.isArray(v) ? v.map(String) : String(v == null ? '' : v));
+  });
   return {
     email: String(val(f.email) || '').toLowerCase().trim(),
+    eid: val(f.eid) || '',
+    name: val(f.name) || '',
+    dept: val(f.department) || '',
+    pos: val(f.position) || '',
     key: val(f.examKey) || '',
     title: val(f.examTitle) || 'ХАБЭА шалгалт',
     type: val(f.examType) || '',
@@ -66,7 +81,17 @@ function rowFrom(doc) {
     passed: val(f.passed) === true,
     qs: bd.length,
     qOk: qOk,
-    ts: ts
+    ts: ts,
+    /* Гарын үсгийн баталгаа */
+    code: val(f.signCode) || '',
+    otpAt: String(val(f.otpVerifiedAt) || ''),
+    signedAt: String(val(f.signedAt) || ''),
+    hasSign: !!f.signature,
+    /* Асуулт тус бүрийн оноо ба хариулт */
+    bd: bd.map(function (b) {
+      return { id: String(val(b.id) || ''), pts: Number(val(b.pts) || 0), earned: Number(val(b.earned) || 0) };
+    }),
+    ans: ans
   };
 }
 
@@ -158,12 +183,7 @@ async function writeFor(email, rows) {
   rows.sort(function (a, b) { return b.ts - a.ts; });
   return await putJson(emailKey(email), {
     updatedAt: new Date().toISOString(),
-    list: rows.map(function (r) {
-      return {
-        key: r.key, title: r.title, type: r.type, percent: r.percent,
-        passed: r.passed, qs: r.qs, qOk: r.qOk, ts: r.ts
-      };
-    })
+    list: rows
   });
 }
 
@@ -200,6 +220,28 @@ module.exports = async function handler(req, res) {
     /* Админы тайлан, KPI-ийн нэгтгэлд хэрэгтэй БҮХ бичлэгийн толь.
        Өмнө нь ажилтан бүр апп нээх бүрдээ ЭНЭ бүх бичлэгийг Firestore-оос
        татдаг байсан нь квот дүүргэдэг гол шалтгаан байв. */
+    /* Асуултын сан — шалгалтын хуудсыг зурахад хэрэгтэй */
+    try {
+      const qr = await fetch(FS_BASE + '/habea_config/questions?key=' + EX_KEY, { cache: 'no-store' });
+      if (qr.ok) {
+        const qj = await qr.json();
+        const arr = (((qj.fields || {}).list || {}).arrayValue || {}).values || [];
+        const qs = arr.map(function (x) {
+          const g = (x.mapValue || {}).fields || {};
+          const o = {};
+          Object.keys(g).forEach(function (k) { o[k] = val(g[k]); });
+          if (o.options) {
+            o.options = (o.options || []).map(function (v) {
+              const gf = (v && v.mapValue && v.mapValue.fields) || {};
+              return { id: val(gf.id), text: val(gf.text) };
+            });
+          }
+          return o;
+        });
+        await putJson('exams/_questions.json', { updatedAt: new Date().toISOString(), list: qs });
+      }
+    } catch (e) { /* асуултгүй ч дүн тольдогдоно */ }
+
     let allOk = false;
     try {
       allOk = await putJson('exams/_all.json', {
