@@ -3787,13 +3787,13 @@ function renderModEmployee(sec, key, mod, title, me) {
 }
 
 /* Ажилтны өөрийн дүнг шууд эх сурвалжаас нөхөж харуулна */
-async function modLiveScore(key) {
+function modLiveScore(key) {
   var slot = document.getElementById('modExamLive');
   if (!slot) return;
   var em = String((SESSION && SESSION.email) || '').toLowerCase();
   if (!em) return;
-  var list = null;
-  try { list = await modExamLoad(em); } catch (e) { list = null; }
+  /* Сангаас шууд; шинэ дүн ирвэл дахин зурна */
+  var list = modExamCached(em, function () { try { modLiveScore(key); } catch (e) {} });
   slot = document.getElementById('modExamLive');
   if (!slot || !list || !list.length) return;
   var mine = list.filter(function (x) { return x.key === key; });
@@ -4677,27 +4677,25 @@ function renderEmployeeDashboard() {
 
 /* «Миний гүйцэтгэл» дэх шалгалтын дүнг ШУУД эх сурвалжаас нөхнө.
    ⚠ Кэшнээс хамаарахгүй тул саяхан шалгалт өгсөн ажилтанд ч харагдана. */
-async function dashLiveScore() {
+/* ⚠ ХҮЛЭЭХГҮЙ. Сангаас ШУУД зурна — дахин зурах бүрд дүн байрандаа
+   үлдэнэ. Шинэ дүн ирвэл л дахин зурна. */
+function dashLiveScore() {
   var slot = document.getElementById('dashExamLive');
   if (!slot) return;
   var em = String((SESSION && SESSION.email) || '').toLowerCase();
   if (!em) return;
-  /* Хоосон бол «ачаалж байна» гэж мэдэгдэнэ — чимээгүй хоосон үлдэхгүй */
-  if (!slot.innerHTML.trim()) {
-    slot.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:18px;' +
-      'font-size:12.5px;color:#94A3B8">Шалгалтын дүнг ачаалж байна…</div>';
-  }
-  var list = null;
-  try { list = await modExamLoad(em); } catch (e) { list = null; }
-  slot = document.getElementById('dashExamLive');
-  if (!slot) return;
-  if (list === null) {
-    slot.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:18px;' +
-      'font-size:12.5px;color:#94A3B8">Шалгалтын дүнг ачаалж чадсангүй.</div>';
-    return;
-  }
-  if (!list.length) { slot.innerHTML = ''; return; }   /* үнэхээр өгөөгүй бол чимээгүй */
-  slot.innerHTML = modExamHTML(list);
+  var draw = function (list) {
+    var el = document.getElementById('dashExamLive');
+    if (!el) return;
+    if (list && list.length) { el.innerHTML = modExamHTML(list); return; }
+    /* Дүн байхгүй нь БАТЛАГДСАН үед л хоосон болгоно */
+    if (list && !list.length) { el.innerHTML = ''; return; }
+    if (!el.innerHTML.trim()) {
+      el.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:18px;' +
+        'font-size:12.5px;color:#94A3B8">Шалгалтын дүнг ачаалж байна…</div>';
+    }
+  };
+  draw(modExamCached(em, draw));
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -19315,29 +19313,34 @@ async function msMyLoad() {
     '<div id="modExSlot"><div class="card" style="padding:20px 22px;margin-top:16px;' +
     'font-size:13px;color:#8A94A6">Зааварчилгааны шалгалтын дүнг ачаалж байна…</div></div>';
 
-  /* ── Шалгалтын дүн (ихэвчлэн хурдан ирдэг) ── */
-  (async function () {
-    var mx = null;
-    for (var t = 0; t < 2; t++) {
-      try {
-        mx = await Promise.race([
-          modExamLoad(em),
-          new Promise(function (r) { setTimeout(function () { r(null); }, 30000); })
-        ]);
-      } catch (e) { mx = null; }
-      if (mx !== null) break;
-      if (!document.getElementById('modExSlot')) return;
-      await new Promise(function (r) { setTimeout(r, 2500); });
-    }
-    var slot = document.getElementById('modExSlot');
-    if (!slot) return;
-    slot.innerHTML = modExamHTML(mx);
-    /* ⚠ Апп нь IIFE тул inline onclick дотоод функцийг ОЛОХГҮЙ */
-    var rt = document.getElementById('modExRetry');
-    if (rt) rt.addEventListener('click', function () {
-      rt.disabled = true; rt.textContent = 'Ачаалж байна…';
-      msMyLoad();
-    });
+  /* ── Шалгалтын дүн — сангаас ШУУД, хүлээхгүй ── */
+  (function () {
+    var paint = function (list) {
+      var slot = document.getElementById('modExSlot');
+      if (!slot) return;
+      if (list == null) return;              /* уншиж чадаагүй — байгааг нь бүү ар */
+      slot.innerHTML = modExamHTML(list);
+      var rt = document.getElementById('modExRetry');
+      if (rt) rt.addEventListener('click', function () {
+        rt.disabled = true; rt.textContent = 'Ачаалж байна…';
+        modExamCacheClear(em); msMyLoad();
+      });
+    };
+    var have = modExamCached(em, paint);
+    if (have) paint(have);
+    /* Сангад юу ч байхгүй бөгөөд татаж ч чадаагүй бол дахин оролдох
+       товчтой мэдэгдэл гаргана — хоосон дэлгэц үлдэхгүй */
+    setTimeout(function () {
+      if (modExamCacheGet(em)) return;
+      var slot = document.getElementById('modExSlot');
+      if (!slot || !/ачаалж байна/i.test(slot.textContent || '')) return;
+      slot.innerHTML = modExamHTML(null);       /* «дахин оролдох» товчтой */
+      var rt = document.getElementById('modExRetry');
+      if (rt) rt.addEventListener('click', function () {
+        rt.disabled = true; rt.textContent = 'Ачаалж байна…';
+        modExamCacheClear(em); msMyLoad();
+      });
+    }, 12000);
   })();
 
   /* ── Видео сургалт ── */
@@ -19494,6 +19497,79 @@ function modExVal(f) {
     return o;
   }
   return undefined;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ШАЛГАЛТЫН ДҮНГИЙН БАЙНГЫН САН
+   ----------------------------------------------------------------------
+   ⚠⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ — энэ алдааг 5 удаа «зассан» ч эргэж ирсэн:
+   «Миний гүйцэтгэл» нь өөрөө өөрийгөө байнга дахин зурдаг (арга хэмжээ
+   ачаалахад, 8 секунд тутам, цэс солиход). Дахин зурах бүрд бүх HTML нь
+   ШИНЭЭР үүсдэг тул дүн арилж, дахин интернэтээс татаж эхэлдэг байв.
+   Тэр татах нь НЭГ УДАА бүтэлгүйтэхэд (сүлжээ салгалаа, сервер удаашрав)
+   дүн нь ХООСОН үлддэг — «гарч ирээд алга болдог» гэдэг нь ЭНЭ.
+
+   Шийдэл: сүүлийн АМЖИЛТТАЙ дүнг санах ойд БА localStorage-д хадгална.
+     · Дахин зурахад ШУУД тэрхүү сангаас гарна — татах хүлээлт ҮГҮЙ
+     · Татаж чадаагүй, эсвэл хоосон ирсэн бол ХУУЧИН ДҮН ХЭВЭЭР үлдэнэ
+     · Хоосон гэж зарлахын тулд урьд нь дүн байгаагүй БАЙХ ёстой
+   Ингэснээр нэг удаа харагдсан дүн ДАХИЖ ХЭЗЭЭ Ч алга болохгүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var MODEX_LS = 'kpi_exam_scores_v1';
+var MODEX_MEM = {};
+var MODEX_FLY = {};          /* нэг и-мэйлд зэрэг олон хүсэлт явуулахгүй */
+var MODEX_FRESH = 60000;     /* сангийн дүн 60 секунд шинэ гэж тооцно */
+
+function modExamCacheGet(em) {
+  if (MODEX_MEM[em]) return MODEX_MEM[em];
+  try {
+    var all = JSON.parse(localStorage.getItem(MODEX_LS) || '{}');
+    if (all && all[em] && Array.isArray(all[em].list)) { MODEX_MEM[em] = all[em]; return all[em]; }
+  } catch (e) {}
+  return null;
+}
+function modExamCacheClear(em) {
+  delete MODEX_MEM[em];
+  try {
+    var all = JSON.parse(localStorage.getItem(MODEX_LS) || '{}') || {};
+    delete all[em];
+    localStorage.setItem(MODEX_LS, JSON.stringify(all));
+  } catch (e) {}
+}
+function modExamCacheSet(em, list) {
+  var rec = { list: list, at: Date.now() };
+  MODEX_MEM[em] = rec;
+  try {
+    var all = {};
+    try { all = JSON.parse(localStorage.getItem(MODEX_LS) || '{}') || {}; } catch (e) {}
+    all[em] = rec;
+    localStorage.setItem(MODEX_LS, JSON.stringify(all));
+  } catch (e) { /* багтаамж дүүрсэн ч санах ой хэвээр ажиллана */ }
+}
+
+/* Сангаас ШУУД буцаана (хүлээхгүй). Хоцорсон бол араас нь чимээгүй шинэчилнэ.
+   onFresh(list) нь ЗӨВХӨН дүн ӨӨРЧЛӨГДСӨН үед дуудагдана. */
+function modExamCached(email, onFresh) {
+  var em = String(email || '').toLowerCase().trim();
+  if (!em) return null;
+  var c = modExamCacheGet(em);
+  var stale = !c || (Date.now() - c.at) > MODEX_FRESH;
+  if (stale && !MODEX_FLY[em]) {
+    MODEX_FLY[em] = 1;
+    modExamLoad(em).then(function (fresh) {
+      MODEX_FLY[em] = 0;
+      /* ⚠ null = уншиж чадсангүй → ХУУЧНЫГ БҮҮ УСТГА.
+         Хоосон массив ч гэсэн урьд нь дүн байсан бол БҮҮ УСТГА —
+         сүлжээний түр саатал дүнг «арилгах» ЁСГҮЙ. */
+      if (fresh === null) return;
+      var prev = modExamCacheGet(em);
+      if (!fresh.length && prev && prev.list.length) { prev.at = Date.now(); return; }
+      var changed = !prev || JSON.stringify(prev.list) !== JSON.stringify(fresh);
+      modExamCacheSet(em, fresh);
+      if (changed && typeof onFresh === 'function') { try { onFresh(fresh); } catch (e) {} }
+    }).catch(function () { MODEX_FLY[em] = 0; });
+  }
+  return c ? c.list : null;
 }
 
 async function modExamLoad(email) {
