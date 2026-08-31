@@ -1804,7 +1804,26 @@ async function finalSubmit(){ sigRelease();
   });
   doc.recordHash=SIG_HASH;
 
-  let saved=false;
+  /* ⭐ ЭХ СУРВАЛЖ нь R2. Firestore нь зөвхөн нөөц хуулбар.
+     Өмнө нь дүн Firestore дээр байсан тул ажилтан бүр апп нээхэд
+     тэндээс уншиж, өдрийн квот дүүрч, дүн ХООСОН харагддаг байв.
+     R2-д уншилтын квот гэж БАЙХГҮЙ. */
+  let r2ok=false;
+  try{
+    const _u=firebase.auth().currentUser;
+    if(_u){
+      const _t=await _u.getIdToken();
+      const _r=await fetch('/api/exam-save/',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({idToken:_t,result:{
+          examKey:doc.examKey, examTitle:doc.examTitle, examType:doc.examType,
+          percent:doc.percent, passed:doc.passed, breakdown:bd }})});
+      const _j=await _r.json();
+      r2ok=!!(_j&&_j.ok);
+    }
+  }catch(e){ console.error('[Submit] R2 error:',e); }
+
+  let saved=r2ok;
   try{
     await db.collection("habea_exam_results").add(doc);
     saved=true;
@@ -1829,17 +1848,7 @@ async function finalSubmit(){ sigRelease();
   if(saved){
     sessClear();
     toast("✅ Амжилттай хадгалагдлаа");
-    /* ⭐ Дүнг R2 толь руу ШУУД буулгана — KPI апп зөвхөн тэндээс уншдаг
-       болсон (Firestore-ийн квот дүүрч дүн алга болдог байсныг зассан).
-       Амжилтгүй болсон ч шалгалтын хадгалалтад нөлөөлөхгүй; өдөр бүрийн
-       ажил ба аппын өөрөө эдгэрэх зам нөхнө. */
-    try{
-      const _u=firebase.auth().currentUser;
-      if(_u){ const _t=await _u.getIdToken();
-        fetch('/api/exam-sync/',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({idToken:_t})}).catch(function(){}); }
-    }catch(e){}
-    if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
+   if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
   }
   btn.disabled=false;btn.textContent="📤 Шалгалт илгээх";
   showResult(bd,tot,pct,passed);
