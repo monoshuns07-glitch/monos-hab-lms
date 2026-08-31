@@ -19572,56 +19572,65 @@ function modExamCached(email, onFresh) {
   return c ? c.list : null;
 }
 
+/* ⚠⚠ ФАЙРСТОР РУУ ХАНДАХАА БОЛИВ (2026-08-31).
+   Өмнө нь дэлгэц зурах бүрд habea-shalgalt-ийн Firestore руу хүсэлт
+   явуулдаг байсан тул үнэгүй квот дүүрч, HTTP 429 буцаж, ажилтны дүн
+   ХООСОН харагддаг байв — «гарч ирээд алга болдог»-ийн ЖИНХЭНЭ шалтгаан.
+   Одоо зөвхөн R2 тольноос уншина: квот гэж байхгүй, хурдан, найдвартай.
+   Тольг /api/exam-sync сервер шинэчилдэг (шалгалт өгмөгц + өдөр бүр).
+   ⚠ ЭНД FIRESTORE-ЫГ ДАХИН БҮҮ НЭМ. */
+/* Толь дутуу бол сервэрээр нэг удаа үүсгүүлнэ (ЗӨВХӨН өөрийн дүн) */
+async function modExamSelfSync(em) {
+  if (modExamSelfSync._done === em) return false;      /* нэг л удаа */
+  modExamSelfSync._done = em;
+  try {
+    var u = firebase.auth().currentUser;
+    if (!u) return false;
+    var idt = await u.getIdToken();
+    var r = await fetch('/api/exam-sync/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: idt })
+    });
+    var j = await r.json();
+    return !!(j && j.ok && j.rows > 0);
+  } catch (e) { return false; }
+}
+
+async function modExamR2Key(email) {
+  var em = String(email || '').toLowerCase().trim();
+  var buf = new TextEncoder().encode(em);
+  var h = await crypto.subtle.digest('SHA-256', buf);
+  var hex = Array.prototype.map.call(new Uint8Array(h), function (b) {
+    return ('0' + b.toString(16)).slice(-2);
+  }).join('');
+  return 'exams/' + hex.slice(0, 24) + '.json';
+}
+
 async function modExamLoad(email) {
   var em = String(email || '').toLowerCase().trim();
-  /* ⚠ null = «уншиж чадсангүй», [] = «үнэхээр өгөөгүй». Хоёрыг ХОЛИХГҮЙ.
-     Алдааг [] гэж буцаавал бодит дүнтэй ажилтанд «шалгалт өгөөгүй» гэж
-     худлаа харагдана. */
+  /* null = «уншиж чадсангүй», [] = «үнэхээр өгөөгүй». Хоёрыг ХОЛИХГҮЙ. */
   if (!em) return null;
-  var url = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-    '/databases/(default)/documents:runQuery?key=' + MODEX_KEY;
-  var body = {
-    structuredQuery: {
-      from: [{ collectionId: 'habea_exam_results' }],
-      where: {
-        fieldFilter: {
-          field: { fieldPath: 'email' }, op: 'EQUAL', value: { stringValue: em }
-        }
-      }
-    }
-  };
+  var key;
+  try { key = await modExamR2Key(em); } catch (e) { return null; }
   for (var attempt = 0; attempt < 3; attempt++) {
     try {
-      var r = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store', body: JSON.stringify(body)
-      });
+      var r = await fetch(TASK_R2 + '/' + key + '?t=' + Date.now(), { cache: 'no-store' });
+      if (r.status === 404) {
+        /* Толь хараахан үүсээгүй байж БОЛНО (шинэ шалгалт, эсвэл
+           тольдолт хоцорсон). Нэг удаа сервэрээс нөхүүлээд дахин уншина —
+           ингэснээр систем өөрөө эдгэрнэ. */
+        var made = await modExamSelfSync(em);
+        if (!made) return [];
+        continue;
+      }
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      var rows = await r.json();
-      if (!Array.isArray(rows)) throw new Error('хүлээгээгүй хариу');
-      var out = [];
-      rows.forEach(function (it) {
-        var d = it && it.document; if (!d) return;      /* хоосон илэрц */
-        var f = d.fields || {};
-        var bd = modExVal(f.breakdown) || [];
-        var qOk = 0;
-        bd.forEach(function (b) {
-          var pts = num(b && b.pts), earned = num(b && b.earned);
-          if (pts > 0 && earned >= pts) qOk++;
-        });
-        var ts = 0;
-        try { ts = Math.floor(new Date(modExVal(f.timestamp) || 0).getTime() / 1000) || 0; } catch (e) {}
-        out.push({
-          key: modExVal(f.examKey) || '', title: modExVal(f.examTitle) || 'ХАБЭА шалгалт',
-          type: modExVal(f.examType) || '', percent: num(modExVal(f.percent)),
-          passed: modExVal(f.passed) === true, qs: bd.length, qOk: qOk, ts: ts
-        });
-      });
-      out.sort(function (a, b) { return b.ts - a.ts; });
-      return out;
+      var j = await r.json();
+      var list = (j && Array.isArray(j.list)) ? j.list : [];
+      list.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+      return list;
     } catch (e) {
       if (attempt === 2) return null;
-      await new Promise(function (res) { setTimeout(res, 1500 * (attempt + 1)); });
+      await new Promise(function (res) { setTimeout(res, 900 * (attempt + 1)); });
     }
   }
   return null;

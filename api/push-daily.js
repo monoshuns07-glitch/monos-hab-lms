@@ -385,6 +385,19 @@ module.exports = async function handler(req, res) {
     } catch (e) { saved = false; }
   }
 
+  /* ⭐ Шалгалтын дүнгийн толийг өдөрт нэг удаа шинэчилнэ.
+     KPI апп зөвхөн R2-оос уншдаг тул энэ нь толийг үнэн байлгана.
+     Алдаа гарсан ч үндсэн ажил үргэлжилнэ. */
+  if (!onlyUid) {
+    try {
+      const host0 = req.headers['x-forwarded-host'] || req.headers.host || '';
+      const cs0 = process.env.CRON_SECRET || '';
+      await fetch('https://' + host0 + '/api/exam-sync/', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + cs0 }
+      });
+    } catch (e) { /* тольдолт алдсан ч сануулга явна */ }
+  }
+
   /* ⭐ Work order-ийн хугацааны сэрэмжлүүлгийг МӨН энд дуудна.
      Vercel-ийн үнэгүй багцад cron ажил ХОЁР л байж болно, өдөрт нэг удаа
      ажиллана. Тиймээс өглөө (энэ cron) + өдөр (0 6 * * *) гэж хоёр удаа
