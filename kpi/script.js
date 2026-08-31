@@ -402,49 +402,41 @@ var MODEX_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
 var _habCache = null, _habAt = 0, _habFly = null;
 var HAB_TTL = 90000;          /* 90 секунд — нэг сессийн доторх дахин дуудлагад */
 
+/* ⚠⚠ FIRESTORE РУУ ХАНДАХАА БОЛИВ (2026-08-31).
+   Өмнө нь ажилтан бүр апп нээх бүрдээ habea_exam_results цуглуулгыг
+   БҮТНЭЭР (300 бичлэгээр хуудаслан) татдаг байв. 311 ажилтан × өдөрт
+   хэд хэдэн ачаалалт = үнэгүй квот өдөр бүр дүүрч, HTTP 429 буцаж,
+   шалгалтын дүн ХООСОН харагддаг байсан ҮНДСЭН шалтгаан нь ЭНЭ байв.
+   Одоо R2 тольноос (exams/_all.json) уншина — квотгүй.
+   ⚠ ЭНД FIRESTORE-ЫГ ДАХИН БҮҮ НЭМ. */
 async function readHabeaExamsByEmail(force) {
   if (!force && _habCache && (Date.now() - _habAt) < HAB_TTL) return _habCache;
   if (_habFly) return await _habFly;          /* зэрэг дуудлагыг нэгтгэнэ */
   _habFly = (async function () {
-    var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-      '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
-    var map = {}, tok = '', guard = 0;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        map = {}; tok = ''; guard = 0;
-        do {
-          var r = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          var j = await r.json();
-          (j.documents || []).forEach(function (d) {
-            var f = d.fields || {};
-            var email = String(modExVal(f.email) || '').toLowerCase().trim();
-            if (!email) return;
-            var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
-            var passed = modExVal(f.passed) === true;
-            if (passed) rec.anyPassed = true;
-            var ts = 0;
-            try { ts = Math.floor(new Date(modExVal(f.timestamp) || 0).getTime() / 1000) || 0; } catch (e2) {}
-            var bd = modExVal(f.breakdown) || [], qOk = 0;
-            bd.forEach(function (b) {
-              var p = num(b && b.pts), e3 = num(b && b.earned);
-              if (p > 0 && e3 >= p) qOk++;
-            });
-            rec.list.push({
-              title: modExVal(f.examTitle) || 'ХАБЭА шалгалт',
-              key: modExVal(f.examKey) || '', type: modExVal(f.examType) || '',
-              percent: num(modExVal(f.percent)), passed: passed,
-              qs: bd.length, qOk: qOk, ts: ts
-            });
+        var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
+        if (r.status === 404) { _habCache = {}; _habAt = Date.now(); return {}; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var jj = await r.json();
+        var rows = (jj && Array.isArray(jj.list)) ? jj.list : [];
+        var map = {};
+        rows.forEach(function (x) {
+          var email = String(x.email || '').toLowerCase().trim();
+          if (!email) return;
+          var rec = map[email] || (map[email] = { pre: null, post: null, anyPassed: false, list: [] });
+          if (x.passed === true) rec.anyPassed = true;
+          rec.list.push({
+            title: x.title || 'ХАБЭА шалгалт', key: x.key || '', type: x.type || '',
+            percent: num(x.percent), passed: x.passed === true,
+            qs: num(x.qs), qOk: num(x.qOk), ts: num(x.ts)
           });
-          tok = j.nextPageToken || '';
-        } while (tok && ++guard < 20);
-
+        });
         Object.keys(map).forEach(function (k) {
           var rec = map[k];
           rec.list.sort(function (a, b) { return b.ts - a.ts; });   /* сүүлийнх нь эхэнд */
-          for (var i = 0; i < rec.list.length; i++) {               /* pre/post — СҮҮЛИЙН оролдлогоор */
-            var it = rec.list[i];
+          for (var i2 = 0; i2 < rec.list.length; i2++) {            /* pre/post — СҮҮЛИЙН оролдлогоор */
+            var it = rec.list[i2];
             if (it.type === 'pre') { if (rec.pre == null) rec.pre = it.percent; }
             else if (it.type === 'post') { if (rec.post == null) rec.post = it.percent; }
           }
@@ -19581,19 +19573,23 @@ function modExamCached(email, onFresh) {
    ⚠ ЭНД FIRESTORE-ЫГ ДАХИН БҮҮ НЭМ. */
 /* Толь дутуу бол сервэрээр нэг удаа үүсгүүлнэ (ЗӨВХӨН өөрийн дүн) */
 async function modExamSelfSync(em) {
-  if (modExamSelfSync._done === em) return false;      /* нэг л удаа */
+  /* 'ok' = толь үүслээ · 'empty' = үнэхээр дүнгүй · 'fail' = мэдэхгүй
+     ⚠ 'fail'-ыг 'empty' гэж үзвэл сервер саатсан үед ажилтны дүн
+     ХООСОН харагдана — яг тэр алдаанаас зайлсхийж байна. */
+  if (modExamSelfSync._done === em) return 'fail';     /* нэг л удаа */
   modExamSelfSync._done = em;
   try {
     var u = firebase.auth().currentUser;
-    if (!u) return false;
+    if (!u) return 'fail';
     var idt = await u.getIdToken();
     var r = await fetch('/api/exam-sync/', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken: idt })
     });
     var j = await r.json();
-    return !!(j && j.ok && j.rows > 0);
-  } catch (e) { return false; }
+    if (!j || j.ok !== true) return 'fail';
+    return j.rows > 0 ? 'ok' : 'empty';
+  } catch (e) { return 'fail'; }
 }
 
 async function modExamR2Key(email) {
@@ -19619,9 +19615,10 @@ async function modExamLoad(email) {
         /* Толь хараахан үүсээгүй байж БОЛНО (шинэ шалгалт, эсвэл
            тольдолт хоцорсон). Нэг удаа сервэрээс нөхүүлээд дахин уншина —
            ингэснээр систем өөрөө эдгэрнэ. */
-        var made = await modExamSelfSync(em);
-        if (!made) return [];
-        continue;
+        var st = await modExamSelfSync(em);
+        if (st === 'ok') continue;              /* толь үүслээ — дахин уншина */
+        if (st === 'empty') return [];          /* үнэхээр дүнгүй */
+        return null;                            /* мэдэхгүй — хуучныг БҮҮ УСТГА */
       }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       var j = await r.json();
@@ -19923,36 +19920,27 @@ function trnScope() {
 }
 
 /* ── Шалгалтын бүх бичлэг (REST, хуудаслаж) ───────────────────────── */
+/* ⚠ FIRESTORE-ООС БИШ, R2 тольноос. Энэ тайлан бүх шалгалтын бичлэгийг
+   уншдаг тул Firestore дээр байхад квотыг хамгийн ихээр иддэг байв.
+   ⚠ ЭНД FIRESTORE-ЫГ ДАХИН БҮҮ НЭМ. */
 async function trnExamAll(force) {
-  if (TRN_EXAMS && !force) return TRN_EXAMS;
-  var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-    '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
-  var out = [], tok = '', guard = 0;
+  if (!force && TRN_EXAMS) return TRN_EXAMS;
   try {
-    do {
-      var r = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      var j = await r.json();
-      (j.documents || []).forEach(function (d) {
-        var f = d.fields || {};
-        var bd = modExVal(f.breakdown) || [], qOk = 0;
-        bd.forEach(function (b) {
-          var p = num(b && b.pts), e2 = num(b && b.earned);
-          if (p > 0 && e2 >= p) qOk++;
-        });
-        var ts = 0;
-        try { ts = new Date(modExVal(f.timestamp) || 0).getTime() || 0; } catch (e3) {}
-        out.push({
-          email: String(modExVal(f.email) || '').toLowerCase(),
-          key: modExVal(f.examKey) || '', type: modExVal(f.examType) || '',
-          percent: num(modExVal(f.percent)), passed: modExVal(f.passed) === true,
-          qs: bd.length, qOk: qOk, at: ts
-        });
-      });
-      tok = j.nextPageToken || '';
-    } while (tok && ++guard < 20);
-    TRN_EXAMS = out;
-    return out;
+    var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
+    if (r.status === 404) { TRN_EXAMS = []; return TRN_EXAMS; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var j = await r.json();
+    var rows = (j && Array.isArray(j.list)) ? j.list : [];
+    /* ⚠ Энэ тайлан `at` (миллисекунд) хүлээдэг, толь нь `ts` (секунд) */
+    TRN_EXAMS = rows.map(function (x) {
+      return {
+        email: String(x.email || '').toLowerCase(),
+        key: x.key || '', type: x.type || '',
+        percent: num(x.percent), passed: x.passed === true,
+        qs: num(x.qs), qOk: num(x.qOk), at: num(x.ts) * 1000
+      };
+    });
+    return TRN_EXAMS;
   } catch (e) { return null; }
 }
 

@@ -197,9 +197,19 @@ module.exports = async function handler(req, res) {
       try { if (await writeFor(em, by[em])) wrote++; else failed++; }
       catch (e) { failed++; }
     }
+    /* Админы тайлан, KPI-ийн нэгтгэлд хэрэгтэй БҮХ бичлэгийн толь.
+       Өмнө нь ажилтан бүр апп нээх бүрдээ ЭНЭ бүх бичлэгийг Firestore-оос
+       татдаг байсан нь квот дүүргэдэг гол шалтгаан байв. */
+    let allOk = false;
+    try {
+      allOk = await putJson('exams/_all.json', {
+        updatedAt: new Date().toISOString(), total: all.length, list: all
+      });
+    } catch (e) { allOk = false; }
+
     return res.status(200).json({
-      ok: failed === 0, total: all.length, people: emails.length,
-      wrote: wrote, failed: failed
+      ok: failed === 0 && allOk, total: all.length, people: emails.length,
+      wrote: wrote, failed: failed, all: allOk
     });
   } catch (e) {
     return res.status(502).json({ ok: false, error: String((e && e.message) || e).slice(0, 160) });
