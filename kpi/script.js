@@ -20586,7 +20586,7 @@ function tdIrts(s) {
     tdSet(ws, r, 4, p.pos);
     tdSet(ws, r, 5, '', { h: 'center' });
     tdSet(ws, r, 6, trndocSign(p.sig, '', false), { size: 6.5, h: 'center', color: 'FF1F5C8B' });
-    ws.getRow(r).height = 24;
+    ws.getRow(r).height = 28;
   });
   var end = 4 + s.people.length;
   [['Хамрагдвал зохих ажилтны тоо:', ''], ['Хамрагдсан ажилтны тоо:', s.people.length]]
@@ -20598,9 +20598,12 @@ function tdIrts(s) {
       ws.getRow(r).height = 17;
     });
   var rs = end + 4;
+  /* ⚠ Багана A нь маш нарийн (№) тул гарчгийг A:B-д нэгтгэнэ —
+     эс бөгөөс «БҮРТГЭЛ ХИЙСЭН:» хоёр мөр болж таслагдана. */
+  ws.mergeCells(rs, 1, rs, 2);
   tdSet(ws, rs, 1, 'БҮРТГЭЛ ХИЙСЭН:', { bold: true, noBorder: true });
-  ws.mergeCells(rs, 2, rs, 4);
-  ws.getCell(rs, 2).border = { bottom: TD_THIN };
+  ws.mergeCells(rs, 3, rs, 5);
+  ws.getCell(rs, 3).border = { bottom: TD_THIN };
   ws.getRow(rs).height = 22;
   return wb;
 }

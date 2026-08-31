@@ -45,6 +45,25 @@ function val(f) {
   return undefined;
 }
 
+/* Firestore-ийн утгыг БҮРЭН задлана (mapValue, arrayValue дотор нь ч) */
+function deep(f) {
+  if (f === null || f === undefined) return '';
+  if (f.stringValue !== undefined) return f.stringValue;
+  if (f.integerValue !== undefined) return Number(f.integerValue);
+  if (f.doubleValue !== undefined) return Number(f.doubleValue);
+  if (f.booleanValue !== undefined) return f.booleanValue;
+  if (f.timestampValue !== undefined) return f.timestampValue;
+  if (f.nullValue !== undefined) return '';
+  if (f.arrayValue !== undefined) return (f.arrayValue.values || []).map(deep);
+  if (f.mapValue !== undefined) {
+    const g = f.mapValue.fields || {};
+    const o = {};
+    Object.keys(g).forEach(function (k) { o[k] = deep(g[k]); });
+    return o;
+  }
+  return '';
+}
+
 function rowFrom(doc) {
   const f = doc.fields || {};
   const bd = (val(f.breakdown) || []).map(function (v) {
@@ -60,14 +79,12 @@ function rowFrom(doc) {
   /* ⚠ Баримт (ирц, дэвтэр, шалгалтын хуудас) үүсгэхэд шаардагдах БҮХ
      талбарыг тольд авчирна. Зурсан гарын үсгийн ЗУРГИЙГ авчрахгүй
      (50 KB × 200 = хэт том) — зөвхөн зурсан эсэх, хэзээ зурсныг авна. */
-  const ansRaw = val(f.answers) || {};
+  /* ⚠ val() нь mapValue-г ЗАДЛАХГҮЙ, дотоод боодлыг нь хэвээр буцаадаг.
+     Тиймээс хариултыг ГҮНЗГИЙ задлахгүй бол баримт дээр «[object Object]»
+     гэж гарна (2026-08-31-нд бодит шалгалтаар илэрсэн). */
+  const ansRaw = (f.answers && f.answers.mapValue && f.answers.mapValue.fields) || {};
   const ans = {};
-  Object.keys(ansRaw).forEach(function (k) {
-    const v = ansRaw[k];
-    ans[k] = (v && typeof v === 'object' && !Array.isArray(v))
-      ? Object.keys(v).reduce(function (o2, kk) { o2[kk] = String(v[kk]); return o2; }, {})
-      : (Array.isArray(v) ? v.map(String) : String(v == null ? '' : v));
-  });
+  Object.keys(ansRaw).forEach(function (k) { ans[k] = deep(ansRaw[k]); });
   return {
     email: String(val(f.email) || '').toLowerCase().trim(),
     eid: val(f.eid) || '',
