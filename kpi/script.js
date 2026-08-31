@@ -20448,7 +20448,13 @@ function trndocScope() {
     var dept = String((me && me.dept) || (SESSION && SESSION.dept) || '');
     if (/Хөдөлмөрийн\s*аюулгүй/i.test(dept)) return { all: true, why: 'ХАБЭА-н алба' };
     try { if (wkIsDirector()) return { all: true, why: 'захирал' }; } catch (e) {}
-    if (isDeptHead() && dept) return { all: false, dept: dept, why: 'албаны дарга' };
+    /* ⚠ isDeptHead() нь SESSION.role-д тулгуурладаг. Албан тушаалаараа
+       дарга/менежер байсан ч дүр нь «ажилтан» байдаг тул тэднийг
+       алдаж байв (2026-08-31-нд бодит шалгалтаар илэрсэн). Эрсдэлийн
+       хэсэгтэй ижил — албан тушаалаар нь шалгана. */
+    var boss = false;
+    try { boss = isDeptHead() || riskIsBoss(); } catch (e) { boss = isDeptHead(); }
+    if (boss && dept) return { all: false, dept: dept, why: 'албаны удирдлага' };
   } catch (e) {}
   return null;
 }
@@ -28655,7 +28661,11 @@ async function init() {
   try { setTimeout(function () { try { readHabeaExamsByEmail(); } catch (e2) {} }, 2500); } catch (e) {}
   /* Сургалтын биелэлтийн цэс — зөвхөн албаны хариуцагч/захиралд.
      ⚠ Энэ нь ЗӨВХӨН сургалтын хэсэгт хамаарна; аппын эрхийн загварт хүрэхгүй. */
-  try { setTimeout(function () { try { trnNavSync(); } catch (e2) {} }, 6000); } catch (e) {}
+  /* ⚠ Ажилтны жагсаалт хожуу ирвэл алба тодорхойгүй байж мэднэ —
+     хэд хэдэн удаа давтаж шалгана. */
+  [6000, 14000, 26000].forEach(function (ms) {
+    try { setTimeout(function () { try { trnNavSync(); } catch (e2) {} }, ms); } catch (e) {}
+  });
   // Дата ачаалахад алдаа гарсан/өлгөгдсөн ч апп ЗААВАЛ ажиллана (хоосон дэлгэц гарахгүй).
   // Сүлжээ удаан үед Firestore хүсэлт мөнхөд хүлээж болзошгүй тул хугацаа тавина.
   // ⚠ 12 секунд нь УТАСНЫ сүлжээнд хүрэлцдэггүй байв — ачаалалт бүрд
