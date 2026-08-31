@@ -1350,11 +1350,63 @@ function colQueries(key) {
 
 /* Цуглуулгуудыг зэрэг татна (аль нэг нь уншигдахгүй бол тэр нэгийг л алгасна) */
 var COL_LOAD_FAILED = [];
+/* ══════════════════════════════════════════════════════════════════════
+   ХООСОН ЦУГЛУУЛГЫГ ОГТ АСУУХГҮЙ
+   ----------------------------------------------------------------------
+   ⚠ Бодит хэмжилт (2026-08-31): ажилтан апп нээх бүрд 15 цуглуулга руу
+   30 хүсэлт явуулж байв. Гэтэл ихэнх нь ХООСОН — дата нь аль хэдийн
+   R2-д шилжсэн. Firestore нь хоосон хүсэлтийг ч уншилт гэж тоолдог тул
+   311 ажилтан × өдөрт хэдэн удаа = квот дэмий дүүрнэ.
+   Одоо аль цуглуулгад ҮНЭХЭЭР дата байгааг R2 дээрх жагсаалтаас мэдээд
+   бусдыг ОГТ асуухгүй.
+   ══════════════════════════════════════════════════════════════════════ */
+var COLS_FILE = 'sys/cols.json';
+var COLS_LIVE = null;
+
+async function colsManifestLoad() {
+  if (COLS_LIVE) return COLS_LIVE;
+  try {
+    var j = await riskR2GetJson(COLS_FILE);
+    if (j && Array.isArray(j.live)) { COLS_LIVE = j.live; return COLS_LIVE; }
+  } catch (e) {}
+  return null;
+}
+
+/* Админ бүрэн дата уншсаны дараа жагсаалтыг шинэчилнэ */
+async function colsManifestSave() {
+  try {
+    if (!isAdmin()) return;
+    var live = COL_KEYS.filter(function (k) { return (colArr(k) || []).length > 0; });
+    var cur = COLS_LIVE || [];
+    if (live.length === cur.length && live.every(function (k) { return cur.indexOf(k) >= 0; })) return;
+    COLS_LIVE = live;
+    await riskR2PutJson(COLS_FILE, { at: new Date().toISOString(), live: live });
+  } catch (e) {}
+}
+
+/* Шинэ бичлэг үүсэхэд цуглуулгыг жагсаалтад нэмнэ */
+async function colsManifestAdd(key) {
+  try {
+    var live = await colsManifestLoad();
+    if (!live || live.indexOf(key) >= 0) return;
+    live.push(key); COLS_LIVE = live;
+    await riskR2PutJson(COLS_FILE, { at: new Date().toISOString(), live: live });
+  } catch (e) {}
+}
+
 async function loadCols(opt) {
   if (!fbReady || !fdb) return;
   COL_LOAD_FAILED = [];
   var skip = (opt && opt.skip) || [];          // R2-оос аль хэдийн авсныг давтахгүй
-  var res = await Promise.all(COL_KEYS.filter(function (k) { return skip.indexOf(k) < 0; }).map(function (k) {
+  /* ⭐ Хоосон цуглуулгыг ОГТ асуухгүй */
+  var live = await colsManifestLoad();
+  var want = COL_KEYS.filter(function (k) {
+    if (skip.indexOf(k) >= 0) return false;
+    if (!live) return true;
+    return live.indexOf(k) >= 0;
+  });
+  try { console.log('[loadCols] ' + want.length + ' / ' + COL_KEYS.length + ' цуглуулга асууна'); } catch (e) {}
+  var res = await Promise.all(want.map(function (k) {
     var queries = colQueries(k);
     return Promise.all(queries.map(function (q) {
       return q.get().catch(function () {
@@ -1394,6 +1446,7 @@ async function loadCols(opt) {
     DB[r.k] = r.arr;
   });
   snapshotCols();
+  try { colsManifestSave(); } catch (e) {}
 
   /* Уншиж чадаагүй цуглуулга байвал ХЭЛНЭ — дата чимээгүй алга болохоос сэргийлнэ */
   if (COL_LOAD_FAILED.length) {
@@ -13291,6 +13344,9 @@ function reportPushToServer(r) {
   };
   try {
     if (!fbReady || typeof fdb === 'undefined' || !fdb) { done(false, 'firebase бэлэн биш'); return; }
+    /* Шинэ бичлэг үүсэхэд цуглуулгыг жагсаалтад бүртгэнэ
+       — эс бөгөөс бусад хүн энэ цуглуулгыг асуухаа больсон байж мэднэ */
+    try { colsManifestAdd('reports'); } catch (e) {}
     colRef('reports').doc(String(r.id)).set(r)
       .then(function () {
         done(true); reportNotifyHab(r);
