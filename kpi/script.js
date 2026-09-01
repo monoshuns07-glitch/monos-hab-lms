@@ -20733,6 +20733,28 @@ function tdShalgalt(s) {
   return wb;
 }
 
+/* ⚠ Windows-ийн ҮНДСЭН ZIP задлагч (Explorer) нь UTF-8 туг зөв тавигдсан
+   байсан ч кирилл нэртэй бичлэгийг задалж чаддаггүй — «Windows cannot
+   open the folder» гэж алддаг (2026-08-31-нд бодит хэрэглэгч дээр гарсан).
+   Тиймээс АРХИВ ДОТОРХ нэрийг латинаар бичнэ. Баримтын дотор бүх бичвэр
+   монголоор хэвээр — зөвхөн файлын нэр латин. */
+var TD_LAT = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+  'ж': 'j', 'з': 'z', 'и': 'i', 'й': 'i', 'к': 'k', 'л': 'l', 'м': 'm',
+  'н': 'n', 'о': 'o', 'ө': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't',
+  'у': 'u', 'ү': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh',
+  'щ': 'sh', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+};
+function tdLat(str) {
+  return String(str || '').split('').map(function (ch) {
+    var lo = ch.toLowerCase();
+    var m = TD_LAT[lo];
+    if (m !== undefined) return (ch === lo) ? m : (m.charAt(0).toUpperCase() + m.slice(1));
+    if (/[A-Za-z0-9._]/.test(ch)) return ch;
+    return '-';
+  }).join('').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
+}
+
 /* ── Архив болгож татах ────────────────────────────────────────────── */
 function trndocDownload(id) {
   var s = (TRNDOC_SES || []).filter(function (x) { return x.id === id; })[0];
@@ -20748,23 +20770,25 @@ function trndocDownload(id) {
     riskLoadZip(function (okZ) {
       if (!okZ) { done('Архивлагч ачаалагдсангүй', true); return; }
       var base = s.dstr + ' ' + s.dept.replace(/[\\/:*?"<>|]/g, '-') + ' — ' + s.title;
+      /* Дэлгэц дээр монголоор, архив дотор ЛАТИНААР (Explorer-ийн улмаас) */
+      var lbase = tdLat(s.dstr + '_' + s.dept + '_' + s.title);
       var docs = [
-        ['1. Ирцийн бүртгэл — ' + base + '.xlsx', tdIrts(s)],
-        ['2. Дэвтрийн хуудас — ' + base + '.xlsx', tdDevter(s)],
-        ['3. Дүнгийн жагсаалт — ' + base + '.xlsx', tdDun(s)],
-        ['4. Шалгалтын хуудас — ' + base + '.xlsx', tdShalgalt(s)]
+        ['1_Irtsiin-burtgel.xlsx', tdIrts(s)],
+        ['2_Devtriin-huudas.xlsx', tdDevter(s)],
+        ['3_Dungiin-jagsaalt.xlsx', tdDun(s)],
+        ['4_Shalgaltyn-huudas.xlsx', tdShalgalt(s)]
       ];
       Promise.all(docs.map(function (d) { return d[1].xlsx.writeBuffer(); }))
         .then(function (bufs) {
           var zip = new JSZip();
-          var f = zip.folder(base);
+          var f = zip.folder(lbase);
           bufs.forEach(function (b, i) { f.file(docs[i][0], b); });
           return zip.generateAsync({ type: 'blob' });
         })
         .then(function (blob) {
           var a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
-          a.download = base + '.zip';
+          a.download = lbase + '.zip';
           document.body.appendChild(a); a.click();
           setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
           done('📦 ' + s.n + ' ажилтны 4 баримт татагдлаа');
