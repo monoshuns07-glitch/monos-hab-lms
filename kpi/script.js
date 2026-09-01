@@ -20793,6 +20793,39 @@ async function trndocAttLoad(s) {
   return rec;
 }
 
+/* ── Сургалтын хөтөлбөр ────────────────────────────────────────────
+   Хөтөлбөр нь ХАБЭА-н албанаас гардаг цорын ганц баримт — систем үүнийг
+   өөрөө үүсгэж чадахгүй. Тиймээс нэг удаа хавсаргавал архивд орно.
+   Ихэнх сургалтад ИЖИЛ хөтөлбөр хэрэглэдэг тул «сүүлд хавсаргасныг
+   ашиглах» товч нэмэв — дахин файл хайх шаардлагагүй. */
+var TRNDOC_LASTPROG = 'kpi_trn_lastprog';
+
+async function trndocProgUpload(s, file) {
+  var ext = String(file.name || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!ext) ext = 'pdf';
+  var key = 'training/program/' + trndocSlug(s.id) + '.' + ext;
+  await r2Put(file, key);
+  var meta = { key: key, name: file.name, ext: ext,
+    at: new Date().toISOString(), by: (SESSION && SESSION.email) || '' };
+  TRNDOC_ATT[s.id] = TRNDOC_ATT[s.id] || { miss: {} };
+  TRNDOC_ATT[s.id].prog = meta;
+  await trndocAttSave(s);
+  try { localStorage.setItem(TRNDOC_LASTPROG, JSON.stringify(meta)); } catch (e) {}
+  return meta;
+}
+
+/* Сүүлд хавсаргасан хөтөлбөрийг энэ сургалтад ч хэрэглэнэ */
+async function trndocProgReuse(s) {
+  var meta = null;
+  try { meta = JSON.parse(localStorage.getItem(TRNDOC_LASTPROG) || 'null'); } catch (e) {}
+  if (!meta || !meta.key) return null;
+  TRNDOC_ATT[s.id] = TRNDOC_ATT[s.id] || { miss: {} };
+  TRNDOC_ATT[s.id].prog = { key: meta.key, name: meta.name, ext: meta.ext,
+    at: new Date().toISOString(), by: (SESSION && SESSION.email) || '', reused: true };
+  await trndocAttSave(s);
+  return TRNDOC_ATT[s.id].prog;
+}
+
 async function trndocAttSave(s) {
   var rec = TRNDOC_ATT[s.id] || { miss: {} };
   rec.at = new Date().toISOString();
@@ -20840,6 +20873,36 @@ function trndocRoster(s) {
   return out;
 }
 
+/* Хөтөлбөрийн мөр — ирц засах цонхны дээд талд */
+function trndocProgHTML(s) {
+  var p = (TRNDOC_ATT[s.id] || {}).prog;
+  var last = null;
+  try { last = JSON.parse(localStorage.getItem(TRNDOC_LASTPROG) || 'null'); } catch (e) {}
+  return '<div style="border:1px solid #E2E8F0;border-radius:12px;padding:11px 13px;' +
+    'margin-bottom:12px;display:flex;flex-wrap:wrap;gap:9px;align-items:center">' +
+    '<div style="flex:1;min-width:170px">' +
+    '<div style="font-size:11px;font-weight:700;color:#64748B;letter-spacing:.04em">' +
+    'СУРГАЛТЫН ХӨТӨЛБӨР</div>' +
+    (p
+      ? '<div style="font-size:13px;font-weight:600;color:#15803D;margin-top:2px">✓ ' +
+        esc(p.name || 'хавсаргасан') + '</div>'
+      : '<div style="font-size:12.5px;color:#94A3B8;margin-top:2px">' +
+        'Хавсаргаагүй — архивт орохгүй</div>') +
+    '</div>' +
+    '<input type="file" id="tdProgFile" accept=".pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg" ' +
+    'style="display:none">' +
+    '<button type="button" id="tdProgPick" style="border:1.5px solid #E2E8F0;background:#fff;' +
+    'color:#334155;border-radius:9px;padding:8px 13px;cursor:pointer;font-family:inherit;' +
+    'font-weight:700;font-size:12.5px">' + (p ? 'Солих' : '📎 Файл хавсаргах') + '</button>' +
+    ((!p && last && last.key)
+      ? '<button type="button" id="tdProgReuse" style="border:1.5px solid #BFDBFE;' +
+        'background:#EFF6FF;color:#1D4ED8;border-radius:9px;padding:8px 13px;cursor:pointer;' +
+        'font-family:inherit;font-weight:700;font-size:12.5px">Сүүлд хавсаргасныг ашиглах</button>'
+      : '') +
+    '<span id="tdProgMsg" style="font-size:12px;color:#8A94A6"></span>' +
+    '</div>';
+}
+
 /* Ирц засах цонх */
 async function trndocAttModal(id) {
   var s = (TRNDOC_SES || []).filter(function (x) { return x.id === id; })[0];
@@ -20883,6 +20946,7 @@ async function trndocAttModal(id) {
         '<div style="font-size:17px;font-weight:800;color:#0F1117">Ирц засах</div>' +
         '<div style="font-size:12.5px;color:#8A94A6;margin:3px 0 12px">' +
         esc(s.dept) + ' · ' + s.dstr + ' · ' + esc(s.title) + '</div>' +
+        trndocProgHTML(s) +
         '<div style="display:flex;gap:16px;font-size:12.5px;margin-bottom:10px">' +
         '<span>Хамрагдвал зохих: <b>' + rows.length + '</b></span>' +
         '<span style="color:#15803D">Ирсэн: <b id="tdCame">' + came + '</b></span>' +
@@ -20915,6 +20979,33 @@ async function trndocAttModal(id) {
         if (rows[i].miss) rows[i].miss = inp.value;
       });
     });
+    var pick = w.querySelector('#tdProgPick');
+    var finp = w.querySelector('#tdProgFile');
+    var pmsg = w.querySelector('#tdProgMsg');
+    if (pick && finp) {
+      pick.addEventListener('click', function () { finp.click(); });
+      finp.addEventListener('change', function () {
+        var f = finp.files && finp.files[0];
+        if (!f) return;
+        if (f.size > 25 * 1024 * 1024) { pmsg.textContent = 'Файл 25 MB-аас том байна'; return; }
+        pmsg.textContent = 'Байршуулж байна…';
+        trndocProgUpload(s, f).then(function () {
+          pmsg.textContent = '';
+          draw();
+          toast('✓ Хөтөлбөр хавсаргалаа');
+        }).catch(function (e) {
+          pmsg.textContent = 'Алдаа: ' + String(e && e.message).slice(0, 40);
+        });
+      });
+    }
+    var reuse = w.querySelector('#tdProgReuse');
+    if (reuse) reuse.addEventListener('click', function () {
+      reuse.disabled = true;
+      trndocProgReuse(s).then(function (m) {
+        if (m) { draw(); toast('✓ Өмнөх хөтөлбөрийг хавсаргалаа'); }
+        else { reuse.disabled = false; toast('Өмнө хавсаргасан хөтөлбөр олдсонгүй', 'warn'); }
+      }).catch(function () { reuse.disabled = false; });
+    });
     var c = w.querySelector('#tdAttCancel');
     if (c) c.addEventListener('click', function () { w.remove(); });
     var sv = w.querySelector('#tdAttSave');
@@ -20922,7 +21013,9 @@ async function trndocAttModal(id) {
       sv.disabled = true; sv.textContent = 'Хадгалж байна…';
       var miss = {};
       rows.forEach(function (p) { if (!p.exam && p.miss) miss[p.key] = p.miss; });
-      TRNDOC_ATT[s.id] = { miss: miss };
+      /* ⚠ Хөтөлбөрийн мэдээллийг ДАРЖ БИЧИХГҮЙ */
+      var prev = TRNDOC_ATT[s.id] || {};
+      TRNDOC_ATT[s.id] = { miss: miss, prog: prev.prog };
       trndocAttSave(s).then(function () {
         w.remove();
         toast('✓ Ирц хадгалагдлаа');
@@ -20968,7 +21061,16 @@ function trndocDownload(id) {
           var zip = new JSZip();
           var f = zip.folder(lbase);
           bufs.forEach(function (b, i) { f.file(docs[i][0], b); });
-          return zip.generateAsync({ type: 'blob' });
+          /* Хавсаргасан хөтөлбөрийг архивт оруулна */
+          var prog = (TRNDOC_ATT[s.id] || {}).prog;
+          if (!prog || !prog.key) return zip.generateAsync({ type: 'blob' });
+          return fetch(TASK_R2 + '/' + prog.key + '?t=' + Date.now())
+            .then(function (r) { return r.ok ? r.blob() : null; })
+            .then(function (b) {
+              if (b) f.file('0_Hotolbor.' + (prog.ext || 'pdf'), b);
+              return zip.generateAsync({ type: 'blob' });
+            })
+            .catch(function () { return zip.generateAsync({ type: 'blob' }); });
         })
         .then(function (blob) {
           var a = document.createElement('a');
@@ -21025,6 +21127,12 @@ async function renderTrnDocs() {
     return;
   }
 
+  /* Сургалт бүрийн хөтөлбөр хавсаргасан эсэхийг ачаална */
+  await Promise.all(TRNDOC_SES.map(function (x) {
+    return trndocAttLoad(x).then(function (a) { x.hasProg = !!(a && a.prog && a.prog.key); })
+      .catch(function () { x.hasProg = false; });
+  }));
+
   var byMonth = {};
   TRNDOC_SES.forEach(function (s) { (byMonth[s.day.slice(0, 7)] = byMonth[s.day.slice(0, 7)] || []).push(s); });
   var months = Object.keys(byMonth).sort().reverse();
@@ -21054,7 +21162,10 @@ async function renderTrnDocs() {
         '<div style="flex:1;min-width:230px">' +
         '<div style="font-weight:700;font-size:14.5px">' + esc(s.dept) + '</div>' +
         '<div style="font-size:12.5px;color:#8A94A6;margin-top:2px">' +
-        s.dstr + ' · ' + esc(s.title) + '</div></div>' +
+        s.dstr + ' · ' + esc(s.title) +
+        (s.hasProg ? ' · <span style="color:#15803D">✓ хөтөлбөртэй</span>'
+                   : ' · <span style="color:#B45309">хөтөлбөргүй</span>') +
+        '</div></div>' +
         '<div style="text-align:center;min-width:74px">' +
         '<div style="font-size:17px;font-weight:800">' + s.n + '</div>' +
         '<div style="font-size:11px;color:#8A94A6">ажилтан</div></div>' +
