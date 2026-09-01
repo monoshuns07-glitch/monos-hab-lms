@@ -20584,18 +20584,22 @@ function tdIrts(s) {
   tdTitle(ws, 6, 'СУРГАЛТЫН ҮЙЛ АЖИЛЛАГААНД ОРОЛЦОГЧДЫН ИРЦИЙН БҮРТГЭЛ',
     'Огноо: ' + s.dstr + '   ·   Алба: ' + s.dept + '   ·   Сургалт: ' + s.title);
   tdHead(ws, 4, ['№', 'НЭР', 'АЛБА', 'АЛБАН ТУШААЛ', 'ЧӨЛӨӨ\n(шалтгаан)', 'ГАРЫН ҮСЭГ']);
-  s.people.forEach(function (p, k) {
+  /* ⚠ Албаны БҮХ ажилтан — шалгалт өгөөгүй ч сууснууд ч орно */
+  var ros = trndocRoster(s);
+  ros.forEach(function (p, k) {
     var r = 5 + k;
     tdSet(ws, r, 1, k + 1, { h: 'center' });
     tdSet(ws, r, 2, p.name);
-    tdSet(ws, r, 3, p.dept);
+    tdSet(ws, r, 3, p.dept || s.dept);
     tdSet(ws, r, 4, p.pos);
-    tdSet(ws, r, 5, '', { h: 'center' });
-    tdSet(ws, r, 6, trndocSign(p.sig, '', false), { size: 6.5, h: 'center', color: 'FF1F5C8B' });
+    tdSet(ws, r, 5, p.miss || '', { h: 'center', size: 8, color: 'FFB5322A' });
+    tdSet(ws, r, 6, p.miss ? '' : trndocSign(p.sig, '', false),
+      { size: 6.5, h: 'center', color: 'FF1F5C8B' });
     ws.getRow(r).height = 28;
   });
-  var end = 4 + s.people.length;
-  [['Хамрагдвал зохих ажилтны тоо:', ''], ['Хамрагдсан ажилтны тоо:', s.people.length]]
+  var came = ros.filter(function (p) { return !p.miss; }).length;
+  var end = 4 + ros.length;
+  [['Хамрагдвал зохих ажилтны тоо:', ros.length], ['Хамрагдсан ажилтны тоо:', came]]
     .forEach(function (pair, i) {
       var r = end + 1 + i;
       ws.mergeCells(r, 1, r, 5);
@@ -20629,7 +20633,8 @@ function tdDevter(s) {
   try { var me = myEmp(); hse = (me && me.name) || ''; } catch (e) {}
   if (!hse) hse = 'ХАБЭА-н менежер';
   var hseCell = hse + '\n✓ ХАБЭА-н алба\n' + s.dstr;
-  s.people.forEach(function (p, k) {
+  /* Дэвтэрт ЗӨВХӨН зааварчилгаа авсан буюу ИРСЭН хүн орно */
+  trndocRoster(s).filter(function (p) { return !p.miss; }).forEach(function (p, k) {
     var r = 5 + k;
     tdSet(ws, r, 1, k + 1, { h: 'center', size: 8 });
     tdSet(ws, r, 2, p.name, { size: 8 });
@@ -20655,26 +20660,29 @@ function tdDun(s) {
     'Алба: ' + s.dept + '   ·   Сургалт: ' + s.title + '   ·   Огноо: ' + s.dstr);
   tdHead(ws, 4, ['№', 'Овог, нэр', 'Албан тушаал', 'Сургалтын\nөмнөх',
     'Сургалтын\nдараах', 'Ахиц', 'Тэнцсэн эсэх']);
-  s.people.forEach(function (p, k) {
+  var came3 = trndocRoster(s).filter(function (p) { return !p.miss; });
+  came3.forEach(function (p, k) {
     var r = 5 + k;
     var pre = p.pre ? num(p.pre.percent) : null;
     var post = p.post ? num(p.post.percent) : null;
     var adv = (pre != null && post != null) ? (post - pre) : null;
     var ok = !!(p.post || p.pre || {}).passed;
+    var noex = (!p.pre && !p.post);
     tdSet(ws, r, 1, k + 1, { h: 'center' });
     tdSet(ws, r, 2, p.name);
     tdSet(ws, r, 3, p.pos);
     tdSet(ws, r, 4, pre != null ? pre + '%' : '—', { h: 'center' });
     tdSet(ws, r, 5, post != null ? post + '%' : '—', { h: 'center' });
     tdSet(ws, r, 6, adv != null ? ((adv >= 0 ? '+' : '') + adv + '%') : '—', { h: 'center' });
-    tdSet(ws, r, 7, ok ? 'Тэнцсэн' : 'Тэнцээгүй',
-      { h: 'center', bold: true, color: ok ? 'FF1B7A4B' : 'FFB5322A' });
+    tdSet(ws, r, 7, noex ? 'Шалгалт өгөөгүй' : (ok ? 'Тэнцсэн' : 'Тэнцээгүй'),
+      { h: 'center', bold: true, color: noex ? 'FF9A6708' : (ok ? 'FF1B7A4B' : 'FFB5322A') });
     ws.getRow(r).height = 18;
   });
-  var end = 4 + s.people.length;
+  var end = 4 + came3.length;
+  var noEx = came3.filter(function (p) { return !p.pre && !p.post; }).length;
   ws.mergeCells(end + 1, 1, end + 1, 7);
-  tdSet(ws, end + 1, 1, 'Нийт ' + s.n + ' ажилтан  ·  Тэнцсэн ' + s.ok +
-    '  ·  Тэнцээгүй ' + (s.n - s.ok), { bold: true, size: 9, noBorder: true });
+  tdSet(ws, end + 1, 1, 'Нийт ' + came3.length + ' ажилтан  ·  Тэнцсэн ' + s.ok +
+    '  ·  Шалгалт өгөөгүй ' + noEx, { bold: true, size: 9, noBorder: true });
   return wb;
 }
 
@@ -20755,6 +20763,182 @@ function tdLat(str) {
   }).join('').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
 }
 
+/* ── ИРЦ: албаны БҮХ ажилтнаас бүрдэнэ ──────────────────────────────
+   ⚠⚠ ЯАГААД (2026-08-31): эхэндээ ирцийн бүртгэлийг ШАЛГАЛТЫН бичлэгээс
+   үүсгэсэн нь БУРУУ байв. Сургалтад суусан ч шалгалтаа өгөөгүй хүн
+   системд ул мөр үлдээхгүй тул ирцээс алга болдог байв — жишээ нь
+   2026.08.28-ны ХХҮ-д 30 ажилтнаас 17 нь л жагсаж, албаны дарга ч
+   орхигдсон.
+
+   Одоо ирц нь АЛБАНЫ БҮРЭЛДЭХҮҮНЭЭС эхэлнэ:
+     · шалгалт өгсөн хүн  → ирсэн (тогтмол, өөрчлөгдөхгүй)
+     · бусад              → ирсэн гэж үзнэ, ХАБЭА «ирээгүй» гэж
+                            тэмдэглэн шалтгаан бичиж болно
+   Сонголт R2-д хадгалагдана: training/attend/<түлхүүр>.json */
+var TRNDOC_ATT = {};            /* sessionId → { miss:{key:reason}, at, by } */
+
+function trndocSlug(id) {
+  return tdLat(String(id).replace(/\|/g, '_')).replace(/\./g, '-');
+}
+function trndocAttKey(s) { return 'training/attend/' + trndocSlug(s.id) + '.json'; }
+
+async function trndocAttLoad(s) {
+  if (TRNDOC_ATT[s.id]) return TRNDOC_ATT[s.id];
+  var rec = { miss: {} };
+  try {
+    var j = await riskR2GetJson(trndocAttKey(s), { fresh: true });
+    if (j && j.miss) rec = { miss: j.miss, at: j.at, by: j.by };
+  } catch (e) {}
+  TRNDOC_ATT[s.id] = rec;
+  return rec;
+}
+
+async function trndocAttSave(s) {
+  var rec = TRNDOC_ATT[s.id] || { miss: {} };
+  rec.at = new Date().toISOString();
+  try { rec.by = (SESSION && SESSION.email) || ''; } catch (e) {}
+  await riskR2PutJson(trndocAttKey(s), rec);
+  return true;
+}
+
+/* Албаны бүх ажилтан + шалгалт өгсөн хүмүүсийг НЭГТГЭНЭ.
+   Түлхүүр нь и-мэйл (байхгүй бол uid, эс бөгөөс нэр). */
+function trndocPersonKey(o) {
+  return String((o.email || o.uid || o.eid || o.name || '')).toLowerCase().trim();
+}
+
+function trndocRoster(s) {
+  var out = [], seen = {};
+  /* ① Шалгалт өгсөн хүмүүс — ирсэн нь БАТЛАГДСАН */
+  s.people.forEach(function (p) {
+    var k = trndocPersonKey(p.pre || p.post || p);
+    if (!k || seen[k]) return;
+    seen[k] = 1;
+    out.push({ key: k, name: p.name, pos: p.pos, dept: p.dept,
+      pre: p.pre, post: p.post, sig: p.sig, exam: true, miss: '' });
+  });
+  /* ② Албын үлдсэн ажилтан */
+  var emps = [];
+  try { emps = empAll() || []; } catch (e) { emps = (DB && DB.employees) || []; }
+  emps.forEach(function (e) {
+    var d = String(e.dept || '');
+    var same = (d === s.dept);
+    if (!same) { try { same = riskSameDept(d, s.dept); } catch (x) {} }
+    if (!same) return;
+    var k = trndocPersonKey(e);
+    if (!k || seen[k]) return;
+    seen[k] = 1;
+    out.push({ key: k, name: e.name || e.fullName || '', pos: e.pos || e.role || '',
+      dept: s.dept, pre: null, post: null, sig: null, exam: false, miss: '' });
+  });
+  /* ③ Хадгалсан «ирээгүй» тэмдэглэгээ */
+  var att = TRNDOC_ATT[s.id];
+  if (att && att.miss) {
+    out.forEach(function (p) { if (!p.exam && att.miss[p.key]) p.miss = att.miss[p.key]; });
+  }
+  out.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
+  return out;
+}
+
+/* Ирц засах цонх */
+async function trndocAttModal(id) {
+  var s = (TRNDOC_SES || []).filter(function (x) { return x.id === id; })[0];
+  if (!s) return;
+  await trndocAttLoad(s);
+  var rows = trndocRoster(s);
+
+  var w = document.createElement('div');
+  w.id = 'tdAttBox';
+  w.style.cssText = 'position:fixed;inset:0;z-index:2147483200;background:rgba(8,12,28,.6);' +
+    'backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:18px';
+
+  var draw = function () {
+    var came = rows.filter(function (p) { return !p.miss; }).length;
+    var html = rows.map(function (p, i) {
+      var lock = p.exam;
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;' +
+        'border-bottom:1px solid #EEF1F4">' +
+        '<span style="width:22px;color:#94A3B8;font-size:12px">' + (i + 1) + '</span>' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:600;font-size:13.5px">' + esc(p.name) + '</div>' +
+        '<div style="font-size:11.5px;color:#8A94A6">' + esc(p.pos || '') +
+        (lock ? ' · <span style="color:#15803D">шалгалт өгсөн</span>' : '') + '</div></div>' +
+        (lock
+          ? '<span class="pill" style="background:#DCFCE7;color:#166534;border-radius:8px;' +
+            'padding:4px 10px;font-size:11.5px;font-weight:700">Ирсэн</span>'
+          : '<button type="button" data-td-toggle="' + i + '" style="border:1.5px solid ' +
+            (p.miss ? '#FCA5A5' : '#BBF7D0') + ';background:' + (p.miss ? '#FEF2F2' : '#F0FDF4') +
+            ';color:' + (p.miss ? '#B91C1C' : '#166534') + ';border-radius:9px;padding:6px 12px;' +
+            'cursor:pointer;font-family:inherit;font-weight:700;font-size:12px">' +
+            (p.miss ? 'Ирээгүй' : 'Ирсэн') + '</button>' +
+            '<input data-td-why="' + i + '" value="' + esc(p.miss || '') + '" placeholder="шалтгаан" ' +
+            'style="width:118px;border:1px solid #E2E8F0;border-radius:8px;padding:6px 8px;' +
+            'font-family:inherit;font-size:12px' + (p.miss ? '' : ';visibility:hidden') + '">') +
+        '</div>';
+    }).join('');
+    w.innerHTML =
+      '<div style="background:#fff;border-radius:20px;padding:20px;max-width:640px;width:100%;' +
+      'max-height:calc(100vh - 36px);display:flex;flex-direction:column;' +
+      'box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:inherit">' +
+        '<div style="font-size:17px;font-weight:800;color:#0F1117">Ирц засах</div>' +
+        '<div style="font-size:12.5px;color:#8A94A6;margin:3px 0 12px">' +
+        esc(s.dept) + ' · ' + s.dstr + ' · ' + esc(s.title) + '</div>' +
+        '<div style="display:flex;gap:16px;font-size:12.5px;margin-bottom:10px">' +
+        '<span>Хамрагдвал зохих: <b>' + rows.length + '</b></span>' +
+        '<span style="color:#15803D">Ирсэн: <b id="tdCame">' + came + '</b></span>' +
+        '<span style="color:#B91C1C">Ирээгүй: <b id="tdMiss">' + (rows.length - came) + '</b></span>' +
+        '</div>' +
+        '<div style="flex:1 1 auto;overflow-y:auto;min-height:0;border-top:1px solid #EEF1F4">' +
+        html + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:14px">' +
+        '<button type="button" id="tdAttCancel" style="flex:1;border:1px solid #E2E8F0;background:#fff;' +
+        'color:#334155;border-radius:11px;padding:12px;cursor:pointer;font-family:inherit;' +
+        'font-weight:700;font-size:13.5px">Болих</button>' +
+        '<button type="button" id="tdAttSave" style="flex:2;border:none;background:#0F1117;color:#fff;' +
+        'border-radius:11px;padding:12px;cursor:pointer;font-family:inherit;font-weight:800;' +
+        'font-size:13.5px">Хадгалах</button></div>' +
+      '</div>';
+    wire();
+  };
+
+  var wire = function () {
+    w.querySelectorAll('[data-td-toggle]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = Number(b.getAttribute('data-td-toggle'));
+        rows[i].miss = rows[i].miss ? '' : 'чөлөөтэй';
+        draw();
+      });
+    });
+    w.querySelectorAll('[data-td-why]').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        var i = Number(inp.getAttribute('data-td-why'));
+        if (rows[i].miss) rows[i].miss = inp.value;
+      });
+    });
+    var c = w.querySelector('#tdAttCancel');
+    if (c) c.addEventListener('click', function () { w.remove(); });
+    var sv = w.querySelector('#tdAttSave');
+    if (sv) sv.addEventListener('click', function () {
+      sv.disabled = true; sv.textContent = 'Хадгалж байна…';
+      var miss = {};
+      rows.forEach(function (p) { if (!p.exam && p.miss) miss[p.key] = p.miss; });
+      TRNDOC_ATT[s.id] = { miss: miss };
+      trndocAttSave(s).then(function () {
+        w.remove();
+        toast('✓ Ирц хадгалагдлаа');
+        renderTrnDocs();
+      }).catch(function (e) {
+        sv.disabled = false; sv.textContent = 'Хадгалах';
+        toast('Хадгалж чадсангүй: ' + String(e && e.message).slice(0, 50), 'error');
+      });
+    });
+  };
+
+  draw();
+  w.addEventListener('click', function (ev) { if (ev.target === w) w.remove(); });
+  document.body.appendChild(w);
+}
+
 /* ── Архив болгож татах ────────────────────────────────────────────── */
 function trndocDownload(id) {
   var s = (TRNDOC_SES || []).filter(function (x) { return x.id === id; })[0];
@@ -20765,6 +20949,7 @@ function trndocDownload(id) {
     if (btn) { btn.disabled = false; btn.textContent = '⬇ Архив татах'; }
     if (msg) toast(msg, bad ? 'error' : 'success');
   };
+  trndocAttLoad(s).then(function () {
   woLoadExcelJS(function (okX) {
     if (!okX) { done('Excel үүсгэгч ачаалагдсангүй', true); return; }
     riskLoadZip(function (okZ) {
@@ -20795,6 +20980,7 @@ function trndocDownload(id) {
         })
         .catch(function (e) { done('Үүсгэж чадсангүй: ' + String(e && e.message).slice(0, 60), true); });
     });
+  });
   });
 }
 
@@ -20875,6 +21061,10 @@ async function renderTrnDocs() {
         '<div style="text-align:center;min-width:84px">' +
         '<div style="font-size:17px;font-weight:800;color:' + (pct >= 80 ? '#15803D' : '#D97706') + '">' +
         s.ok + '</div><div style="font-size:11px;color:#8A94A6">тэнцсэн · ' + pct + '%</div></div>' +
+        '<button type="button" data-td-att="' + esc(s.id) + '" ' +
+        'style="border:1.5px solid #E2E8F0;background:#fff;color:#334155;border-radius:10px;' +
+        'padding:10px 14px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">' +
+        '✎ Ирц засах</button>' +
         '<button type="button" data-td-zip="' + esc(s.id) + '" ' +
         'style="border:none;background:#0F1117;color:#fff;border-radius:10px;padding:10px 16px;' +
         'cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">⬇ Архив татах</button>' +
@@ -20886,6 +21076,8 @@ async function renderTrnDocs() {
   if (!sec._tdWired) {
     sec._tdWired = true;
     sec.addEventListener('click', function (ev) {
+      var a2 = ev.target.closest('[data-td-att]');
+      if (a2) { trndocAttModal(a2.getAttribute('data-td-att')); return; }
       var b = ev.target.closest('[data-td-zip]');
       if (b) trndocDownload(b.getAttribute('data-td-zip'));
     });
