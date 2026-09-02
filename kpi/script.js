@@ -1050,6 +1050,10 @@ async function loadDB() {
   }
   try { migrateDB(); } catch (e) {}
   _applyR2();                       // R2-оос ирсэн эрсдэл/даалгаврыг эцэст нь суулгана
+  /* ⚠ Tombstone-ыг ЭНД дахин хэрэглэнэ. Дээрх delTombApply() нь _applyR2()-оос
+     ӨМНӨ ажилладаг тул R2-оос ирсэн даалгавар устгасныг буцааж суулгаж,
+     админд устгасан даалгавар түр харагддаг байв (2026-09-02 туршилтаар илэрсэн). */
+  try { await delTombApply(); } catch (e) {}
   dbCacheSave('бүрэн');
   return fresh;
 }
