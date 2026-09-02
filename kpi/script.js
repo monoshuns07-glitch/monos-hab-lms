@@ -2130,6 +2130,95 @@ async function taskR2Load() {
     return p.rows;
   } catch (e) { return null; }
 }
+/* ══════════════════════════════════════════════════════════════════════
+   ДААЛГАВАР ӨГӨХ ЭРХ + СЕРВЕРТ ХАДГАЛАХ (2026-09-02)
+   ----------------------------------------------------------------------
+   ⚠ ЯАГААД: «Даалгавар нэмэх» товч зөвхөн admin/depthead ДҮРТЭЙ хүнд
+   гарч байв. Албан тушаалаараа менежер/дарга/захирал/ахлах боловч дүр нь
+   «ажилтан» хүмүүс даалгавар өгч чаддаггүй байв.
+   ⚠ ИЛҮҮ НОЦТОЙ: saveDB() нь админ биш хүний DB.tasks-ыг ОГТ БИЧДЭГГҮЙ.
+   Тиймээс ажилтан «Гүйцэтгэсэн» дарахад, албаны дарга хянахад — өөрчлөлт
+   зөвхөн тухайн хөтөч дээр үлдэж, серверт хүрдэггүй байв.
+   Шийдэл: даалгаврын бүх өөрчлөлт taskPersist()-ээр R2 руу
+   (read → merge → write) очно. Нэг файл тул updatedAt-аар шинэ нь ялна,
+   устгагдсаныг tombstone-оор хасна.
+   ══════════════════════════════════════════════════════════════════════ */
+/* Даалгавар өгөх/хянах эрхтэй юу — албан тушаалаар */
+function taskIsBoss() {
+  try {
+    if (isAdmin() || isDeptHead()) return true;
+    if (wkIsDirector()) return true;          /* захирал */
+    return riskIsBoss();                       /* дарга · ахлах · менежер · эрхлэгч */
+  } catch (e) { return false; }
+}
+/* Бүх албанд өгөх эрхтэй юу (админ, захирал) */
+function taskScopeAll() {
+  try { return isAdmin() || wkIsDirector(); } catch (e) { return false; }
+}
+/* Удирдагчийн алба */
+function taskBossDept() {
+  var d = '';
+  try { var me = myEmp(); if (me) d = String(me.dept || ''); } catch (e) {}
+  if (!d && SESSION) d = String(SESSION.dept || '');
+  return d;
+}
+/* Нэвтэрсэн хүний ЖИНХЭНЭ нэр (USER.name нь и-мэйлийн эхний хэсэг байдаг) */
+function taskMyName() {
+  try { var me = myEmp(); if (me && me.name) return me.name; } catch (e) {}
+  return USER.name;
+}
+function taskIdsOf(t) {
+  return (t && t.empIds && t.empIds.length) ? t.empIds : ((t && t.empId) ? [t.empId] : []);
+}
+
+/* R2 дахь файлыг read → merge → write. changed = өөрчилсөн даалгаврууд */
+async function taskR2Merge(changed, opts) {
+  opts = opts || {};
+  var remote = [];
+  try {
+    var p = await riskR2GetJson(TASK_R2_FILE, { fresh: true });
+    if (p && Array.isArray(p.rows)) remote = p.rows;
+  } catch (e) {}
+  var byId = {};
+  remote.forEach(function (r) { if (r && r.id != null) byId[String(r.id)] = r; });
+  (changed || []).forEach(function (x) {
+    if (!x || x.id == null) return;
+    var k = String(x.id), old = byId[k];
+    /* Шинэ нь ялна; updatedAt байхгүй хуучин бичлэгийг локал нь дарна */
+    if (!old || String(x.updatedAt || '') >= String(old.updatedAt || '')) byId[k] = x;
+  });
+  /* Устгагдсаныг хасна (админы устгал tombstone бичдэг) */
+  var gone = {};
+  try {
+    var f = await riskR2GetJson(WK_DEL_FILE, { fresh: true });
+    ((f && f.list) || []).forEach(function (t) { if (t && t.id) gone[String(t.id)] = 1; });
+  } catch (e) {}
+  var rows = Object.keys(byId).filter(function (k) { return !gone[k]; }).map(function (k) { return byId[k]; });
+  rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
+  await taskR2Publish(rows);
+  if (opts.apply !== false) DB.tasks = rows;
+  return true;
+}
+
+/* Даалгаврын өөрчлөлтийг серверт хадгална. list = нэг эсвэл олон даалгавар */
+async function taskPersist(list) {
+  var arr = Array.isArray(list) ? list : [list];
+  arr = arr.filter(function (x) { return x && x.id != null; });
+  if (!arr.length) return false;
+  var at = new Date().toISOString();
+  arr.forEach(function (x) { x.updatedAt = at; });
+  try { dbCacheSave('даалгавар'); } catch (e) {}
+  if (isAdmin()) { saveDB(); return true; }      /* админ — Firestore + R2 (merge) */
+  var ok = false;
+  try { ok = await taskR2Merge(arr); } catch (e) { console.error('[task] R2', e); }
+  if (!ok) {
+    toast('Даалгавар серверт хадгалагдсангүй — сүлжээгээ шалгаад дахин оролдоно уу', 'error');
+    return false;
+  }
+  try { pulseBump('db'); } catch (e) {}          /* бусдын дэлгэц шинэчлэгдэнэ */
+  return true;
+}
+
 function taskCacheLoad() {
   try {
     var c = JSON.parse(localStorage.getItem(TASK_CACHE_KEY) || 'null');
@@ -2173,7 +2262,9 @@ function taskR2Sync() {
     if (!isAdmin() && !isDeptHead()) return;
     var rows = colArr('tasks');
     if (!rows.length) return;
-    taskR2Publish(rows).catch(function (e) { console.error('[tasks] R2 sync', e); });
+    /* ⚠ merge — админы хуучин хуулбар нь удирдагч/ажилтны САЯХАН бичсэн
+       өөрчлөлтийг дарахгүй (updatedAt-аар шинэ нь ялна) */
+    taskR2Merge(rows, { apply: false }).catch(function (e) { console.error('[tasks] R2 sync', e); });
   } catch (e) {}
 }
 
@@ -4742,6 +4833,16 @@ function renderEmployeeDashboard() {
     goodList.push({ icon: 'ti-checkbox', txt: 'Бүх арга хэмжээг баримтжуулсан (' + mst.done + '/' + mst.total + ')' });
   }
 
+  /* Удирдах албан тушаалтан — хянах ёстой даалгавар */
+  try {
+    if (taskIsBoss()) {
+      var _rvw = (DB.tasks || []).filter(function (t) { return t.status === 'submitted' && canReviewTask(t); });
+      if (_rvw.length) todoList.unshift({ icon: 'ti-eye-search', color: '#7C3AED',
+        txt: _rvw.length + ' даалгавар таны хяналтыг хүлээж байна',
+        sub: 'Даалгавар цэс дээрх «Хянах» товчоор үнэлгээ өгнө', page: 'tasks', gain: 0 });
+    }
+  } catch (er) {}
+
   // 3б) Хуучин даалгавар (үлдэгдэл байвал)
   if (tsk.total) {
     var _notDone = tsk.total - tsk.done - tsk.pending;
@@ -6394,8 +6495,8 @@ function taskRepeatNext(x) {
     return _ymd(d);
   }
   DB.tasks = DB.tasks || [];
-  DB.tasks.unshift({
-    id: nextId('TSK', DB.tasks),
+  var nt = {
+    id: isAdmin() ? nextId('TSK', DB.tasks) : newId('TSK'),
     title: x.title, desc: x.desc || '', dept: x.dept || 'all',
     empId: x.empId || '', empIds: (x.empIds || []).slice(),
     startDate: shift(x.startDate || x.dueDate), dueDate: shift(x.dueDate || x.startDate),
@@ -6405,16 +6506,27 @@ function taskRepeatNext(x) {
     createdByEmail: x.createdByEmail || '',
     createdAt: new Date().toISOString(), completedBy: '', completedAt: '',
     repeatOf: x.id
-  });
+  };
+  DB.tasks.unshift(nt);
+  return nt;
 }
 
 /* Хэн хянаж, үнэлгээ өгөх эрхтэй вэ */
 function canReviewTask(t) {
+  if (!t) return false;
   if (isAdmin()) return true;
-  if (!isDeptHead()) return false;
-  if (t && t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
-  var d = (SESSION && SESSION.dept) || '';
-  return !!d && !!t && (t.dept === d || t.dept === 'all');
+  /* ⚠ Өөрт нь оногдсон даалгаврыг ӨӨРӨӨ хянаж болохгүй (захирлаас менежерт
+     өгсөн даалгаврыг менежер өөрөө батлах боломжийг хаана) */
+  try {
+    var me = myEmp();
+    if (me && taskIdsOf(t).indexOf(me.id) > -1) return false;
+  } catch (e) {}
+  if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
+  if (!taskIsBoss()) return false;
+  if (taskScopeAll()) return true;                 /* захирал — бүх алба */
+  var d = taskBossDept();
+  if (!d) return false;
+  return t.dept === 'all' || t.dept === d || riskSameDept(t.dept, d);
 }
 
 function empTaskStats(e) {
@@ -25576,10 +25688,18 @@ function renderTasks() {
   DB.tasks = DB.tasks || [];
   var admin = isAdmin(), dh = isDeptHead(), emp = isEmp();
   var me = emp ? myEmp() : null;
+  /* Албан тушаалаар — менежер, дарга, захирал, ахлах */
+  var boss = taskIsBoss(), scopeAll = taskScopeAll(), bossDept = taskBossDept();
 
   /* Role-д тохирсон даалгаврыг шүүх */
   var tasks = DB.tasks.filter(function (t) {
     if (admin) return true;
+    if (boss && !dh) {
+      if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
+      if (scopeAll) return true;
+      if (bossDept && (t.dept === 'all' || t.dept === bossDept || riskSameDept(t.dept, bossDept))) return true;
+      return !!(me && taskIdsOf(t).indexOf(me.id) > -1);
+    }
     if (dh && SESSION) {
       if (t.createdByEmail && t.createdByEmail === SESSION.email) return true;
       return SESSION.dept ? (t.dept === SESSION.dept || t.dept === 'all') : false;
@@ -25596,12 +25716,12 @@ function renderTasks() {
 
   /* Badge — хянагчид "хянах", ажилтанд "хийх" тоо */
   var badge = document.getElementById('taskBadge');
-  var bn = (admin || dh) ? (myReview.length || open.length) : open.length;
+  var bn = boss ? (myReview.length || open.length) : open.length;
   if (badge) { badge.textContent = bn; badge.style.display = bn ? 'inline-block' : 'none'; }
 
   var html = '<div class="page-header"><div><h1>Даалгавар</h1>' +
     '<p class="page-subtitle">Даалгавар өгөх → ажилтан гүйцэтгэх → хянагч үнэлгээ өгч баталгаажуулах</p></div>' +
-    (admin || dh ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
+    (boss ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
     '</div>';
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
@@ -25709,7 +25829,11 @@ function renderTasks() {
         var tid2 = dl.getAttribute('data-task-del');
         if (!confirm('Энэ даалгаврыг устгах уу?')) return;
         DB.tasks = DB.tasks.filter(function (x) { return x.id !== tid2; });
-        saveDB(); renderTasks(); renderDashboard();
+        renderTasks(); renderDashboard();
+        /* ⚠ Эхлээд tombstone — эс бөгөөс R2 merge үед бусдын хуулбараас
+           «амилж» буцаж ирнэ */
+        delTombAdd([tid2]).then(function () { saveDB(); })
+          .catch(function () { saveDB(); });
         toast('Даалгавар устгагдлаа', 'warn');
       }
     });
@@ -25735,11 +25859,14 @@ function actionSubmitTask(tid) {
       x.submitNote = (v.note || '').trim();
       x.proofUrl = v.proof || '';
       x.proofName = v.proofName || '';
-      x.submittedBy = USER.name;
+      x.submittedBy = taskMyName();
       x.submittedAt = new Date().toISOString();
       x.reviewComment = '';
-      saveDB(); renderTasks(); renderDashboard();
-      toast('Хянуулахаар илгээгдлээ. Хянагч үнэлгээ өгнө.', 'success');
+      renderTasks(); renderDashboard();
+      taskPersist(x).then(function (ok) {
+        if (ok) toast('Хянуулахаар илгээгдлээ. Хянагч үнэлгээ өгнө.', 'success');
+        renderTasks(); renderDashboard();
+      });
     }
   });
 }
@@ -25781,29 +25908,51 @@ function actionReviewTask(tid) {
     submitLabel: 'Хадгалах',
     onSubmit: function (v) {
       x.reviewComment = (v.comment || '').trim();
-      x.reviewedBy = USER.name;
+      x.reviewedBy = taskMyName();
       x.reviewedAt = new Date().toISOString();
       if (v.decision === 'return') {
         x.status = 'returned';
         x.score = null;
-        saveDB(); renderTasks(); renderDashboard();
-        toast('Даалгавар буцаагдлаа. Ажилтан дахин гүйцэтгэнэ.', 'warn');
+        renderTasks(); renderDashboard();
+        taskPersist(x).then(function (ok) {
+          if (ok) toast('Даалгавар буцаагдлаа. Ажилтан дахин гүйцэтгэнэ.', 'warn');
+          renderTasks(); renderDashboard();
+        });
         return;
       }
       var s = clamp(parseInt(v.score, 10) || 0, 0, 100);
       x.status = 'approved';
       x.score = s;
-      x.completedBy = x.submittedBy || USER.name;
+      x.completedBy = x.submittedBy || taskMyName();
       x.completedAt = x.submittedAt || new Date().toISOString();
-      try { taskRepeatNext(x); } catch (err) { console.error('[task repeat]', err); }
-      saveDB(); renderTasks(); renderDashboard();
-      toast('Баталгаажлаа · үнэлгээ ' + s + '%' + (x.repeat ? ' · дараагийнх автоматаар үүслээ' : '') + ' — KPI-д тооцогдлоо', 'success');
+      var nxt = null;
+      try { nxt = taskRepeatNext(x); } catch (err) { console.error('[task repeat]', err); }
+      renderTasks(); renderDashboard();
+      taskPersist(nxt ? [x, nxt] : x).then(function (ok) {
+        if (ok) toast('Баталгаажлаа · үнэлгээ ' + s + '%' + (x.repeat ? ' · дараагийнх автоматаар үүслээ' : '') + ' — KPI-д тооцогдлоо', 'success');
+        renderTasks(); renderDashboard();
+      });
     }
   });
 }
 function actionAddTask() {
-  var deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
-  var empOpts = (DB.employees || []).slice().sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
+  if (!taskIsBoss()) { toast('Даалгавар өгөх эрх байхгүй', 'warn'); return; }
+  /* Админ, захирал — бүх алба. Менежер/дарга/ахлах — ЗӨВХӨН өөрийн алба */
+  var all = taskScopeAll(), myDept = taskBossDept();
+  var meRec = null; try { meRec = myEmp(); } catch (e) {}
+  var deptOpts, empSrc;
+  if (all || !myDept) {
+    deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
+    empSrc = (DB.employees || []).slice();
+  } else {
+    deptOpts = [{ value: myDept, label: myDept }];
+    empSrc = (DB.employees || []).filter(function (e) {
+      return e.dept === myDept || riskSameDept(e.dept, myDept);
+    });
+  }
+  /* Өөртөө даалгавар өгөхгүй — өөрөө хянах боломжгүй тул */
+  if (meRec && !isAdmin()) empSrc = empSrc.filter(function (e) { return e.id !== meRec.id; });
+  var empOpts = empSrc.sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
     .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; });
   formModal({
     title: 'Шинэ даалгавар',
@@ -25820,7 +25969,7 @@ function actionAddTask() {
           { value: 'normal', label: '🔵 Энгийн' },
           { value: 'low',    label: '⚪ Бага — цаг гарвал' }
         ] },
-      { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: 'all' },
+      { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: (all || !myDept) ? 'all' : myDept },
       { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist',
         options: empOpts, value: [], searchable: true, searchPlaceholder: '🔍 Ажилтны нэр эсвэл албаар хайх...' },
       { name: 'startDate', label: 'Эхлэх огноо (заавал биш)', type: 'date', value: '' },
@@ -25835,11 +25984,15 @@ function actionAddTask() {
     onSubmit: function (v) {
       DB.tasks = DB.tasks || [];
       var empIds = Array.isArray(v.empIds) ? v.empIds.filter(Boolean) : [];
-      DB.tasks.unshift({
-        id: nextId('TSK', DB.tasks),
+      /* Удирдагч зөвхөн өөрийн албанд — цонх хязгаарласан ч дахин шалгана */
+      var dpt = v.dept || 'all';
+      if (!all && myDept) dpt = myDept;
+      var nt = {
+        /* ⚠ Админ биш хүний DB.tasks дутуу байж болох тул давхардахгүй ID */
+        id: isAdmin() ? nextId('TSK', DB.tasks) : newId('TSK'),
         title: v.title,
         desc: v.desc || '',
-        dept: v.dept || 'all',
+        dept: dpt,
         empId: empIds[0] || '',
         empIds: empIds,
         startDate: v.startDate || '',
@@ -25850,14 +26003,18 @@ function actionAddTask() {
         refUrl: v.refUrl || '',
         refUrlName: v.refUrlName || '',
         status: 'open',
-        createdBy: USER.name,
+        createdBy: taskMyName(),
         createdByEmail: (SESSION && SESSION.email) || '',
         createdAt: new Date().toISOString(),
         completedBy: '',
         completedAt: ''
+      };
+      DB.tasks.unshift(nt);
+      renderTasks();
+      taskPersist(nt).then(function (ok) {
+        if (ok) toast('Даалгавар нэмэгдлээ', 'success');
+        renderTasks();
       });
-      saveDB(); renderTasks();
-      toast('Даалгавар нэмэгдлээ', 'success');
     }
   });
 }
