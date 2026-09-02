@@ -463,10 +463,13 @@ function syncHabeaToModProgress(habeaByEmail, employees) {
   (employees || []).forEach(function (emp) {
     var email = String(emp.email || '').toLowerCase().trim();
     var hx = habeaByEmail[email];
-    if (!hx || !hx.list) return;
+    /* ⚠ Бичлэггүй хүнийг АЛГАСАХГҮЙ — түүний ХУУЧИН дүнг
+       цэвэрлэх шаардлагатай. Өмнө энд return хийдэг байсан тул
+       устгасан шалгалт ҮҮРД «өгсөн» гэж үлдэж байв. */
     // Модуль тус бүрийн ХАМГИЙН СҮҮЛИЙН оролдлогыг олно (ts max)
+    var hlist = (hx && hx.list) ? hx.list : [];
     var latest = {}, counts = {};
-    hx.list.forEach(function (item) {
+    hlist.forEach(function (item) {
       var mkey = item.key;
       if (!mkey || modKeys.indexOf(mkey) === -1) return;
       counts[mkey] = (counts[mkey] || 0) + 1; // оролдлогын тоо
@@ -485,6 +488,25 @@ function syncHabeaToModProgress(habeaByEmail, employees) {
         changed = true;
       }
     });
+
+    /* УСТГАСАН ШАЛГАЛТЫГ АРИЛГАНА (2026-09-02)
+       ⚠ ЯАГААД: энэ функц зөвхөн БИЧДэг байсан тул админаас
+       устгасан шалгалт KPI дээр «өгсөн 92%» гэж ҮҮРД үлдэж байв.
+       ⚠ ЗӨВХӨН шалгалтын талбарыг арилгана. Видео/сургалтын
+       явц буюу бусад бүх талбар ХӨНДӨГДӨХГҮЙ — шинэ объектед
+       хуулж авна. TRAINING_MODULES нь зааварчилгааны 5 төрлийг л агуулна. */
+    modKeys.forEach(function (mkey) {
+      if (latest[mkey]) return;                    /* бичлэг байгаа — хүрэхгүй */
+      var pk = emp.id + '_' + mkey;
+      var old = (DB.empProgress || {})[pk];
+      if (!old || !old.examTaken) return;          /* цэвэрлэх зүйл алга */
+      var nx = {};
+      Object.keys(old).forEach(function (f) {
+        if (!/^exam(Taken|Score|Passed|AttemptCount|TakenAt)$/.test(f)) nx[f] = old[f];
+      });
+      DB.empProgress[pk] = nx;
+      changed = true;
+    });
   });
   return changed;
 }
@@ -500,7 +522,7 @@ async function refreshMyExams() {
     var map = await readHabeaExamsByEmail();
     if (!map) return false; // унших алдаа — өгөгдлийг арилгахгүй (фликерээс сэргийлнэ)
     // Модуль шалгалтын дүнг empProgress-д синк — "ХАБЭА Шалгалт" карт болон модуль хуудас эндээс уншина
-    try { syncHabeaToModProgress(map, DB.employees); } catch (e) {}
+    try { if (syncHabeaToModProgress(map, DB.employees)) saveDB(); } catch (e) {}
     var hx = map[String(me.email).toLowerCase().trim()];
     var newList = (hx && hx.list) ? hx.list : [];
     // Өгөгдөл үнэхээр өөрчлөгдсөн эсэхийг шалгаж, өөрчлөгдсөн үед л дахин зурна (фликер саармагжуулна)
@@ -20791,7 +20813,15 @@ async function trndocAttLoad(s) {
   var rec = { miss: {} };
   try {
     var j = await riskR2GetJson(trndocAttKey(s), { fresh: true });
-    if (j && j.miss) rec = { miss: j.miss, at: j.at, by: j.by };
+    /* ⚠⚠ БҮХ талбарыг АВЧ ҮЛДЭНЭ (2026-09-02 засвар).
+       Өмнө зөвхөн miss/at/by-г хуулдаг байсан тул ХӨТӨЛБӨРИЙН
+       ЗААГЧ (prog) алга болж:
+         · сургалт бүр «хөтөлбөргүй» гэж харагдаж,
+         · архив татахад хөтөлбөр ОРОХГҮЙ байж,
+         · ирц хадгалахад заагч файлаас АРЧИГДАЖ байв.
+       Файлд miss байхгүй (зөвхөн хөтөлбөр хавсаргасан) тохиолдол байдаг
+       тул `j.miss` биш, `j` байгаагаар нь шалгана. */
+    if (j) rec = { miss: (j.miss || {}), at: j.at, by: j.by, prog: j.prog };
   } catch (e) {}
   TRNDOC_ATT[s.id] = rec;
   return rec;
