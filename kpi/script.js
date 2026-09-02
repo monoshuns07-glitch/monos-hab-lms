@@ -2217,13 +2217,16 @@ async function taskPersist(list) {
   var at = new Date().toISOString();
   arr.forEach(function (x) { x.updatedAt = at; });
   try { dbCacheSave('даалгавар'); } catch (e) {}
-  if (isAdmin()) { saveDB(); return true; }      /* админ — Firestore + R2 (merge) */
+  /* ⚠ R2 ЭХЛЭЭД — админд ч. Өмнө админ saveDB() → Firestore → дараа нь R2
+     гэсэн дараалалтай байсан тул Firestore квот дүүрч (HTTP 429) унахад
+     R2 огт шинэчлэгдэхгүй, ажилтнуудад хуучин байдал үлддэг байв. */
   var ok = false;
-  try { ok = await taskR2Merge(arr); } catch (e) { console.error('[task] R2', e); }
+  try { ok = await taskR2Merge(arr, { apply: !isAdmin() }); } catch (e) { console.error('[task] R2', e); }
   if (!ok) {
     toast('Даалгавар серверт хадгалагдсангүй — сүлжээгээ шалгаад дахин оролдоно уу', 'error');
     return false;
   }
+  if (isAdmin()) { try { saveDB(); } catch (e) {} }   /* Firestore нөөц хуулбар */
   try { pulseBump('db'); } catch (e) {}          /* бусдын дэлгэц шинэчлэгдэнэ */
   return true;
 }
@@ -25843,8 +25846,10 @@ function renderTasks() {
         renderTasks(); renderDashboard();
         /* ⚠ Эхлээд tombstone — эс бөгөөс R2 merge үед бусдын хуулбараас
            «амилж» буцаж ирнэ */
-        delTombAdd([tid2]).then(function () { saveDB(); })
-          .catch(function () { saveDB(); });
+        delTombAdd([tid2])
+          .then(function () { return taskR2Merge([], { apply: false }); })   /* R2 ЭХЛЭЭД */
+          .catch(function (e) { console.error('[task] del', e); })
+          .then(function () { try { saveDB(); } catch (e) {} try { pulseBump('db'); } catch (e) {} });
         toast('Даалгавар устгагдлаа', 'warn');
       }
     });
