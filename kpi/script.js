@@ -15743,6 +15743,49 @@ function wkStatus(r) {
   if (r.wkClaimBy && r.wkClaimBy.uid) return 'claimed';
   return 'new';
 }
+/* ══ НЭГ ХҮН — НЭГ БИЧЛЭГ ══════════════════════════════════════════════
+   Нэр нь бүртгэх МӨЧИД хувилж хадгалагддаг тул нэг хүн хоёр өөр байдлаар
+   («Бямбасүрэн Даваадорж» ба «Б. Даваадорж») харагдаж байв — мэдээлэл нь
+   нэг үед, хүлээн авалт нь өөр үед тогтсоноос. Харуулах үедээ uid-аар нь
+   бүртгэлээс дахин олж, ижил бичлэгт оруулна. Бүртгэл засагдвал хуучин
+   бичлэгүүд ч өөрөө зөв болно. */
+/* Дууссан ажлын ГИНЖИН ХЭЛХЭЭ — өгсөн · гүйцэтгэсэн · баталгаажуулсан.
+   Зөвхөн бүрэн дууссан (wkAccept === 'done') үед харагдана. */
+function wkChainHTML(r) {
+  if (!r || wkStatus(r) !== 'closed') return '';
+  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+  var d = function (v) { var s = String(v || '').slice(0, 10); return s ? ' · ' + s : ''; };
+  var step = function (icon, role, name, when, color) {
+    if (!name) return '';
+    return '<div style="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:150px">' +
+      '<span style="flex:0 0 auto;font-size:14px;line-height:1.3">' + icon + '</span>' +
+      '<span style="flex:1;min-width:0">' +
+      '<span style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.04em;color:' + color + '">' + role + '</span>' +
+      '<span style="display:block;font-size:12px;color:#334155;font-weight:600;line-height:1.35">' + esc(name) + '</span>' +
+      (when ? '<span style="display:block;font-size:10.5px;color:#94A3B8">' + esc(when) + '</span>' : '') +
+      '</span></div>';
+  };
+  var a = step('📝', 'ЗАХИАЛГА ӨГСӨН',
+    wkPersonName(r.reporterUid, r.reporterFull || r.reporterName), String(r.createdAt || '').slice(0, 10), '#4F46E5');
+  var b = step('🔧', 'ГҮЙЦЭТГЭСЭН',
+    wkPersonName(cl.uid, cl.name), String(r.wkExecAt || cl.at || '').slice(0, 10), '#B45309');
+  var c = step('✅', 'ШАЛГАЖ БАТАЛГААЖУУЛСАН',
+    wkPersonName(ac.uid, ac.name), String(ac.at || '').slice(0, 10), '#0ca30c');
+  if (!a && !b && !c) return '';
+  var arrow = '<span style="align-self:center;color:#CBD5E1;font-size:15px;flex:0 0 auto">→</span>';
+  return '<div style="margin-top:9px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;' +
+    'padding:10px 12px;display:flex;gap:9px;flex-wrap:wrap;align-items:stretch">' +
+    a + (a && b ? arrow : '') + b + (b && c ? arrow : '') + c + '</div>';
+}
+function wkPersonName(uid, fallback) {
+  try {
+    if (uid) {
+      var e = (DB.employees || []).filter(function (x) { return x.uid === uid; })[0];
+      if (e) { var n = empFullName(e); if (n) return n; }
+    }
+  } catch (err) {}
+  return String(fallback || '').trim();
+}
 var WK_STATUS = {
   new: { l: 'Хүлээж аваагүй', c: '#C81E3A', bg: '#FEF2F2' },
   claimed: { l: 'Хийгдэж байна', c: '#E9A100', bg: '#FFFBEB' },
@@ -16695,8 +16738,11 @@ function wkRowHTML(r) {
        Хүлээж авах хүн ЯАГААД яаралтай болохыг эндээс шууд ойлгоно. */
     wkHazChipsHTML(r) +
     '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
-    ' · 👤 ' + esc(r.reporterFull || r.reporterName || '') +
-    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(r.wkClaimBy.name) : '') + '</div>' +
+    ' · 👤 ' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName)) +
+    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(wkPersonName(r.wkClaimBy.uid, r.wkClaimBy.name)) : '') + '</div>' +
+    /* ── ДУУССАН бол гинжин хэлхээг бүтнээр: хэн өгсөн → хэн хийсэн → хэн баталсан.
+       Хүн хараад л шууд ойлгохоор, товчилсонгүй. ── */
+    wkChainHTML(r) +
     (acts.length ? '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">' +
       acts.map(function (a) {
         return '<button class="btn btn-sm" data-' + a[0] + '="' + esc(r.id) + '" style="background:' +
