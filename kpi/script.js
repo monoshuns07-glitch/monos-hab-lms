@@ -2181,6 +2181,15 @@ async function taskR2Merge(changed, opts) {
   } catch (e) {}
   var byId = {};
   remote.forEach(function (r) { if (r && r.id != null) byId[String(r.id)] = r; });
+  /* ⚠ НЭГДЭЛ: локал жагсаалтыг ч оруулна. Админ биш хүний DB.tasks нь
+     албаар шүүгдсэн ХЭСЭГ байж болох тул зөвхөн НЭМНЭ, хэзээ ч хасахгүй —
+     устгал tombstone-оор л явна. Ингэснээр R2 хоосон/дутуу үед ч
+     хэний ч даалгавар алга болохгүй. */
+  (DB.tasks || []).forEach(function (r) {
+    if (!r || r.id == null) return;
+    var k = String(r.id), old = byId[k];
+    if (!old || String(r.updatedAt || '') > String(old.updatedAt || '')) byId[k] = r;
+  });
   (changed || []).forEach(function (x) {
     if (!x || x.id == null) return;
     var k = String(x.id), old = byId[k];
