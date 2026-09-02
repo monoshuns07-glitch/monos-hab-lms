@@ -204,6 +204,24 @@ async function writeFor(email, rows) {
   });
 }
 
+/* ── ӨМНӨХ АЖИЛТНУУДЫГ САНАХ ───────────────────────
+   ⚠ ЯАГААД (2026-09-02): тольдох нь ЗӨВХӨН бичлэгтэй хүнд файл
+   бичдэг байв. Ажилтны бүх шалгалтыг устгавал түүний хуучин толь
+   ХӨДӨЛГӨӨГүй үлдэж, «Миний гүйцэтгэл» дээр УСТГАГДСАН дүн хэвээр
+   харагдасаар байв — АЛИВАА устгалт дараа нь харагдахгүй болно.
+   Шийдэл: хэнд бичснээ тэмдэглэж явна. Дараагийн удаа жагсаалтаас
+   алга болсон хүн бүрийг ХООСОН жагсаалтаар дарна. */
+const IDX_KEY = 'exams/_index.json';
+
+async function idxRead() {
+  try {
+    const r = await fetch(R2 + '/' + IDX_KEY + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j && j.emails) ? j.emails : [];
+  } catch (e) { return []; }
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const body = req.method === 'POST' ? await readBody(req) : {};
@@ -234,6 +252,19 @@ module.exports = async function handler(req, res) {
       try { if (await writeFor(em, by[em])) wrote++; else failed++; }
       catch (e) { failed++; }
     }
+
+    /* Бичлэггүй болсон хүний тольийг хоослоно (дээрх тайлбарыг үз) */
+    let blanked = 0;
+    try {
+      const prev = await idxRead();
+      const now = {};
+      emails.forEach(function (e) { now[e] = 1; });
+      const gone = prev.filter(function (e) { return e && !now[e]; });
+      for (const em of gone) {
+        try { if (await writeFor(em, [])) blanked++; } catch (e) {}
+      }
+      await putJson(IDX_KEY, { updatedAt: new Date().toISOString(), emails: emails });
+    } catch (e) { /* тольдолт бүхэлдээ зогсохгүй */ }
     /* Админы тайлан, KPI-ийн нэгтгэлд хэрэгтэй БҮХ бичлэгийн толь.
        Өмнө нь ажилтан бүр апп нээх бүрдээ ЭНЭ бүх бичлэгийг Firestore-оос
        татдаг байсан нь квот дүүргэдэг гол шалтгаан байв. */
@@ -268,7 +299,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(200).json({
       ok: failed === 0 && allOk, total: all.length, people: emails.length,
-      wrote: wrote, failed: failed, all: allOk
+      wrote: wrote, failed: failed, blanked: blanked, all: allOk
     });
   } catch (e) {
     return res.status(502).json({ ok: false, error: String((e && e.message) || e).slice(0, 160) });

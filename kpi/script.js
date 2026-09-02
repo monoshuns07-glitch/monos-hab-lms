@@ -19675,11 +19675,15 @@ function modExamCached(email, onFresh) {
     modExamLoad(em).then(function (fresh) {
       MODEX_FLY[em] = 0;
       /* ⚠ null = уншиж чадсангүй → ХУУЧНЫГ БҮҮ УСТГА.
-         Хоосон массив ч гэсэн урьд нь дүн байсан бол БҮҮ УСТГА —
-         сүлжээний түр саатал дүнг «арилгах» ЁСГҮЙ. */
+         Сүлжээний түр саатал дүнг «арилгах» ЁСГҮЙ.
+
+         ⚠⚠ Харин ХООСОН массивыг ИТГЭНЭ (2026-09-02 засвар).
+         modExamLoad нь хоёрыг аль хэдийн ялгадаг:
+           null = уншиж чадсангүй,  [] = толь бичигдсан, дүнгүй.
+         Өмнө энд «хоосон бол бүү устга» гэсэн илүүц хамгаалалт байсан
+         тул АДМИНААС УСТГАСАН дүн ажилтны дэлгэц дээр ҮҮРД ҮЛДэх байв. */
       if (fresh === null) return;
       var prev = modExamCacheGet(em);
-      if (!fresh.length && prev && prev.list.length) { prev.at = Date.now(); return; }
       var changed = !prev || JSON.stringify(prev.list) !== JSON.stringify(fresh);
       modExamCacheSet(em, fresh);
       if (changed && typeof onFresh === 'function') { try { onFresh(fresh); } catch (e) {} }
