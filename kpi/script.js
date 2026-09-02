@@ -2301,6 +2301,22 @@ function actionRiskRelease() {
   buildModal('Нэг удаагийн ажлын эрсдэл нээх', node, { width: '560px', footer: save });
 }
 
+/* Эрсдэл нэмэхэд ЭХЛЭЭД сонгох байршил (обьект). Компанийн бодит нэгжүүд.
+   «Бусад» сонговол доор нь чөлөөт бичих талбар нээгдэнэ — жагсаалтад алга
+   газар гарвал системд шинээр оруулах боломжтой. */
+var RISK_SITES = [
+  'Төв оффис',
+  'Шингэн хүнсний үйлдвэр — ПЭТ усны шугам',
+  'Шингэн хүнсний үйлдвэр — БИБ шугам',
+  'Хуурай хүнсний үйлдвэр — цай цех',
+  'Хуурай хүнсний үйлдвэр — үрэл цех',
+  'Баруун агуулах',
+  'Зүүн агуулах',
+  'Түүхий эд, бараа бүтээгдэхүүний агуулах',
+  'Аюуд товер оффис'
+];
+var RISK_SITE_OTHER = '__other__';
+
 /* ══════════════════════════════════════════════════════════════════════
    ЭРСДЭЛ / ЗААВАРЧИЛГАА ГАРААР НЭМЭХ  (админ ба туслах админ)
    «Өнөөдөр ийм газар ажиллана, ийм аюул бий, ингэж сэргийлнэ» гэсэн
@@ -2357,6 +2373,22 @@ function actionRiskAdd() {
     'Энд оруулсан зүйл сонгосон ажилтнуудад <b>шууд харагдана</b>. Ажлын өдрийн зааварчилгаа, шинэ аюулын мэдэгдэл оруулахад тохиромжтой.<br>' +
     '<b>📅 Огноо: ' + ackDateMn(new Date().toISOString()) + '</b> — өнөөдрийн огноо автоматаар хамт бүртгэгдэнэ.' +
     (mySec ? '<br>🏷 Хэсэг: <b>' + esc(mySec) + '</b> — эрсдэл энэ хэсэгт бүртгэгдэнэ.' : '') + '</div>' +
+
+    /* ① ХААНА — обьектоо эхлээд сонгоно */
+    '<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;' +
+    'color:#64748B;margin-bottom:4px">Хаана <span style="color:#DC2626">*</span></label>' +
+    '<select id="raSite" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">' +
+    '<option value="">— сонгоно уу —</option>' +
+    RISK_SITES.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('') +
+    '<option value="' + RISK_SITE_OTHER + '">Бусад (шинээр бичих)</option></select></div>' +
+
+    '<div id="raSiteOtherBox" style="display:none;margin-bottom:11px">' +
+    '<label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Байршлын нэрийг бичнэ үү <span style="color:#DC2626">*</span></label>' +
+    '<input id="raSiteOther" placeholder="Жишээ: Шинэ салбар агуулах" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit"></div>' +
+
+    /* ② ЯМАР АЖЛЫН БАЙРАНД — чөлөөт бичвэр */
+    fld('raWorkplace', 'Ямар ажлын байранд', 'Жишээ: Савлагааны оператор, ээлжийн ахлах') +
+
     fld('raHaz', 'Аюул / гарчиг *', 'Жишээ: Шатны бүсэд гулгах, унах') +
     fld('raProc', 'Ямар ажил хийж байхад', 'Жишээ: Угаалга, цэвэрлэгээ хийх үед') +
     fld('raLoc', 'Байршил', 'Жишээ: 2-р давхрын шат') +
@@ -2389,6 +2421,11 @@ function actionRiskAdd() {
       node.querySelector('#raPosBox').style.display = v === 'pos' ? 'block' : 'none';
       node.querySelector('#raEmpBox').style.display = v === 'emp' ? 'block' : 'none';
     }
+    /* «Бусад» сонгоход шинэ байршил бичих талбар нээгдэнэ */
+    if (ev.target && ev.target.id === 'raSite') {
+      var ob = node.querySelector('#raSiteOtherBox');
+      if (ob) ob.style.display = (ev.target.value === RISK_SITE_OTHER) ? 'block' : 'none';
+    }
   });
 
   var save = elc('button', 'btn btn-primary', '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах');
@@ -2397,6 +2434,14 @@ function actionRiskAdd() {
     var g = function (id) { var el = node.querySelector('#' + id); return el ? String(el.value || '').trim() : ''; };
     var hz = g('raHaz'), act = g('raAct');
     var st = node.querySelector('#raSt');
+    /* ① Байршил — «Бусад» бол чөлөөт бичвэрийг нь авна */
+    var siteSel = g('raSite');
+    var site = (siteSel === RISK_SITE_OTHER) ? g('raSiteOther') : siteSel;
+    if (!site) {
+      st.innerHTML = '<span style="color:#DC2626">' +
+        (siteSel === RISK_SITE_OTHER ? 'Шинэ байршлын нэрийг бичнэ үү.' : 'Хаана болохыг сонгоно уу.') + '</span>';
+      return;
+    }
     if (!hz || !act) { st.innerHTML = '<span style="color:#DC2626">Аюул ба арга хэмжээг заавал бөглөнө үү.</span>'; return; }
     var P = +g('raP') || 1, N = +g('raN') || 1, Hh = +g('raH') || 1;
     var dept = lockDept || g('raDept') || (depts[0] || '');
@@ -2410,7 +2455,12 @@ function actionRiskAdd() {
     var rec = {
       id: 'RSK-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
       dept: dept, position: positions.join(', '), positions: positions, empIds: empIds,
-      hazard: hz, process: g('raProc'), location: g('raLoc'), cause: g('raCause'),
+      site: site, workplace: g('raWorkplace'),
+      hazard: hz, process: g('raProc'),
+      /* Дэлгэрэнгүй/хэвлэлт нь `location`-ыг уншдаг. Нарийн байршил бичээгүй
+         бол дор хаяж обьектын нэр харагдана — хоосон мөр гарахгүй. */
+      location: g('raLoc') || site,
+      cause: g('raCause'),
       actions: act, responsible: g('raResp'), due: g('raDue'),
       p: P, n: N, h: Hh, pv: [P], nv: [N], hv: [Hh],
       r: P * N * Hh, rAfter: 0, rOk: true, unscored: false,
@@ -3090,6 +3140,16 @@ function buildModal(title, contentNode, opts) {
   var body = elc('div', 'modal-body');
   body.appendChild(contentNode);
   modal.appendChild(head); modal.appendChild(body);
+  /* ⚠ opts.footer-ийг УРЬД НЬ ОГТ ХЭРЭГЛЭДЭГГҮЙ байсан: дуудагч тал товчоо
+     үүсгээд дамжуулдаг ч энд DOM-д залгагддаггүй тул «Эрсдэл / зааварчилгаа
+     нэмэх» болон «Нэг удаагийн ажлын эрсдэл» цонхны ИЛГЭЭХ товч огт
+     харагддаггүй байв — маягтаа бөглөөд хадгалах ямар ч арга байгаагүй. */
+  if (opts.footer) {
+    var foot = elc('div', 'modal-foot');
+    if (typeof opts.footer === 'string') foot.innerHTML = opts.footer;
+    else foot.appendChild(opts.footer);
+    modal.appendChild(foot);
+  }
   overlay.appendChild(modal);
   overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) closeModal(); });
   modalRoot.innerHTML = '';
