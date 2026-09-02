@@ -2317,6 +2317,60 @@ var RISK_SITES = [
 ];
 var RISK_SITE_OTHER = '__other__';
 
+/* ══ P / N / H ОНОО ӨГӨХ АЛБАН ЁСНЫ ШАЛГУУР ══════════════════════════════
+   Эх сурвалж: ажлын байрны эрсдэлийн үнэлгээний маягтын «Аргачлал» хуудас
+   (P / N / H коэффициентийн хүснэгтүүд). Хэрэглэгч оноогоо таамаглалаар
+   биш, энэ шалгуураар өгнө — сонголт бүрийн ард тайлбар нь шууд гарна.
+   ⚠ Тоо, дараалал нь эх баримттай ЯГ таарна — өөрчилвөл өмнөх бүх
+   үнэлгээтэй харьцуулах боломжгүй болно. */
+var RISK_PNH = {
+  p: {
+    label: 'Магадлал (P)',
+    title: 'Аюул үүсэх давтамж',
+    items: [
+      { v: 1, short: 'тохиолдлын',        full: 'Тохиолдлын — маш ховор, санамсаргүй тохиолдлоор л үүсэж болзошгүй.' },
+      { v: 2, short: 'бага магадлалтай',  full: 'Бага магадлалтай — тохиолдож болох ч ховор.' },
+      { v: 3, short: 'магадлалтай',       full: 'Магадлалтай — тодорхой давтамжтайгаар тохиолдож болно.' },
+      { v: 4, short: 'бүрэн магадлалтай', full: 'Бүрэн магадлалтай — нөхцөл бүрдвэл гарцаагүй тохиолдоно.' },
+      { v: 5, short: 'тогтмол',           full: 'Тогтмол — байнга, өдөр тутам үүсэж байдаг.' }
+    ]
+  },
+  n: {
+    label: 'Үр дагавар (N)',
+    title: 'Аюулаас үүдэх хор уршгийн хэмжээ',
+    items: [
+      { v: 1, short: 'Бага хохирол — чадвар алдагдахгүй', full: 'Хөдөлмөрийн чадвар алдагдах байдалд хүргэхгүйгээр эрүүл мэндэд бага хэмжээний хохирол учруулах гэмтэл.' },
+      { v: 2, short: 'Бага зэргийн гэмтэл — эмнэлэгт хэвтэхгүй', full: 'Эмнэлэгт хэвтэхгүйгээр хөдөлмөрийн чадвар алдагдахгүй байдалд хүргэх бага зэргийн гэмтэл.' },
+      { v: 3, short: 'Ноцтой гэмтэл — эмнэлэгт хэвтэнэ', full: 'Эмнэлэгт хэвтэж эмчлүүлэх шаардлагатай ноцтой гэмтэл.' },
+      { v: 4, short: 'Хүнд гэмтэл — удаан эмчилгээ', full: 'Удаан хугацааны эмчилгээ шаардах хор уршигтай хүнд гэмтэл.' },
+      { v: 5, short: 'Амь нас эрсдэх', full: 'Амь нас эрсдэхэд хүргэх гэмтэл.' }
+    ]
+  },
+  h: {
+    label: 'Санал (H)',
+    title: 'Үнэлгээ хийж буй ажилчдын хувийн санал',
+    items: [
+      { v: 1, short: 'Маш бага нөлөөтэй', full: 'Аюул заналын түвшин нь маш бага нөлөөтэй.' },
+      { v: 2, short: 'Бага нөлөөтэй',     full: 'Аюул заналын түвшин нь бага нөлөөтэй.' },
+      { v: 3, short: 'Их нөлөөтэй',       full: 'Аюул заналын түвшин нь их нөлөөтэй.' },
+      { v: 4, short: 'Маш их нөлөөтэй',   full: 'Аюул заналын түвшин нь маш их нөлөөтэй.' },
+      { v: 5, short: 'Ноцтой — их сөрөг нөлөө', full: 'Аюул заналын түвшин ноцтой нөхцөл байдал, их хэмжээний сөрөг нөлөөлөл, хор уршигт хүргэж болзошгүй.' }
+    ]
+  }
+};
+/* R = P × N × H-ийн 5 зэрэг (эх баримтын A–E ангилал) */
+var RISK_R_BANDS = [
+  { min: 100, code: 'A', label: 'Үл зөвшөөрөгдөх эрсдэл', color: '#DC2626' },
+  { min: 51,  code: 'B', label: 'Тохиромжгүй, ихээхэн',   color: '#EA580C' },
+  { min: 11,  code: 'C', label: 'Дундаж хэмжээний',        color: '#D97706' },
+  { min: 4,   code: 'D', label: 'Зөвшөөрөгдөх хэмжээний',  color: '#0891B2' },
+  { min: 1,   code: 'E', label: 'Бага хэмжээний',          color: '#16A34A' }
+];
+function riskBandOf(r) {
+  for (var i = 0; i < RISK_R_BANDS.length; i++) if (r >= RISK_R_BANDS[i].min) return RISK_R_BANDS[i];
+  return RISK_R_BANDS[RISK_R_BANDS.length - 1];
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    ЭРСДЭЛ / ЗААВАРЧИЛГАА ГАРААР НЭМЭХ  (админ ба туслах админ)
    «Өнөөдөр ийм газар ажиллана, ийм аюул бий, ингэж сэргийлнэ» гэсэн
@@ -2361,11 +2415,39 @@ function actionRiskAdd() {
         : '<input id="' + id + '" placeholder="' + esc(ph || '') + '" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">') +
       '</div>';
   };
-  var sel5 = function (id, label) {
-    var o = '';
-    for (var i = 1; i <= 5; i++) o += '<option value="' + i + '">' + i + '</option>';
-    return '<div style="flex:1"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">' + label + '</label>' +
-      '<select id="' + id + '" style="width:100%;padding:9px 10px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">' + o + '</select></div>';
+  /* ⚠ Өмнө нь энэ гурван талбар зүгээр «1 2 3 4 5» гэсэн тоо байсан тул
+     хэрэглэгч ЯМАР шалгуураар оноо өгөхөө мэдэхгүй, таамгаар сонгодог байв.
+     Одоо сонголт бүр өөрийн тайлбартай, доор нь бүтэн тодорхойлолт гарна. */
+  var selPNH = function (id, key) {
+    var cfg = RISK_PNH[key];
+    var o = cfg.items.map(function (it) {
+      return '<option value="' + it.v + '" title="' + esc(it.full) + '">' +
+        it.v + ' — ' + esc(it.short) + '</option>';
+    }).join('');
+    return '<div style="flex:1;min-width:0"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px" title="' + esc(cfg.title) + '">' +
+      esc(cfg.label) + '</label>' +
+      '<select id="' + id + '" data-pnh="' + key + '" style="width:100%;padding:9px 10px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13px;font-family:inherit">' + o + '</select></div>';
+  };
+  /* Сонгосон оноонуудын бүтэн тайлбар + гарах эрсдэлийн зэрэг */
+  var pnhHint = function () {
+    var q = function (id) { var el = node && node.querySelector('#' + id); return el ? +el.value || 1 : 1; };
+    var line = function (key, v) {
+      var cfg = RISK_PNH[key];
+      var it = cfg.items.filter(function (x) { return x.v === v; })[0] || cfg.items[0];
+      return '<div style="display:flex;gap:8px;margin-top:5px">' +
+        '<span style="flex:0 0 74px;font-size:11px;font-weight:800;color:#4F46E5">' + esc(cfg.label) + ' ' + it.v + '</span>' +
+        '<span style="flex:1;min-width:0;font-size:12px;color:#475569;line-height:1.5">' + esc(it.full) + '</span></div>';
+    };
+    var P = q('raP'), N = q('raN'), H = q('raH'), R = P * N * H;
+    var b = riskBandOf(R);
+    return '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px;margin-bottom:11px">' +
+      '<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#94A3B8;text-transform:uppercase">Оноо хэрхэн өгөх вэ</div>' +
+      line('p', P) + line('n', N) + line('h', H) +
+      '<div style="margin-top:9px;padding-top:8px;border-top:1px solid #E2E8F0;display:flex;align-items:center;gap:9px;flex-wrap:wrap">' +
+      '<span style="font-size:12px;color:#64748B">' + P + ' × ' + N + ' × ' + H + ' =</span>' +
+      '<span style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:19px;font-weight:900;color:' + b.color + ';line-height:1">' + R + '</span>' +
+      '<span style="background:' + b.color + '18;color:' + b.color + ';border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">' +
+      b.code + ' · ' + esc(b.label) + '</span></div></div>';
   };
 
   var node = elc('div', 'modal-info',
@@ -2394,7 +2476,8 @@ function actionRiskAdd() {
     fld('raLoc', 'Байршил', 'Жишээ: 2-р давхрын шат') +
     fld('raCause', 'Шалтгаан', 'Жишээ: Нойтон шал, гэрэлтүүлэг сул', 'ta') +
     fld('raAct', 'Урьдчилан сэргийлэх арга хэмжээ *', 'Жишээ: Анхааруулах тэмдэг тавих, гулгахгүй гутал өмсөх', 'ta') +
-    '<div style="display:flex;gap:9px;margin-bottom:11px">' + sel5('raP', 'Магадлал (P)') + sel5('raN', 'Үр дагавар (N)') + sel5('raH', 'Санал (H)') + '</div>' +
+    '<div style="display:flex;gap:9px;margin-bottom:9px">' + selPNH('raP', 'p') + selPNH('raN', 'n') + selPNH('raH', 'h') + '</div>' +
+    '<div id="raPnh"></div>' +
     fld('raResp', 'Хэн хяналт тавих', 'Жишээ: Ээлжийн ахлах') +
     fld('raDue', 'Хэзээ / хугацаа', 'Жишээ: Өдөр бүр, эсвэл 2026-09-01') +
     '<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Алба</label>' +
@@ -2426,7 +2509,15 @@ function actionRiskAdd() {
       var ob = node.querySelector('#raSiteOtherBox');
       if (ob) ob.style.display = (ev.target.value === RISK_SITE_OTHER) ? 'block' : 'none';
     }
+    /* P/N/H сонгох бүрд тайлбар ба эрсдэлийн зэрэг шинэчлэгдэнэ */
+    if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-pnh')) drawPnh();
   });
+
+  function drawPnh() {
+    var box = node.querySelector('#raPnh');
+    if (box) box.innerHTML = pnhHint();
+  }
+  drawPnh();
 
   var save = elc('button', 'btn btn-primary', '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах');
   save.style.width = '100%';
