@@ -2270,7 +2270,9 @@ function taskR2Sync() {
   try {
     if (!isAdmin() && !isDeptHead()) return;
     var rows = colArr('tasks');
-    if (!rows.length) return;
+    /* ⚠ Хоосон бол ч БИЧНЭ. Өмнө «хоосон бол буца» гэсэн хамгаалалт байсан нь
+       СҮҮЛЧИЙН даалгаврыг устгахад R2 шинэчлэгдэхгүй үлдээдэг байв (2026-09-02).
+       merge нь remote ∪ локал − tombstone тул хоосон локал R2-г арчихгүй. */
     /* ⚠ merge — админы хуучин хуулбар нь удирдагч/ажилтны САЯХАН бичсэн
        өөрчлөлтийг дарахгүй (updatedAt-аар шинэ нь ялна) */
     taskR2Merge(rows, { apply: false }).catch(function (e) { console.error('[tasks] R2 sync', e); });
