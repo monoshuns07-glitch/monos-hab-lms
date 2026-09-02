@@ -17636,16 +17636,27 @@ function openReportDetail(id) {
 var WO_FILE = 'workorders/_all.json';
 var WO_ROWS = [], WO_OK = false;
 
-/* Ажлын төрөл — маягтын баруун дээд булангийн чагтууд */
+/* Ажлын төрөл — маягтын баруун дээд булангийн чагтууд
+   ⚠ ХАМРАХ ХҮРЭЭ: ажлын захиалга нь ЖИЖИГ САЖИГ, нэмэлт засварт зориулагдсан
+   (ус алдсан, цахилгааны масс, хаалга санжсан, зам сэтэрсэн г.м).
+   ҮЙЛДВЭРИЙН ЗОГСОЛТ ба ҮНДСЭН ТОНОГ ТӨХӨӨРӨМЖИЙН ТӨЛӨВЛӨГӨӨТ ЗАСВАР энэ
+   системд ОРОХГҮЙ — тэдгээр нь өөрийн төлөвлөлт, процесстой.
+   ⭐ `off: true` = сонгох боломжоос хассан. Жагсаалтаас БҮРМӨСӨН устгавал
+   өмнө нь тэр төрлөөр бүртгэгдсэн захиалгууд woKind()-ийн fallback-аар
+   «Эвдрэл» болж хувирч түүх гуйвна. Тиймээс харуулах чадварыг нь үлдээв. */
 var WO_KINDS = [
   { k: 'bm',  en: 'BM',  mn: 'Эвдрэл',     c: '#DC2626', bg: '#FEF2F2' },
   { k: 'im',  en: 'IM',  mn: 'Саатал',     c: '#EA580C', bg: '#FFF7ED' },
-  { k: 'pm',  en: 'PM',  mn: 'Төлөвлөсөн', c: '#0891B2', bg: '#ECFEFF' },
+  { k: 'pm',  en: 'PM',  mn: 'Төлөвлөсөн', c: '#0891B2', bg: '#ECFEFF', off: true },
   { k: 'new', en: 'New', mn: 'Шинэ',       c: '#7C3AED', bg: '#F5F3FF' }
 ];
 function woKind(k) {
   for (var i = 0; i < WO_KINDS.length; i++) if (WO_KINDS[i].k === k) return WO_KINDS[i];
   return WO_KINDS[0];
+}
+/* Шинээр захиалга үүсгэхэд СОНГОЖ болох төрлүүд (хамрах хүрээнд багтсан нь) */
+function woKindsPickable() {
+  return WO_KINDS.filter(function (k) { return !k.off; });
 }
 
 /* Дөрвөн үе шат — цаасан маягтын SECTION 1/2/3-тай яг тохирно.
@@ -17834,7 +17845,7 @@ function woNewModal(fromReport) {
   var today = todayISO();
   var sel = { kind: rep ? 'bm' : 'bm', unit: 'Тоног төхөөрөмж', hazardous: !!rep };
 
-  var kindBtns = WO_KINDS.map(function (k) {
+  var kindBtns = woKindsPickable().map(function (k) {
     return '<button type="button" class="wo-kind" data-wok="' + k.k + '" style="flex:1;min-width:92px;' +
       'border:1.5px solid #E2E8F0;background:#fff;border-radius:10px;padding:8px 6px;cursor:pointer;' +
       'font-family:inherit;text-align:center">' +
@@ -17851,7 +17862,16 @@ function woNewModal(fromReport) {
 
     '<div style="font-size:12px;font-weight:800;color:#94A3B8;letter-spacing:.4px;margin-bottom:7px">' +
     'АЖЛЫН ТӨРӨЛ / TYPE</div>' +
-    '<div id="woKinds" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">' + kindBtns + '</div>' +
+    '<div id="woKinds" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">' + kindBtns + '</div>' +
+
+    /* Хамрах хүрээг ЭНД хэлнэ — буруу захиалга орж ирснийхээ дараа буцаахаас
+       өмнө нь сануулах нь хоёр талдаа хямд. */
+    '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:9px;padding:9px 12px;' +
+    'margin-bottom:13px;font-size:12px;color:#64748B;line-height:1.55">' +
+    '<b style="color:#334155">Энэ хуудас юунд зориулагдсан бэ:</b> жижиг сажиг, нэмэлт засвар — ' +
+    'ус алдах, цахилгааны масс, хаалга санжих, зам сэтрэх гэх мэт.<br>' +
+    '<b style="color:#B45309">Хамаарахгүй:</b> үйлдвэрийн зогсолт, үндсэн тоног төхөөрөмжийн ' +
+    'төлөвлөгөөт засвар — эдгээр нь өөрийн төлөвлөгөөгөөр явна.</div>' +
 
     '<label style="display:flex;align-items:center;gap:9px;background:#FFF7ED;border:1.5px solid #FED7AA;' +
     'border-radius:10px;padding:10px 12px;margin-bottom:14px;cursor:pointer">' +
