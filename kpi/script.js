@@ -20779,6 +20779,23 @@ var TD_LAT = {
   'у': 'u', 'ү': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh',
   'щ': 'sh', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
 };
+/* Архивын БОГИНО нэр — Windows-ын замын хязгаарт багтаана.
+   Жишээ: 2026.08.26_Chanaryn-hyanaltyn-lab_Davtan  (~45 тэмдэгт)
+   Өмнөх: 2026.08.26_Chanaryn-hyanaltyn-laboratori_Eeljit-davtan-zaavarchilgaa (67) */
+var TD_SHORT = {
+  urdchilsan: 'Urdchilsan',
+  ankhan: 'Ankhan',
+  davtan_eeljit: 'Davtan',
+  davtan_eeljit_bus: 'Davtan-bus',
+  davtan_odor_tutmiin: 'Odor-dutam'
+};
+function tdZipName(s) {
+  var d = tdLat(String(s.dept || '')).replace(/-+$/, '');
+  if (d.length > 26) d = d.slice(0, 26).replace(/-+$/, '');
+  var t = TD_SHORT[s.key] || tdLat(String(s.title || '')).slice(0, 12);
+  return (s.dstr + '_' + d + '_' + t).replace(/-{2,}/g, '-');
+}
+
 function tdLat(str) {
   return String(str || '').split('').map(function (ch) {
     var lo = ch.toLowerCase();
@@ -21083,17 +21100,25 @@ function trndocDownload(id) {
       if (!okZ) { done('Архивлагч ачаалагдсангүй', true); return; }
       var base = s.dstr + ' ' + s.dept.replace(/[\\/:*?"<>|]/g, '-') + ' — ' + s.title;
       /* Дэлгэц дээр монголоор, архив дотор ЛАТИНААР (Explorer-ийн улмаас) */
-      var lbase = tdLat(s.dstr + '_' + s.dept + '_' + s.title);
+      /* ⚠ WINDOWS-ЫН 260 ТЭМДЭГТИЙН ХЯЗГААР (2026-09-02 засвар)
+         Өмнө архивын нэр ба доторх хавтас НЭГ ИЖИЛ урт нэртэй байв.
+         Windows «Задлах» үед ZIP-ийн нэрээр хавтас үүсгэдэг тул
+         зам нь «Урт-нэр\\Урт-нэр\\файл» болж ХОЁР ДАХИН уртсаж,
+         «The destination path is too long» алдаа өгдөг байв.
+         Засвар: доторх хавтсыг АВЧ ХАЯЖ, нэрсийг богиносгов. */
+      var lbase = tdZipName(s);
       var docs = [
-        ['1_Irtsiin-burtgel.xlsx', tdIrts(s)],
-        ['2_Devtriin-huudas.xlsx', tdDevter(s)],
-        ['3_Dungiin-jagsaalt.xlsx', tdDun(s)],
-        ['4_Shalgaltyn-huudas.xlsx', tdShalgalt(s)]
+        ['1_Irts.xlsx', tdIrts(s)],
+        ['2_Devter.xlsx', tdDevter(s)],
+        ['3_Dun.xlsx', tdDun(s)],
+        ['4_Shalgalt.xlsx', tdShalgalt(s)]
       ];
       Promise.all(docs.map(function (d) { return d[1].xlsx.writeBuffer(); }))
         .then(function (bufs) {
           var zip = new JSZip();
-          var f = zip.folder(lbase);
+          /* Файлууд АРХИВЫН ҮНДСэнд — доторх давхар хавтасгүй.
+             Windows задлахад өөрөө ZIP-ийн нэрээр хавтас үүсгэнэ. */
+          var f = zip;
           bufs.forEach(function (b, i) { f.file(docs[i][0], b); });
           /* Хавсаргасан хөтөлбөрийг архивт оруулна */
           var prog = (TRNDOC_ATT[s.id] || {}).prog;
