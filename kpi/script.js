@@ -2166,6 +2166,82 @@ function taskBossDept() {
   if (!d && SESSION) d = String(SESSION.dept || '');
   return d;
 }
+/* ══════════════════════════════════════════════════════════════════════
+   ДААЛГАВРЫГ ДЭЭД ШАТ БАТЛАХ
+   ----------------------------------------------------------------------
+   Ажилтан даалгавар өгвөл түүний ШУУД дээд албан тушаалтан батална.
+   Жишээ: Шингэн хүнсний үйлдвэрийн ажилтан → тухайн шугамын менежер.
+   ⭐ Энэ бол ackSubordinates()-ийн ЭСРЭГ тал. Шатлалыг шинээр зохиохгүй,
+      танилцуулгын модульд аль хэдийн ажиллаж байгаа дүрмийг эргүүлж
+      ашиглана — эс бөгөөс нэг системд хоёр өөр шатлал үүснэ.
+   ══════════════════════════════════════════════════════════════════════ */
+function taskApproverOf(emp) {
+  if (!emp) return null;
+  var role = 'emp';
+  try { role = ackRoleOf(emp); } catch (e) {}
+  /* Захирал ба албаны дарга бол дээд шат нь өөрөө — батлуулахгүй */
+  if (role === 'ceo' || role === 'prod' || role === 'lead') return null;
+  var dept = emp.dept || '', unit = '';
+  try { unit = ackUnitOf(emp) || ''; } catch (e) {}
+
+  if (role === 'emp') {
+    /* Өөрийн хэсгийн (шугам/цех) менежер. ackSubordinates нь менежерээс
+       доош яг ийм дүрмээр шүүдэг тул эсрэгээр нь тааруулна. */
+    var mgr = null;
+    try {
+      mgr = (ackDueEmps(dept) || []).filter(function (x) {
+        if (!x || x.uid === emp.uid) return false;
+        if (ackRoleOf(x) !== 'mgr') return false;
+        if (unit && ackUnitOf(x) !== unit) return false;
+        var sec = ackSecOf(x);
+        if (sec && !ackInSection(emp, dept, sec)) return false;
+        return true;
+      })[0] || null;
+    } catch (e) {}
+    if (mgr) return mgr;
+  }
+  /* Менежер, эсвэл менежергүй алба → албаны дарга */
+  try { return ackLeadFor(dept, unit) || null; } catch (e) { return null; }
+}
+/* Энгийн ажилтан даалгавар өгч чадах уу — зөвхөн дээд шат нь олдвол */
+function taskCanRequest() {
+  try { return !isAdmin() && !!taskApproverOf(myEmp()); } catch (e) { return false; }
+}
+function taskIsPending(t) { return !!t && t.status === 'pending'; }
+/* Батлагдаагүй = хүлээгдэж буй ЭСВЭЛ буцаагдсан. Аль нь ч гүйцэтгэгчид
+   харагдах, «Хийгдэх» тоололд орох ёсгүй. */
+function taskIsUnapproved(t) { return !!t && (t.status === 'pending' || t.status === 'rejected'); }
+/* Дээд шат батлах (ok=true) эсвэл буцаах (ok=false) */
+function taskApprove(id, ok) {
+  var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanApprove(t)) { toast('Танд батлах эрх алга', 'error'); return; }
+  if (!ok && !confirm('Энэ даалгаврыг буцаах уу? Үүсгэсэн хүн дахин засаж илгээх боломжтой.')) return;
+  t.status = ok ? 'open' : 'rejected';
+  t.approvedBy = taskMyName();
+  t.approvedAt = new Date().toISOString();
+  renderTasks();
+  taskPersist(t).then(function (done) {
+    if (done) toast(ok ? '✓ Батлагдлаа — ажилтнуудад харагдана' : 'Буцаагдлаа', ok ? 'success' : 'warn');
+    renderTasks();
+  });
+}
+/* Энэ хүн тухайн даалгаврыг батлах эрхтэй юу */
+function taskCanApprove(t) {
+  if (!taskIsPending(t)) return false;
+  if (isAdmin()) return true;
+  var uid = (SESSION && SESSION.uid) || '';
+  if (uid && t.approverUid && t.approverUid === uid) return true;
+  /* Батлагч бүртгэлээс олдоогүй бол албаны дарга нь батална */
+  if (!t.approverUid) {
+    try {
+      var me = myEmp();
+      if (me && ackRoleOf(me) === 'lead' && riskSameDept(me.dept, t.createdDept || '')) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+
 /* Нэвтэрсэн хүний ЖИНХЭНЭ нэр (USER.name нь и-мэйлийн эхний хэсэг байдаг) */
 function taskMyName() {
   try { var me = myEmp(); if (me && me.name) return me.name; } catch (e) {}
@@ -6549,6 +6625,9 @@ function canReviewTask(t) {
 
 function empTaskStats(e) {
   var assigned = (DB.tasks || []).filter(function (t) {
+    /* ⚠ Батлагдаагүй даалгавар ажилтанд ХАРАГДДАГГҮЙ тул KPI-д ч тооцогдохгүй.
+       Эс бөгөөс хараагүй ажлынхаа төлөө оноогоо алдана. */
+    if (taskIsUnapproved(t)) return false;
     var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
     return ids.indexOf(e.id) > -1; // зөвхөн нэрлэн оногдуулсан даалгавар
   });
@@ -6565,6 +6644,7 @@ function empTaskStats(e) {
 /* ---- Даалгавар: албанд (эсвэл бүх албанд) өгсөн даалгаврын дүн — албаны мөрөнд ---- */
 function deptTaskStats(dept) {
   var assigned = (DB.tasks || []).filter(function (t) {
+    if (taskIsUnapproved(t)) return false;   // батлагдаагүй нь албанд ч тооцогдохгүй
     var ids = (t.empIds && t.empIds.length) ? t.empIds : (t.empId ? [t.empId] : []);
     if (ids.length) return false; // нэрлэсэн даалгавар албанд тооцогдохгүй
     return t.dept === 'all' || t.dept === dept;
@@ -25731,6 +25811,13 @@ function renderTasks() {
 
   /* Role-д тохирсон даалгаврыг шүүх */
   var tasks = DB.tasks.filter(function (t) {
+    /* ⭐ Батлагдаагүй даалгаврыг ГҮЙЦЭТГЭГЧ ХАРАХГҮЙ — зөвхөн үүсгэгч,
+       батлагч, админ. Эс бөгөөс батлагдаагүй ажил хийгдэж эхэлнэ. */
+    if (taskIsUnapproved(t)) {
+      if (admin) return true;
+      if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
+      return taskCanApprove(t);
+    }
     if (admin) return true;
     if (boss && !dh) {
       if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
@@ -25746,8 +25833,10 @@ function renderTasks() {
     return false;
   }).sort(taskSortFn);
 
+  var pending = tasks.filter(taskIsUnapproved);
+  var myApprove = pending.filter(taskCanApprove);
   var review = tasks.filter(function (x) { return x.status === 'submitted'; });
-  var open   = tasks.filter(function (x) { return x.status !== 'submitted' && !taskIsClosed(x); });
+  var open   = tasks.filter(function (x) { return x.status !== 'submitted' && !taskIsUnapproved(x) && !taskIsClosed(x); });
   var closed = tasks.filter(taskIsClosed);
   var myReview = review.filter(canReviewTask);
   var overdue = tasks.filter(function (x) { return taskOverdueDays(x) > 0; });
@@ -25759,7 +25848,8 @@ function renderTasks() {
 
   var html = '<div class="page-header"><div><h1>Даалгавар</h1>' +
     '<p class="page-subtitle">Даалгавар өгөх → ажилтан гүйцэтгэх → хянагч үнэлгээ өгч баталгаажуулах</p></div>' +
-    (boss ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
+    /* Удирдлага — шууд. Энгийн ажилтан — дээд шаттай бол (тэр батална). */
+    ((boss || taskCanRequest()) ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
     '</div>';
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
@@ -25840,8 +25930,43 @@ function renderTasks() {
       '<div style="font-size:12.5px;color:#6D28D9">Гүйцэтгэлийг нь үзээд үнэлгээ өгнө үү. Үнэлгээ нь ажилтны KPI оноонд шууд нөлөөлнө.</div></div>';
   }
 
-  html += (review.length ? '<h3 style="margin:0 0 10px;font-size:15px;color:#7C3AED">Хянагдаж буй ' + review.length + '</h3>' + review.map(taskCard).join('') : '') +
-    '<h3 style="margin:' + (review.length ? '18px' : '0') + ' 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
+  /* ── Батлах хүлээж буй ── */
+  if (pending.length) {
+    var pCard = function (x) {
+      var mine = taskCanApprove(x);
+      return '<div style="background:#fff;border:1.5px solid ' + (mine ? '#FDE68A' : '#E2E8F0') + ';border-radius:12px;' +
+        'padding:13px 15px;margin-bottom:9px;display:flex;align-items:flex-start;gap:12px">' +
+        '<div style="width:34px;height:34px;border-radius:9px;background:#FFFBEB;color:#B45309;display:flex;' +
+        'align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-clock-pause"></i></div>' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<span style="font-size:14px;font-weight:700;color:#1E293B">' + esc(x.title || '') + '</span>' +
+        (x.status === 'rejected'
+          ? '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">↩ Буцаагдсан</span>'
+          : '<span style="background:#B4530918;color:#B45309;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Батлах хүлээж буй</span>') +
+        '</div>' +
+        (x.desc ? '<div style="font-size:12.5px;color:#64748B;margin-top:3px;white-space:pre-wrap">' + esc(x.desc) + '</div>' : '') +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
+        '<span><i class="ti ti-user"></i> ' + esc(x.createdBy || '') + '</span>' +
+        '<span><i class="ti ti-building"></i> ' + esc(x.dept === 'all' ? 'Бүх алба' : (x.dept || '')) + '</span>' +
+        (x.approverName ? '<span><i class="ti ti-user-check"></i> ' + esc(x.approverName) + ' батлана</span>' : '') +
+        '</div></div>' +
+        (mine ? '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
+          '<button class="btn btn-sm btn-primary" data-task-ok="' + esc(x.id) + '"><i class="ti ti-check"></i> Батлах</button>' +
+          '<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA" data-task-no="' + esc(x.id) + '">Буцаах</button>' +
+          '</div>' : '') + '</div>';
+    };
+    if (myApprove.length) {
+      html += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:14px;padding:14px 16px;margin-bottom:14px">' +
+        '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">⏳ Таны батлах ёстой ' + myApprove.length + ' даалгавар</div>' +
+        '<div style="font-size:12.5px;color:#B45309">Доод шатны ажилтны өгсөн даалгавар. Батлагдтал гүйцэтгэгчид харагдахгүй.</div></div>';
+    }
+    html += '<h3 style="margin:0 0 10px;font-size:15px;color:#B45309">Батлах хүлээж буй ' + pending.length + '</h3>' +
+      pending.map(pCard).join('');
+  }
+
+  html += (review.length ? '<h3 style="margin:' + (pending.length ? '18px' : '0') + ' 0 10px;font-size:15px;color:#7C3AED">Хянагдаж буй ' + review.length + '</h3>' + review.map(taskCard).join('') : '') +
+    '<h3 style="margin:' + ((review.length || pending.length) ? '18px' : '0') + ' 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
     (open.length ? open.map(taskCard).join('') : emptyBox('Хийгдэх даалгавар алга')) +
     (closed.length ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Баталгаажсан ' + closed.length + '</h3>' + closed.map(taskCard).join('') : '');
 
@@ -25855,6 +25980,12 @@ function renderTasks() {
       /* Даалгавар доторх «Эрсдэлийн дэлгэрэнгүй» */
       var ro = ev.target.closest('[data-risk-open]');
       if (ro) { riskOpenDetail(ro.getAttribute('data-risk-open')); return; }
+
+      /* Дээд шат — батлах / буцаах */
+      var apOk = ev.target.closest('[data-task-ok]');
+      if (apOk) { taskApprove(apOk.getAttribute('data-task-ok'), true); return; }
+      var apNo = ev.target.closest('[data-task-no]');
+      if (apNo) { taskApprove(apNo.getAttribute('data-task-no'), false); return; }
 
       var sb = ev.target.closest('[data-task-submit]');
       if (sb) { actionSubmitTask(sb.getAttribute('data-task-submit')); return; }
@@ -25976,24 +26107,40 @@ function actionReviewTask(tid) {
   });
 }
 function actionAddTask() {
-  if (!taskIsBoss()) { toast('Даалгавар өгөх эрх байхгүй', 'warn'); return; }
-  /* Админ, захирал — бүх алба. Менежер/дарга/ахлах — ЗӨВХӨН өөрийн алба */
   var all = taskScopeAll(), myDept = taskBossDept();
   var meRec = null; try { meRec = myEmp(); } catch (e) {}
-  var deptOpts, empSrc;
-  if (all || !myDept) {
-    deptOpts = [{ value: 'all', label: 'Бүх алба' }].concat(deptList().map(function (d) { return { value: d, label: d }; }));
-    empSrc = (DB.employees || []).slice();
-  } else {
-    deptOpts = [{ value: myDept, label: myDept }];
-    empSrc = (DB.employees || []).filter(function (e) {
-      return e.dept === myDept || riskSameDept(e.dept, myDept);
-    });
+  /* ⭐ Энгийн ажилтан ч даалгавар өгч болно — гэхдээ ДЭЭД ШАТ нь батална.
+     Өмнө нь зөвхөн удирдлага өгдөг байсан. Хяналт нь «хэн өгөх вэ» гэдэгт
+     биш, «хэн батлах вэ» гэдэгт шилжсэн. */
+  if (!taskIsBoss()) {
+    var ap0 = null; try { ap0 = taskApproverOf(meRec); } catch (e) {}
+    if (!ap0) { toast('Таны дээд албан тушаалтан бүртгэлээс олдсонгүй — админд хандана уу', 'warn'); return; }
   }
-  /* Өөртөө даалгавар өгөхгүй — өөрөө хянах боломжгүй тул */
-  if (meRec && !isAdmin()) empSrc = empSrc.filter(function (e) { return e.id !== meRec.id; });
-  var empOpts = empSrc.sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
-    .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; });
+
+  /* ⭐ БҮХ АЛБА сонгогдоно. Өмнө нь удирдагчид зөвхөн ӨӨРИЙН албыг л
+     харуулдаг байсан тул ХАБЭА-гийн хүнд «ХАБЭА» гэсэн ганц мөр гардаг,
+     өөр албанд даалгавар өгөх ямар ч арга байгаагүй. Хяналтыг албаар нь
+     хааж барихын оронд ДЭЭД ШАТНЫ БАТАЛГААгаар хийнэ (доор). */
+  var deptOpts = [{ value: 'all', label: 'Бүх алба' }]
+    .concat(deptList().map(function (d) { return { value: d, label: d }; }));
+  var defDept = (all || !myDept) ? 'all' : myDept;
+
+  /* Сонгосон албаны ажилтнууд. 'all' бол бүгд. */
+  function empsForDept(d) {
+    var src = (DB.employees || []).filter(function (e) {
+      if (!d || d === 'all') return true;
+      return e.dept === d || riskSameDept(e.dept, d);
+    });
+    /* Өөртөө даалгавар өгөхгүй — өөрөө хянах боломжгүй тул */
+    if (meRec && !isAdmin()) src = src.filter(function (e) { return e.id !== meRec.id; });
+    return src.sort(function (a, b) { return (a.dept + a.name).localeCompare(b.dept + b.name); })
+      .map(function (e) { return { value: e.id, label: e.name + ' · ' + (e.dept || '') }; });
+  }
+  var empOpts = empsForDept(defDept);
+
+  /* Батлагч — ажилтан/менежер даалгавар өгвөл дээд шат нь батална */
+  var approver = null;
+  try { if (!isAdmin()) approver = taskApproverOf(meRec); } catch (e) {}
   formModal({
     title: 'Шинэ даалгавар',
     width: '520px',
@@ -26009,7 +26156,7 @@ function actionAddTask() {
           { value: 'normal', label: '🔵 Энгийн' },
           { value: 'low',    label: '⚪ Бага — цаг гарвал' }
         ] },
-      { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: (all || !myDept) ? 'all' : myDept },
+      { name: 'dept', label: 'Хаана өгөх (алба)', type: 'select', options: deptOpts, value: defDept },
       { name: 'empIds', label: 'Тодорхой ажилтнуудад (заавал биш — олон сонгож болно)', type: 'checkboxlist',
         options: empOpts, value: [], searchable: true, searchPlaceholder: '🔍 Ажилтны нэр эсвэл албаар хайх...' },
       { name: 'startDate', label: 'Эхлэх огноо (заавал биш)', type: 'date', value: '' },
@@ -26024,9 +26171,7 @@ function actionAddTask() {
     onSubmit: function (v) {
       DB.tasks = DB.tasks || [];
       var empIds = Array.isArray(v.empIds) ? v.empIds.filter(Boolean) : [];
-      /* Удирдагч зөвхөн өөрийн албанд — цонх хязгаарласан ч дахин шалгана */
       var dpt = v.dept || 'all';
-      if (!all && myDept) dpt = myDept;
       var nt = {
         /* ⚠ Админ биш хүний DB.tasks дутуу байж болох тул давхардахгүй ID */
         id: isAdmin() ? nextId('TSK', DB.tasks) : newId('TSK'),
@@ -26042,7 +26187,11 @@ function actionAddTask() {
         repeat: v.repeat || '',
         refUrl: v.refUrl || '',
         refUrlName: v.refUrlName || '',
-        status: 'open',
+        /* Дээд шат байвал ЭХЛЭЭД батлуулна — батлагдтал гүйцэтгэгчид харагдахгүй */
+        status: approver ? 'pending' : 'open',
+        approverUid: approver ? (approver.uid || '') : '',
+        approverName: approver ? (approver.name || '') : '',
+        createdDept: (meRec && meRec.dept) || myDept || '',
         createdBy: taskMyName(),
         createdByEmail: (SESSION && SESSION.email) || '',
         createdAt: new Date().toISOString(),
@@ -26052,11 +26201,57 @@ function actionAddTask() {
       DB.tasks.unshift(nt);
       renderTasks();
       taskPersist(nt).then(function (ok) {
-        if (ok) toast('Даалгавар нэмэгдлээ', 'success');
+        if (ok) {
+          toast(approver
+            ? 'Илгээгдлээ — ' + (approver.name || 'дээд шат') + ' батласны дараа ажилтнуудад харагдана'
+            : 'Даалгавар нэмэгдлээ', 'success');
+        }
         renderTasks();
       });
     }
   });
+
+  /* ── Алба солиход ажилтны жагсаалтыг ДАХИН БАЙГУУЛНА ──
+     formModal нь талбаруудыг нэг удаа зурдаг тул хоорондоо холбогддоггүй.
+     Цонх нь DOM-д синхроноор ордог учир эндээс шууд холбож болно. */
+  try {
+    var root = document.querySelector('.modal-root');
+    var dSel = root && root.querySelector('[data-field="dept"] select');
+    var eGrp = root && root.querySelector('[data-field="empIds"]');
+    if (dSel && eGrp) {
+      dSel.addEventListener('change', function () {
+        var list = eGrp.querySelector('.chk-list');
+        var srch = eGrp.querySelector('input[type="search"], input.chk-search');
+        if (!list) return;
+        list.innerHTML = '';
+        var opts = empsForDept(dSel.value);
+        opts.forEach(function (o) {
+          var row = elc('label', 'chk-row');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:5px 4px;cursor:pointer;font-size:13px';
+          row.setAttribute('data-lbl', String(o.label).toLowerCase());
+          var cb = elc('input'); cb.type = 'checkbox'; cb.value = o.value;
+          row.appendChild(cb); row.appendChild(document.createTextNode(o.label));
+          list.appendChild(row);
+        });
+        if (!opts.length) {
+          list.innerHTML = '<div style="font-size:12.5px;color:#94A3B8;padding:8px 4px">Энэ албанд бүртгэлтэй ажилтан алга</div>';
+        }
+        if (srch) srch.value = '';   // хайлт хуучин албаных үлдэхгүй
+      });
+    }
+    /* Хэн батлахыг УРЬДЧИЛАН хэлнэ — илгээсний дараа гайхахгүй */
+    if (approver && root) {
+      var dg = root.querySelector('[data-field="dept"]');
+      if (dg) {
+        var note = elc('div', '', '<i class="ti ti-user-check"></i> Энэ даалгаврыг <b>' +
+          esc(approver.name || '') + '</b> (' + esc(approver.pos || approver.role || 'дээд шат') +
+          ') батласны дараа ажилтнуудад харагдана.');
+        note.style.cssText = 'background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;' +
+          'padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:#92400E;line-height:1.5';
+        dg.parentNode.insertBefore(note, dg);
+      }
+    }
+  } catch (e) {}
 }
 
 /* ══════════════════════════════════════════════════════════════════════
