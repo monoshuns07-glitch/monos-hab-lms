@@ -16735,9 +16735,20 @@ function wkPatch(id, fn, msg) {
 }
 
 /* ── ХҮЛЭЭЖ АВАХ ── */
+/* ⚠ ӨӨРӨӨ ӨӨРТӨӨ АЖИЛ ОНООХГҮЙ.
+   Мэдээлсэн хүн өөрөө гүйцэтгээд өөрөө баталвал шалгах хоёр дахь нүд огт
+   байхгүй болж, баталгаажуулах алхам утгагүй болно.
+   (2026-09-03: RP-MTJO3WCXJQN — нэг хүн бүх алхмыг 1 минутад гүйцэтгэсэн.) */
+function wkIsSelf(r, uid) {
+  return !!(r && uid && r.reporterUid && r.reporterUid === uid);
+}
 function wkClaim(id) {
   var me = reqMe(); if (!me) return;
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (wkIsSelf(r, me.uid)) {
+    toast('Өөрийн мэдээлсэн ажлыг өөрөө хүлээж авах боломжгүй — өөр хүн гүйцэтгэнэ', 'warn');
+    return;
+  }
   if (r && r.wkClaimBy && r.wkClaimBy.uid && r.wkClaimBy.uid !== me.uid) {
     toast(r.wkClaimBy.name + ' аль хэдийн хүлээж авсан байна', 'warn'); return;
   }
@@ -17361,6 +17372,8 @@ function wkGateStaff(r) {
   try {
     (DB.employees || []).forEach(function (e) {
       if (e.onLeave || !e.uid) return;
+      /* Мэдээлсэн хүнийг өөрийг нь томилох жагсаалтаас хасна */
+      if (wkIsSelf(r, e.uid)) return;
       var d = String(e.dept || '');
       var isHab = /Хөдөлмөрийн\s*аюулгүй/i.test(d);
       var isIta = /нженер\s*техник/i.test(d);
@@ -17585,7 +17598,8 @@ function wkRowHTML(r) {
 
   /* Товчлуурууд — тухайн хүн ЮУ ХИЙЖ ЧАДАХ вэ */
   var acts = [];
-  if (inMyGate && st === 'new')
+  /* Өөрийн мэдээлсэн ажлыг өөрөө хүлээж авахгүй — товчийг ч харуулахгүй */
+  if (inMyGate && st === 'new' && !wkIsSelf(r, me.uid))
     acts.push(['wk-claim', 'Хүлээж авах', '#4F46E5', 'ti-hand-grab']);
   /* Дарга/админ/захирал — хэн ч аваагүй бол ГАРААР хүн томилно */
   if (st === 'new' && wkCanAssign(r))
