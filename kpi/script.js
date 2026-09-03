@@ -22024,6 +22024,17 @@ async function deleteHabeaResult(id) {
     _habCache = null;                      /* кэшийг хүчингүй болгоно */
     toast('Устгагдлаа ✓', 'success');
     loadHabeaResultsPanel();
+    /* ⚠ R2 толийг ШУУД шинэчилнэ — өмнө дараагийн өдрийн cron хүртэл устгасан
+       дүн ажилтны «Миний гүйцэтгэл», KPI дээр хэвээр харагддаг байв (2026-09-03). */
+    try {
+      if (fauth && fauth.currentUser) {
+        fauth.currentUser.getIdToken().then(function (t) {
+          return fetch('/api/exam-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken: t, all: true }) });
+        }).then(function () { try { modExamCacheClear(); } catch (e) {} try { pulseBump('exam'); } catch (e) {} })
+          .catch(function () {});
+      }
+    } catch (e) {}
   } catch (e) { toast('Алдаа гарлаа', 'err'); }
 }
 
