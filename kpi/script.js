@@ -752,6 +752,28 @@ async function syncEmployeesWithRealData() {
       shown = true;
       /* Ажилтанд энэ хангалттай — Firestore рүү огт хандахгүй */
       if (!isAdmin()) return true;
+      /* ⚠⚠ 2026-09-03 — КВОТЫГ ДҮҮРГЭДЭГ ГОЛ ШАЛТГААН.
+         Админ ачаалалт БҮРД 314 ажилтны баримтыг Firestore-оос уншиж байв
+         (314 уншилт × нээлт бүр). Хэдэн арван удаа нээхэд өдрийн үнэгүй квот
+         дүүрч, БҮХ хүнд дата хоосон харагдана. Одоо R2 дахь хуулбар шинэхэн
+         (6 цагаас бага) бол Firestore руу ОГТ ХАНДАХГҮЙ.
+         Шаардвал: Ажилтнууд хуудасны «Шинэчлэх» товч, эсвэл
+         localStorage.setItem('empForce','1') → дараагийн нээлтэд шинэчилнэ. */
+      try {
+        var _force = false;
+        try { _force = localStorage.getItem('empForce') === '1'; } catch (e) {}
+        if (_force) { try { localStorage.removeItem('empForce'); } catch (e) {} }
+        var _age = 1e15;
+        try {
+          var _meta = await riskR2GetJson(EMP_R2_FILE);
+          var _at = Date.parse((_meta && (_meta.at || _meta.updatedAt)) || '') || 0;
+          if (_at) _age = Date.now() - _at;
+        } catch (e) {}
+        if (!_force && _age < 6 * 3600 * 1000) {
+          console.log('[emp] R2 хуулбар шинэхэн (' + Math.round(_age / 60000) + ' мин) — Firestore алгасав');
+          return true;
+        }
+      } catch (e) {}
     }
   } catch (e) { console.error('[emp] R2', e); }
 
@@ -5386,9 +5408,16 @@ function loadRiskDepts(cb) {
     if (typeof fbReady === 'undefined' || !fbReady || !fdb) {
       RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); return;
     }
-    fdb.collection(RISK_COL).get().then(function (s) {
-      RISK_DEPTS = s.docs.map(function (d) { return d.id; });
-      loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS);
+    /* ⚠ 2026-09-03: эхлээд R2 индексээс (risks/index.json). Ажилтан Firestore
+       руу ОГТ хандахгүй; админ л нөөц замаар татна. */
+    riskR2GetJson(RISK_R2_INDEX).then(function (idx) {
+      var d = (idx && idx.depts) ? Object.keys(idx.depts) : null;
+      if (d && d.length) { RISK_DEPTS = d; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); return null; }
+      if (!isAdmin()) { RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); return null; }
+      return fdb.collection(RISK_COL).get().then(function (s) {
+        RISK_DEPTS = s.docs.map(function (x) { return x.id; });
+        loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS);
+      });
     }).catch(function () { RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); });
   } catch (e) { RISK_DEPTS = []; loadRiskDepts._busy = false; if (cb) cb(RISK_DEPTS); }
 }
@@ -7356,6 +7385,8 @@ function loadRiskDashboard(dept, cb) {
 }
 function _rdashFromFirestore(dept, cb) {
   if (!fbReady || !fdb) { cb(null); return; }
+  /* ⚠ 2026-09-03: ажилтан Firestore руу хандахгүй — R2-д байхгүй бол хоосон */
+  if (!isAdmin()) { cb(null); return; }
   fbGuard(RISK_COL, 'эрсдэл — R2 нурсан үеийн нөөц зам');
   fdb.collection(RISK_COL).doc(dept).get()
     .then(function (snap) {
@@ -28862,6 +28893,9 @@ async function registerEmployee(v, em, btn) {
     try { await sAuth.signOut(); } catch (e) {}
     if (uErr) throw new Error('«users» цуглуулгад бичих эрх алга. Firebase Rules дээр match /users/{uid} → allow create: if request.auth != null; нэмнэ үү. (' + uErr.message + ')');
     closeModal();
+    /* ⚠ Шинэ ажилтан нэмэгдсэн тул R2 дахь хуулбарыг дараагийн нээлтэд заавал
+       шинэчилнэ (эс бөгөөс 6 цаг хүртэл жагсаалтад орохгүй) */
+    try { localStorage.setItem('empForce', '1'); } catch (e) {}
     toast('Ажилтан бүртгэгдлээ — ' + v.lastName.charAt(0) + '. ' + v.firstName, 'success');
     await refreshEmployeesNow();
   } catch (e) {
