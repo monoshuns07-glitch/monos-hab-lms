@@ -25643,9 +25643,17 @@ function reqSyncViolations() {
 }
 
 /* ══ ХАРАГДАЦ ══ */
+/* ⚠ ЗАХИРЛУУДЫГ ЖАГСААЛТААС ХАСНА. Хувцас, ХХХ-ийн хүсэлт батлах үүрэг
+   нь ХАБЭА, Санхүү, Хангамж дээр байдаг (reqDefaultRoute-ийг үз).
+   Захирлыг батлах шат болгон сонговол хүсэлт хэзээ ч гүйцэхгүй хүлээнэ.
+   Тэднийг сонгох боломжтой байсан цорын ганц шалтгаан нь бүртгэлд
+   албаараа орсон байдаг явдал байв. */
 function reqPersonOptions(dept) {
   var list = (DB.employees || []).filter(function (e) {
     if (!e.uid) return false;
+    var role = 'emp';
+    try { role = ackRoleOf(e); } catch (err) {}
+    if (role === 'ceo' || role === 'prod') return false;
     if (!dept) return true;
     return riskSameDept(dept, e.dept);
   });
