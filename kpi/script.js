@@ -10022,11 +10022,12 @@ function riskIsReleasedTo(r, emp) {
 async function riskReleasesLoad() {
   try {
     var j = await riskR2GetJson(RISK_REL_FILE);
-    if (j && j.map) { RISK_RELEASES = j.map; return j.map; }
+    if (j && j.map) { RISK_RELEASES = j.map; try { riskCacheBust(); } catch (e) {} return j.map; }
   } catch (e) {}
   return null;
 }
 async function riskReleasesSave() {
+  try { riskCacheBust(); } catch (e) {}
   return await riskR2PutJson(RISK_REL_FILE, { updatedAt: new Date().toISOString(), map: RISK_RELEASES });
 }
 
@@ -10099,7 +10100,9 @@ function riskCacheBust() { RISK_VER++; _seenCache = {}; _dueCache = {}; }
 function _riskSig() {
   var r = (DB && DB.risks) || [];
   var sc = 0; try { sc = Object.keys(ACK_SEC || {}).length; } catch (e) {}
-  return _empSig() + '#' + r.length + '#' + RISK_VER + '#' + sc + '#' + (ACK_SEC_OK ? 1 : 0);
+  /* ⚠ Нээлт (releases) өөрчлөгдвөл ажилтны жагсаалт дахин бодогдох ёстой (2026-09-03) */
+  var rl = 0; try { rl = Object.keys(RISK_RELEASES || {}).map(function (k) { return k.length + ((RISK_RELEASES[k].empIds || []).length * 7); }).reduce(function (a, b) { return a + b; }, 0); } catch (e) {}
+  return _empSig() + '#' + r.length + '#' + RISK_VER + '#' + sc + '#' + (ACK_SEC_OK ? 1 : 0) + '#' + rl;
 }
 var _seenCache = {}, _seenSig = null, _seenN = 0;
 function riskSeenBy(emp) {
@@ -10136,7 +10139,8 @@ function _riskSeenByRaw(emp) {
   try { sec0 = ackSecOf(emp); } catch (e) {}
   var mine = all.filter(function (r) {
     if (!riskAppliesTo(r, emp)) return false;
-    if (sec0 && riskSectionOf(r) !== sec0) return false;
+    /* ⚠ Нээгдсэн нэг удаагийн ажил хэсэггүй тул хэсгийн шүүлтээр унагахгүй */
+    if (sec0 && !r.onDemand && riskSectionOf(r) !== sec0) return false;
     return true;
   });
   if (mine.length) return { rows: mine, scope: sec0 ? 'section' : 'pos' };
@@ -10153,7 +10157,7 @@ function _riskSeenByRaw(emp) {
       /* Нэг удаагийн ажил (автокран, өндөрт гагнуур) нээгдээгүй бол
          албаны жагсаалтад ч харагдахгүй — зөвхөн нээлгэсэн хүнд. */
       if (r.onDemand && !riskIsReleasedTo(r, emp)) return false;
-      if (sec && riskSectionOf(r) !== sec) return false;
+      if (sec && !r.onDemand && riskSectionOf(r) !== sec) return false;
       return true;
     });
 
