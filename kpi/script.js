@@ -9187,7 +9187,10 @@ async function ackExportJobFiles(job) {
     var fill = async function (list) {
       var wb = new ExcelJS.Workbook();
       await wb.xlsx.load(tpl.slice(0));
-      var ws = wb.getWorksheet('Танилцсан') || wb.worksheets[wb.worksheets.length - 1];
+      /* Хуудасны нэр зайтай/өөр бичигдсэн байж болно ('Танилцсан ') — уян хатан хайна */
+      var ws = null;
+      wb.eachSheet(function (sh) { if (!ws && /танилцсан/i.test(String(sh.name || '').trim())) ws = sh; });
+      if (!ws) ws = wb.worksheets[wb.worksheets.length - 1];
       var start = 6;
       for (var r = 1; r <= 20; r++) { if (String(ws.getCell(r, 2).value || '').trim() === '№') { start = r + 1; break; } }
       var styles = [];
@@ -16524,6 +16527,32 @@ function wkClaim(id) {
   } catch (e) {}
 }
 
+/* ── Хүлээн авснаа цуцлах ── */
+function wkUnclaim(id) {
+  var me = reqMe(); if (!me) return;
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r || !r.wkClaimBy || !r.wkClaimBy.uid) { toast('Энэ ажлыг хэн ч хүлээж аваагүй байна', 'warn'); return; }
+  if (r.wkClaimBy.uid !== me.uid && !isAdmin()) { toast('Зөвхөн хүлээж авсан хүн эсвэл админ цуцална', 'warn'); return; }
+  if (wkStatus(r) !== 'claimed') { toast('Гүйцэтгэсний дараа цуцлах боломжгүй', 'warn'); return; }
+  var why = prompt('Хүлээн авснаа цуцлах шалтгаан (заавал биш):', '') ;
+  if (why === null) return;
+  var prev = r.wkClaimBy;
+  wkPatch(id, function (x) {
+    x.wkUnclaimLog = (x.wkUnclaimLog || []).concat([{
+      uid: me.uid, name: me.name || '', at: new Date().toISOString(),
+      was: { uid: prev.uid, name: prev.name || '', at: prev.at || '' }, why: String(why || '').slice(0, 200)
+    }]);
+    x.wkClaimBy = null;                          /* → төлөв дахин «шинэ» */
+  }, '↩ Хүлээн авалт цуцлагдлаа — ажил дахин нээлттэй боллоо');
+  try {
+    var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+    var rep = woEmpByUid(rr.reporterUid);
+    if (rep) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
+      title: '↩ Хүлээн авалт цуцлагдлаа',
+      body: (prev.name || '') + ' хүлээн авснаа цуцаллаа' + (why ? ' — ' + String(why).slice(0, 80) : '') + '. Ажил дахин нээлттэй.' });
+  } catch (e) {}
+}
+
 /* ══ АЮУЛЫН ТӨРЛИЙГ ЗАСАХ — ЗӨВХӨН ХАБЭА ═══════════════════════════════
    Илгээгч ажилтан аюулаа зөв ангилж чадахгүй байж болно (шинээр хэрэглэж
    эхэлж байгаа, мэргэжлийн ойлголт өөр). Тиймээс ХАБЭА-н алба ирсэн
@@ -17307,6 +17336,11 @@ function wkRowHTML(r) {
     acts.push(['wk-urg', 'Зэрэг батлах', '#E9A100', 'ti-flag']);
   if (claimedByMe && st === 'claimed')
     acts.push(['wk-exec', 'Гүйцэтгэсэн', '#0ca30c', 'ti-checkbox']);
+  /* ⚠ Хүлээн авснаа буцаах (2026-09-03): өмнө хүлээж авсан хүн андуурсан ч
+     буцааж чаддаггүй, ажил тэр хүн дээр «түгжигддэг» байв. Гүйцэтгэхээс өмнө
+     л цуцална; ажил дахин «шинэ» болж, гарц дахь бүх хүнд харагдана. */
+  if ((claimedByMe || isAdmin()) && st === 'claimed')
+    acts.push(['wk-unclaim', 'Хүлээн авснаа цуцлах', '#64748B', 'ti-hand-off']);
   if (mine && st === 'executed')
     acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
   /* ХАБЭА — ирсэн мэдээллийн аюулын ангиллыг зөв болгоно */
@@ -19558,6 +19592,8 @@ function rfAfter(sec, admin, pending) {
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     var wc = ev.target.closest('[data-wk-claim]');
     if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
+    var wuc = ev.target.closest('[data-wk-unclaim]');
+    if (wuc) { ev.stopPropagation(); wkUnclaim(wuc.getAttribute('data-wk-unclaim')); return; }
     var wdl = ev.target.closest('[data-wk-del]');
     if (wdl) { ev.stopPropagation(); reportDeleteHard(wdl.getAttribute('data-wk-del')); return; }
     var was = ev.target.closest('[data-wk-assign]');
