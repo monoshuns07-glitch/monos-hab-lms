@@ -897,6 +897,22 @@ async function loadDB() {
             var _mine = _idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
             if (_mine.length) _want = _mine;
           }
+          /* ⚠ Өөр албаны хүнд нээсэн нэг удаагийн ажил (2026-09-03): нээлтийн
+             албаны файлыг ч татна — ХАБЭА-н менежерт ИТА-ийн автокраны үнэлгээ
+             нээсэн ч харагдахгүй байв. */
+          if (!isAdmin() && SESSION && SESSION.uid && _want.length < _idx.depts.length) {
+            try {
+              var _rj = await riskR2GetJson(RISK_REL_FILE);
+              if (_rj && _rj.map) { RISK_RELEASES = _rj.map; }
+              Object.keys(RISK_RELEASES || {}).forEach(function (k) {
+                var rel = RISK_RELEASES[k];
+                if (!rel || !rel.dept || (rel.empIds || []).indexOf(SESSION.uid) < 0) return;
+                _idx.depts.forEach(function (d) {
+                  if (riskSameDept(d.name, rel.dept) && _want.indexOf(d) < 0) _want = _want.concat([d]);
+                });
+              });
+            } catch (e2) {}
+          }
         } catch (e) { console.error('[risks] албаар шүүх алдаа — бүгдийг татна', e); }
         /* ⚠ Өмнө нь алба бүрийг ДАРААЛЖ татдаг байсан тул утасны сүлжээнд
            (70–300мс саатал × 11 алба) 3–10 секунд иддэг байв. Одоо ЗЭРЭГ. */
