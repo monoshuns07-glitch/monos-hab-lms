@@ -29300,6 +29300,25 @@ function establishSession() {
     var u = null;
     try { u = JSON.parse(localStorage.getItem('monos_user') || 'null'); } catch (e) {}
 
+    /* ⚠ Firestore унасан үед (квот дүүрч HTTP 429 — 2026-09-02-нд бодитоор
+       болсон) ажилтны алба, албан тушаалыг R2 дахь employees/all.json-оос
+       авна. Өмнө «ажилтан, албагүй» болгодог байсан тул захирал, менежер,
+       албаны дарга нар эрхээ алдаж, цэс нь нуугддаг байв. R2-д квот байхгүй. */
+    async function sessionFromR2(uid, email) {
+      var out = { dept: '', pos: '' };
+      try {
+        var r = await fetch(riskR2Url('employees/all.json') + '?t=' + Date.now(), { cache: 'no-store' });
+        if (r.ok) {
+          var j = await r.json(); var rows = (j && j.rows) || [];
+          var em = String(email || '').toLowerCase();
+          var me = rows.filter(function (e) {
+            return (uid && e.uid === uid) || (em && String(e.email || '').toLowerCase() === em);
+          })[0];
+          if (me) { out.dept = String(me.dept || ''); out.pos = String(me.pos || me.role || ''); }
+        }
+      } catch (e) {}
+      return out;
+    }
     function proceed(uid, email) {
       try { localStorage.setItem('monos_user', JSON.stringify({ email: email, uid: uid })); } catch (e) {}
       // Firebase холбогдоогүй бол эрх баталгаажуулах боломжгүй тул admin эрх ОЛГОХГҮЙ (аюулгүйн бодлого)
@@ -29347,8 +29366,12 @@ function establishSession() {
           resolve();
         }
       }).catch(function () {
-        SESSION = { role: 'employee', email: email, uid: uid, empId: null, dept: '' };
-        resolve();
+        sessionFromR2(uid, email).then(function (f) {
+          SESSION = { role: 'employee', email: email, uid: uid, empId: null, dept: f.dept, pos: f.pos };
+          try { IS_DIRECTOR = /захирал/i.test(f.pos); } catch (e2) {}
+          try { console.warn('[login] users уншигдсангүй — алба/албан тушаалыг R2-оос авав'); } catch (e3) {}
+          resolve();
+        });
       });
     }
 
