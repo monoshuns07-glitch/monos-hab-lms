@@ -16186,6 +16186,46 @@ function wkGateHas(r, gate) {
   return g === 'both' ? (gate === 'hab' || gate === 'ita') : g === gate;
 }
 /* Тухайн хүн аль хаалтад харьяалагдах вэ ('' = аль нь ч биш) */
+/* ══ АЛБАНЫ ДАРГА — ӨӨРИЙН АЛБАНЫ БҮХ АЖИЛ ══════════════════════════════
+   Өмнө нь дарга нар зөвхөн ӨӨРИЙН мэдээлснийг л хардаг байсан (ХАБЭА, ИТА
+   бол «Ирсэн» табтай, бусад алба огт байхгүй). Тиймээс хуурай хүнсний
+   үйлдвэрийн дарга өөрийн ажилтнуудын мэдээлснийг харах ямар ч арга
+   байгаагүй. Бүх албанд ТЭГШ хамаарна.
+   ⚠ Хоёр талаас нь: (1) мэдээлсэн хүн миний албаных, ЭСВЭЛ (2) ажил
+     миний албаны байршилд хийгдэж байгаа. Үйлдвэрийн даргад «манай
+     үйлдвэрт хийгдэж буй ажил» гэдэг нь хэн мэдээлснээс үл хамаарна. */
+/* ⚠ ЭРХИЙГ FIRESTORE-ЫН role-ООР ТОГТООЖ БОЛОХГҮЙ. 300 хэрэглэгчийн 297
+   нь «employee» — албаны дарга нар ч мөн адил. Тиймээс АЛБАН ТУШААЛААР
+   таньна (ACK_LEADS-ийн зарчим). SESSION.pos нь нэвтрэх үед тавигддаг тул
+   ажилтны жагсаалт ачаалагдахаас ӨМНӨ ч ажиллана — уншилтын шүүлтэд чухал. */
+function wkBossPos() {
+  var p = '';
+  try { var me = myEmp(); if (me) p = String(me.pos || me.role || ''); } catch (e) {}
+  if (!p && SESSION) p = String(SESSION.pos || '');
+  return /дарга|ахлах\s*(менежер|инженер|химич)/i.test(p);
+}
+function wkIsDeptBoss() {
+  try {
+    if (isAdmin() || wkIsDirector()) return false;   /* тэдэнд «Бүх ажил» таб бий */
+    return wkBossPos();
+  } catch (e) { return false; }
+}
+function wkMyDeptName() {
+  var d = '';
+  try { var me = myEmp(); if (me) d = me.dept || ''; } catch (e) {}
+  if (!d && SESSION) d = SESSION.dept || '';
+  return d;
+}
+/* Энэ бичлэг миний албанд хамаарах уу */
+function wkInMyDept(r, dept) {
+  if (!r || !dept) return false;
+  try {
+    if (riskSameDept(dept, reportDept(r))) return true;       /* мэдээлсэн хүний алба */
+    if (r.locGroup && riskSameDept(dept, r.locGroup)) return true;  /* ажлын байршил */
+  } catch (e) {}
+  return false;
+}
+
 function wkMyGate() {
   var dept = '';
   var me = null; try { me = myEmp(); } catch (e) {}
@@ -17745,9 +17785,18 @@ function wkListHTML(all) {
   });
   var lateN = allOpen.filter(function (r) { return (wkTime(r) || {}).late; }).length;
 
+  /* ⭐ Албаны даргад — өөрийн албаны БҮХ ажил (нээлттэй нь дээр эрэмбэлэгдэнэ) */
+  var myDept = wkMyDeptName();
+  var deptRows = wkIsDeptBoss()
+    ? rows.filter(function (r) { return wkInMyDept(r, myDept); })
+    : [];
+  var deptOpen = deptRows.filter(function (r) { return wkStatus(r) !== 'closed'; }).length;
+
   var tabs = [];
   if (seeAll) tabs.push({ k: 'all', l: 'Бүх ажил', n: allOpen.length,
     tone: lateN ? '#C81E3A' : (allOpen.length ? '#4F46E5' : '') });
+  if (deptRows.length || wkIsDeptBoss()) tabs.push({ k: 'dept', l: 'Албаны ажил', n: deptOpen,
+    tone: deptOpen ? '#4F46E5' : '' });
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
   if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
   tabs.push({ k: 'rep', l: 'Миний мэдээлсэн', n: toAccept.length, tone: toAccept.length ? '#4F46E5' : '' });
@@ -17756,7 +17805,8 @@ function wkListHTML(all) {
   var okTabs = tabs.map(function (t) { return t.k; });
   if (okTabs.indexOf(WK_TAB) < 0) WK_TAB = okTabs[0] || 'rep';
 
-  var list = WK_TAB === 'all' ? allOpen : WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
+  var list = WK_TAB === 'all' ? allOpen : WK_TAB === 'dept' ? deptRows
+    : WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
     : WK_TAB === 'done' ? done : mineRep;
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
@@ -18396,6 +18446,11 @@ function rfNeedAllRows() {
   try {
     if (isAdmin()) return true;
     if (wkIsDirector()) return true;      /* захирлууд бүх ажлыг ХАРНА */
+    /* ⭐ Албаны дарга/ахлах — өөрийн албаны ажлыг харахын тулд бүх мөр
+       хэрэгтэй. Зөвхөн dept-ээр шүүвэл ӨӨР албаны хүн МАНАЙ байршилд
+       хийж буй ажил алга болно (жишээ: ИТА-гийн инженер цай цехэд засвар
+       хийхэд хуурай хүнсний даргад харагдахгүй байв). */
+    if (wkBossPos()) return true;
     var d = (SESSION && SESSION.dept) || '';
     return /Хөдөлмөрийн\s*аюулгүй/i.test(d) || /нженер\s*техник/i.test(d);
   } catch (e) { return false; }
