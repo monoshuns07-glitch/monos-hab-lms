@@ -2388,7 +2388,8 @@ async function riskR2Load() {
   try {
     var c = JSON.parse(localStorage.getItem(RISK_CACHE_KEY) || 'null');
     if (c && c.version === idx.version && Array.isArray(c.rows) &&
-        String(c.scope || '') === String(riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || ''))) {
+        String(c.scope || '').split('+')[0] === String(riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || '')) &&
+        String(c.scope || '').indexOf('+') > 0) {
       DB.risks = c.rows; riskCacheBust(); return { cached: true, n: c.rows.length };
     }
   } catch (e) {}
@@ -2408,6 +2409,24 @@ async function riskR2Load() {
     var mine = idx.depts.filter(function (d) { return riskSameDept(d.name, SESSION.dept); });
     if (mine.length) want = mine;                 // олдохгүй бол бүгдийг (аюулгүй тал руу)
   }
+  /* ⚠ Өөр албаны хүнд нээсэн нэг удаагийн ажил (2026-09-03): нээлтийн албаны
+     файлыг ч татна — эс бөгөөс баннер ч, мөр ч харагдахгүй (ХАБЭА-н менежерт
+     ИТА-ийн автокраны үнэлгээ нээсэн ч харагдаагүй). */
+  if (!isAdmin() && dsc !== 'all') {
+    try {
+      if (!Object.keys(RISK_RELEASES || {}).length) await riskReleasesLoad();
+      var myIds = {};
+      if (SESSION && SESSION.uid) myIds[SESSION.uid] = 1;
+      try { var _m = myEmp(); if (_m) { if (_m.id) myIds[_m.id] = 1; if (_m.uid) myIds[_m.uid] = 1; } } catch (e0) {}
+      Object.keys(RISK_RELEASES || {}).forEach(function (k) {
+        var rel = RISK_RELEASES[k];
+        if (!rel || !rel.dept || !(rel.empIds || []).some(function (x) { return myIds[x]; })) return;
+        idx.depts.forEach(function (d) {
+          if (riskSameDept(d.name, rel.dept) && want.indexOf(d) < 0) want = want.concat([d]);
+        });
+      });
+    } catch (e1) {}
+  }
   var out = [];
   for (var i = 0; i < want.length; i++) {
     try {
@@ -2418,7 +2437,7 @@ async function riskR2Load() {
   DB.risks = out; riskCacheBust();
   try {
     localStorage.setItem(RISK_CACHE_KEY, JSON.stringify({ version: idx.version, rows: out,
-      scope: riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || '') }));
+      scope: (riskDirScope() || (isAdmin() ? 'admin' : (SESSION && SESSION.dept) || '')) + '+' + want.length }));
   }
   catch (e) { /* хэтэрхий том бол кэшлэхгүй — асуудалгүй */ }
   return { cached: false, n: out.length, depts: want.length };
