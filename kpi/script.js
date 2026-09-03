@@ -12739,18 +12739,24 @@ function raRender() {
   var go = document.getElementById('raGo');
   if (go) go.addEventListener('click', function () {
     go.disabled = true; go.innerHTML = '<i class="ti ti-loader-2"></i> Үүсгэж байна…';
-    var now = Date.now(), n = 0;
+    var now = Date.now(), n = 0, made = [];
     okList.forEach(function (b, i) {
       var t = b.task;
       t.id = 'TSK-' + now + '-' + i;
       t.createdAt = new Date().toISOString();
-      t.createdBy = (SESSION && SESSION.email) || 'admin';
+      t.createdBy = taskMyName();
+      t.createdByEmail = (SESSION && SESSION.email) || '';
       (DB.tasks = DB.tasks || []).push(t);
       b.risk.taskId = t.id;                       // давхардахаас сэргийлнэ
+      made.push(t);
       n++;
     });
     saveDB(); closeModal();
-    toast(n + ' даалгавар үүсч хувиарлагдлаа', 'success');
+    /* ⚠ saveDB() админ биш хүний даалгаврыг серверт бичдэггүй — R2 руу шууд */
+    taskPersist(made).then(function (ok) {
+      if (ok) toast(n + ' даалгавар үүсч хувиарлагдлаа', 'success');
+      try { renderTasks(); } catch (e) {}
+    });
     try { renderHazards(); } catch (e) {}
     try { renderTasks(); } catch (e) {}
   });
@@ -24705,7 +24711,7 @@ async function reqAct(id, kind, note, extDays) {
 function reqSyncViolations() {
   if (!isAdmin() && !isDeptHead()) return 0;
   DB.violations = DB.violations || [];
-  var changed = 0;
+  var changed = 0, touched = [];
   (REQ_ROWS || []).forEach(function (r) {
     var over = reqOverdue(r);
     if (over <= 0) return;
@@ -24719,16 +24725,29 @@ function reqSyncViolations() {
       ' ажлын өдөр хугацаа хэтэрсэн (шат ' + (r.step + 1) + ')';
     var ex = DB.violations.filter(function (v) { return v.id === vid; })[0];
     if (ex) {
-      if (ex.points !== pts || ex.desc !== desc) { ex.points = pts; ex.desc = desc; changed++; }
+      if (ex.points !== pts || ex.desc !== desc) { ex.points = pts; ex.desc = desc; changed++; touched.push(ex); }
     } else {
-      DB.violations.push({
+      var nv = {
         id: vid, empId: emp.id, date: todayISO(), desc: desc, points: pts,
         by: 'систем (автомат)', createdAt: new Date().toISOString(), reqId: r.id
-      });
+      };
+      DB.violations.push(nv);
+      touched.push(nv);
       changed++;
     }
   });
-  if (changed) { try { saveDB(); } catch (e) {} }
+  if (changed) {
+    try { saveDB(); } catch (e) {}
+    /* ⚠ saveDB() админ биш хүний зөрчлийг серверт бичдэггүй (зөвхөн аюул/санал/
+       мэдээлэл). Туслах админ үүсгэсэн зөрчил алга болдог байв → баримт бүрийг
+       шууд бичнэ (kpi_violations дүрэм зөвшөөрдөг). */
+    if (!isAdmin() && fbReady && fdb) {
+      touched.forEach(function (v) {
+        try { colRef('violations').doc(String(v.id)).set(v).catch(function () {}); } catch (e) {}
+      });
+      try { colsManifestAdd('violations'); } catch (e) {}
+    }
+  }
   return changed;
 }
 
@@ -26428,6 +26447,26 @@ var HR_ST = {
 };
 
 function hrAll() { DB.hrorders = DB.hrorders || []; return DB.hrorders; }
+/* ══ ЗАХИАЛГЫГ СЕРВЕР РҮҮ ХҮРГЭХ ══
+   ⚠⚠ saveDB() нь админ биш хүний hrorders-ыг ОГТ бичдэггүй (зөвхөн аюул/санал/
+   мэдээлэл). Гэтэл захиалгыг үүсгэдэг албаны дарга, зурдаг захирал, ХН,
+   санхүү бүгд эрхийн хувьд «ажилтан» тул тэдний үйлдэл зөвхөн хөтөч дээр нь
+   үлдэж, бусдад харагддаггүй байв (2026-09-03-нд аудитаар илэрсэн).
+   Цалингийн дүн агуулдаг тул R2 биш Firestore баримт руу шууд бичнэ
+   (reportPushToServer-тэй ижил зарчим; kpi_hrorders дүрэм зөвшөөрдөг). */
+function hrPushToServer(o) {
+  if (!o || !o.id) return;
+  try {
+    if (!fbReady || typeof fdb === 'undefined' || !fdb) return;
+    try { colsManifestAdd('hrorders'); } catch (e) {}
+    colRef('hrorders').doc(String(o.id)).set(o)
+      .then(function () { try { pulseBump('hrorder'); } catch (e) {} })
+      .catch(function (e) {
+        console.error('[hr] серверт хүрсэнгүй', e);
+        toast('⚠ Захиалга серверт хадгалагдсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
+      });
+  } catch (e) { console.error('[hr] push', e); }
+}
 function hrLevel(k) { return HR_LEVELS.filter(function (x) { return x.key === k; })[0] || HR_LEVELS[0]; }
 function hrSt(o) { return HR_ST[o && o.status] || HR_ST.running; }
 
@@ -27088,6 +27127,7 @@ function actionAddHrOrder(edit) {
       hrAll().push(rec);
     }
     saveDB();
+    hrPushToServer(rec);
     hrNotify(rec, edit ? 'again' : 'new');
     closeModal();
     renderHrOrders();
@@ -27247,6 +27287,7 @@ function hrDetail(id) {
         if (i + 1 >= HR_STEPS.length) { o.status = 'done'; o.step = HR_STEPS.length; }
         else o.step = i + 1;
         saveDB();
+        hrPushToServer(o);
         hrNotify(o, o.status === 'done' ? 'done' : 'step');
         closeModal(); renderHrOrders();
         toast(o.status === 'done' ? o.id + ' бүрэн батлагдлаа' : 'Гарын үсэг зурагдлаа', 'success');
@@ -27266,6 +27307,7 @@ function hrDetail(id) {
         o.returns = (_f(o.returns) || 0) + 1;
         o.log.push({ at: o.returnAt, uid: me.uid, name: me.name || '', what: 'Буцаав — ' + n2 });
         saveDB();
+        hrPushToServer(o);
         hrNotify(o, 'returned');
         closeModal(); renderHrOrders();
         toast('Захиалга буцаагдлаа', 'warn');
@@ -27275,7 +27317,7 @@ function hrDetail(id) {
         if (!confirm('Энэ захиалгыг цуцлах уу?')) return;
         o.status = 'cancelled';
         o.log.push({ at: new Date().toISOString(), uid: (me && me.uid) || '', name: (me && me.name) || '', what: 'Цуцлав' });
-        saveDB(); closeModal(); renderHrOrders();
+        saveDB(); hrPushToServer(o); closeModal(); renderHrOrders();
         toast('Захиалга цуцлагдлаа', 'warn');
       }
     });
