@@ -14500,7 +14500,7 @@ function rfDashData(all) {
     /* Энэ ажлыг хийгээгүйгээс учирч болох аюулын ангилал (WK_HAZ_TYPES).
        Нэг захиалга ОЛОН ангилалтай байж болно тул нийлбэр нь мөрийн
        тооноос ИХ гарч болно — картан дээр ингэж хэлнэ. */
-    byHaz: {}, hazRows: {}, hazN: 0,
+    byHaz: {}, hazRows: {}, hazN: 0, hazAny: [], hazNone: [], hazSkip: [],
     byWho: {}, whoRows: {},          /* хэн мэдээлсэн */
     byDoer: {}, doerRows: {},        /* хэн хүлээж авсан */
     onTime: [], late: [], waiting: [], unreliable: [],
@@ -14530,15 +14530,24 @@ function rfDashData(all) {
     var kk = wkKindOf(r).k;
     if (d.kind[kk] != null) { d.kind[kk]++; d.kindRows[kk].push(r); }
 
-    /* Аюулын ангилал — зөвхөн сонгосон бичлэгээс */
+    /* Аюулын ангилал — зөвхөн сонгосон бичлэгээс.
+       ⚠ «Аюул байхгүй» нь аюул БИШ — эсрэг хариулт. Түүнийг жинхэнэ
+       аюултай нэг мөрөнд тоолбол «5 аюул илэрсэн» гэсэн худал тоо гарна.
+       Тиймээс гурав тусад нь: аюултай · аюулгүй гэсэн · огт сонгоогүй. */
     var hz = (r.wkHaz || []);
     if (hz.length) {
-      d.hazN++;
+      var realHaz = 0;
       hz.forEach(function (hk) {
         var ht = wkHazType(hk); if (!ht) return;
+        if (wkHazIsNone(ht)) return;                 // «Аюул байхгүй» — доор тусад нь
+        realHaz++;
         d.byHaz[ht.mn] = (d.byHaz[ht.mn] || 0) + 1;
         push(d.hazRows, ht.mn, r);
       });
+      if (realHaz) { d.hazN++; d.hazAny.push(r); }
+      else { d.hazNone.push(r); }
+    } else {
+      d.hazSkip.push(r);
     }
     var uu = Math.min(5, Math.max(1, wkUrg(r)));
     d.urg[uu - 1]++; d.urgRows[uu - 1].push(r);
@@ -14735,9 +14744,16 @@ function rfKindHTML(d) {
       '<span style="display:block;font-size:21px;font-weight:900;line-height:1.15;color:' +
       (on ? '#fff' : col) + ';font-variant-numeric:tabular-nums">' + n + '</span></button>';
   };
+  /* ⚠ ХООСОН ТӨРЛИЙГ ХАРУУЛАХГҮЙ. «Аюул» гэсэн төрөл нь ЖИНХЭНЭ бүртгэлд
+     нэг ч удаа сонгогдоогүй (бүгд «Осолд дөхсөн» эсвэл «Ажлын захиалга»
+     болж ирдэг) тул үргэлж 0 харагдаж, «аюул огт байхгүй юм байна» гэсэн
+     ХУДАЛ сэтгэгдэл төрүүлж байв. Бодит аюулууд нь ажлын захиалгын
+     «Хийхгүй бол юу болох вэ» асуултаар цуглардаг — тэдгээрийг доорх
+     тусдаа «Аюулын ангилал» карт харуулна.
+     Сонгогдсон таб бол 0 байсан ч үлдэнэ (эс бөгөөс шүүлтээ алдана). */
   var head = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:13px">' +
     tabBtn('all', 'Бүгд', d.n, RF_C.a, sel === 'all') +
-    kinds.map(function (k) {
+    kinds.filter(function (k) { return (d.kind[k] || 0) > 0 || sel === k; }).map(function (k) {
       return tabBtn(k, RF_KIND[k].l, d.kind[k] || 0, RF_KIND[k].c, sel === k);
     }).join('') + '</div>';
 
@@ -15513,12 +15529,32 @@ function rfDashHTML(all) {
 function rfHazHTML(d) {
   var rows = WK_HAZ_TYPES.map(function (h) {
     return { h: h, v: d.byHaz[h.mn] || 0 };
-  }).filter(function (x) { return x.v > 0; }).sort(function (a, b) { return b.v - a.v; });
+  }).filter(function (x) { return x.v > 0 && !wkHazIsNone(x.h); }).sort(function (a, b) { return b.v - a.v; });
+
+  /* ⚠ Гурван тоог ЭХЛЭЭД. Өмнө нь зөвхөн ангиллын баганууд байсан тул
+     «аюул тэмдэглэгдээгүй» ба «аюул байхгүй гэж хариулсан» хоёр ялгагдахгүй,
+     нэг ч ангилал сонгогдоогүй үед карт бүхэлдээ хоосон харагддаг байв. */
+  var nAny = (d.hazAny || []).length, nNone = (d.hazNone || []).length, nSkip = (d.hazSkip || []).length;
+  var pill = function (label, n, col, rowsArr, hint) {
+    var key = rfDrill(label, hint, rowsArr || []);
+    return '<div' + rfHit(key, label + ': ' + n) + 'class="rf-hit" style="flex:1;min-width:96px;cursor:pointer;' +
+      'background:' + col + '12;border:1px solid ' + col + '33;border-radius:10px;padding:8px 10px">' +
+      '<div style="font-size:19px;font-weight:900;line-height:1.1;color:' + col +
+      ';font-variant-numeric:tabular-nums">' + n + '</div>' +
+      '<div style="font-size:11px;color:' + RF_INK.s + ';line-height:1.3">' + esc(label) + '</div></div>';
+  };
+  var summary = '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">' +
+    pill('Аюул тэмдэглэсэн', nAny, '#C81E3A', d.hazAny, 'Хийхгүй бол аюул учирна гэж заасан') +
+    pill('Аюул байхгүй гэсэн', nNone, '#0ca30c', d.hazNone, 'Тодорхой «аюул байхгүй» гэж хариулсан') +
+    pill('Хариулаагүй', nSkip, '#94A3B8', d.hazSkip, 'Аюулын асуултад ангилал сонгоогүй') +
+    '</div>';
 
   if (!rows.length) {
     return rfCard('Ямар аюулаас сэргийлж байна',
-      'Ажлын захиалга үүсгэхэд ангиллаа сонгоно',
-      '<div style="font-size:12.5px;color:' + RF_INK.m + '">Одоогоор сонголт хийгдээгүй байна</div>');
+      'Ажлын захиалгын «Хийхгүй бол юу болох вэ» асуултаас',
+      summary + '<div style="font-size:12.5px;color:' + RF_INK.m + '">' +
+      (nNone && !nAny ? 'Мэдээлэгдсэн ажлууд бүгд «аюул байхгүй» гэсэн хариулттай.'
+        : 'Аюулын ангилал хараахан сонгогдоогүй байна.') + '</div>');
   }
   var max = Math.max.apply(null, rows.map(function (x) { return x.v; }));
   var body = rows.map(function (x) {
@@ -15536,8 +15572,8 @@ function rfHazHTML(d) {
       ';font-variant-numeric:tabular-nums">' + x.v + '</span></div>';
   }).join('');
   return rfCard('Ямар аюулаас сэргийлж байна',
-    d.hazN + ' захиалга ангилалтай · нэг захиалга олон ангилалтай байж болно · дарж жагсаалтыг харна',
-    body);
+    'Ажлын захиалгын «Хийхгүй бол юу болох вэ» асуултаас · нэг захиалга олон ангилалтай байж болно · дарж жагсаалтыг харна',
+    summary + body);
 }
 
 /* ── АНХААРАЛ ШААРДСАН — тоо биш, ҮЙЛДЭЛ ── */
@@ -15653,6 +15689,17 @@ var WK_HAZ_TYPES = [
    Өмнө нь 6 ангилал кодод ХАТУУ бичигдсэн байсан тул нэмэх бүрд
    хөгжүүлэлт хийх шаардлагатай байв. Одоо админ өөрөө нэмж/засаж/
    устгана. R2-д хадгална (Firestore-д БИШ). */
+/* «Аюул байхгүй» гэсэн ангилал уу — энэ нь аюул БИШ, эсрэг хариулт.
+   ⚠ Ангиллыг админ өөрөө нэмдэг тул түлхүүрээр нь (k) барьж болохгүй —
+   нэрээр нь таньна. «Аюул байхгүй», «аюулгүй.» гэх мэт бичлэгийг барина. */
+function wkHazIsNone(ht) {
+  if (!ht) return false;
+  /* ⚠ БҮТЭН мөрөөр таарна. Дэд мөрөөр («аюулгүй» гэсэн үг агуулсан эсэх)
+     шалгавал «Хүнсний чанар, АЮУЛГҮЙ байдлын» гэсэн ЖИНХЭНЭ ангилал
+     «аюул байхгүй» гэж буруу тоологдоно (тестээр илэрсэн). */
+  return /^\s*аюул(\s*нь)?\s*(байхгүй|үгүй)\s*[.!]?\s*$|^\s*аюулгүй\s*[.!]?\s*$/i
+    .test(String(ht.mn || ''));
+}
 var WK_HAZ_FILE = 'workflow/haztypes.json';
 var WK_HAZ_PALETTE = [
   ['#7C3AED', '#F5F3FF'], ['#0891B2', '#ECFEFF'], ['#DB2777', '#FDF2F8'],
