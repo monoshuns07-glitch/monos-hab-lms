@@ -885,6 +885,7 @@ async function loadDB() {
      байсан тул тэр таслалтад өртөж, эрсдэл огт ачаалагддаггүй байв.
      Одоо эрсдэл, даалгавар нь Firestore-оос үл хамааран эхэлж ирнэ. */
   var _tOk = false, _R2_RISKS = null, _R2_TASKS = null, _R2_EMPS = null, _R2_MS = null;
+  var _rOk = false, _R2_REPS = null;
   if (!DEMO) {
     try {
       var _idx = await riskR2GetJson(RISK_R2_INDEX);
@@ -941,6 +942,12 @@ async function loadDB() {
     await Promise.all([
       (async function () {
         try {
+          _R2_REPS = await repR2Load();
+          if (Array.isArray(_R2_REPS)) { _rOk = true; console.log('[reports] R2-оос ' + _R2_REPS.length); }
+        } catch (e) { console.error('[reports] R2', e); }
+      })(),
+      (async function () {
+        try {
           _R2_TASKS = await taskR2Load();
           /* ⚠ R2 нь одоо даалгаврын ЭХ СУРВАЛЖ (бүх бичилт R2-first). Файл
              уншигдсан бол хоосон ч гэсэн Firestore-оос асуухгүй — өмнө хоосон
@@ -986,6 +993,14 @@ async function loadDB() {
       if (!DB) return;
       if (_R2_RISKS && _R2_RISKS.length) { DB.risks = _R2_RISKS; riskCacheBust(); }
       if (Array.isArray(_R2_TASKS)) DB.tasks = _R2_TASKS;
+      /* Аюулын мэдээлэл/ажлын захиалга — R2 файл байвал тэр нь эх сурвалж.
+         Локалд R2-д байхгүй (саяхан бичсэн) мөр байвал хадгална. */
+      if (_rOk) {
+        var _rv = repVisible(_R2_REPS), _rid = {};
+        _rv.forEach(function (x) { if (x && x.id != null) _rid[String(x.id)] = 1; });
+        (DB.reports || []).forEach(function (x) { if (x && x.id != null && !_rid[String(x.id)]) _rv.push(x); });
+        DB.reports = _rv;
+      }
       /* MiSkill дүн — R2 нь эх сурвалж */
       if (_R2_MS && _R2_MS.rows.length) {
         /* Дэлгэрэнгүйг санах ойд авч явахгүй — кэшэнд багтахгүй болно */
@@ -1049,6 +1064,7 @@ async function loadDB() {
        R2-гийнхаар нь ДАРДАГ байв — квот дүүргэсэн хамгийн том шалтгаан. */
     var _skip = [];
     if (_tOk) _skip.push('tasks');
+    if (_rOk) _skip.push('reports');   /* R2 файл байвал Firestore-оос асуухгүй (квот) */
     if (_R2_MS && _R2_MS.rows && _R2_MS.rows.length) _skip.push('miskillStats');
     if (isSplit()) { try { await loadCols(_skip.length ? { skip: _skip } : null); } catch (e) {} }
     dbCacheSave('бүртгэлүүд');
@@ -2392,6 +2408,76 @@ function taskR2Sync() {
   } catch (e) {}
 }
 
+/* ══ АЮУЛЫН МЭДЭЭЛЭЛ / АЖЛЫН ЗАХИАЛГА — R2 ДАВХАР ХАДГАЛАЛТ (2026-09-03) ══
+   ⚠ Firestore-ийн өдрийн квот дүүрэхэд (429) «Ажлын захиалга» хуудас бүхэлдээ
+   хоосон харагдаж, мэдээлэл серверт хүрдэггүй байв. Одоо бичилт бүр R2-д ч
+   хадгалагдана; уншихад R2 файл байвал Firestore-оос огт асуухгүй.
+   Нэгдэл: remote ∪ локал ∪ өөрчлөгдсөн (updatedAt шинэ нь ялна) − tombstone. */
+var REP_R2_FILE = 'reports/_all.json';
+function repStamp(r) { return String((r && (r.updatedAt || r.wkExecAt || r.at || r.createdAt)) || ''); }
+async function repR2Load() {
+  try {
+    var p = await riskR2GetJson(REP_R2_FILE);
+    if (!p || !Array.isArray(p.rows)) return null;
+    /* Хоосон, «seeded» тэмдэггүй файл = эх сурвалж биш → Firestore-оос уншина */
+    if (!p.rows.length && !p.seeded) return null;
+    return p.rows;
+  } catch (e) { return null; }
+}
+/* Ажилтан бүр бүх мөрийг татах боловч Firestore-ийн хуучин хүрээтэй адил
+   зөвхөн ӨӨРИЙН мэдээлсэн / ӨӨРИЙН хүлээж авсан мөрийг л хадгална. */
+function repVisible(rows) {
+  try {
+    if (rfNeedAllRows()) return rows;
+    var uid = (SESSION && SESSION.uid) || '';
+    return rows.filter(function (r) {
+      return r && (r.reporterUid === uid || (r.wkClaimBy && r.wkClaimBy.uid === uid));
+    });
+  } catch (e) { return rows; }
+}
+async function repR2Merge(changed, opts) {
+  opts = opts || {};
+  var remote = [];
+  try {
+    var p = await riskR2GetJson(REP_R2_FILE, { fresh: true });
+    if (p && Array.isArray(p.rows)) remote = p.rows;
+  } catch (e) {}
+  var byId = {};
+  remote.forEach(function (r) { if (r && r.id != null) byId[String(r.id)] = r; });
+  (DB.reports || []).forEach(function (r) {
+    if (!r || r.id == null) return;
+    var k = String(r.id), old = byId[k];
+    if (!old || repStamp(r) > repStamp(old)) byId[k] = r;
+  });
+  (changed || []).forEach(function (x) {
+    if (!x || x.id == null) return;
+    byId[String(x.id)] = x;                       /* сая өөрчлөгдсөн нь үргэлж ялна */
+  });
+  (opts.remove || []).forEach(function (id) { delete byId[String(id)]; });
+  /* Устгалын tombstone — бүрмөсөн устгасан мөр дахин амилахгүй */
+  try {
+    var tf = await riskR2GetJson(WK_DEL_FILE, { fresh: true });
+    ((tf && tf.list) || []).forEach(function (t) { if (t && t.id) delete byId[String(t.id)]; });
+  } catch (e) {}
+  var rows = Object.keys(byId).map(function (k) { return byId[k]; });
+  rows.sort(function (a, b) { return repStamp(b) > repStamp(a) ? 1 : -1; });
+  await riskR2PutJson(REP_R2_FILE, {
+    updatedAt: new Date().toISOString(), seeded: true,
+    by: (SESSION && SESSION.email) || '', rows: rows
+  });
+  return rows;
+}
+function repR2Sync() {
+  try {
+    if (!isAdmin()) return;
+    /* ⚠ Firestore-оос уншиж чадаагүй (429/permission) эсвэл хоосон бол бичихгүй —
+       эс бөгөөс хоосон R2 файл бүх хүний мэдээллийг «нуух» байсан */
+    if (!(DB.reports || []).length) return;
+    if ((COL_LOAD_FAILED || []).some(function (x) { return x && x.key === 'reports'; })) return;
+    repR2Merge([]).catch(function (e) { console.error('[reports] R2 sync', e); });
+  } catch (e) {}
+}
+
 /* Эрхээс хамаарч ХЭРЭГТЭЙ албуудыг л татна */
 async function riskR2Load() {
   var idx;
@@ -3075,7 +3161,7 @@ function saveDB() {
         var step = 'тохиргоо';
         KPI_DOC().set(mainDocPayload())
           .then(function () { step = 'бүртгэлүүд'; return saveCols(); })
-          .then(function () { taskR2Sync(); })   // R2 дахь даалгаврын хувилбарыг шинэчилнэ
+          .then(function () { taskR2Sync(); repR2Sync(); })   // R2 дахь даалгавар/мэдээллийн хувилбарыг шинэчилнэ
           .then(function () { return kpiR2Publish(mainDocPayload()); })
           .catch(function (e) { saveErrorToast(e, step); });
       } else {
@@ -14257,13 +14343,21 @@ function reportPushToServer(r) {
     /* Шинэ бичлэг үүсэхэд цуглуулгыг жагсаалтад бүртгэнэ
        — эс бөгөөс бусад хүн энэ цуглуулгыг асуухаа больсон байж мэднэ */
     try { colsManifestAdd('reports'); } catch (e) {}
+    /* ⚠ 2026-09-03: R2 давхар хадгалалт. Firestore квот дүүрсэн (429) үед ч
+       R2-д хүрсэн бол амжилттай гэж үзнэ; хоёулаа унавал л алдаа. */
+    var okAny = false, fails = 0, finished = false;
+    var after = function (ok, why) {
+      if (ok) { okAny = true; if (!finished) { finished = true; done(true); reportNotifyHab(r); try { pulseBump('report'); } catch (e) {} } return; }
+      fails++;
+      console.warn('[report] нэг сувагт хүрсэнгүй', why);
+      if (fails >= 2 && !okAny && !finished) { finished = true; done(false, why); }
+    };
+    try {
+      repR2Merge([r]).then(function () { after(true); }).catch(function (e) { after(false, e); });
+    } catch (e) { after(false, e); }
     colRef('reports').doc(String(r.id)).set(r)
-      .then(function () {
-        done(true); reportNotifyHab(r);
-        /* ⭐ Холбогдох хүмүүс/админы дэлгэц Represh-гүйгээр шинэчлэгдэнэ */
-        try { pulseBump('report'); } catch (e) {}
-      })
-      .catch(function (e) { done(false, e); });
+      .then(function () { after(true); })
+      .catch(function (e) { after(false, e); });
   } catch (e) { done(false, e); }
 }
 
@@ -17092,6 +17186,7 @@ async function reportDeleteHard(id) {
   } catch (e) { console.error('[del] mirror', e); }
 
   /* 4. Устгасны тэмдэглэл — ажилтны хөтөч дээрх хуучин хуулбарыг ч устгана */
+  try { await repR2Merge([], { remove: [String(id)] }); } catch (e) { console.error('[reports] R2 устгал', e); }
   try { await delTombAdd([String(id)].concat(wo && wo.id ? [String(wo.id)] : [])); }
   catch (e) { console.error('[del] tomb', e); }
 

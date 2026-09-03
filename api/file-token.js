@@ -27,7 +27,7 @@ const UP_TTL = 15 * 60 * 1000;        // байршуулах эрх — 15 ми
 const ADMIN_EMAILS = ['buynt666@gmail.com'];
 /* Нэвтэрсэн хүн бүрд зөвшөөрөгдөх угтварууд (клиент дээр merge-ээр бичдэг хамтын файлууд) */
 const USER_PREFIXES = [
-  'ack/', 'measures/', 'risks/', 'training/', 'tasks/', 'workflow/', 'workorders/',
+  'ack/', 'measures/', 'risks/', 'training/', 'tasks/', 'reports/', 'workflow/', 'workorders/',
   'notify/', 'requests/', 'push/', 'sys/', 'evidence/', 'att_task_', 'vid_task_', 'uploads/'
 ];
 function keyAllowed(key, isAdmin) {
