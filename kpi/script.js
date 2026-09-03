@@ -14376,7 +14376,7 @@ function rfDashData(all) {
     byHaz: {}, hazRows: {}, hazN: 0,
     byWho: {}, whoRows: {},          /* хэн мэдээлсэн */
     byDoer: {}, doerRows: {},        /* хэн хүлээж авсан */
-    onTime: [], late: [], waiting: [],
+    onTime: [], late: [], waiting: [], unreliable: [],
     hasPhoto: [], noPhoto: [],
     claimHrs: [], doneHrs: [],
     stage: { rep: [], ver: [], fix: [], done: [] },
@@ -14455,12 +14455,17 @@ function rfDashData(all) {
     var hrs = wkUrgHours(wkUrg(r));
     var born = new Date(r.createdAt).getTime();
     var endAt = r.wkExecAt ? new Date(r.wkExecAt).getTime() : null;
-    if (endAt) {
+    /* ⚠ Итгэл багатай бичлэг (өөрөө баталсан / минутын дотор «гүйцэтгэсэн») нь
+       хугацааны дундаж, «хугацаандаа багтсан» хувийг гуйвуулна. Тусад нь
+       тоолж, аль нэг ангилалд ч оруулахгүй — алга болгохгүй, гуйвуулахгүй. */
+    if (wkTrustLow(r)) {
+      d.unreliable.push(r);
+    } else if (endAt) {
       if (endAt - born <= hrs * 3600000) d.onTime.push(r); else d.late.push(r);
       var dh = (endAt - born) / 3600000; if (dh >= 0 && dh < 24 * 365) d.doneHrs.push(dh);
     } else if (Date.now() - born > hrs * 3600000) d.late.push(r);
     else d.waiting.push(r);
-    if (r.wkClaimBy && r.wkClaimBy.at) {
+    if (!wkTrustLow(r) && r.wkClaimBy && r.wkClaimBy.at) {
       var ch = (new Date(r.wkClaimBy.at).getTime() - born) / 3600000;
       if (ch >= 0 && ch < 24 * 365) d.claimHrs.push(ch);
     }
@@ -14830,7 +14835,8 @@ function rfGateHTML(d) {
 
 /* ══ ХУГАЦААНЫ БИЕЛЭЛТ ══ яаралтай зэргээс тооцсон хугацаанд багтсан эсэх */
 function rfSlaHTML(d) {
-  var tot = d.onTime.length + d.late.length + d.waiting.length;
+  var unrel = (d.unreliable || []).length;
+  var tot = d.onTime.length + d.late.length + d.waiting.length + unrel;
   if (!tot) return '';
   var seg = [
     { l: 'Хугацаандаа', v: d.onTime.length, c: '#0ca30c', i: '✔', rows: d.onTime,
@@ -14838,7 +14844,10 @@ function rfSlaHTML(d) {
     { l: 'Хугацаа хэтэрсэн', v: d.late.length, c: '#C81E3A', i: '⏰', rows: d.late,
       s: 'Хугацаанаас хожимдсон эсвэл одоо ч хэтэрсэн' },
     { l: 'Хугацаа дуусаагүй', v: d.waiting.length, c: '#94A3B8', i: '⏳', rows: d.waiting,
-      s: 'Хугацаа нь байсаар байна' }
+      s: 'Хугацаа нь байсаар байна' },
+    /* Дундажийг гуйвуулахгүйн тулд тусад нь. Алга болгохгүй — ил тоолно. */
+    { l: 'Тооцоонд ороогүй', v: unrel, c: '#E9A100', i: '⚠', rows: d.unreliable || [],
+      s: 'Өөрөө баталсан эсвэл минутын дотор «гүйцэтгэсэн» — хугацааны дундаж, хувьд оруулаагүй' }
   ];
   var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
     seg.filter(function (x) { return x.v; }).map(function (x) {
@@ -15180,6 +15189,7 @@ function rfExportXlsx(all) {
         [],
         ['Хугацаандаа', d.onTime.length, pct(d.onTime.length, d.n)],
         ['Хугацаа хэтэрсэн', d.late.length, pct(d.late.length, d.n)],
+        ['Тооцоонд ороогүй (өөрөө баталсан / хэт хурдан)', (d.unreliable || []).length, pct((d.unreliable || []).length, d.n)],
         ['Хугацаа дуусаагүй', d.waiting.length, pct(d.waiting.length, d.n)],
         [],
         ['Зураг хавсаргасан', d.hasPhoto.length, pct(d.hasPhoto.length, d.n)],
@@ -16148,6 +16158,49 @@ function wkStatus(r) {
    нэг үед, хүлээн авалт нь өөр үед тогтсоноос. Харуулах үедээ uid-аар нь
    бүртгэлээс дахин олж, ижил бичлэгт оруулна. Бүртгэл засагдвал хуучин
    бичлэгүүд ч өөрөө зөв болно. */
+/* ══ ИТГЭЛЦЛИЙН ШАЛГУУР ══════════════════════════════════════════════════
+   Баталгаажуулах алхмын утга нь ХОЁР ДАХЬ ХҮНИЙ НҮД. Нэг хүн мэдээлж,
+   өөрөө гүйцэтгэж, өөрөө баталвал тэр алхам утгагүй болно.
+   Мөн хүлээж авснаас хойш минутын дотор «гүйцэтгэсэн» гэж тэмдэглэвэл
+   бодит ажил биш — товч дарсан гэсэн үг.
+   ⚠ ХОРИГЛОХГҮЙ. ИТА-гийнхан өөрсдийн хэсгийн асуудлыг мэдээлээд өөрсдөө
+     засдаг тул хатуу хоривол ажил гацна. Зөвхөн ИЛ ТЭМДЭГЛЭЖ, хугацааны
+     дундажаас хасна — эс бөгөөс «дундаж гүйцэтгэл 1 минут» гэсэн худал
+     тоо гарна. (2026-09-03: RP-MTJO3WCXJQN дээр яг ийм тохиолдол илэрсэн.) */
+var WK_FAST_MIN = 5;
+function wkTrustFlags(r) {
+  var f = [];
+  if (!r) return f;
+  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+  var mins = function (a, b) {
+    var x = new Date(a).getTime(), y = new Date(b).getTime();
+    if (isNaN(x) || isNaN(y)) return null;
+    return (y - x) / 60000;
+  };
+  /* ⚠ Мэдээлэгч ӨӨРИЙН мэдээллээ баталгаажуулах нь ХЭВИЙН урсгал — засварыг
+     хүсэлт гаргагч нь шалгаж хүлээн авах ёстой. Тиймээс тэр ганцаараа
+     тэмдэг БОЛОХГҮЙ. Асуудал нь мэдээлэгч ӨӨРӨӨ ГҮЙЦЭТГЭЭД өөрөө баталсан
+     үед үүснэ — тэгэхэд шалгах хоёр дахь нүд огт байхгүй болно. */
+  var selfDo = !!(r.reporterUid && cl.uid && r.reporterUid === cl.uid);
+  var selfOk = !!(r.reporterUid && ac.uid && r.reporterUid === ac.uid);
+  if (selfDo && selfOk) f.push({ k: 'self', t: 'Өөрөө гүйцэтгэж, өөрөө баталсан — шалгах хоёр дахь хүн байхгүй' });
+  var m1 = (cl.at && r.wkExecAt) ? mins(cl.at, r.wkExecAt) : null;
+  if (m1 !== null && m1 >= 0 && m1 < WK_FAST_MIN) f.push({ k: 'fastWork', t: 'Хүлээж авснаас ' + Math.max(1, Math.round(m1)) + ' минутад «гүйцэтгэсэн»' });
+  var m2 = (r.wkExecAt && ac.at) ? mins(r.wkExecAt, ac.at) : null;
+  if (m2 !== null && m2 >= 0 && m2 < WK_FAST_MIN) f.push({ k: 'fastOk', t: 'Гүйцэтгэснээс ' + Math.max(1, Math.round(m2)) + ' минутад баталсан' });
+  return f;
+}
+function wkTrustLow(r) { return wkTrustFlags(r).length > 0; }
+/* Картад харуулах анхааруулга */
+function wkTrustHTML(r) {
+  var f = wkTrustFlags(r);
+  if (!f.length) return '';
+  return '<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;' +
+    'padding:7px 10px;font-size:11.5px;color:#92400E;line-height:1.5">' +
+    '<b>⚠ Хугацааны тооцоонд ороогүй</b><br>' +
+    f.map(function (x) { return '· ' + esc(x.t); }).join('<br>') + '</div>';
+}
+
 /* Дууссан ажлын ГИНЖИН ХЭЛХЭЭ — өгсөн · гүйцэтгэсэн · баталгаажуулсан.
    Зөвхөн бүрэн дууссан (wkAccept === 'done') үед харагдана. */
 function wkChainHTML(r) {
@@ -17167,6 +17220,7 @@ function wkRowHTML(r) {
     /* ── ДУУССАН бол гинжин хэлхээг бүтнээр: хэн өгсөн → хэн хийсэн → хэн баталсан.
        Хүн хараад л шууд ойлгохоор, товчилсонгүй. ── */
     wkChainHTML(r) +
+    wkTrustHTML(r) +
     (acts.length ? '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">' +
       acts.map(function (a) {
         return '<button class="btn btn-sm" data-' + a[0] + '="' + esc(r.id) + '" style="background:' +
