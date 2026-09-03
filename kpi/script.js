@@ -1277,6 +1277,17 @@ function fbGuard(name, why) {
 }
 
 function colRef(key) { fbGuard(COL_PREFIX + key, 'colRef(' + key + ')'); return fdb.collection(COL_PREFIX + key); }
+/* ⚠⚠ 2026-09-03 — ХАТУУ ХОРИГ. Ажилтны талаас Firestore руу зөвшөөрөгдөөгүй
+   цуглуулга уншихыг кодын түвшинд зогсооно. Ингэснээр шинэ код санамсаргүй
+   Firestore руу орж, өдрийн квот дүүргэж, «дата алга болсон» асуудал
+   давтагдахгүй. Админ л дүүргэлт (seed) хийхээр үлдэнэ. */
+function fbReadAllowed(name) {
+  try {
+    var n = String(name || '');
+    if (FB_ALLOWED.indexOf(n) >= 0) return true;   /* users, user_roles */
+    return !!isAdmin();
+  } catch (e) { return false; }
+}
 /* Хамгаалалт: түлхүүр ямар ч шалтгаанаар массив биш болсон бол хоосон гэж үзнэ */
 function colArr(k) { return Array.isArray(DB[k]) ? DB[k] : []; }
 function isColKey(k) { return COL_KEYS.indexOf(k) >= 0 && Array.isArray(DB[k]); }
@@ -22599,23 +22610,28 @@ async function loadMyResults() {
   }
   try {
     var uid = SESSION.uid;
-    var rSnap = await fdb.collection('exam_results').where('userId', '==', uid).get();
-    var results = rSnap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-    var pSnap = await fdb.collection('training_progress').where('userId', '==', uid).get();
-    var progress = pSnap.docs.map(function (d) { return d.data(); });
+    /* ⚠ 2026-09-03: ӨМНӨ энд Firestore-оос exam_results / training_progress /
+       trainings-ийг ШУУД уншиж байв. Өдрийн квот дүүрэхэд (429) энэ хуудас
+       «Дата ачаалахад алдаа гарлаа» гэж унана. Одоо БҮГД R2-оос. */
+    var _ex = await lmsExamLoad();
+    var results = (_ex || []).filter(function (r) { return r && r.userId === uid; });
+    var _pr = await lmsR2Load();
+    var progress = (_pr || []).filter(function (p) { return p && p.userId === uid; });
     var ids = {}; results.forEach(function (r) { if (r.trainingId) ids[r.trainingId] = 1; });
     progress.forEach(function (p) { if (p.trainingId) ids[p.trainingId] = 1; });
-    var idList = Object.keys(ids), tMap = {};
-    for (var i = 0; i < idList.length; i += 30) {
-      var chunk = idList.slice(i, i + 30);
-      try { var tSnap = await fdb.collection('trainings').where(firebase.firestore.FieldPath.documentId(), 'in', chunk).get(); tSnap.forEach(function (d) { tMap[d.id] = d.data(); }); } catch (e) {}
-    }
+    var tMap = {};
+    try {
+      (await lmsTrnLoad() || []).forEach(function (t) {
+        if (t && t.id != null && ids[t.id]) tMap[t.id] = t;
+      });
+    } catch (e) {}
     results.forEach(function (r) { r.trainingTitle = (tMap[r.trainingId] && tMap[r.trainingId].title) || 'Сургалт'; r.passingScore = (tMap[r.trainingId] && tMap[r.trainingId].passingScore) || 70; });
     progress.forEach(function (p) { p.trainingTitle = (tMap[p.trainingId] && tMap[p.trainingId].title) || 'Сургалт'; });
     results.sort(function (a, b) { var ta = (a.timestamp && a.timestamp.toMillis && a.timestamp.toMillis()) || 0, tb = (b.timestamp && b.timestamp.toMillis && b.timestamp.toMillis()) || 0; return tb - ta; });
     renderMyResultsData({ results: results, progress: progress }, statsEl, progEl, resEl, false);
   } catch (e) {
-    if (resEl) resEl.innerHTML = emptyBox('Дата ачаалахад алдаа гарлаа');
+    console.error('[myResults]', e);
+    if (resEl) resEl.innerHTML = emptyBox('Дүн ачаалахад алдаа гарлаа. Хуудсыг дахин ачаална уу.');
     if (progEl) progEl.innerHTML = '';
   }
 }
@@ -23642,7 +23658,8 @@ async function lmsTrnLoad(force) {
     if (p && Array.isArray(p.rows)) rows = p.rows;
   } catch (e) {}
   if (rows.length) return rows;
-  if (DEMO || !fbReady) return [];
+  /* ⚠ Ажилтан Firestore руу ОГТ хандахгүй — зөвхөн админ дүүргэж R2-д нийтэлнэ */
+  if (DEMO || !fbReady || !isAdmin()) return [];
   try {
     var snap = await fdb.collection('trainings').get();
     rows = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
@@ -23669,12 +23686,13 @@ async function lmsR2Load(force) {
 /* Өөрийн ШИНЭ явцыг Firestore-оос нэмж уншина (сайт дээр шалгалт өгсөн бол).
    Зөвхөн өөрийн баримт тул хэдхэн уншилт — квотод нөлөөлөхгүй. */
 async function lmsMergeSelf() {
+  /* ⚠ 2026-09-03: Firestore-оос уншихаа БОЛИВ. Явц нь R2 (lms/progress.json)
+     дээр бүрэн байдаг — админ MiSkill импортоор шинэчилдэг. */
   try {
     if (!SESSION || !SESSION.uid) return;
-    var s = await fdb.collection('training_progress').where('userId', '==', SESSION.uid).get();
-    s.forEach(function (d) {
-      var x = d.data() || {};
-      if (!x.trainingId) return;
+    var rows = await lmsR2Load();
+    (rows || []).forEach(function (x) {
+      if (!x || x.userId !== SESSION.uid || !x.trainingId) return;
       (LMS.progByUser[SESSION.uid] = LMS.progByUser[SESSION.uid] || {})[x.trainingId] = x;
     });
   } catch (e) {}
