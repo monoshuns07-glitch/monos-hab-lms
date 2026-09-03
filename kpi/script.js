@@ -13492,6 +13492,31 @@ function empFullName(e) {
   if (ln && fn) return ln + ' ' + fn;
   return String(e.name || '').trim();
 }
+/* ══ НЭР ХАРУУЛАХ ГАНЦ ФОРМАТ: «Б.Даваадорж» ══════════════════════════
+   Овгийн эхний үсэг + цэг + нэр. Жагсаалт, карт, хэлхээнд ВСЮДУ энэ хэлбэр.
+   ⚠ Бүртгэлд нэр нь гурван янзаар хадгалагдсан байдаг:
+       lastName/firstName тусад нь · «Бямбасүрэн Даваадорж» · «Б. Даваадорж»
+     Аль нь ирсэн ч ИЖИЛ үр дүн гаргана — эс бөгөөс нэг хүн хоёр янзаар
+     харагдана (2026-09-03-нд яг ийм зөрүү илэрсэн).
+   ⚠ Албан ёсны ХЭВЛЭХ баримтууд (ажлын захиалга, ХН-ийн захиалга) нь
+     empFullName()-ээ хэвээр хэрэглэнэ — тэнд бүтэн овог нэр байх ёстой. */
+function empShortName(e) {
+  if (!e) return '';
+  var ln = String(e.lastName || '').trim(), fn = String(e.firstName || '').trim();
+  if (ln && fn) return ln.charAt(0).toUpperCase() + '.' + fn;
+  return shortenPersonName(e.name);
+}
+/* Бэлэн мөрийг богино хэлбэрт оруулна («Бямбасүрэн Даваадорж» → «Б.Даваадорж») */
+function shortenPersonName(s) {
+  var n = String(s || '').trim().replace(/\s+/g, ' ');
+  if (!n) return '';
+  var p = n.split(' ');
+  if (p.length < 2) return n;                       // ганц үг — овог мэдэгдэхгүй
+  var first = p[0].replace(/\.$/, '');              // «Б.» → «Б»
+  var rest = p.slice(1).join(' ');
+  if (!first) return rest;
+  return first.charAt(0).toUpperCase() + '.' + rest;
+}
 /* Хүнийг НЭГ мөрөөр бүрэн танилцуулна: Овог Нэр · Албан тушаал */
 function empIdentity(e) {
   if (!e) return '';
@@ -14935,7 +14960,7 @@ function rfTableHTML(d) {
       '<td>' + esc(r.dept || '—') + '</td>' +
       '<td>' + esc(r.location || '—') + '</td>' +
       '<td>' + esc(r.equipment || '—') + '</td>' +
-      '<td>' + esc(r.reporterFull || r.reporterName || '—') + '</td>' +
+      '<td>' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—') + '</td>' +
       '<td>' + esc(stat[r.status] || r.status) + '</td>' +
       '<td>' + (r.urgent ? 'Тийм' : '') + '</td>' +
       '<td>' + (wo ? esc(wo.id) + (woIsDone(wo) ? ' (хаагдсан)' : ' (явцад)') : '—') + '</td></tr>';
@@ -15801,10 +15826,11 @@ function wkPersonName(uid, fallback) {
   try {
     if (uid) {
       var e = (DB.employees || []).filter(function (x) { return x.uid === uid; })[0];
-      if (e) { var n = empFullName(e); if (n) return n; }
+      if (e) { var n = empShortName(e); if (n) return n; }
     }
   } catch (err) {}
-  return String(fallback || '').trim();
+  /* Бүртгэлээс олдоогүй ч хадгалагдсан нэрийг ижил хэлбэрт оруулна */
+  return shortenPersonName(fallback);
 }
 var WK_STATUS = {
   new: { l: 'Хүлээж аваагүй', c: '#C81E3A', bg: '#FEF2F2' },
@@ -15959,7 +15985,7 @@ function wkHazFixModal(id) {
     node.innerHTML =
       '<div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:11px;padding:10px 12px;' +
       'margin-bottom:12px;font-size:12.5px;color:#475569;line-height:1.6">' +
-      '<b>' + esc(r.reporterFull || r.reporterName || '') + '</b> ийм мэдээлэл өгсөн:<br>' +
+      '<b>' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName)) + '</b> ийм мэдээлэл өгсөн:<br>' +
       esc(String(r.desc || '').slice(0, 160)) +
       (r.wkHazText ? '<br><span style="color:#92400E">Аюул: ' + esc(r.wkHazText) + '</span>' : '') +
       '</div>' +
@@ -17710,7 +17736,7 @@ function openReportDetail(id) {
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
     (r.equipment ? '<div class="detail-row"><span>Тоног төхөөрөмж</span><b>' + esc(r.equipment) + '</b></div>' : '') +
     (r.urgent ? '<div class="detail-row"><span>Яаралтай</span><b style="color:#DC2626">🚨 Тийм</b></div>' : '') +
-    '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(r.reporterFull || r.reporterName || '—') + '</b></div>' +
+    '<div class="detail-row"><span>Мэдээлсэн</span><b>' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—') + '</b></div>' +
     (r.reporterPos ? '<div class="detail-row"><span>Албан тушаал</span><b>' + esc(r.reporterPos) + '</b></div>' : '') +
     (r.dept ? '<div class="detail-row"><span>Алба</span><b>' + esc(r.dept) + '</b></div>' : '') +
     '<div class="detail-row"><span>Огноо</span><b>' + new Date(r.createdAt).toLocaleString('mn-MN') + '</b></div>' +
