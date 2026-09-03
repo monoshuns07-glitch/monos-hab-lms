@@ -19449,6 +19449,17 @@ function openNotifications(anchor) {
 }
 function addNotification(text, page, uid) {
   DB.notifications.push({ id: 'N' + Date.now() + '-' + Math.floor(Math.random() * 1000), text: text, time: new Date().toISOString(), read: false, page: page, uid: uid || '' });
+  /* ⚠ DB.notifications нь зөвхөн админы saveDB-ээр хадгалагддаг. ХАБЭА-н ажилтан
+     (эрхээр «ажилтан») мэдээллийг баталгаажуулахад «Таны мэдээлэл баталгаажлаа»
+     гэсэн мэдэгдэл мэдээлэгчид ХЭЗЭЭ Ч хүрдэггүй байв (2026-09-03). R2-ийн
+     мэдэгдлийн систем (ntfSend → notify/_all.json + push) руу давхар явуулна. */
+  try {
+    if (uid && typeof ntfSend === 'function') {
+      var tgt = (empAll() || []).filter(function (e) { return e && e.uid === uid; })[0];
+      if (tgt) ntfSend([tgt], { kind: 'sys', url: '/kpi/?page=' + (page || 'dashboard'),
+        title: 'Мэдэгдэл', body: String(text || '').slice(0, 200) }).catch(function () {});
+    }
+  } catch (e) {}
 }
 
 /* ============ PPE мөрдөлт + Анхны тусламжийн хайрцаг (албаны түвшний оноо) ============ */
