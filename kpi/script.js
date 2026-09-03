@@ -2454,14 +2454,32 @@ function actionRiskRelease() {
     }).join('') + '</select></div>' +
     '<div style="margin-bottom:6px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Энэ ажилд оролцох ажилтнууд</label>' +
     '<input id="rlSearch" placeholder="Нэрээр хайх…" style="width:100%;padding:8px 11px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:7px"></div>' +
+    '<div style="display:flex;gap:7px;margin-bottom:7px;flex-wrap:wrap">' +
+    '<button type="button" class="btn btn-secondary btn-sm" data-rl-all="1"><i class="ti ti-users"></i> Ажлын албыг бүхэлд нь сонгох</button>' +
+    '<button type="button" class="btn btn-secondary btn-sm" data-rl-all="0">Бүгдийг арилгах</button></div>' +
     '<div id="rlList" style="max-height:230px;overflow:auto;border:1px solid #E2E8F0;border-radius:9px;padding:8px">' +
     emps.map(function (e) {
-      return '<label class="rlRow" data-name="' + esc((e.name || '').toLowerCase()) + '" style="display:block;font-size:12.5px;padding:4px 0">' +
+      return '<label class="rlRow" data-name="' + esc((e.name || '').toLowerCase()) + '" data-dept="' + esc(e.dept || '') + '" style="display:block;font-size:12.5px;padding:4px 0">' +
         '<input type="checkbox" class="rlEmp" value="' + esc(e.id) + '"> ' + esc(e.name || '—') +
         ' <span style="color:#94A3B8">· ' + esc(e.pos || e.role || '') + ' · ' + esc(e.dept || '') + '</span></label>';
     }).join('') + (emps.length ? '' : '<div style="font-size:12px;color:#94A3B8">Ажилтан олдсонгүй</div>') + '</div>' +
     '<div id="rlSt" style="margin-top:9px;font-size:12.5px;color:#64748B"></div>');
 
+  /* Албыг бүхэлд нь — тухайн ажлын албаны бүх ажилтныг сонгоно (2026-09-03) */
+  node.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-rl-all]'); if (!b) return;
+    var on = b.getAttribute('data-rl-all') === '1';
+    var k = node.querySelector('#rlJob').value, d = (jobs[k] && jobs[k].dept) || '';
+    var n = 0;
+    Array.prototype.forEach.call(node.querySelectorAll('.rlRow'), function (row) {
+      var cb = row.querySelector('.rlEmp'); if (!cb) return;
+      if (!on) { cb.checked = false; return; }
+      var ed = row.getAttribute('data-dept') || '';
+      if (!d || ed === d || riskSameDept(d, ed)) { cb.checked = true; n++; }
+    });
+    var st = node.querySelector('#rlSt');
+    if (st) st.textContent = on ? (d ? d + ' — ' + n + ' ажилтан сонгогдлоо' : n + ' ажилтан сонгогдлоо') : 'Сонголт арилгав';
+  });
   var syncChecks = function () {
     var k = node.querySelector('#rlJob').value;
     var cur = (RISK_RELEASES[k] && RISK_RELEASES[k].empIds) || [];
