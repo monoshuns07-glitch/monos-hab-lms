@@ -9070,6 +9070,46 @@ function ackJobBannerHTML(A) {
   }).join('');
 }
 
+/* ── Админ: ажлын танилцалтын Excel (хэн зурсан / зураагүй + эрсдэлийн жагсаалт) ── */
+async function ackExportJob(job) {
+  toast('Бүрдүүлж байна…', 'info');
+  try {
+    var rows = ackJobRows(job);
+    var rel = (RISK_RELEASES || {})[job] || {};
+    var ids = rel.empIds || [];
+    var ver = ackJobVersion(job);
+    var st = await ackLoadKey(ackJobFile(job), true);
+    ACK_JOBS[job] = st;
+    var emps = (empAll() || []).filter(function (e) { return ids.indexOf(e.id) >= 0 || ids.indexOf(e.uid) >= 0; });
+    /* Нээгдсэн ч бүртгэлд олдохгүй id (хасагдсан ажилтан г.м.) — мөрөөр нь харуулна */
+    var seen = {}; emps.forEach(function (e) { seen[e.id] = 1; seen[e.uid] = 1; });
+    ids.forEach(function (id) { if (!seen[id]) emps.push({ id: id, uid: id, name: '(бүртгэлд алга) ' + String(id).slice(0, 8), pos: '', dept: rel.dept || '' }); });
+    emps.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); });
+    var people = emps.map(function (e) {
+      var r = ((st && st.rows) || []).filter(function (x) { return x.uid === e.uid && String(x.version) === String(ver); })[0] || null;
+      return { emp: e, row: r };
+    });
+    var signed = people.filter(function (p) { return p.row; }).length;
+    var dept = rel.dept || (rows[0] && rows[0].dept) || '';
+    var aoa = ackSheetAoa('НЭГ УДААГИЙН АЖЛЫН ЭРСДЭЛТЭЙ ТАНИЛЦСАН БҮРТГЭЛ',
+      'Ажил: ' + job + (dept ? ' · Алба: ' + dept : '') + ' · Нээлттэй ' + ids.length + ' · Зурсан ' + signed + ' · Зураагүй ' + (ids.length - signed),
+      people, rows.length);
+    /* Танилцсан хуудсанд «Уншсан эрсдэл/хугацаа» баганыг «Төлөв»-өөр солино */
+    aoa[5] = ['д/д', 'Харьяалагдах алба', 'Албан тушаал', 'Овог нэр', 'Гарын үсэг (код)', 'Огноо', 'Төлөв', 'Нээсэн'];
+    people.forEach(function (p, i) { aoa[6 + i][6] = p.row ? 'Танилцсан' : 'ЗУРААГҮЙ'; aoa[6 + i][7] = ackDateMn(rel.at || ''); });
+    var R = [['МОНОС ХҮНС ХХК'], ['ЭРСДЭЛИЙН ЖАГСААЛТ — ' + job], [dept], [], ['д/д', 'Ажилбар', 'Аюул', 'Шалтгаан', 'Байршил', 'Арга хэмжээ', 'Оноо', 'Түвшин']];
+    rows.slice().sort(function (a, b) { return riskScore(b) - riskScore(a); }).forEach(function (r, i) {
+      R.push([i + 1, r.process || '', r.hazard || '', r.cause || '', r.location || '', r.actions || '', riskScore(r), riskLevel(r).name]);
+    });
+    ackWriteBook([
+      { name: 'Танилцсан', aoa: aoa },
+      { name: 'Эрсдэлүүд', aoa: R, cols: [{ wch: 5 }, { wch: 28 }, { wch: 48 }, { wch: 40 }, { wch: 22 }, { wch: 48 }, { wch: 7 }, { wch: 12 }] }
+    ], 'Танилцсан-' + String(job).replace(/[^\wА-Яа-яӨөҮү\- ]/g, '').slice(0, 60) + '-' + _ymd(new Date()) + '.xlsx');
+  } catch (e) {
+    toast('Татаж чадсангүй: ' + ((e && e.message) || e), 'error');
+  }
+}
+
 /* ── Код: ЗӨВХӨН аппын дотор. ⚠ И-мэйл рүү ХЭЗЭЭ Ч илгээхгүй (хэрэглэгчийн
    шаардлага). ackSendOtp нь бүтэхгүй үедээ и-мэйл рүү шилждэг тул ЭНД
    ашиглахгүй. Нэвтэрсэн и-мэйлээр (SESSION.email) хүсэлт явуулна — сервер
@@ -10467,6 +10507,7 @@ function riskGroupedHTML(list) {
           (od ? ';background:#FFFBEB;border:1px solid #FDE68A' : '') + '">' +
           '<i class="ti ' + (od ? 'ti-lock-open' : 'ti-briefcase') + '" style="font-size:14px;color:' + (od ? '#B45309' : '#7C3AED') + ';flex-shrink:0"></i>' +
           '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (od ? esc(p.slice(2).trim()) + label.slice(label.indexOf('<span')) : label) + '</span>' +
+          (od ? '<button type="button" class="btn btn-secondary btn-sm" data-ack-jobxl="' + esc(p.slice(2).trim()) + '" title="Хэн танилцсан / зураагүй — Excel" style="flex-shrink:0;padding:4px 9px;font-size:11.5px"><i class="ti ti-download"></i> Танилцсан хуудас</button>' : '') +
           '<span style="flex-shrink:0">' + riskLevelChips(l) + '</span>' +
           '<span style="flex:0 0 34px;text-align:right;font-size:12.5px;font-weight:800;color:' + L2.color + '">' + l.length + '</span></div>';
       }).join('');
@@ -12040,6 +12081,8 @@ function renderHazards() {
     sec.addEventListener('click', function (ev) {
       var em = ev.target.closest('[data-risk-emp]');
       if (em) { riskEmpDetail(em.getAttribute('data-risk-emp')); return; }
+      var jx = ev.target.closest('[data-ack-jobxl]');
+      if (jx) { ev.stopPropagation(); ackExportJob(jx.getAttribute('data-ack-jobxl')); return; }
       var pf = ev.target.closest('[data-risk-posf]');
       if (pf) {
         var pv = pf.getAttribute('data-risk-posf') || '';
