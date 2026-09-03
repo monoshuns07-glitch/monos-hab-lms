@@ -13724,6 +13724,21 @@ function actionReportNew(presetType) {
       sel.photo = durl || '';
       if (durl) { var pv = $('#rfPreview', node); pv.src = durl; pv.style.display = 'block'; $('#rfPhotoLbl span', node).textContent = 'Зураг солих'; }
       else { imgFailToast(f); _self.value = ''; }
+      /* ⚠ Зургийг R2-д байршуулж, бичлэгт ХОЛБООС хадгална (2026-09-03).
+         Өмнө base64-ээр Firestore баримт дотор хадгалдаг байсан тул 18 мэдээлэл
+         1.3 MB болж, ХАБЭА/ИТА/захирал апп нээх бүрд бүгдийг татдаг, баримтын
+         1 MB хязгаарт ойртдог байв. R2 амжвал холбоос, амжихгүй бол base64 хэвээр. */
+      if (durl) {
+        (async function () {
+          try {
+            var blob = await (await fetch(durl)).blob();
+            var key = 'evidence/reports/' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) + '.jpg';
+            var url = await r2Put(blob, key);
+            var final = (typeof url === 'string' && /^https?:/.test(url)) ? url : (TASK_R2 + '/' + key);
+            if (sel.photo === durl) sel.photo = final;    /* хэрэглэгч зургаа солиогүй бол */
+          } catch (e) { /* base64 хэвээр — мэдээлэл алдагдахгүй */ }
+        })();
+      }
     });
   });
   /* ⭐ Гарын үсгийн самбар АВАГДСАН — хэн мэдээлснийг бүртгэлээс нь
