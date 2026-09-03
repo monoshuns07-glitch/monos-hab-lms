@@ -15084,7 +15084,7 @@ function rfSlaHTML(d) {
       s: 'Хугацаа нь байсаар байна' },
     /* Дундажийг гуйвуулахгүйн тулд тусад нь. Алга болгохгүй — ил тоолно. */
     { l: 'Тооцоонд ороогүй', v: unrel, c: '#E9A100', i: '⚠', rows: d.unreliable || [],
-      s: 'Өөрөө баталсан эсвэл минутын дотор «гүйцэтгэсэн» — хугацааны дундаж, хувьд оруулаагүй' }
+      s: 'Ретроспектив бүртгэл эсвэл өөрөө баталсан — хугацаа нь ажлын биш бүртгэлийн цаг тул дундажид оруулаагүй' }
   ];
   var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
     seg.filter(function (x) { return x.v; }).map(function (x) {
@@ -15426,7 +15426,7 @@ function rfExportXlsx(all) {
         [],
         ['Хугацаандаа', d.onTime.length, pct(d.onTime.length, d.n)],
         ['Хугацаа хэтэрсэн', d.late.length, pct(d.late.length, d.n)],
-        ['Тооцоонд ороогүй (өөрөө баталсан / хэт хурдан)', (d.unreliable || []).length, pct((d.unreliable || []).length, d.n)],
+        ['Тооцоонд ороогүй (ретроспектив бүртгэл / өөрөө баталсан)', (d.unreliable || []).length, pct((d.unreliable || []).length, d.n)],
         ['Хугацаа дуусаагүй', d.waiting.length, pct(d.waiting.length, d.n)],
         [],
         ['Зураг хавсаргасан', d.hasPhoto.length, pct(d.hasPhoto.length, d.n)],
@@ -16426,16 +16426,26 @@ function wkStatus(r) {
    нэг үед, хүлээн авалт нь өөр үед тогтсоноос. Харуулах үедээ uid-аар нь
    бүртгэлээс дахин олж, ижил бичлэгт оруулна. Бүртгэл засагдвал хуучин
    бичлэгүүд ч өөрөө зөв болно. */
-/* ══ ИТГЭЛЦЛИЙН ШАЛГУУР ══════════════════════════════════════════════════
-   Баталгаажуулах алхмын утга нь ХОЁР ДАХЬ ХҮНИЙ НҮД. Нэг хүн мэдээлж,
-   өөрөө гүйцэтгэж, өөрөө баталвал тэр алхам утгагүй болно.
-   Мөн хүлээж авснаас хойш минутын дотор «гүйцэтгэсэн» гэж тэмдэглэвэл
-   бодит ажил биш — товч дарсан гэсэн үг.
+/* ══ ХУГАЦААНЫ ИТГЭЛЦЭЛ ══════════════════════════════════════════════════
+   Хэдхэн минутад «хүлээж авсан → гүйцэтгэсэн → баталсан» болсон бичлэгийн
+   хугацаа нь АЖЛЫН хугацаа биш, БҮРТГЭЛИЙН хугацаа. Түүнийг дундажид
+   оруулбал «дундаж гүйцэтгэл 1 минут» гэсэн худал тоо гарна.
+
+   ⚠ ЭНЭ НЬ БУРУУТГАЛ БИШ. Ажлаа хийчихээд дараа нь бүртгэх нь бүрэн
+     хэвийн зуршил. Тиймээс ГҮЙЦЭТГЭЛИЙН НОТОЛГОО (зураг эсвэл утга
+     бүхий тэмдэглэл) байвал «ретроспектив бүртгэл» гэж НЭЭЛТТЭЙ хэлнэ.
+     Нотолгоогүй бол л «шалгах шаардлагатай» гэж үзнэ.
+     (2026-09-03: RP-MTJO3WCXJQN — засварын зураг ба «Мотор сольж засвар
+      хийсэн» гэсэн тэмдэглэлтэй атлаа «хэт хурдан» гэж буруутгаж байв.)
    ⚠ ХОРИГЛОХГҮЙ. ИТА-гийнхан өөрсдийн хэсгийн асуудлыг мэдээлээд өөрсдөө
-     засдаг тул хатуу хоривол ажил гацна. Зөвхөн ИЛ ТЭМДЭГЛЭЖ, хугацааны
-     дундажаас хасна — эс бөгөөс «дундаж гүйцэтгэл 1 минут» гэсэн худал
-     тоо гарна. (2026-09-03: RP-MTJO3WCXJQN дээр яг ийм тохиолдол илэрсэн.) */
+     засдаг тул хатуу хоривол ажил гацна. */
 var WK_FAST_MIN = 5;
+/* Ажил үнэхээр хийгдсэн нотолгоо бий юу */
+function wkHasProof(r) {
+  if (!r) return false;
+  if (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) return true;
+  return String(r.wkExecNote || '').trim().length >= 8;
+}
 function wkTrustFlags(r) {
   var f = [];
   if (!r) return f;
@@ -16452,20 +16462,50 @@ function wkTrustFlags(r) {
   var selfDo = !!(r.reporterUid && cl.uid && r.reporterUid === cl.uid);
   var selfOk = !!(r.reporterUid && ac.uid && r.reporterUid === ac.uid);
   if (selfDo && selfOk) f.push({ k: 'self', t: 'Өөрөө гүйцэтгэж, өөрөө баталсан — шалгах хоёр дахь хүн байхгүй' });
+  /* Хугацаа хэт богино — нотолгоотой бол «ретроспектив», үгүй бол «шалгах» */
+  var proof = wkHasProof(r);
   var m1 = (cl.at && r.wkExecAt) ? mins(cl.at, r.wkExecAt) : null;
-  if (m1 !== null && m1 >= 0 && m1 < WK_FAST_MIN) f.push({ k: 'fastWork', t: 'Хүлээж авснаас ' + Math.max(1, Math.round(m1)) + ' минутад «гүйцэтгэсэн»' });
   var m2 = (r.wkExecAt && ac.at) ? mins(r.wkExecAt, ac.at) : null;
-  if (m2 !== null && m2 >= 0 && m2 < WK_FAST_MIN) f.push({ k: 'fastOk', t: 'Гүйцэтгэснээс ' + Math.max(1, Math.round(m2)) + ' минутад баталсан' });
+  var fast1 = (m1 !== null && m1 >= 0 && m1 < WK_FAST_MIN);
+  var fast2 = (m2 !== null && m2 >= 0 && m2 < WK_FAST_MIN);
+  if (fast1 || fast2) {
+    if (proof) {
+      f.push({ k: 'retro', ok: true,
+        t: 'Ажил хийгдсэний ДАРАА бүртгэсэн бололтой — гүйцэтгэлийн нотолгоо (зураг/тэмдэглэл) байна. ' +
+           'Хугацаа нь ажлын биш, бүртгэлийн хугацаа тул дундажид оруулаагүй.' });
+    } else {
+      if (fast1) f.push({ k: 'fastWork', t: 'Хүлээж авснаас ' + Math.max(1, Math.round(m1)) + ' минутад «гүйцэтгэсэн» — нотолгоо алга' });
+      if (fast2) f.push({ k: 'fastOk', t: 'Гүйцэтгэснээс ' + Math.max(1, Math.round(m2)) + ' минутад баталсан — нотолгоо алга' });
+    }
+  }
   return f;
+}
+/* Шалгах шаардлагатай юу (ретроспектив бүртгэл нь БУРУУТГАЛ БИШ) */
+function wkTrustSuspect(r) {
+  return wkTrustFlags(r).some(function (x) { return !x.ok; });
 }
 function wkTrustLow(r) { return wkTrustFlags(r).length > 0; }
 /* Картад харуулах анхааруулга */
 function wkTrustHTML(r) {
   var f = wkTrustFlags(r);
   if (!f.length) return '';
-  return '<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;' +
-    'padding:7px 10px;font-size:11.5px;color:#92400E;line-height:1.5">' +
-    '<b>⚠ Хугацааны тооцоонд ороогүй</b><br>' +
+  /* Нотолгоотой ретроспектив бүртгэл бол ЭНГИЙН тайлбар (саарал), зөвхөн
+     нотолгоогүй тохиолдолд шар анхааруулга. Бодит ажил хийсэн хүнийг
+     улаанаар буруутгах нь системд итгэх итгэлийг унагана. */
+  /* Гарчиг нь ЯГ юу илэрснийг хэлнэ. «Шалгах шаардлагатай» гэдгийг зөвхөн
+     нотолгоогүй хурдан бүртгэлд хэрэглэнэ — нэг хүн бүх алхмыг хийсэн нь
+     хяналтын ажиглалт болохоос сэжиг биш. */
+  var hasFast = f.some(function (x) { return x.k === 'fastWork' || x.k === 'fastOk'; });
+  var hasSelf = f.some(function (x) { return x.k === 'self'; });
+  var bg = hasFast ? '#FFFBEB' : '#F8FAFC';
+  var bd = hasFast ? '#FDE68A' : '#E2E8F0';
+  var ink = hasFast ? '#92400E' : '#64748B';
+  var head = hasFast ? '⚠ Шалгах шаардлагатай · хугацааны тооцоонд ороогүй'
+    : (hasSelf ? 'ⓘ Нэг хүн бүх алхмыг гүйцэтгэсэн · хугацааны тооцоонд ороогүй'
+               : 'ⓘ Хугацааны тооцоонд ороогүй');
+  return '<div style="margin-top:8px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:9px;' +
+    'padding:7px 10px;font-size:11.5px;color:' + ink + ';line-height:1.5">' +
+    '<b>' + head + '</b><br>' +
     f.map(function (x) { return '· ' + esc(x.t); }).join('<br>') + '</div>';
 }
 
