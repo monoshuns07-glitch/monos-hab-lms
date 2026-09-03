@@ -14723,7 +14723,10 @@ function rfDashData(all) {
     /* ── Хугацаанд багтсан эсэх ── */
     var hrs = wkUrgHours(wkUrg(r));
     var born = new Date(r.createdAt).getTime();
-    var endAt = r.wkExecAt ? new Date(r.wkExecAt).getTime() : null;
+    /* ⭐ Ажил ХИЙГДСЭН бодит цагаар (гүйцэтгэгч заасан бол түүгээр) */
+    var _dt = wkDoneTime(r);
+    var endAt = _dt ? new Date(_dt).getTime() : null;
+    if (endAt !== null && isNaN(endAt)) endAt = null;
     /* ⚠ Итгэл багатай бичлэг (өөрөө баталсан / минутын дотор «гүйцэтгэсэн») нь
        хугацааны дундаж, «хугацаандаа багтсан» хувийг гуйвуулна. Тусад нь
        тоолж, аль нэг ангилалд ч оруулахгүй — алга болгохгүй, гуйвуулахгүй. */
@@ -16479,6 +16482,9 @@ function wkStatus(r) {
    ⚠ ХОРИГЛОХГҮЙ. ИТА-гийнхан өөрсдийн хэсгийн асуудлыг мэдээлээд өөрсдөө
      засдаг тул хатуу хоривол ажил гацна. */
 var WK_FAST_MIN = 5;
+/* ⭐ Ажил ХИЙГДСЭН бодит цаг. Гүйцэтгэгч «хэзээ хийсэн» гэж заасан бол
+   түүнийг, эс бөгөөс бүртгэсэн цагийг авна. Хугацааны БҮХ тооцоо үүгээр. */
+function wkDoneTime(r) { return (r && (r.wkDoneAt || r.wkExecAt)) || ''; }
 /* Ажил үнэхээр хийгдсэн нотолгоо бий юу */
 function wkHasProof(r) {
   if (!r) return false;
@@ -16501,6 +16507,11 @@ function wkTrustFlags(r) {
   var selfDo = !!(r.reporterUid && cl.uid && r.reporterUid === cl.uid);
   var selfOk = !!(r.reporterUid && ac.uid && r.reporterUid === ac.uid);
   if (selfDo && selfOk) f.push({ k: 'self', t: 'Өөрөө гүйцэтгэж, өөрөө баталсан — шалгах хоёр дахь хүн байхгүй' });
+  /* ⭐ Гүйцэтгэгч «хэзээ хийсэн» гэж ТОДОРХОЙ заасан бол хугацаа нь бодит —
+     ямар ч тэмдэглэгээ хэрэггүй, статистикт бүрэн эрхтэй орно. Энэ бол
+     ретроспектив бүртгэлийн ЗӨВ хэлбэр. */
+  if (r.wkDoneAt) return f;
+
   /* Хугацаа хэт богино — нотолгоотой бол «ретроспектив», үгүй бол «шалгах» */
   var proof = wkHasProof(r);
   var m1 = (cl.at && r.wkExecAt) ? mins(cl.at, r.wkExecAt) : null;
@@ -16580,7 +16591,7 @@ function wkChainHTML(r) {
   var b;
   if (doer) {
     b = cell(closed ? '🔧' : '🛠', closed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
-      day(r.wkExecAt || cl.at), '#B45309', false);
+      day(wkDoneTime(r) || cl.at), '#B45309', false);
   } else {
     var g = null; try { g = wkGate(r.wkGate); } catch (e) {}
     var hrs = 0; try { hrs = Math.round(wkUnclaimedHours(r)); } catch (e) {}
@@ -17014,6 +17025,17 @@ function wkExecModal(id) {
      «Юу хийснээ бичнэ үү» гэж буцаадаг байв. Тиймээс тайлбарыг хувьсагчид
      хадгалж, дахин зурахад буцааж тавина. */
   var photo = '', note = '';
+  /* ⭐ «ХЭЗЭЭ ХИЙСЭН» нь «хэзээ бүртгэсэн»-ээс ӨӨР. Ажлаа хийчихээд дараа нь
+     бүртгэх нь хэвийн зуршил. Өмнө нь систем бүх цагийг «одоо» гэж бичдэг
+     байсан тул ретроспектив бүртгэл нь «1 минутад засчихсан» мэт харагдаж,
+     хугацааны дундажийг гуйвуулж, шударга бус сэжиг төрүүлдэг байв. */
+  var localVal = function (d) {
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+  };
+  var doneAt = localVal(new Date());          /* анхдагч нь одоо */
+  var bornMs = new Date(r.createdAt).getTime();
   var node = elc('div', 'modal-info');
   var draw = function () {
     node.innerHTML =
@@ -17036,34 +17058,59 @@ function wkExecModal(id) {
           'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
           'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
         : '') +
+      '<div class="rf-field" style="margin-top:12px"><label style="font-weight:700;font-size:12.5px;color:#334155">' +
+      'Ажлыг хэзээ хийсэн бэ? <span style="color:#DC2626">*</span></label>' +
+      '<input type="datetime-local" id="wkExDone" class="rf-input" value="' + esc(doneAt) + '"' +
+      ' max="' + esc(localVal(new Date())) + '"' +
+      (isNaN(bornMs) ? '' : ' min="' + esc(localVal(new Date(bornMs))) + '"') + '>' +
+      '<div style="font-size:11.5px;color:#64748B;margin-top:4px">' +
+      'Өмнө нь хийчихээд одоо бүртгэж байгаа бол <b>бодит цагаа</b> тавина уу — ' +
+      'хугацааны тооцоо үүгээр бодогдоно.</div></div>' +
       '<div style="font-size:11.5px;color:#64748B;margin-top:9px">' +
       'Илгээсний дараа мэдээлсэн хүн шалгаж <b>батална</b>. Дутуу бол буцаана.</div>' +
       '<button class="btn btn-primary btn-block" id="wkExGo" style="margin-top:12px">' +
       '<i class="ti ti-checkbox"></i> Гүйцэтгэсэн гэж илгээх</button>';
     var _ta = node.querySelector('#wkExNote');
     if (_ta) _ta.addEventListener('input', function () { note = this.value; });
+    var _dt = node.querySelector('#wkExDone');
+    if (_dt) _dt.addEventListener('input', function () { doneAt = this.value; });
     wkWirePickers(node, function (d) {
       var t = node.querySelector('#wkExNote');
       if (t) note = t.value;               /* зураг орохоос ӨМНӨ бичсэнийг хадгална */
+      var dd = node.querySelector('#wkExDone');
+      if (dd) doneAt = dd.value;           /* сонгосон цаг ч мөн адил алдагдахгүй */
       photo = d; draw();
     });
   };
   node.addEventListener('click', function (ev) {
     if (ev.target.closest('#wkExDel')) {
       var t0 = node.querySelector('#wkExNote'); if (t0) note = t0.value;
+      var d0 = node.querySelector('#wkExDone'); if (d0) doneAt = d0.value;
       photo = ''; draw(); return;
     }
     if (!ev.target.closest('#wkExGo')) return;
     var _t = node.querySelector('#wkExNote');
     if (_t) note = _t.value;
+    var _d = node.querySelector('#wkExDone');
+    if (_d) doneAt = _d.value;
     note = (note || '').trim();
     if (!note) { toast('Юу хийснээ бичнэ үү', 'warn'); return; }
     if (!photo) { toast('Баталгааны зураг оруулна уу', 'warn'); return; }
+    /* Хийсэн цагийг шалгана — ирээдүй ч, мэдээлэхээс өмнөх ч байж болохгүй */
+    var doneMs = doneAt ? new Date(doneAt).getTime() : NaN;
+    if (isNaN(doneMs)) { toast('Ажлыг хэзээ хийсэн огноо, цагаа сонгоно уу', 'warn'); return; }
+    if (doneMs > Date.now() + 60000) { toast('Ирээдүйн цаг сонгож болохгүй', 'warn'); return; }
+    if (!isNaN(bornMs) && doneMs < bornMs - 60000) {
+      toast('Мэдээлэл өгөхөөс өмнөх цаг байж болохгүй', 'warn'); return;
+    }
     var me = reqMe(); var emp = woEmpByUid(me && me.uid) || me || {};
     closeModal();
     var rr = wkPatch(id, function (x) {
       x.wkExecNote = note; x.wkExecPhoto = photo;
+      /* wkExecAt = БҮРТГЭСЭН цаг (аудит, хөндөхгүй)
+         wkDoneAt = АЖИЛ ХИЙГДСЭН бодит цаг (хугацааны тооцоо үүгээр) */
       x.wkExecAt = new Date().toISOString();
+      x.wkDoneAt = new Date(doneMs).toISOString();
       x.wkExecBy = { uid: me && me.uid, name: empFullName(emp) || (me && me.name) || '',
         pos: emp.pos || emp.role || '' };
       x.wkAccept = 'pending';
