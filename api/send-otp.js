@@ -221,6 +221,11 @@ module.exports = async function handler(req, res) {
       if (who && who.email && who.email === email) {
         return res.status(200).json({ ok: true, id, ttl: TTL_MIN, code, channel: 'app' });
       }
+      /* ⚠ noMail: аппын зам бүтээгүй ч и-мэйл рүү ХЭЗЭЭ Ч явуулахгүй (нэг удаагийн
+         ажлын танилцалт — код зөвхөн дэлгэцэнд гарна, 2026-09-03) */
+      if (body.noMail) {
+        return res.status(403).json({ ok: false, error: 'Нэвтрэлт баталгаажсангүй — код зөвхөн аппын дотор гардаг. Хуудсыг дахин ачаалаад оролдоно уу.' });
+      }
       /* Таниагүй бол доош үргэлжилж, хуучин ёсоор и-мэйлээр явна */
     }
 

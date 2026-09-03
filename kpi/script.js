@@ -9017,13 +9017,36 @@ function ackJobBannerHTML(A) {
   }).join('');
 }
 
+/* ── Код: ЗӨВХӨН аппын дотор. ⚠ И-мэйл рүү ХЭЗЭЭ Ч илгээхгүй (хэрэглэгчийн
+   шаардлага). ackSendOtp нь бүтэхгүй үедээ и-мэйл рүү шилждэг тул ЭНД
+   ашиглахгүй. Нэвтэрсэн и-мэйлээр (SESSION.email) хүсэлт явуулна — сервер
+   idToken-ий и-мэйлтэй тулгаад кодыг шууд буцаана. */
+async function ackJobSendCode(job) {
+  var em = String((SESSION && SESSION.email) || '').trim().toLowerCase();
+  if (!em) return { ok: false, error: 'Нэвтэрсэн и-мэйл олдсонгүй — дахин нэвтэрнэ үү' };
+  var idt = '';
+  try { var u = firebase.auth().currentUser; if (u) idt = await u.getIdToken(true); } catch (e) {}
+  if (!idt) return { ok: false, error: 'Нэвтрэлт баталгаажсангүй — хуудсыг дахин ачаалаад оролдоно уу' };
+  try {
+    var r = await fetch('/api/send-otp/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: em, name: (ACK_ME && ACK_ME.me && ACK_ME.me.name) || '',
+        examTitle: 'Нэг удаагийн ажлын эрсдэлтэй танилцах — ' + job,
+        origin: location.origin, channel: 'app', idToken: idt, noMail: true })
+    });
+    var j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok || !j || !j.id) return { ok: false, error: (j && j.error) || ('Код бэлдэж чадсангүй (' + r.status + ')') };
+    if (!j.code) return { ok: false, error: 'Код аппын дотор ирсэнгүй — дахин оролдоно уу (и-мэйл рүү илгээгээгүй)' };
+    return { ok: true, id: j.id, code: String(j.code), email: em };
+  } catch (e) { return { ok: false, error: 'Сүлжээ: ' + ((e && e.message) || e) }; }
+}
+
 /* ── Цонх: бүх эрсдэл нэг хуудсанд → чеклист → код → баталгаажуулах ── */
 function ackJobModal(job) {
   var A = ACK_ME; if (!A || A.none || !A.me) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
   var rows = ackJobRows(job);
   if (!rows.length) { toast('Эрсдэл олдсонгүй', 'error'); return; }
   var ver = ackJobVersion(job);
-  var em = String(A.me.email || '').trim();
   var node = elc('div');
   var cards = rows.slice().sort(function (a, b) { return riskScore(b) - riskScore(a); }).map(function (r, i) {
     var L = riskLevel(r);
@@ -9050,7 +9073,7 @@ function ackJobModal(job) {
     'урьдчилан сэргийлэх арга хэмжээг мөрдөхөө зөвшөөрч байна.</span></label>' +
     '<div id="ajStep1" style="margin-top:11px"><button class="btn btn-primary" id="ajSend" disabled style="width:100%">' +
     '<i class="ti ti-shield-check"></i> Зөвшөөрч, баталгаажуулах код авах</button>' +
-    (em ? '' : '<div style="font-size:12px;color:#B91C1C;margin-top:6px">Таны и-мэйл бүртгэгдээгүй байна — ХАБЭА-н албанд хандана уу.</div>') + '</div>' +
+    '</div>' +
     '<div id="ajStep2" style="display:none;margin-top:11px">' +
     '<div id="ajCodeBox"></div>' +
     '<input id="ajCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" ' +
@@ -9073,16 +9096,16 @@ function ackJobModal(job) {
   };
   list.addEventListener('scroll', onScroll);
   setTimeout(onScroll, 200);      /* богино жагсаалт бол шууд нээгдэнэ */
-  chk.addEventListener('change', function () { sendBtn.disabled = !(chk.checked && em); });
+  chk.addEventListener('change', function () { sendBtn.disabled = !chk.checked; });
 
   var OTP = { id: '' };
   var send = async function (btn) {
     var old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Код бэлдэж байна…';
     say('');
-    var r = await ackSendOtp(A.me, 'Нэг удаагийн ажлын эрсдэлтэй танилцах — ' + job);
+    var r = await ackJobSendCode(job);            /* ⚠ зөвхөн аппын дотор — и-мэйлгүй */
     btn.disabled = false; btn.innerHTML = old;
-    if (!r.ok) { say('⚠️ ' + esc(r.error || 'Илгээж чадсангүй'), '#B91C1C'); return; }
-    OTP.id = r.id;
+    if (!r.ok) { say('⚠️ ' + esc(r.error || 'Код бэлдэж чадсангүй'), '#B91C1C'); return; }
+    OTP.id = r.id; OTP.email = r.email;
     node.querySelector('#ajStep1').style.display = 'none';
     node.querySelector('#ajStep2').style.display = '';
     var box = node.querySelector('#ajCodeBox');
@@ -9108,7 +9131,7 @@ function ackJobModal(job) {
     if (code.length < 4) { say('⚠️ Кодоо оруулна уу (дээрх кодыг дарахад орно).', '#B91C1C'); return; }
     var btn = this, old = btn.innerHTML;
     btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Шалгаж байна…';
-    var v = await ackVerifyOtp(OTP.id, code, A.me.email);
+    var v = await ackVerifyOtp(OTP.id, code, OTP.email || A.me.email);
     if (!v.ok) { btn.disabled = false; btn.innerHTML = old; say('⚠️ ' + esc(v.error), '#B91C1C'); return; }
     btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
     var me = A.me;
