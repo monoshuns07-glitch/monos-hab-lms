@@ -9110,6 +9110,49 @@ async function ackExportJob(job) {
   }
 }
 
+/* ── Дээд самбар: нэг удаагийн ажлын үнэлгээнүүд (админ, туслах админ, удирдлага) ──
+   ⚠ Өмнө зөвхөн албаны бүлэглэлт дотор (хуудасны доод хэсэгт) байсан тул
+   админ олж чаддаггүй байв (2026-09-03). */
+function riskJobsPanelHTML() {
+  try {
+    if (!(isAdmin() || isDeptHead() || riskIsBoss() || wkIsDirector())) return '';
+    var jobs = {};
+    (DB.risks || []).forEach(function (r) {
+      if (!r || !r.onDemand) return;
+      var k = riskJobKey(r); if (!k) return;
+      var j = jobs[k] || (jobs[k] = { key: k, dept: r.dept || '', n: 0, mx: 0 });
+      j.n++; var sc = riskScore(r); if (sc > j.mx) j.mx = sc;
+    });
+    var keys = Object.keys(jobs);
+    if (!keys.length) return '';
+    var rows = keys.sort().map(function (k) {
+      var j = jobs[k];
+      var rel = (RISK_RELEASES || {})[k] || {};
+      var open = (rel.empIds || []).length;
+      var signed = ackJobSignedCount(k);
+      var L = riskLevel(j.mx);
+      return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid #FDE68A;background:#FFFBEB;border-radius:12px;margin-top:8px">' +
+        '<i class="ti ti-lock-open" style="font-size:18px;color:#B45309;flex-shrink:0"></i>' +
+        '<div style="flex:1;min-width:220px">' +
+        '<div style="font-size:13.5px;font-weight:800;color:#1E293B">' + esc(k) + '</div>' +
+        '<div style="font-size:12px;color:#64748B;margin-top:2px">' + esc(j.dept) + ' · ' + j.n + ' эрсдэл · дээд түвшин <b style="color:' + L.color + '">' + esc(L.name) + '</b> · ' +
+        (open ? '<b style="color:#15803D">нээлттэй ' + open + ' хүнд</b> · зурсан <b>' + signed + '</b> · зураагүй <b style="color:' + ((open - signed) > 0 ? '#B91C1C' : '#64748B') + '">' + (open - signed) + '</b>'
+              : '<b style="color:#B45309">хэнд ч нээгээгүй</b>') + '</div></div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        ((isAdmin() || isDeptHead()) ? '<button type="button" class="btn btn-secondary btn-sm" data-risk-rel="1" title="Хэнд нээхээ сонгох"><i class="ti ti-users"></i> Нээх / засах</button>' : '') +
+        '<button type="button" class="btn btn-secondary btn-sm" data-ack-jobxl="' + esc(k) + '" title="Хэн танилцсан / зураагүй — нэгдсэн жагсаалт"><i class="ti ti-list-check"></i> Жагсаалт</button>' +
+        '<button type="button" class="btn btn-primary btn-sm" data-ack-jobtpl="' + esc(k) + '" title="Хүн бүрд эх загвараар үнэлгээ + танилцсан хуудас (ZIP)"><i class="ti ti-download"></i> Хүн бүрийн хуудас</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm" data-risk-posf="' + esc(k) + '" title="Зөвхөн энэ ажлын эрсдэлийг шүүх"><i class="ti ti-filter"></i> Эрсдэлүүд</button>' +
+        '</div></div>';
+    }).join('');
+    return '<div class="card" style="padding:14px 16px;margin-bottom:14px;border:1.5px solid #FDE68A">' +
+      '<div style="display:flex;align-items:center;gap:8px"><i class="ti ti-lock-open" style="color:#B45309"></i>' +
+      '<h3 style="margin:0;font-size:15px;color:#92400E">Нэг удаагийн ажлын эрсдэлийн үнэлгээ</h3>' +
+      '<span style="font-size:12px;color:#94A3B8">· ажил хийгдэх өдөр нь ажилтнуудад нээж, танилцсан гарын үсгийг нь татна</span></div>' +
+      rows + '</div>';
+  } catch (e) { return ''; }
+}
+
 /* ── Админ: ХҮН БҮРИЙН танилцсан хуудас — эх загвараар (2026-09-03) ──
    Эх Excel (үнэлгээний хүснэгт, арга, нүүр, «Танилцсан» 4 хуудас) R2-д
    risks/templates/<riskSlug(ажил)>.xlsx нэрээр хадгалагдсан. Түүнийг тэр
@@ -11997,6 +12040,8 @@ function renderHazards() {
       RISK_TAB = 'risks';
       /* Захирлуудад — албадаар хуваасан товчнууд */
       H += riskDeptBarHTML(list);
+      /* ⭐ Нэг удаагийн ажлын үнэлгээ — дээд самбар (админ/удирдлагад) */
+      H += riskJobsPanelHTML();
       /* ТАНИЛЦАЛТ — хүн бүр (захирал, хариуцагч, ажилтан) гарын үсэг зурна */
       H += ackBannerHTML();
       /* Ажилтанд — эрэмбэлсэн, энгийн хэлээр. Админ/туслах админд — дашбоард. */
