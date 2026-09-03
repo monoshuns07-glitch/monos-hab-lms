@@ -17,6 +17,24 @@ const crypto = require('crypto');
 const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
 
 const UP_TTL = 15 * 60 * 1000;        // байршуулах эрх — 15 минут
+
+/* ══ ТҮЛХҮҮРИЙН ХЯЗГААР (2026-09-03) ══
+   ⚠ Өмнө нэвтэрсэн ХЭН Ч ямар ч түлхүүрт (employees/all.json, exams/*,
+   push/subs.json …) бичих эрх авч чаддаг байв — нэг ажилтан бүх хүний
+   бүртгэл, шалгалтын дүнг дарж бичих боломжтой гэсэн үг.
+   Одоо: админ бүгдэд; бусад нь ЗӨВХӨН аппын хамтын ажиллагааны файлууд
+   болон өөрийн байршуулалтад. Шалгалтын дүн зөвхөн сервер (exam-save) бичнэ. */
+const ADMIN_EMAILS = ['buynt666@gmail.com'];
+/* Нэвтэрсэн хүн бүрд зөвшөөрөгдөх угтварууд (клиент дээр merge-ээр бичдэг хамтын файлууд) */
+const USER_PREFIXES = [
+  'ack/', 'measures/', 'risks/', 'training/', 'tasks/', 'workflow/', 'workorders/',
+  'notify/', 'requests/', 'push/', 'sys/', 'evidence/', 'att_task_', 'vid_task_', 'uploads/'
+];
+function keyAllowed(key, isAdmin) {
+  if (isAdmin) return true;
+  if (/(^|\/)\.\.(\/|$)/.test(key)) return false;            /* зам гажуудуулах */
+  return USER_PREFIXES.some(function (p) { return key.indexOf(p) === 0; });
+}
 const DL_TTL = 6 * 60 * 60 * 1000;    // татах холбоос — 6 цаг
 
 function hmacHex(secret, msg) {
@@ -89,6 +107,16 @@ module.exports = async function handler(req, res) {
 
   const user = await verifyIdToken(body.idToken);
   if (!user) return res.status(401).json({ ok: false, error: 'Нэвтрээгүй байна' });
+
+  /* Байршуулах эрх — түлхүүр бүрийг эрхээр шалгана (татах 'dl' хязгаарлахгүй) */
+  if (kind === 'up') {
+    const isAdmin = ADMIN_EMAILS.indexOf(String(user.email || '').toLowerCase()) >= 0;
+    const bad = keys.filter(function (k) { return !keyAllowed(k, isAdmin); });
+    if (bad.length) {
+      return res.status(403).json({ ok: false, error: 'Энэ файлд бичих эрх байхгүй',
+        denied: bad.map(function (k) { return k.slice(0, 60); }) });
+    }
+  }
 
   const exp = String(Date.now() + (kind === 'dl' ? DL_TTL : UP_TTL));
   if (kind === 'otp') {

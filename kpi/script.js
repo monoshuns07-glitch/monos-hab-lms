@@ -22801,7 +22801,9 @@ async function lmsTrnLoad(force) {
   try {
     var snap = await fdb.collection('trainings').get();
     rows = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
-    try { await lmsTrnPublish(rows); } catch (e) {}
+    /* ⚠ R2 руу зөвхөн админ нийтэлнэ — lms/ угтварт бусдын бичих эрхийг
+       file-token хаасан (2026-09-03) */
+    if (isAdmin()) { try { await lmsTrnPublish(rows); } catch (e) {} }
   } catch (e) { console.warn('[LMS] trainings', e && e.message); }
   return rows;
 }
