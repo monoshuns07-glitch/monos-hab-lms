@@ -2487,7 +2487,8 @@ function actionRiskRelease() {
     var ids = [];
     Array.prototype.forEach.call(node.querySelectorAll('.rlEmp:checked'), function (c) { ids.push(c.value); });
     save.disabled = true; save.innerHTML = '<i class="ti ti-loader"></i> Хадгалж байна…';
-    RISK_RELEASES[k] = { empIds: ids, at: new Date().toISOString(), by: (SESSION && SESSION.email) || 'admin' };
+    RISK_RELEASES[k] = { empIds: ids, at: new Date().toISOString(), by: (SESSION && SESSION.email) || 'admin',
+      dept: (jobs[k] && jobs[k].dept) || '' };   /* гарын үсгийн хувилбарт алба хэрэгтэй */
     try {
       await riskReleasesSave();
       toast(ids.length ? '✓ ' + ids.length + ' ажилтанд нээгдлээ' : '✓ Хаагдлаа — хэнд ч харагдахгүй', 'success');
@@ -4399,7 +4400,6 @@ function actionModEditContent(key) {
   var mod = getMod(key);
   var node = elc('div', 'modal-info');
   var R2_WORKER = 'https://monos-upload.buynt666.workers.dev';
-  var R2_KEY = 'monos2026';
   node.innerHTML =
     '<div class="rf-field"><label style="font-weight:600;font-size:13px">Видео файл байршуулах (R2)</label>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
@@ -4417,31 +4417,24 @@ function actionModEditContent(key) {
     '<textarea id="mDesc" class="rf-input" rows="4" placeholder="Сургалтын зорилго, агуулга...">' + esc(mod.desc || '') + '</textarea></div>' +
     '<button class="btn btn-primary btn-block" id="mSaveContent" style="margin-top:14px"><i class="ti ti-device-floppy"></i> Хадгалах</button>';
 
+  /* ⚠ Өмнө хуучин X-Key-ээр шууд PUT хийдэг байсан нь worker дээр 401 болж,
+     видео/файл байршуулалт «Алдаа гарлаа» гэж унадаг байв (2026-09-03).
+     Одоо эрхтэй r2Put (админд бүх түлхүүр нээлттэй). */
   function r2Upload(file, progressEl, inputEl) {
     if (!file) return;
-    var fname = Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    var fname = 'modules/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     progressEl.textContent = 'Байршуулж байна...';
     progressEl.style.color = '#D97706';
-    var xhr = new XMLHttpRequest();
-    xhr.open('PUT', R2_WORKER + '/' + fname);
-    xhr.setRequestHeader('X-Key', R2_KEY);
-    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-    xhr.upload.onprogress = function (e) {
-      if (e.lengthComputable) progressEl.textContent = Math.round(e.loaded / e.total * 100) + '%';
-    };
-    xhr.onload = function () {
-      if (xhr.status === 200) {
-        var res = JSON.parse(xhr.responseText);
-        inputEl.value = res.url;
-        progressEl.textContent = 'Амжилттай байршлаа ✓';
-        progressEl.style.color = '#16A34A';
-      } else {
-        progressEl.textContent = 'Алдаа гарлаа';
-        progressEl.style.color = '#DC2626';
-      }
-    };
-    xhr.onerror = function () { progressEl.textContent = 'Холболтын алдаа'; progressEl.style.color = '#DC2626'; };
-    xhr.send(file);
+    r2Put(file, fname, function (loaded, total) {
+      if (total) progressEl.textContent = Math.round(loaded / total * 100) + '%';
+    }).then(function (url) {
+      inputEl.value = (typeof url === 'string' && /^https?:/.test(url)) ? url : (TASK_R2 + '/' + fname);
+      progressEl.textContent = 'Амжилттай байршлаа ✓';
+      progressEl.style.color = '#16A34A';
+    }).catch(function (e) {
+      progressEl.textContent = 'Алдаа гарлаа: ' + String((e && e.message) || e).slice(0, 60);
+      progressEl.style.color = '#DC2626';
+    });
   }
 
   node.querySelector('#mVidFile').addEventListener('change', function () {
@@ -6418,7 +6411,9 @@ var TASK_R2 = (function () {
   } catch (e) {}
   return 'https://monos-upload.buynt666.workers.dev';
 })();
-var TASK_R2_KEY = 'monos2026';
+/* ⚠ Хуучин X-Key-г бүрмөсөн хассан (2026-09-03) — worker хүлээн авахаа больсон,
+   нийтийн repo-д нууц үлдээх нь буруу. Эрх (grant) байхгүй бол 401 болж, алдаа
+   нь харагдана. */
 var R2_CHUNK = 50 * 1024 * 1024;      // нэг хэсэг
 var R2_SIMPLE_MAX = 90 * 1024 * 1024; // үүнээс жижиг бол энгийн PUT
 
@@ -6486,12 +6481,10 @@ async function r2Grant(key) {
 /* Хүсэлт бүрт эрхээ хавсаргана: шинэ гарын үсэг эсвэл хуучин түлхүүр */
 function r2Auth(xhr, grant) {
   if (grant) { xhr.setRequestHeader('X-Up', grant.token); xhr.setRequestHeader('X-Exp', grant.exp); }
-  else { xhr.setRequestHeader('X-Key', TASK_R2_KEY); }
 }
 function r2AuthHeaders(grant, extra) {
   var h = extra || {};
   if (grant) { h['X-Up'] = grant.token; h['X-Exp'] = grant.exp; }
-  else { h['X-Key'] = TASK_R2_KEY; }
   return h;
 }
 
@@ -7194,6 +7187,16 @@ function loadRiskDashboard(dept, cb) {
     try { cb(JSON.parse(localStorage.getItem('rdash_' + dept) || 'null')); } catch (e) { cb(null); }
     return;
   }
+  /* ⚠ R2 ЭХЛЭЭД (2026-09-03): ажилтан бүр эрсдэлийн хуудас нээх бүрд Firestore-оос
+     уншдаг байсан. Мета файл risks/dash/<slug>.json */
+  var _rk = 'risks/dash/' + riskSlug(riskCanonDept(dept) || dept) + '.json';
+  riskR2GetJson(_rk).then(function (m) {
+    if (m && (m.htmlUrl || m.html)) { cb({ dept: dept, htmlUrl: m.htmlUrl, html: m.html, uploadedAt: m.uploadedAt, uploadedBy: m.uploadedBy }); return; }
+    if (m && m.deleted) { cb(null); return; }
+    _rdashFromFirestore(dept, cb);
+  }).catch(function () { _rdashFromFirestore(dept, cb); });
+}
+function _rdashFromFirestore(dept, cb) {
   if (!fbReady || !fdb) { cb(null); return; }
   fbGuard(RISK_COL, 'эрсдэл — R2 нурсан үеийн нөөц зам');
   fdb.collection(RISK_COL).doc(dept).get()
@@ -7219,38 +7222,33 @@ function saveRiskDashboard(dept, html, cb) {
     try { localStorage.setItem('rdash_' + dept, JSON.stringify(data)); cb(true); } catch (e) { cb(false); }
     return;
   }
-  if (!fbReady || !fdb) { cb(false); return; }
-  var R2W = 'https://monos-upload.buynt666.workers.dev';
-  var R2K = 'monos2026';
-  var fname = 'rdash_' + Date.now() + '_' + dept.replace(/[^a-zA-Z0-9]/g, '_') + '.html';
+  /* ⚠ Өмнө хуучин X-Key-ээр R2 руу бичдэг байсан нь 401 болж, HTML-ийг Firestore
+     баримт дотор (1 MB хүртэл) хадгалдаг болсон байв (2026-09-03-нд илэрсэн).
+     Одоо эрхтэй r2Put + мета JSON; Firestore зөвхөн нөөц. */
+  var slug = riskSlug(riskCanonDept(dept) || dept);
+  var hkey = 'risks/dash/' + slug + '_' + Date.now().toString(36) + '.html';
   var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  var xhr = new XMLHttpRequest();
-  xhr.open('PUT', R2W + '/' + fname);
-  xhr.setRequestHeader('X-Key', R2K);
-  xhr.setRequestHeader('Content-Type', 'text/html;charset=utf-8');
-  xhr.onload = function () {
+  blob.name = 'dashboard.html';
+  (async function () {
     var meta = { dept: dept, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
-    if (xhr.status === 200) {
-      try { meta.htmlUrl = JSON.parse(xhr.responseText).url; } catch (e) { meta.htmlUrl = R2W + '/' + fname; }
-    } else {
-      meta.html = html;
-    }
-    fdb.collection(RISK_COL).doc(dept).set(meta)
-      .then(function () { cb(true); }).catch(function () { cb(false); });
-  };
-  xhr.onerror = function () {
-    var meta = { dept: dept, html: html, uploadedBy: (SESSION && SESSION.email) || 'admin', uploadedAt: new Date().toISOString() };
-    fdb.collection(RISK_COL).doc(dept).set(meta)
-      .then(function () { cb(true); }).catch(function () { cb(false); });
-  };
-  xhr.send(blob);
+    try {
+      var url = await r2Put(blob, hkey);
+      meta.htmlUrl = (typeof url === 'string' && /^https?:/.test(url)) ? url : (TASK_R2 + '/' + hkey);
+    } catch (e) { meta.html = html; }               /* R2 амжихгүй бол дотор нь */
+    var okMeta = false;
+    try { await riskR2PutJson('risks/dash/' + slug + '.json', meta); okMeta = true; } catch (e) {}
+    try { if (fbReady && fdb) await fdb.collection(RISK_COL).doc(dept).set(meta); } catch (e) {}
+    cb(okMeta || !!meta.htmlUrl);
+  })();
 }
 
 function deleteRiskDashboard(dept, cb) {
   if (DEMO) { localStorage.removeItem('rdash_' + dept); cb(true); return; }
-  if (!fbReady || !fdb) { cb(false); return; }
+  var dslug = riskSlug(riskCanonDept(dept) || dept);
+  try { riskR2PutJson('risks/dash/' + dslug + '.json', { dept: dept, deleted: true, at: new Date().toISOString() }).catch(function () {}); } catch (e) {}
+  if (!fbReady || !fdb) { cb(true); return; }
   fdb.collection(RISK_COL).doc(dept).delete()
-    .then(function () { cb(true); }).catch(function () { cb(false); });
+    .then(function () { cb(true); }).catch(function () { cb(true); });
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -8709,6 +8707,7 @@ async function ackRefreshMine(force) {
   var role = ackRoleOf(me);
   var isDir = ackIsDir(role);
   var ver = isDir ? ackCompanyVersion() : ackVersionOf(dept);
+  try { await ackJobsLoad(me, force); } catch (e) {}
   var g = await ackGateFor(me, force);
   var top = g.top;
   var store = isDir ? top : await ackLoad(dept, force);
@@ -8936,11 +8935,208 @@ function ackFold(label, inner, bd, n) {
     '<div style="margin-top:8px">' + inner + '</div></details>';
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   НЭГ УДААГИЙН АЖЛЫН ЭРСДЭЛТЭЙ ТАНИЛЦАХ — БОГИНО УРСГАЛ (2026-09-03)
+   ----------------------------------------------------------------------
+   Автокран, гагнуур гэх мэт нэг удаагийн ажлын үнэлгээг албанд НЭЭХЭД
+   ажилтнууд «зааварчилгаа хэлбэрээр танилцсан» гарын үсгээ зурна.
+   Албаны үндсэн танилцалт (эрсдэл бүрийг уншиж санал бичдэг) урт урсгалаас
+   ЯЛГААТАЙ: бүх эрсдэлийг НЭГ хуудсанд гүйлгэж үзнэ → зөвшөөрсөн чеклист →
+   код (аппын дотор шууд гарна) → кодоо дараад → «Баталгаажуулах».
+   Хадгалалт: ack/job-<slug>.json (ажил бүр тусдаа хуудас), хувилбар нь
+   тухайн ажлын эрсдэлийн агуулгын hash — үнэлгээ өөрчлөгдвөл дахин зурна.
+   ══════════════════════════════════════════════════════════════════════ */
+var ACK_JOBS = {};                 /* jobKey → store {version, rows:[{uid,code,at,…}]} */
+var ACK_JOBS_LOADED = false;
+
+function ackJobFile(job) { return ACK_PREFIX + 'job-' + riskSlug(job) + '.json'; }
+/* Тухайн ажлын эрсдэлүүд (бүх алба) */
+function ackJobRows(job) {
+  return (DB.risks || []).filter(function (r) { return r && r.onDemand && riskJobKey(r) === job; });
+}
+function ackJobVersion(job) { return ackHashOf(ackJobRows(job)); }
+/* Надад нээгдсэн, ГАРЫН ҮСЭГ ЗУРААГҮЙ ажлууд */
+function ackJobsPending(me) {
+  if (!me || !me.uid) return [];
+  var out = [];
+  Object.keys(RISK_RELEASES || {}).forEach(function (job) {
+    var rows = ackJobRows(job);
+    if (!rows.length) return;
+    if (!riskIsReleasedTo(rows[0], me)) return;
+    var ver = ackJobVersion(job);
+    var st = ACK_JOBS[job];
+    var signed = st && (st.rows || []).some(function (x) { return x.uid === me.uid && String(x.version) === String(ver); });
+    if (!signed) out.push({ job: job, rows: rows, ver: ver });
+  });
+  return out;
+}
+function ackJobSignedRow(job, uid) {
+  var st = ACK_JOBS[job]; if (!st) return null;
+  var ver = ackJobVersion(job);
+  return (st.rows || []).filter(function (x) { return x.uid === uid && String(x.version) === String(ver); })[0] || null;
+}
+function ackJobSignedCount(job) {
+  var st = ACK_JOBS[job]; if (!st) return 0;
+  var ver = ackJobVersion(job), seen = {};
+  (st.rows || []).forEach(function (x) { if (String(x.version) === String(ver) && x.uid) seen[x.uid] = 1; });
+  return Object.keys(seen).length;
+}
+/* Надад нээгдсэн ажлуудын хуудсыг татна (ackRefreshMine дотроос) */
+async function ackJobsLoad(me, force) {
+  var jobs = Object.keys(RISK_RELEASES || {}).filter(function (job) {
+    var rows = ackJobRows(job);
+    return rows.length && (!me || riskIsReleasedTo(rows[0], me));
+  });
+  for (var i = 0; i < jobs.length; i++) {
+    try { ACK_JOBS[jobs[i]] = await ackLoadKey(ackJobFile(jobs[i]), force); } catch (e) {}
+  }
+  ACK_JOBS_LOADED = true;
+  return ACK_JOBS;
+}
+async function ackJobsLoadAll(force) { return await ackJobsLoad(null, force); }
+
+/* ── Баннер: нээгдсэн ажил бүрт нэг ── */
+function ackJobBannerHTML(A) {
+  if (!A || !A.me) return '';
+  var pend = ackJobsPending(A.me);
+  if (!pend.length) return '';
+  return pend.map(function (p) {
+    var mx = 0; p.rows.forEach(function (r) { var sc = riskScore(r); if (sc > mx) mx = sc; });
+    var L = riskLevel(mx);
+    return '<div id="ackBanner" style="background:#FFF7ED;border:1.5px solid #FDBA74;border-radius:14px;' +
+      'padding:14px 16px;margin-bottom:13px;color:#9A3412;font-size:13px;line-height:1.65">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<i class="ti ti-lock-open" style="font-size:21px"></i>' +
+      '<div style="flex:1;min-width:200px"><b>Нэг удаагийн ажлын эрсдэлийн үнэлгээ танд нээгдлээ.</b><br>' +
+      '<span style="font-size:12.5px"><b>' + esc(p.job) + '</b> — ' + p.rows.length + ' эрсдэл · дээд түвшин ' +
+      '<span style="color:' + L.color + ';font-weight:800">' + esc(L.name) + '</span>. ' +
+      'Бүгдийг гүйлгэж үзээд зааварчилгаа хэлбэрээр танилцсан гарын үсгээ зурна уу.</span></div>' +
+      '<button class="btn btn-primary btn-sm" data-ack-job="' + esc(p.job) + '">' +
+      '<i class="ti ti-writing-sign"></i> Гүйлгэж үзээд гарын үсэг зурах</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+/* ── Цонх: бүх эрсдэл нэг хуудсанд → чеклист → код → баталгаажуулах ── */
+function ackJobModal(job) {
+  var A = ACK_ME; if (!A || A.none || !A.me) { toast('Ажилтны бүртгэл олдсонгүй', 'error'); return; }
+  var rows = ackJobRows(job);
+  if (!rows.length) { toast('Эрсдэл олдсонгүй', 'error'); return; }
+  var ver = ackJobVersion(job);
+  var em = String(A.me.email || '').trim();
+  var node = elc('div');
+  var cards = rows.slice().sort(function (a, b) { return riskScore(b) - riskScore(a); }).map(function (r, i) {
+    var L = riskLevel(r);
+    return '<div style="border:1px solid #E2E8F0;border-left:5px solid ' + L.color + ';border-radius:12px;padding:11px 13px;margin-bottom:9px;background:#fff">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">' +
+      '<span style="font-size:11px;font-weight:800;color:#94A3B8">' + (i + 1) + '/' + rows.length + '</span>' +
+      '<span style="font-size:11px;font-weight:800;color:' + L.color + ';background:' + L.color + '18;border-radius:99px;padding:2px 9px">' + esc(L.name) + ' · ' + riskScore(r) + '</span>' +
+      (r.process ? '<span style="font-size:11.5px;color:#64748B;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.process) + '</span>' : '') + '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#1E293B;line-height:1.45">' + esc(r.hazard || '') + '</div>' +
+      (r.cause ? '<div style="font-size:12px;color:#475569;margin-top:4px"><b>Шалтгаан:</b> ' + esc(r.cause) + '</div>' : '') +
+      (r.location ? '<div style="font-size:12px;color:#475569;margin-top:2px"><b>Байршил:</b> ' + esc(r.location) + '</div>' : '') +
+      (r.actions ? '<div style="font-size:12px;color:#166534;margin-top:5px;background:#F0FDF4;border-radius:8px;padding:6px 9px"><b>Арга хэмжээ:</b> ' + esc(r.actions) + '</div>' : '') +
+      '</div>';
+  }).join('');
+
+  node.innerHTML =
+    '<div style="font-size:12.5px;color:#475569;line-height:1.6;margin-bottom:9px">' +
+    '<b>' + esc(job) + '</b> · ' + rows.length + ' эрсдэл. Доош гүйлгэж бүгдийг үзнэ үү.</div>' +
+    '<div id="ajList" style="max-height:46vh;overflow:auto;padding-right:4px;border-top:1px solid #F1F5F9;border-bottom:1px solid #F1F5F9;padding-top:9px">' + cards + '</div>' +
+    '<div id="ajProg" style="font-size:11.5px;color:#94A3B8;margin:6px 0 10px;text-align:center">Доош гүйлгэж бүх эрсдэлийг үзнэ үү…</div>' +
+    '<label id="ajChkRow" style="display:flex;align-items:flex-start;gap:10px;background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;padding:11px 13px;cursor:pointer;opacity:.55">' +
+    '<input type="checkbox" id="ajChk" disabled style="width:18px;height:18px;margin-top:2px;flex-shrink:0">' +
+    '<span style="font-size:13px;color:#1E293B;line-height:1.5">Дээрх <b>' + rows.length + ' эрсдэлтэй</b> зааварчилгаа хэлбэрээр танилцаж, ' +
+    'урьдчилан сэргийлэх арга хэмжээг мөрдөхөө зөвшөөрч байна.</span></label>' +
+    '<div id="ajStep1" style="margin-top:11px"><button class="btn btn-primary" id="ajSend" disabled style="width:100%">' +
+    '<i class="ti ti-shield-check"></i> Зөвшөөрч, баталгаажуулах код авах</button>' +
+    (em ? '' : '<div style="font-size:12px;color:#B91C1C;margin-top:6px">Таны и-мэйл бүртгэгдээгүй байна — ХАБЭА-н албанд хандана уу.</div>') + '</div>' +
+    '<div id="ajStep2" style="display:none;margin-top:11px">' +
+    '<div id="ajCodeBox"></div>' +
+    '<input id="ajCode" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" ' +
+    'style="width:100%;padding:13px;border:1.5px solid #E2E8F0;border-radius:11px;font-size:24px;font-weight:900;text-align:center;letter-spacing:.4em;font-family:Consolas,monospace;margin-top:8px">' +
+    '<button class="btn btn-primary" id="ajOk" style="width:100%;margin-top:10px"><i class="ti ti-circle-check"></i> Баталгаажуулах</button>' +
+    '<button class="btn btn-secondary btn-sm" id="ajResend" style="width:100%;margin-top:7px">Код дахин авах</button></div>' +
+    '<div id="ajSt" style="margin-top:10px;font-size:12.5px;line-height:1.6"></div>';
+
+  buildModal('Нэг удаагийн ажлын эрсдэлтэй танилцах', node, { width: '560px' });
+  var st = node.querySelector('#ajSt');
+  var say = function (html, col) { st.innerHTML = '<span style="color:' + (col || '#64748B') + '">' + html + '</span>'; };
+  var list = node.querySelector('#ajList'), chk = node.querySelector('#ajChk'), chkRow = node.querySelector('#ajChkRow');
+  var sendBtn = node.querySelector('#ajSend'), prog = node.querySelector('#ajProg');
+  var seenAll = false;
+  var onScroll = function () {
+    var left = list.scrollHeight - list.scrollTop - list.clientHeight;
+    var pct = list.scrollHeight > list.clientHeight ? Math.min(100, Math.round((list.scrollTop + list.clientHeight) * 100 / list.scrollHeight)) : 100;
+    prog.textContent = seenAll ? '✓ Бүх эрсдэлийг үзлээ' : (pct + '% үзсэн — доош гүйлгэнэ үү');
+    if (left <= 8 && !seenAll) { seenAll = true; chk.disabled = false; chkRow.style.opacity = '1'; prog.textContent = '✓ Бүх эрсдэлийг үзлээ'; }
+  };
+  list.addEventListener('scroll', onScroll);
+  setTimeout(onScroll, 200);      /* богино жагсаалт бол шууд нээгдэнэ */
+  chk.addEventListener('change', function () { sendBtn.disabled = !(chk.checked && em); });
+
+  var OTP = { id: '' };
+  var send = async function (btn) {
+    var old = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Код бэлдэж байна…';
+    say('');
+    var r = await ackSendOtp(A.me, 'Нэг удаагийн ажлын эрсдэлтэй танилцах — ' + job);
+    btn.disabled = false; btn.innerHTML = old;
+    if (!r.ok) { say('⚠️ ' + esc(r.error || 'Илгээж чадсангүй'), '#B91C1C'); return; }
+    OTP.id = r.id;
+    node.querySelector('#ajStep1').style.display = 'none';
+    node.querySelector('#ajStep2').style.display = '';
+    var box = node.querySelector('#ajCodeBox');
+    if (r.code) {
+      /* ⭐ Код дэлгэцэн дээр гарна — ДАРАХАД нүдэнд өөрөө бичигдэнэ (шалгалттай ижил) */
+      box.innerHTML = '<div style="font-size:11.5px;font-weight:800;color:#9A3412;letter-spacing:.05em;text-align:center">ТАНЫ КОД — дарж оруулна уу</div>' +
+        '<button type="button" id="ajCodeChip" style="display:block;width:100%;margin-top:4px;padding:12px;border:2px dashed #FDBA74;background:#FFF7ED;border-radius:12px;' +
+        'font-size:32px;font-weight:900;letter-spacing:.2em;color:#0F1117;font-family:Consolas,monospace;cursor:pointer">' + esc(r.code) + '</button>';
+      box.querySelector('#ajCodeChip').addEventListener('click', function () {
+        node.querySelector('#ajCode').value = r.code;
+        this.style.background = '#DCFCE7'; this.style.borderColor = '#86EFAC';
+        say('✓ Код орлоо — «Баталгаажуулах» дарна уу', '#166534');
+      });
+    } else {
+      box.innerHTML = '<div style="font-size:12.5px;color:#047857">✉️ Код и-мэйл рүү тань илгээгдлээ (' + (r.ttl || 10) + ' минут хүчинтэй). Кодоо доор бичнэ үү.</div>';
+    }
+  };
+  sendBtn.addEventListener('click', function () { send(this); });
+  node.querySelector('#ajResend').addEventListener('click', function () { send(this); });
+
+  node.querySelector('#ajOk').addEventListener('click', async function () {
+    var code = String(node.querySelector('#ajCode').value || '').replace(/\D/g, '');
+    if (code.length < 4) { say('⚠️ Кодоо оруулна уу (дээрх кодыг дарахад орно).', '#B91C1C'); return; }
+    var btn = this, old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i> Шалгаж байна…';
+    var v = await ackVerifyOtp(OTP.id, code, A.me.email);
+    if (!v.ok) { btn.disabled = false; btn.innerHTML = old; say('⚠️ ' + esc(v.error), '#B91C1C'); return; }
+    btn.innerHTML = '<i class="ti ti-loader-2"></i> Хадгалж байна…';
+    var me = A.me;
+    var sig = (function () { try { return ackSigCodeIn(A.store, me.uid); } catch (e) { return ''; } })() || String(code);
+    var rec = {
+      uid: me.uid, name: me.name || '', pos: me.pos || me.role || '',
+      dept: riskCanonDept(me.dept) || me.dept || '', job: job,
+      code: sig, otp: String(code), version: String(ver),
+      n: rows.length, riskIds: rows.map(function (r) { return r.id; }), hash: ver,
+      kind: 'job', at: new Date().toISOString()
+    };
+    var w = await ackWrite(ackJobFile(job), rec);
+    btn.disabled = false; btn.innerHTML = old;
+    if (!w.ok) { say('⚠️ ' + esc(w.error), '#B91C1C'); return; }
+    ACK_JOBS[job] = w.store;
+    closeModal();
+    toast('✓ «' + job + '» — танилцсан гарын үсэг бүртгэгдлээ', 'success');
+    try { renderHazards(); } catch (e) {}
+  });
+}
+
 function ackBannerHTML() {
   var A = ACK_ME;
   if (!A) return '<div id="ackBanner" style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;' +
     'padding:12px 15px;margin-bottom:12px;font-size:12.5px;color:#94A3B8">Танилцалтын байдлыг шалгаж байна…</div>';
   if (A.none) return '';
+  /* ⭐ Нээгдсэн нэг удаагийн ажлын танилцалт хүлээгдэж байвал ТҮРҮҮЛЖ */
+  try { var jb = ackJobBannerHTML(A); if (jb) return jb; } catch (e) {}
 
   var box = function (bg, bd, col, html) {
     return '<div id="ackBanner" style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:14px;' +
@@ -10031,7 +10227,7 @@ function riskDashHTML(list, subtitle) {
     if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
     if (RISK_FILTER.cell && riskScore(r) !== RISK_FILTER.cell) return false;
     if (RISK_FILTER.q) {
-      var hay = [r.hazard, r.process, r.consequence, r.controls, r.actions, r.responsible, r.position, (r.positions||[]).join(' ')].join(' ').toLowerCase();
+      var hay = [r.hazard, r.process, r.consequence, r.controls, r.actions, r.responsible, r.position, (r.positions||[]).join(' '), riskJobKey(r)].join(' ').toLowerCase();
       if (hay.indexOf(RISK_FILTER.q) < 0) return false;
     }
     return true;
@@ -10143,6 +10339,10 @@ function riskEmpDetail(empId) {
    ажилтнууд эрсдэлийнхээ тоотойгоо харагдана.
    ══════════════════════════════════════════════════════════════════════ */
 function riskGroupedHTML(list) {
+  if (!ACK_JOBS_LOADED && (isAdmin() || isDeptHead() || riskIsBoss())) {
+    ACK_JOBS_LOADED = true;
+    ackJobsLoadAll().then(function () { try { renderHazards(); } catch (e) {} }).catch(function () {});
+  }
   var byDept = {};
   list.forEach(function (r) { (byDept[r.dept || 'Тодорхойгүй'] = byDept[r.dept || 'Тодорхойгүй'] || []).push(r); });
   var dnames = Object.keys(byDept).sort(function (a, b) { return byDept[b].length - byDept[a].length; });
@@ -10162,17 +10362,31 @@ function riskGroupedHTML(list) {
     var byPos = {};
     dl.forEach(function (r) {
       var ps = riskPositions(r);
-      var key = ps.length ? (r.position || (r.positions || []).join(', ')) : '⌂ Албанд бүхэлд нь';
+      /* ⚠ Нэг удаагийн ажлын үнэлгээ (автокран, гагнуур …) албаны байнгын
+         ажлын байруудтай холилдож, хаана байгаа нь мэдэгддэггүй байв (2026-09-03).
+         Ажлын нэрээр нь тусдаа «🔓» бүлэг болгож ЭХЭНД харуулна. */
+      var key = r.onDemand
+        ? ('🔓 ' + (riskJobKey(r) || r.position || 'Нэг удаагийн ажил'))
+        : (ps.length ? (r.position || (r.positions || []).join(', ')) : '⌂ Албанд бүхэлд нь');
       (byPos[key] = byPos[key] || []).push(r);
     });
-    var pRows = Object.keys(byPos).sort(function (a, b) { return byPos[b].length - byPos[a].length; })
+    var pRows = Object.keys(byPos).sort(function (a, b) {
+        var oa = a.indexOf('🔓') === 0 ? 1 : 0, ob = b.indexOf('🔓') === 0 ? 1 : 0;
+        if (oa !== ob) return ob - oa;                    /* нэг удаагийн ажил ЭХЭНД */
+        return byPos[b].length - byPos[a].length;
+      })
       .map(function (p) {
         var l = byPos[p], m2 = 0;
         l.forEach(function (r) { var s = riskScore(r); if (s > m2) m2 = s; });
         var L2 = riskLevel(m2);
-        return '<div class="dash-click" data-risk-posf="' + esc(p) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px">' +
-          '<i class="ti ti-briefcase" style="font-size:14px;color:#7C3AED;flex-shrink:0"></i>' +
-          '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p) + '</span>' +
+        var od = p.indexOf('🔓') === 0;
+        var relN = od ? ((RISK_RELEASES[p.slice(2).trim()] || {}).empIds || []).length : 0;
+        var label = od ? (p + ' <span style="font-size:11px;color:' + (relN ? '#15803D' : '#B45309') + ';font-weight:700">· нэг удаагийн ажил · ' +
+          (relN ? 'нээлттэй ' + relN + ' хүнд · зурсан ' + ackJobSignedCount(p.slice(2).trim()) : 'хэнд ч нээгээгүй') + '</span>') : esc(p);
+        return '<div class="dash-click" data-risk-posf="' + esc(od ? p.slice(2).trim() : p) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px' +
+          (od ? ';background:#FFFBEB;border:1px solid #FDE68A' : '') + '">' +
+          '<i class="ti ' + (od ? 'ti-lock-open' : 'ti-briefcase') + '" style="font-size:14px;color:' + (od ? '#B45309' : '#7C3AED') + ';flex-shrink:0"></i>' +
+          '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (od ? esc(p.slice(2).trim()) + label.slice(label.indexOf('<span')) : label) + '</span>' +
           '<span style="flex-shrink:0">' + riskLevelChips(l) + '</span>' +
           '<span style="flex:0 0 34px;text-align:right;font-size:12.5px;font-weight:800;color:' + L2.color + '">' + l.length + '</span></div>';
       }).join('');
@@ -11021,7 +11235,7 @@ function riskEmpBriefHTML(list, myPos, myDept) {
     if (RISK_FILTER.dept && !riskSameDept(r.dept, RISK_FILTER.dept)) return false;
     if (RISK_FILTER.level && riskLevel(r).name !== RISK_FILTER.level) return false;
     if (RISK_FILTER.q) {
-      var hay = [r.hazard, r.process, r.location, r.cause, r.actions, r.responsible]
+      var hay = [r.hazard, r.process, r.location, r.cause, r.actions, r.responsible, riskJobKey(r)]
         .join(' ').toLowerCase();
       if (hay.indexOf(RISK_FILTER.q) < 0) return false;
     }
@@ -11698,6 +11912,8 @@ function renderHazards() {
         RISK_FILTER.mx = ''; RISK_FILTER.q = ''; RISK_FILTER.cell = 0;
         RISK_TAB = 'risks'; renderHazards(); return;
       }
+      var aj = ev.target.closest('[data-ack-job]');
+      if (aj) { ackJobModal(aj.getAttribute('data-ack-job')); return; }
       if (ev.target.closest('[data-ack-read]')) {
         if (!ACK_ME || !ACK_ME.ready) return;
         ackReadOpen(riskEmpMerged(risksForView()), ACK_ME.ver, renderHazards);

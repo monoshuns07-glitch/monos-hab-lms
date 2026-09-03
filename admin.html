@@ -3350,7 +3350,8 @@ window.removeAttachment = function(i){
 
 /* ===== R2 БАЙРШУУЛАГЧ — жижиг файл шууд, том файл (>90MB) multipart-аар (5GB хүртэл) ===== */
 const R2_WORKER = 'https://monos-upload.buynt666.workers.dev';
-const R2_KEY = 'monos2026';
+/* ⚠ Хуучин X-Key-г бүрмөсөн хассан (2026-09-03): worker хүлээн авахаа больсон,
+   нийтийн repo-д нууц үлдээх нь буруу. Эрх (grant) байхгүй бол 401 → алдаа харагдана. */
 const R2_CHUNK = 50 * 1024 * 1024; // 50MB нэг хэсэг
 
 /* ══ ТҮР ЗУУРЫН БАЙРШУУЛАХ ЭРХ ══
@@ -3373,12 +3374,10 @@ async function r2Grant(key){
 }
 function r2Auth(xhr, grant){
   if (grant){ xhr.setRequestHeader('X-Up', grant.token); xhr.setRequestHeader('X-Exp', grant.exp); }
-  else { xhr.setRequestHeader('X-Key', R2_KEY); }
 }
 function r2AuthHeaders(grant, extra){
   const h = Object.assign({}, extra || {});
   if (grant){ h['X-Up'] = grant.token; h['X-Exp'] = grant.exp; }
-  else { h['X-Key'] = R2_KEY; }
   return h;
 }
 
@@ -3452,7 +3451,7 @@ async function uploadAttachments(files){
   if (!files.length) return [];
   wrap.style.display = 'block';
 
-  const R2W = 'https://monos-upload.buynt666.workers.dev', R2K = 'monos2026';
+  const R2W = 'https://monos-upload.buynt666.workers.dev';
   const uploaded = [];
   for (let i = 0; i < files.length; i++){
     const file = files[i];
@@ -3464,10 +3463,13 @@ async function uploadAttachments(files){
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const path = `att_lms_${ts}_${i}_${safeName}`;
     try {
+      /* ⚠ эрхтэй байршуулалт (X-Key-г worker хүлээн авахаа больсон) */
+      const grant = await r2Grant(path);
+      if (!grant) throw new Error('байршуулах эрх авч чадсангүй — нэвтэрсэн эсэхээ шалгана уу');
       const url = await new Promise((res, rej) => {
         const xhr = new XMLHttpRequest();
         xhr.open('PUT', R2W + '/' + path);
-        xhr.setRequestHeader('X-Key', R2K);
+        r2Auth(xhr, grant);
         xhr.setRequestHeader('Content-Type', file.type);
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable){
