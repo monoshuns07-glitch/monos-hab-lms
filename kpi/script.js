@@ -15812,30 +15812,59 @@ function wkStatus(r) {
 /* Дууссан ажлын ГИНЖИН ХЭЛХЭЭ — өгсөн · гүйцэтгэсэн · баталгаажуулсан.
    Зөвхөн бүрэн дууссан (wkAccept === 'done') үед харагдана. */
 function wkChainHTML(r) {
-  if (!r || wkStatus(r) !== 'closed') return '';
+  if (!r) return '';
+  var st = wkStatus(r);
   var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
-  var d = function (v) { var s = String(v || '').slice(0, 10); return s ? ' · ' + s : ''; };
-  var step = function (icon, role, name, when, color) {
-    if (!name) return '';
-    return '<div style="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:150px">' +
+  var closed = st === 'closed';
+  var day = function (v) { return String(v || '').slice(0, 10); };
+
+  /* Нэг нүд. warn=true бол улаанаар анхааруулна. */
+  var cell = function (icon, role, name, sub, color, warn) {
+    return '<div style="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:158px">' +
       '<span style="flex:0 0 auto;font-size:14px;line-height:1.3">' + icon + '</span>' +
       '<span style="flex:1;min-width:0">' +
       '<span style="display:block;font-size:10.5px;font-weight:800;letter-spacing:.04em;color:' + color + '">' + role + '</span>' +
-      '<span style="display:block;font-size:12px;color:#334155;font-weight:600;line-height:1.35">' + esc(name) + '</span>' +
-      (when ? '<span style="display:block;font-size:10.5px;color:#94A3B8">' + esc(when) + '</span>' : '') +
+      '<span style="display:block;font-size:12.5px;font-weight:' + (warn ? '800' : '600') +
+      ';color:' + (warn ? '#B91C1C' : '#334155') + ';line-height:1.35">' + esc(name) + '</span>' +
+      (sub ? '<span style="display:block;font-size:10.5px;color:#94A3B8">' + esc(sub) + '</span>' : '') +
       '</span></div>';
   };
-  var a = step('📝', 'ЗАХИАЛГА ӨГСӨН',
-    wkPersonName(r.reporterUid, r.reporterFull || r.reporterName), String(r.createdAt || '').slice(0, 10), '#4F46E5');
-  var b = step('🔧', 'ГҮЙЦЭТГЭСЭН',
-    wkPersonName(cl.uid, cl.name), String(r.wkExecAt || cl.at || '').slice(0, 10), '#B45309');
-  var c = step('✅', 'ШАЛГАЖ БАТАЛГААЖУУЛСАН',
-    wkPersonName(ac.uid, ac.name), String(ac.at || '').slice(0, 10), '#0ca30c');
-  if (!a && !b && !c) return '';
+
+  /* 1. МЭДЭЭЛСЭН — үргэлж бий */
+  var a = cell('📣', 'МЭДЭЭЛСЭН',
+    wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—',
+    day(r.createdAt), '#4F46E5', false);
+
+  /* 2. ГҮЙЦЭТГЭХ — томилогдсон бол нэр, үгүй бол ХЭН Ч АВААГҮЙ + хариуцах алба.
+     Өмнө нь энэ мэдээлэл тусдаа улаан тууз байсныг ЭНД нэгтгэв. */
+  var doer = wkPersonName(cl.uid, cl.name);
+  var b;
+  if (doer) {
+    b = cell(closed ? '🔧' : '🛠', closed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
+      day(r.wkExecAt || cl.at), '#B45309', false);
+  } else {
+    var g = null; try { g = wkGate(r.wkGate); } catch (e) {}
+    var hrs = 0; try { hrs = Math.round(wkUnclaimedHours(r)); } catch (e) {}
+    var waited = '';
+    try { if (hrs >= 1) waited = wkHoursText(hrs) + ' болж байна'; } catch (e) {}
+    b = cell('⚠️', 'ГҮЙЦЭТГЭХ', 'Хэн ч аваагүй',
+      ((g && g.ab) ? g.ab + ' хүлээж байна' : '') + (waited ? ' · ' + waited : ''),
+      '#B45309', true);
+  }
+
+  /* 3. БАТАЛГААЖУУЛСАН — зөвхөн бүрэн дууссан үед */
+  var c = '';
+  if (closed) {
+    c = cell('✅', 'ШАЛГАЖ БАТАЛГААЖУУЛСАН',
+      wkPersonName(ac.uid, ac.name) || '—', day(ac.at), '#0ca30c', false);
+  }
+
   var arrow = '<span style="align-self:center;color:#CBD5E1;font-size:15px;flex:0 0 auto">→</span>';
-  return '<div style="margin-top:9px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;' +
+  var bg = closed ? '#F0FDF4' : (doer ? '#FFFBEB' : '#FEF2F2');
+  var bd = closed ? '#BBF7D0' : (doer ? '#FDE68A' : '#FECACA');
+  return '<div style="margin-top:9px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;' +
     'padding:10px 12px;display:flex;gap:9px;flex-wrap:wrap;align-items:stretch">' +
-    a + (a && b ? arrow : '') + b + (b && c ? arrow : '') + c + '</div>';
+    a + arrow + b + (c ? arrow + c : '') + '</div>';
 }
 function wkPersonName(uid, fallback) {
   try {
@@ -16786,13 +16815,8 @@ function wkRowHTML(r) {
       (t.done ? '#0ca30c' : t.late ? '#C81E3A' : t.near ? '#E9A100' : '#64748B') + '">' +
       (t.late ? '⏰ ' : '') + esc(t.text) + '</span>' : '') +
     '</div>' +
-    /* ⚠ «Бүгдэд харагдана» гэдэг практикт «хэн ч хариуцахгүй» болдог —
-       тиймээс аваагүй зүйлийг УЛААНААР тодруулна. */
-    (st === 'new' && wkUnclaimedHours(r) >= 1
-      ? '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:5px 9px;' +
-        'font-size:11.5px;font-weight:800;color:#B91C1C;margin-bottom:6px">' +
-        '🙋 Хэн ч аваагүй — ' + esc(wkHoursText(Math.round(wkUnclaimedHours(r)))) + ' болж байна</div>'
-      : '') +
+    /* ⚠ «Хэн ч аваагүй» тусдаа улаан тууз ЭНД БАЙСАН. Доорх гинжин туузын
+       «ГҮЙЦЭТГЭХ» нүд яг үүнийг хэлдэг болсон тул давхардуулахгүй. */
     '<div style="font-size:13.5px;font-weight:600;color:#1E293B;line-height:1.45">' +
     esc(String(r.desc || '').slice(0, 130)) + '</div>' +
     /* Энэ ажлыг хийгээгүйгээс учирч болох аюул — ангиллын чипс ба тайлбар.
