@@ -9110,6 +9110,82 @@ async function ackExportJob(job) {
   }
 }
 
+/* ── Админ: ХҮН БҮРИЙН танилцсан хуудас — эх загвараар (2026-09-03) ──
+   Эх Excel (үнэлгээний хүснэгт, арга, нүүр, «Танилцсан» 4 хуудас) R2-д
+   risks/templates/<riskSlug(ажил)>.xlsx нэрээр хадгалагдсан. Түүнийг тэр
+   чигээр нь ачаалж, зөвхөн «Танилцсан» хуудсын мөрүүдийг бөглөнө:
+   хүн бүрд нэг файл (нэр, албан тушаал, огноо, OTP код) + бүгдийг нэг файл. */
+async function ackExportJobFiles(job) {
+  toast('Эх загвараар бүрдүүлж байна…', 'info');
+  try {
+    var okX = await new Promise(function (r) { woLoadExcelJS(r); });
+    var okZ = await new Promise(function (r) { riskLoadZip(r); });
+    if (!okX || !okZ) { toast('Excel/ZIP үүсгэгч ачаалагдсангүй', 'error'); return; }
+    var tplKey = 'risks/templates/' + riskSlug(job) + '.xlsx';
+    var resp = await fetch(TASK_R2 + '/' + tplKey + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!resp.ok) { toast('Энэ ажлын эх загвар (Excel) R2-д байхгүй байна — ХАБЭА-н админ байршуулна уу', 'error'); return; }
+    var tpl = await resp.arrayBuffer();
+
+    var rows = ackJobRows(job);
+    var rel = (RISK_RELEASES || {})[job] || {};
+    var ids = rel.empIds || [];
+    var ver = ackJobVersion(job);
+    var st = await ackLoadKey(ackJobFile(job), true);
+    ACK_JOBS[job] = st;
+    var emps = (empAll() || []).filter(function (e) { return ids.indexOf(e.id) >= 0 || ids.indexOf(e.uid) >= 0; });
+    emps.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); });
+    var people = emps.map(function (e) {
+      var r = ((st && st.rows) || []).filter(function (x) { return x.uid === e.uid && String(x.version) === String(ver); })[0] || null;
+      return { emp: e, row: r };
+    });
+    if (!people.length) { toast('Нээгдсэн ажилтан олдсонгүй', 'warn'); return; }
+
+    /* Загварыг ачаалж «Танилцсан» хуудсыг бөглөнө */
+    var fill = async function (list) {
+      var wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(tpl.slice(0));
+      var ws = wb.getWorksheet('Танилцсан') || wb.worksheets[wb.worksheets.length - 1];
+      var start = 6;
+      for (var r = 1; r <= 20; r++) { if (String(ws.getCell(r, 2).value || '').trim() === '№') { start = r + 1; break; } }
+      var styles = [];
+      for (var c = 2; c <= 6; c++) styles.push(JSON.parse(JSON.stringify(ws.getCell(start, c).style || {})));
+      for (var rr = start; rr < start + 60; rr++) { for (var cc = 2; cc <= 6; cc++) ws.getCell(rr, cc).value = null; }
+      list.forEach(function (p, i) {
+        var e = p.emp, row = p.row, y = start + i;
+        var vals = [i + 1, e.name || '', e.pos || e.role || '',
+          row ? ackDateMn(row.at) : '', row ? ('✓ OTP ' + row.code) : 'ЗУРААГҮЙ'];
+        for (var k = 0; k < 5; k++) {
+          var cell = ws.getCell(y, 2 + k);
+          cell.value = vals[k];
+          cell.style = JSON.parse(JSON.stringify(styles[k]));
+          if (!row && k === 4) cell.font = Object.assign({}, cell.font || {}, { color: { argb: 'FFB91C1C' }, bold: true });
+        }
+        ws.getRow(y).height = 22;
+      });
+      return await wb.xlsx.writeBuffer();
+    };
+
+    var zip = new JSZip();
+    var folder = zip.folder(tdLat(job).slice(0, 48) || 'tanilsan');
+    folder.file('00_Bugd_' + people.length + '_ajiltan.xlsx', await fill(people));
+    for (var i = 0; i < people.length; i++) {
+      var p = people[i];
+      var nm = (tdLat(p.emp.name || ('ajiltan' + (i + 1))) || ('ajiltan' + (i + 1))).slice(0, 40);
+      folder.file((i + 1 < 10 ? '0' : '') + (i + 1) + '_' + nm + (p.row ? '_tanilsan' : '_ZURAAGUI') + '.xlsx', await fill([p]));
+    }
+    var blob = await zip.generateAsync({ type: 'blob' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Tanilsan-' + (tdLat(job).slice(0, 40) || 'ajil') + '-' + _ymd(new Date()) + '.zip';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    var signed = people.filter(function (p) { return p.row; }).length;
+    toast('📦 ' + people.length + ' ажилтны хуудас татагдлаа (зурсан ' + signed + ', зураагүй ' + (people.length - signed) + ')', 'success');
+  } catch (e) {
+    toast('Татаж чадсангүй: ' + ((e && e.message) || e), 'error');
+  }
+}
+
 /* ── Код: ЗӨВХӨН аппын дотор. ⚠ И-мэйл рүү ХЭЗЭЭ Ч илгээхгүй (хэрэглэгчийн
    шаардлага). ackSendOtp нь бүтэхгүй үедээ и-мэйл рүү шилждэг тул ЭНД
    ашиглахгүй. Нэвтэрсэн и-мэйлээр (SESSION.email) хүсэлт явуулна — сервер
@@ -10507,7 +10583,8 @@ function riskGroupedHTML(list) {
           (od ? ';background:#FFFBEB;border:1px solid #FDE68A' : '') + '">' +
           '<i class="ti ' + (od ? 'ti-lock-open' : 'ti-briefcase') + '" style="font-size:14px;color:' + (od ? '#B45309' : '#7C3AED') + ';flex-shrink:0"></i>' +
           '<span style="flex:1;min-width:0;font-size:12.5px;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (od ? esc(p.slice(2).trim()) + label.slice(label.indexOf('<span')) : label) + '</span>' +
-          (od ? '<button type="button" class="btn btn-secondary btn-sm" data-ack-jobxl="' + esc(p.slice(2).trim()) + '" title="Хэн танилцсан / зураагүй — Excel" style="flex-shrink:0;padding:4px 9px;font-size:11.5px"><i class="ti ti-download"></i> Танилцсан хуудас</button>' : '') +
+          (od ? '<button type="button" class="btn btn-secondary btn-sm" data-ack-jobxl="' + esc(p.slice(2).trim()) + '" title="Хэн танилцсан / зураагүй — нэгдсэн жагсаалт" style="flex-shrink:0;padding:4px 9px;font-size:11.5px"><i class="ti ti-list-check"></i> Жагсаалт</button>' +
+                 '<button type="button" class="btn btn-primary btn-sm" data-ack-jobtpl="' + esc(p.slice(2).trim()) + '" title="Хүн бүрд эх загвараар үнэлгээ + танилцсан хуудас (ZIP)" style="flex-shrink:0;padding:4px 9px;font-size:11.5px"><i class="ti ti-download"></i> Хүн бүрийн хуудас</button>' : '') +
           '<span style="flex-shrink:0">' + riskLevelChips(l) + '</span>' +
           '<span style="flex:0 0 34px;text-align:right;font-size:12.5px;font-weight:800;color:' + L2.color + '">' + l.length + '</span></div>';
       }).join('');
@@ -12083,6 +12160,8 @@ function renderHazards() {
       if (em) { riskEmpDetail(em.getAttribute('data-risk-emp')); return; }
       var jx = ev.target.closest('[data-ack-jobxl]');
       if (jx) { ev.stopPropagation(); ackExportJob(jx.getAttribute('data-ack-jobxl')); return; }
+      var jt = ev.target.closest('[data-ack-jobtpl]');
+      if (jt) { ev.stopPropagation(); ackExportJobFiles(jt.getAttribute('data-ack-jobtpl')); return; }
       var pf = ev.target.closest('[data-risk-posf]');
       if (pf) {
         var pv = pf.getAttribute('data-risk-posf') || '';
