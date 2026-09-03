@@ -1483,6 +1483,7 @@ async function loadCols(opt) {
           /* ⚠ ЭНД ЧИМЭЭГҮЙ ӨНГӨРӨХГҮЙ — дүрэм хориглосон бол дата
              "алга болсон" мэт харагддаг байсан шалтгаан нь ЭНЭ. */
           COL_LOAD_FAILED.push({ key: k, code: (e2 && (e2.code || e2.name)) || '' });
+          if (k === 'reports') { try { window._REP_SRC_BAD = 1; } catch (e3) {} }
           return null;
         });
       });
@@ -2420,7 +2421,7 @@ async function repR2Load() {
     var p = await riskR2GetJson(REP_R2_FILE);
     if (!p || !Array.isArray(p.rows)) return null;
     /* Хоосон, «seeded» тэмдэггүй файл = эх сурвалж биш → Firestore-оос уншина */
-    if (!p.rows.length && !p.seeded) return null;
+    if (!p.seeded) return null;      /* бүтэн биш толь — Firestore-оос уншина */
     return p.rows;
   } catch (e) { return null; }
 }
@@ -2461,8 +2462,15 @@ async function repR2Merge(changed, opts) {
   } catch (e) {}
   var rows = Object.keys(byId).map(function (k) { return byId[k]; });
   rows.sort(function (a, b) { return repStamp(b) > repStamp(a) ? 1 : -1; });
+  /* seeded = «энэ файл бүх мөрийг агуулна» гэсэн тэмдэг. Зөвхөн БҮХ мөрийг
+     харах эрхтэй (админ/ХАБЭА/захирал) бөгөөд эх сурвалж нь бүтэн байсан
+     хүний бичилт л түүнийг тавина; бусад тохиолдолд өмнөх тэмдгийг хэвээр. */
+  var full = false;
+  try { full = rfNeedAllRows() && repSrcOk(); } catch (e) {}
+  var wasSeeded = false;
+  try { var pv = await riskR2GetJson(REP_R2_FILE, { fresh: true }); wasSeeded = !!(pv && pv.seeded); } catch (e) {}
   await riskR2PutJson(REP_R2_FILE, {
-    updatedAt: new Date().toISOString(), seeded: true,
+    updatedAt: new Date().toISOString(), seeded: (full || wasSeeded),
     by: (SESSION && SESSION.email) || '', rows: rows
   });
   return rows;
@@ -17917,6 +17925,16 @@ function wkUnclaimedHours(r) {
        → Firestore нь эцсийн үнэн, хоёр тал давхар илгээхгүй
    ══════════════════════════════════════════════════════════════════════ */
 var WK_OPEN_FILE = 'workflow/_open.json';
+/* ⚠ 2026-09-03: Firestore-ийн ӨДРИЙН КВОТ дүүрэхэд (HTTP 429) DB.reports
+   хоосон ирж, толь файлууд хоосон бичигдэж, БҮХ ажлын захиалга алга болсон
+   мэт харагдав. Одоо «эх сурвалж бүтэн үү» гэдгийг нэг газраас шалгана. */
+function repSrcOk() {
+  try {
+    if ((COL_LOAD_FAILED || []).some(function (x) { return x && x.key === 'reports'; })) return false;
+    if (window._REP_SRC_BAD) return false;
+    return true;
+  } catch (e) { return false; }
+}
 var WK_ESC_KEYS = { noclaim: 'wkEscNoClaim', half: 'wkEsc50', due: 'wkEsc100', late2: 'wkEsc200' };
 
 /* Сервер илгээсэн тэмдгийг бичлэг рүү буулгана */
@@ -18035,6 +18053,17 @@ async function wkMirrorPush(all, full) {
     if (JSON.stringify(out) === JSON.stringify(old)) { wkMirrorPush._last = sig; return true; }
   }
 
+  /* ⚠ ХАМГААЛАЛТ: эх сурвалж бүтэн биш бол ТОЛИЙГ ОГТ ХӨНДӨХГҮЙ */
+  if (!repSrcOk()) { console.warn('[wk] эх сурвалж бүтэн биш — толь бичихгүй'); return false; }
+  if (!out.length) {
+    /* Хоосон болгох гэж байна уу? Зөвхөн одоогийн толь ч хоосон бол зөвшөөрнө. */
+    var chk = null;
+    try { chk = await riskR2GetJson(WK_OPEN_FILE, { fresh: true }); } catch (e) { return false; }
+    if (chk && chk.list && chk.list.length) {
+      console.warn('[wk] толийг хоосруулах оролдлого зогсоов (' + chk.list.length + ' мөр хэвээр)');
+      return false;
+    }
+  }
   try {
     await riskR2PutJson(WK_OPEN_FILE, {
       updatedAt: new Date().toISOString(), by: full ? 'browser' : 'emp', list: out
