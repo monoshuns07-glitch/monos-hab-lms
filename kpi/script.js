@@ -11419,7 +11419,23 @@ function riskTabList(list) {
     try { var me = myEmp(); st = meaMineStats(me); nr = meaMyRules(me).length; } catch (e) {}
     tabs.push({ key: 'mea', icon: 'ti-checkbox', label: 'Миний арга хэмжээ, мөрдөх дүрэм',
       n: (st.total - st.done) + nr, tone: st.late ? '#DC2626' : '' });
-    tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
+    /* ⭐ ЗАХИРАЛД хувцас, ХХХ-ийн хүсэлт хамаарахгүй — батлах үүрэг нь албаны
+       дарга, ХАБЭА дээр байдаг. Тиймээс хоосон табыг харуулахгүй.
+       ⚠ БҮРМӨСӨН нуухгүй: батлах гинжин хэлхээг хүсэлт гаргагч ӨӨРӨӨ
+         сонгодог тул захирлыг шат болгон сонгосон тохиолдол гарч болно.
+         Тэр үед таб буцаж гарна — эс бөгөөс хүсэлт мөнхөд гацна. */
+    var hideReq = false;
+    try {
+      var role0 = ackRoleOf(myEmp());
+      if (role0 === 'ceo' || role0 === 'prod') {
+        var mineReq = 0;
+        try { mineReq = reqMine((myEmp() || {}).uid).length; } catch (e2) {}
+        hideReq = (rq === 0 && mineReq === 0);
+      }
+    } catch (e) {}
+    if (!hideReq) {
+      tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
+    }
   }
   return tabs;
 }
@@ -11483,6 +11499,10 @@ function riskDeptShort(name) {
 
 function riskTabsHTML(list) {
   var tabs = riskTabList(list);
+  /* ⚠ Идэвхтэй таб алга болсон бол (жишээ нь захиралд «Хувцас, ХХХ» нуугдсан)
+     хоосон хуудсан дээр гацахгүйн тулд эхний боломжит руу шилжинэ. */
+  var keys = tabs.map(function (t) { return t.key; });
+  if (keys.length && keys.indexOf(RISK_TAB) < 0) RISK_TAB = keys[0];
   if (tabs.length < 2) return '';
   return '<div style="display:flex;gap:6px;flex-wrap:wrap;border-bottom:1.5px solid #E2E8F0;margin-bottom:14px">' +
     tabs.map(function (t) {
