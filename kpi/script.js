@@ -925,8 +925,12 @@ async function loadDB() {
     await Promise.all([
       (async function () {
         try {
-          _R2_TASKS = await taskR2Load() || taskCacheLoad();
-          if (_R2_TASKS && _R2_TASKS.length) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
+          _R2_TASKS = await taskR2Load();
+          /* ⚠ R2 нь одоо даалгаврын ЭХ СУРВАЛЖ (бүх бичилт R2-first). Файл
+             уншигдсан бол хоосон ч гэсэн Firestore-оос асуухгүй — өмнө хоосон
+             байхад Firestore руу орж, квот дүүргэж байв. */
+          if (Array.isArray(_R2_TASKS)) { _tOk = true; console.log('[tasks] R2-оос ' + _R2_TASKS.length); }
+          else _R2_TASKS = taskCacheLoad();
         } catch (e) { console.error('[tasks] R2', e); }
       })(),
       /* ⭐ MiSkill сургалт/шалгалтын дүн — нэг файл, бүх хэрэглэгчид */
@@ -965,7 +969,7 @@ async function loadDB() {
     try {
       if (!DB) return;
       if (_R2_RISKS && _R2_RISKS.length) { DB.risks = _R2_RISKS; riskCacheBust(); }
-      if (_R2_TASKS && _R2_TASKS.length) DB.tasks = _R2_TASKS;
+      if (Array.isArray(_R2_TASKS)) DB.tasks = _R2_TASKS;
       /* MiSkill дүн — R2 нь эх сурвалж */
       if (_R2_MS && _R2_MS.rows.length) {
         /* Дэлгэрэнгүйг санах ойд авч явахгүй — кэшэнд багтахгүй болно */
@@ -1024,7 +1028,13 @@ async function loadDB() {
     dbCacheSave('үндсэн');
 
     /* v2 — бүртгэлүүд тусдаа цуглуулгад байвал тэндээс татна */
-    if (isSplit()) { try { await loadCols(_tOk ? { skip: ['tasks'] } : null); } catch (e) {} }
+    /* ⚠ R2-оос ирсэн цуглуулгыг Firestore-оос ДАХИН асуухгүй. miskillStats
+       (298 баримт) ажилтан бүрийн ачаалалт бүрд уншигдаж, дараа нь _applyR2
+       R2-гийнхаар нь ДАРДАГ байв — квот дүүргэсэн хамгийн том шалтгаан. */
+    var _skip = [];
+    if (_tOk) _skip.push('tasks');
+    if (_R2_MS && _R2_MS.rows && _R2_MS.rows.length) _skip.push('miskillStats');
+    if (isSplit()) { try { await loadCols(_skip.length ? { skip: _skip } : null); } catch (e) {} }
     dbCacheSave('бүртгэлүүд');
     /* Эрсдэл, даалгавар нь ЭНД БИШ — loadDB-ийн эхэнд R2-оос аль хэдийн
        ачаалагдсан (Firestore-ийн удаашрал/таслалтад өртөхгүйн тулд). */
@@ -2282,7 +2292,11 @@ async function taskR2Merge(changed, opts) {
     var f = await riskR2GetJson(WK_DEL_FILE, { fresh: true });
     ((f && f.list) || []).forEach(function (t) { if (t && t.id) gone[String(t.id)] = 1; });
   } catch (e) {}
-  var rows = Object.keys(byId).filter(function (k) { return !gone[k]; }).map(function (k) { return byId[k]; });
+  /* ⚠ Зориуд бичиж буй (changed) бичлэг нь хуучин tombstone-оос ДАВУУ —
+     эс бөгөөс дугаар давхцахад шинэ даалгавар чимээгүй алга болно. */
+  var keep = {};
+  (changed || []).forEach(function (x) { if (x && x.id != null) keep[String(x.id)] = 1; });
+  var rows = Object.keys(byId).filter(function (k) { return keep[k] || !gone[k]; }).map(function (k) { return byId[k]; });
   rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
   await taskR2Publish(rows);
   if (opts.apply !== false) DB.tasks = rows;
@@ -6590,7 +6604,7 @@ function taskRepeatNext(x) {
   }
   DB.tasks = DB.tasks || [];
   var nt = {
-    id: isAdmin() ? nextId('TSK', DB.tasks) : newId('TSK'),
+    id: newId('TSK'),
     title: x.title, desc: x.desc || '', dept: x.dept || 'all',
     empId: x.empId || '', empIds: (x.empIds || []).slice(),
     startDate: shift(x.startDate || x.dueDate), dueDate: shift(x.dueDate || x.startDate),
@@ -26220,7 +26234,9 @@ function actionAddTask() {
       var dpt = v.dept || 'all';
       var nt = {
         /* ⚠ Админ биш хүний DB.tasks дутуу байж болох тул давхардахгүй ID */
-        id: isAdmin() ? nextId('TSK', DB.tasks) : newId('TSK'),
+        /* ⚠ ҮРГЭЛЖ давхардахгүй ID. nextId нь устгасан дугаарыг дахин
+           үүсгэж, tombstone-д таарч шинэ даалгавар чимээгүй алга болдог байв. */
+        id: newId('TSK'),
         title: v.title,
         desc: v.desc || '',
         dept: dpt,
