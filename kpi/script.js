@@ -17800,7 +17800,7 @@ function wkListHTML(all) {
   var tabs = [];
   if (seeAll) tabs.push({ k: 'all', l: 'Бүх ажил', n: allOpen.length,
     tone: lateN ? '#C81E3A' : (allOpen.length ? '#4F46E5' : '') });
-  if (deptRows.length || wkIsDeptBoss()) tabs.push({ k: 'dept', l: 'Албаны ажил', n: deptOpen,
+  if (deptRows.length || wkIsDeptBoss()) tabs.push({ k: 'dept', l: 'Манай албанаас захиалсан', n: deptOpen,
     tone: deptOpen ? '#4F46E5' : '' });
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
   if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
@@ -17816,8 +17816,11 @@ function wkListHTML(all) {
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
+    /* ⭐ Хэрэглэгчийн ӨӨРИЙНХ нь алба нэрээрээ гарна — «ерөнхий систем» биш,
+       «манай албаны хуудас» гэсэн мэдрэмж төрүүлнэ. */
     '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Аюул мэдээлэх · Ажлын захиалга</div>' +
-    '<div style="font-size:12px;color:#94A3B8">Мэдээл → хүлээн ав → гүйцэтгэ → батал</div></div>' +
+    '<div style="font-size:12px;color:#94A3B8">' +
+    (myDept ? esc(myDept) + ' · ' : '') + 'Мэдээл → хүлээн ав → гүйцэтгэ → батал</div></div>' +
     '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
     '<i class="ti ti-plus"></i> Шинэ мэдээлэл</button>' +
     ((isAdmin() || isDeptHead()) ? '<button class="btn btn-secondary btn-sm" data-wk-admin="1" ' +
