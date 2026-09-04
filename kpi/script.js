@@ -1614,6 +1614,95 @@ function riskDeptsOf(r) {
   if (r.depts && r.depts.length) return r.depts;
   return r.dept ? [r.dept] : [];
 }
+/* ══ ҮНЭЛГЭЭНИЙ БАГ — СОНГОЛТООС АВТОМАТААР ═══════════════════════════
+   Албан ёсны маягтад үнэлгээг 3–4 хүн хийж, тус бүрийн оноо баганаар
+   ордог. Тэр хүмүүсийг ГАРААР сонгуулбал маягт хүндэрнэ — гэтэл тэд
+   бүгд аль хэдийн сонгосон зүйлээс ГАРЧ ИРДЭГ:
+     · оруулж байгаа хүн            — үргэлж
+     · «Хаана» → хэсгийн хариуцагч  — цай цех бол цай цехийн менежер
+     · сонгосон алба → удирдлага    — 1–2 алба сонгосон үед
+     · сонгосон ажлын байр → ажилтан
+     · тоног төхөөрөмжийн аюул      — ИТА-гийн инженер
+   ⚠ Таамаглал ЗАРИМДАА БУРУУ гарна (нэг албанд хэд хэдэн менежер, хэсэг
+     оноогоогүй г.м.) тул дэлгэц дээр ЗАСАХ боломжтой байх ёстой.
+     Чимээгүй буруу бөглөх нь хамгийн муу хувилбар. */
+/* «Хаана» сонголтыг ХЭСГИЙН нэртэй холбоно.
+   ⚠ Шууд харьцуулж болохгүй: сайт нь «ПЭТ усны шугам», хэсэг нь «Пет
+     шугам» — э/е үсгээр зөрдөг. Тиймээс ялгах товч тэмдгээр таана. */
+var RISK_SITE_SECTION = [
+  { re: /п[эе]т/i,      sec: 'Пет шугам' },
+  { re: /биб/i,         sec: 'Биб шугам' },
+  { re: /цай\s*цех/i,   sec: 'ЦАЙ ЦЕХ' },
+  { re: /үрэл\s*цех/i,  sec: 'ҮРЭЛ ЦЕХ' }
+];
+function riskSecOfSite(site) {
+  var t = String(site || '');
+  for (var i = 0; i < RISK_SITE_SECTION.length; i++) {
+    if (RISK_SITE_SECTION[i].re.test(t)) return RISK_SITE_SECTION[i].sec;
+  }
+  return '';
+}
+/* Тухайн хэсгийг хариуцдаг хүмүүсийн uid (ack/_sections.json-оос) */
+function riskUidsForSection(sec) {
+  var out = [];
+  if (!sec || !ACK_SEC) return out;
+  var want = String(sec).trim().toLowerCase();
+  Object.keys(ACK_SEC).forEach(function (uid) {
+    var v = String(ACK_SEC[uid] || '').trim().toLowerCase();
+    if (v && v !== '*' && v === want) out.push(uid);
+  });
+  return out;
+}
+function riskTeamSuggest(o) {
+  o = o || {};
+  var out = [], seen = {};
+  var emps = [];
+  try { emps = empAll() || []; } catch (e) {}
+  var push = function (e, why) {
+    if (!e) return;
+    var k = e.uid || e.id; if (!k || seen[k]) return;
+    seen[k] = 1;
+    out.push({ uid: e.uid || '', id: e.id || '', name: e.name || '',
+               pos: e.pos || e.role || '', dept: e.dept || '', why: why || '' });
+  };
+  try { push(myEmp(), 'оруулсан'); } catch (e) {}
+
+  var sec = riskSecOfSite(o.site);
+  if (sec) {
+    var uids = riskUidsForSection(sec);
+    emps.forEach(function (e) { if (uids.indexOf(e.uid) >= 0) push(e, sec + ' хариуцагч'); });
+  }
+
+  /* ⚠ «Бүх алба» сонгоход 14 даргыг цуглуулбал баг утгагүй болно —
+     тиймээс 1–2 алба сонгосон үед л албаны удирдлагыг нэмнэ. */
+  var ds = o.depts || [];
+  if (ds.length && ds.length <= 2) {
+    ds.forEach(function (d) {
+      var lead = emps.filter(function (e) {
+        return riskSameDept(e.dept, d) && /дарга|менежер/i.test(e.pos || e.role || '');
+      })[0];
+      if (lead) push(lead, riskDeptShort(d) + ' удирдлага');
+    });
+  }
+
+  var ps = o.positions || [];
+  if (ps.length === 1) {
+    var one = emps.filter(function (e) {
+      if (!riskNameMatch(ps[0], e.pos || e.role || '')) return false;
+      return !ds.length || ds.some(function (d) { return riskSameDept(e.dept, d); });
+    })[0];
+    if (one) push(one, ps[0]);
+  }
+
+  if (/тоног\s*төхөөрөмж|механизм|машин|цахилгаан|засвар/i.test(String(o.hazard || '') + ' ' + String(o.process || ''))) {
+    var eng = emps.filter(function (e) {
+      return /инженер/i.test(e.pos || e.role || '') && /инженер\s*техник/i.test(e.dept || '');
+    })[0];
+    if (eng) push(eng, 'тоног төхөөрөмж');
+  }
+  return out;
+}
+
 function riskInDept(r, dept) {
   if (!dept) return true;
   var ds = riskDeptsOf(r);
@@ -2978,6 +3067,15 @@ function actionRiskAdd() {
     '<div id="raEmpBox" style="display:none;margin-top:8px"></div>' +
     '<div id="raScopeSum" style="margin-top:9px;font-size:12px;color:#4338CA;font-weight:700"></div>' +
     '</div>' +
+    /* ④ ҮНЭЛГЭЭНИЙ БАГ — автоматаар бүрдэнэ, засаж болно */
+    '<div style="border:1.5px solid #BBF7D0;background:#F0FDF4;border-radius:12px;padding:12px 13px;margin-bottom:11px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px">' +
+    '<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#065F46;text-transform:uppercase">Үнэлгээний баг</div>' +
+    '<div style="font-size:11.5px;color:#059669">сонголтоос автоматаар — засаж болно</div></div>' +
+    '<div id="raTeam"></div>' +
+    '<select id="raTeamAdd" style="width:100%;margin-top:8px;padding:8px 11px;border:1.5px solid #BBF7D0;border-radius:9px;font-size:13px;font-family:inherit;background:#fff">' +
+    '<option value="">+ хүн нэмэх…</option></select>' +
+    '</div>' +
     '<div id="raSt" style="margin-top:6px;font-size:12.5px"></div>');
 
   /* Сонгосон албад — түгжээтэй бол ганц */
@@ -3050,7 +3148,64 @@ function actionRiskAdd() {
     if (pb) pb.style.display = who === 'pos' ? 'block' : 'none';
     if (eb) eb.style.display = who === 'emp' ? 'block' : 'none';
     drawSum();
+    drawTeam();
   }
+  /* ── Үнэлгээний баг ──
+     Автомат санал + гараар хассан/нэмсэн нь ДАРААГИЙН зурагдалтад
+     хадгалагдана. Эс бөгөөс алба солих бүрд хийсэн засвар алга болно. */
+  var teamOut = {}, teamIn = [];
+  function teamNow() {
+    var sug = [];
+    try {
+      sug = riskTeamSuggest({
+        site: (node.querySelector('#raSite') || {}).value || '',
+        depts: selDepts(),
+        positions: Array.prototype.map.call(node.querySelectorAll('.raPos:checked'), function (c) { return c.value; }),
+        hazard: (node.querySelector('#raHaz') || {}).value || '',
+        process: (node.querySelector('#raProc') || {}).value || ''
+      });
+    } catch (e) {}
+    var out = sug.filter(function (t) { return !teamOut[t.uid || t.id]; });
+    teamIn.forEach(function (t) {
+      if (!out.some(function (x) { return (x.uid || x.id) === (t.uid || t.id); })) out.push(t);
+    });
+    return out;
+  }
+  function drawTeam() {
+    var box = node.querySelector('#raTeam'); if (!box) return;
+    var list = teamNow();
+    box.innerHTML = list.length
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap">' + list.map(function (t) {
+          return '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #BBF7D0;' +
+            'border-radius:999px;padding:5px 6px 5px 11px;font-size:12.5px">' +
+            '<b style="color:#065F46">' + esc(t.name || '—') + '</b>' +
+            (t.why ? '<span style="color:#94A3B8;font-size:11px">' + esc(t.why) + '</span>' : '') +
+            '<button type="button" class="raTeamDel" data-k="' + esc(t.uid || t.id) + '" ' +
+            'title="Хасах" style="border:none;background:#ECFDF5;color:#059669;border-radius:50%;width:19px;height:19px;' +
+            'line-height:1;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">×</button></span>';
+        }).join('') + '</div>'
+      : '<div style="font-size:12px;color:#94A3B8">Хараахан бүрдээгүй — сонголтоо хийнэ үү, эсвэл доороос нэмнэ үү.</div>';
+    /* Нэмэх жагсаалт — багт ороогүй хүмүүс */
+    var sel = node.querySelector('#raTeamAdd'); if (!sel) return;
+    var have = {}; list.forEach(function (t) { have[t.uid || t.id] = 1; });
+    var all = [];
+    try { all = empAll() || []; } catch (e) {}
+    sel.innerHTML = '<option value="">+ хүн нэмэх…</option>' +
+      all.filter(function (e) { return !have[e.uid || e.id]; })
+        .map(function (e) {
+          return '<option value="' + esc(e.uid || e.id) + '">' + esc(e.name || '—') +
+            ' · ' + esc(e.pos || e.role || '') + '</option>';
+        }).join('');
+  }
+  node.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest && ev.target.closest('.raTeamDel');
+    if (!b) return;
+    ev.preventDefault();
+    var k = b.getAttribute('data-k');
+    teamOut[k] = 1;
+    teamIn = teamIn.filter(function (t) { return (t.uid || t.id) !== k; });
+    drawTeam();
+  });
   /* «бүгд» товч — тухайн албаны БҮХ ажилтныг тэмдэглэнэ/арилгана */
   node.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest && ev.target.closest('.raEmpAll');
@@ -3066,6 +3221,13 @@ function actionRiskAdd() {
   });
   /* Хайлт — мөрийг нуух зөвхөн, тэмдэглэгээ хэвээр үлдэнэ */
   node.addEventListener('input', function (ev) {
+    /* Аюулын бичвэрээс «тоног төхөөрөмж» гэдгийг таньдаг тул бичих
+       үед нь баг шинэчлэгдэнэ. Бичих бүрд биш — түр хүлээгээд. */
+    if (ev.target && (ev.target.id === 'raHaz' || ev.target.id === 'raProc')) {
+      clearTimeout(drawTeam._t);
+      drawTeam._t = setTimeout(function () { try { drawTeam(); } catch (e) {} }, 500);
+      return;
+    }
     if (!ev.target || ev.target.id !== 'raEmpQ') return;
     var q = String(ev.target.value || '').trim().toLowerCase();
     Array.prototype.forEach.call(node.querySelectorAll('.raEmpRow'), function (l) {
@@ -3097,6 +3259,20 @@ function actionRiskAdd() {
     if (ev.target && ev.target.id === 'raSite') {
       var ob = node.querySelector('#raSiteOtherBox');
       if (ob) ob.style.display = (ev.target.value === RISK_SITE_OTHER) ? 'block' : 'none';
+      drawTeam();
+    }
+    /* Багт хүн нэмэх */
+    if (ev.target && ev.target.id === 'raTeamAdd' && ev.target.value) {
+      var k2 = ev.target.value, all2 = [];
+      try { all2 = empAll() || []; } catch (e2) {}
+      var e3 = all2.filter(function (x) { return (x.uid || x.id) === k2; })[0];
+      if (e3) {
+        delete teamOut[k2];
+        teamIn.push({ uid: e3.uid || '', id: e3.id || '', name: e3.name || '',
+                      pos: e3.pos || e3.role || '', dept: e3.dept || '', why: 'гараар' });
+      }
+      ev.target.value = '';
+      drawTeam();
     }
     /* P/N/H сонгох бүрд тайлбар ба эрсдэлийн зэрэг шинэчлэгдэнэ */
     if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-pnh')) drawPnh();
@@ -3117,6 +3293,7 @@ function actionRiskAdd() {
     }
   } catch (e) {}
   drawScope();
+  drawTeam();
 
   var save = elc('button', 'btn btn-primary', '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах');
   save.style.width = '100%';
@@ -3184,6 +3361,12 @@ function actionRiskAdd() {
     st.innerHTML = '';
 
     var _now = Date.now();
+    var _team = [];
+    try {
+      _team = teamNow().map(function (t) {
+        return { uid: t.uid || '', name: t.name || '', pos: t.pos || '', why: t.why || '' };
+      });
+    } catch (e) {}
     /* ⚠ ОЛОН АЛБА = НЭГ БИЧЛЭГ. Өмнө нь алба тус бүрд бичлэг үүсгэдэг
        байсан тул нэг аюул 11 удаа давтагдаж, жагсаалт бөглөрч, засварлахад
        11 газар засах хэрэгтэй болж байв. Одоо `depts` жагсаалт нь хэнд
@@ -3210,6 +3393,8 @@ function actionRiskAdd() {
         r: P * N * Hh, rAfter: 0, rOk: true, unscored: false,
         category: 'Зааварчилгаа',
         src: mySec ? ('ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД/' + pl.dept + '/' + mySec + '/Гараар нэмсэн.xlsx') : '',
+        /* Үнэлгээ хийсэн баг — албан ёсны маягтын толгойд эдгээр нэр орно */
+        team: _team,
         addedBy: mySec ? 'section' : (isAdmin() ? 'admin' : 'depthead'),
         addedVia: 'manual',
         createdAt: new Date().toISOString(),
@@ -12877,6 +13062,9 @@ function riskDetailHTML(r) {
       ? riskFactBox('🏢', 'Хамрах алба (' + r.depts.length + ')', r.depts.join(' · ')) : '') +
     /* Эрсдэл оруулсан хүн — ЗӨВХӨН эрхтэй хүмүүст (ХАБЭА, админ, дарга).
        Ажилтанд хэрэггүй, бас хэн оруулсныг харуулах нь дотоод мэдээлэл. */
+    ((r.team && r.team.length)
+      ? riskFactBox('👥', 'Үнэлгээ хийсэн баг (' + r.team.length + ')',
+          r.team.map(function (t) { return t.name + (t.pos ? ' — ' + t.pos : ''); }).join(' · ')) : '') +
     ((r.createdBy && riskPageAdmin())
       ? riskFactBox('✍️', 'Эрсдэл оруулсан',
           esc(r.createdBy) + (r.createdDay ? ' · ' + esc(r.createdDay) : '')) : '');
