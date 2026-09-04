@@ -9646,7 +9646,11 @@ async function ackJobsLoad(me, force) {
      болгодог байсан тул гарын үсгийн файл сессийн турш ОГТ татагддаггүй,
      нэгтгэлд «зурсан 0» гарч, баннер нь зурсан хүнээс дахин шаарддаг байв.
      Одоо: үнэхээр ачаалсан, ЭСВЭЛ нээгдсэн ажил огт байхгүй үед л тэмдэглэнэ. */
-  if (jobs.length || !rel.length) ACK_JOBS_LOADED = true;
+  /* ⚠⚠ ЗӨВХӨН үнэхээр ачаалсан үед тэмдэглэнэ. rel.length===0 гэдэг нь
+     «нээгдсэн ажил байхгүй» биш, RISK_RELEASES хараахан ИРЖ АМЖААГҮЙ
+     гэсэн үг байж болно — тэр үед тэмдэглэвэл дахин оролдохгүй болно.
+     Дуудагч тал (riskGroupedHTML) нь releases ирсний дараа л дуудна. */
+  if (jobs.length) ACK_JOBS_LOADED = true;
   return ACK_JOBS;
 }
 async function ackJobsLoadAll(force) { return await ackJobsLoad(null, force); }
@@ -11201,6 +11205,7 @@ function riskGroupedHTML(list) {
      зурагдалтад ДАХИН оролдоно. ACK_JOBS_BUSY нь давхар дуудалт,
      хязгааргүй давталтаас хамгаална. */
   if (!ACK_JOBS_LOADED && !ACK_JOBS_BUSY && (DB.risks || []).length &&
+      Object.keys(RISK_RELEASES || {}).length &&
       (isAdmin() || isDeptHead() || riskIsBoss())) {
     ACK_JOBS_BUSY = true;
     ackJobsLoadAll()
