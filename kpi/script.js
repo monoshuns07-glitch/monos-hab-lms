@@ -9401,9 +9401,23 @@ function ackJobRows(job) {
   return (DB.risks || []).filter(function (r) { return r && r.onDemand && riskJobKey(r) === job; });
 }
 function ackJobVersion(job) { return ackHashOf(ackJobRows(job)); }
+/* ⚠ ЭРСДЭЛ БҮРЭН АЧААЛАГДСАН УУ.
+   Хувилбарын хэш нь ТУХАЙН АГШИНД ачаалагдсан мөрүүдээс бодогддог. Эрсдэл
+   албаар тус тусад нь татагддаг тул бүгд ирж амжаагүй байхад хэш бодвол
+   гарын үсэг зурсан хүн ч «зураагүй» болж, орох болгонд дахин шаардана.
+   Индекс дэх нийт тоотой тулгаж, дутуу бол ШААРДАХГҮЙ. */
+function ackRisksReady() {
+  try {
+    var tot = RISK_INDEX && +RISK_INDEX.total;
+    if (!tot) return true;                       /* индекс алга — шалгах аргагүй */
+    return ((DB.risks || []).length >= tot);
+  } catch (e) { return true; }
+}
+
 /* Надад нээгдсэн, ГАРЫН ҮСЭГ ЗУРААГҮЙ ажлууд */
 function ackJobsPending(me) {
   if (!me || !me.uid) return [];
+  if (!ackRisksReady()) return [];               /* дутуу датаар шаардахгүй */
   var out = [];
   Object.keys(RISK_RELEASES || {}).forEach(function (job) {
     var rows = ackJobRows(job);
@@ -9416,14 +9430,22 @@ function ackJobsPending(me) {
   });
   return out;
 }
+/* Аль хувилбартай тулгах вэ. Эрсдэл бүрэн ачаалагдсан бол ОДООГИЙН хэшээр
+   (эрсдэл засагдсан бол дахин зурах ёстой). Дутуу бол ФАЙЛЫН өөрийнх нь
+   хувилбараар — эс бөгөөс зурсан хүн «зураагүй» болж тоологдоно. */
+function ackJobVerFor(job) {
+  var st = ACK_JOBS[job];
+  if (ackRisksReady()) return ackJobVersion(job);
+  return (st && st.version) ? String(st.version) : ackJobVersion(job);
+}
 function ackJobSignedRow(job, uid) {
   var st = ACK_JOBS[job]; if (!st) return null;
-  var ver = ackJobVersion(job);
+  var ver = ackJobVerFor(job);
   return (st.rows || []).filter(function (x) { return x.uid === uid && String(x.version) === String(ver); })[0] || null;
 }
 function ackJobSignedCount(job) {
   var st = ACK_JOBS[job]; if (!st) return 0;
-  var ver = ackJobVersion(job), seen = {};
+  var ver = ackJobVerFor(job), seen = {};
   (st.rows || []).forEach(function (x) { if (String(x.version) === String(ver) && x.uid) seen[x.uid] = 1; });
   return Object.keys(seen).length;
 }
