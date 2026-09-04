@@ -1617,6 +1617,31 @@ function riskSlug(name) {
      таньдаг (ackRoleOf нь myEmp() шаарддаг). */
 var RISK_PROD_DEPTS  = /хуурай\s*хүнс|шингэн\s*хүнс|чанарын\s*хяналт|инженер\s*техник|чанарын\s*баталгаа/i;
 var RISK_SALES_DEPTS = /борлуулалт|маркетинг/i;
+/* ⚠ ХАБЭА АЛБА — эрсдлийг ХЯНАХ эрх, үүрэг нь энэ албаны бүх ажилтанд
+   ИЖИЛ. Тиймээс эрсдэлийн хэсэг тэдэнд админтай ижил хэлбэрээр харагдана:
+   компанийн бүх албаны эрсдэл, ижил гарчиг, ижил таб, ижил хэрэгсэл.
+   Өмнө нь тэд өөрсдийн ажлын байрны 45 эрсдэл л хардаг байсан тул
+   компанийн тайланг бэлддэг хүн захиралтай өөр тоо ярьдаг байв.
+
+   ⚠⚠ ЭНЭ НЬ ЗӨВХӨН ХАРАГДАЦ. Танилцах (гарын үсэг зурах) олонлогийг
+      ӨӨРЧЛӨХГҮЙ — risksForView() хэвээр үлдэнэ. ХАБЭА-гийн ажилтан
+      компанийн 577 эрсдлийг ХЯНАНА, гэхдээ ажилтны хувиар ӨӨРИЙН
+      албаныхаа 19 эрсдэлтэй ТАНИЛЦАЖ гарын үсэг зурна. Хоёуланг нь
+      холивол гарын үсгийн хууль зүйн утга алдагдана (R2 дээрх одоо
+      байгаа гарын үсэг n=19 гэж бичигдсэн). */
+var RISK_HSE_DEPTS = /хөдөлмөрийн\s*аюулгүй|хабэа/i;
+function riskIsHseStaff() {
+  try {
+    var d = '';
+    try { var me = myEmp(); if (me && me.dept) d = String(me.dept); } catch (e) {}
+    if (!d && typeof SESSION !== 'undefined' && SESSION) d = String(SESSION.dept || '');
+    return RISK_HSE_DEPTS.test(d);
+  } catch (e) { return false; }
+}
+/* Эрсдэлийн ХУУДСАНД админы бүрэн харагдац эзэмших үү.
+   ⚠ «R2 руу шилжүүлэх» зэрэг аюултай үйлдэл нь тусдаа isAdmin()-оор
+     хамгаалагдсан хэвээр — энэ функц түүнийг нээхгүй. */
+function riskPageAdmin() { return isAdmin() || isDeptHead() || riskIsHseStaff(); }
 /* key: доор харьцуулагддаг түлхүүр · pos: албан тушаалын таних загвар
    re: харьяа албадын загвар (null = БҮХ алба) */
 var DIR_SCOPES = [
@@ -1678,6 +1703,7 @@ function riskIsBoss() {
    эсвэл ХЭСЭГ ОНООСОН ажилтан */
 function riskCanAdd() {
   if (isAdmin() || isDeptHead()) return true;
+  if (riskIsHseStaff()) return true;
   if (riskIsBoss()) return true;
   try { return !!ackSecOf(myEmp()); } catch (e) { return false; }
 }
@@ -10395,6 +10421,17 @@ function riskAppliesTo(r, emp) {
   return pos.some(function (p) { return riskNameMatch(p, mine); });
 }
 /* Эрхээс хамаарсан жагсаалт */
+/* Эрсдэлийн ХУУДСАНД зурах жагсаалт.
+   ⚠ risksForView()-оос ЗОРИУД ТУСГААРЛАВ: тэр нь ackReadOpen/ackOpenModal-д
+     ч дуудагддаг тул ТАНИЛЦАХ олонлогийг тодорхойлдог. Тэнд гар хүрвэл
+     ХАБЭА-гийн ажилтны гарын үсэг 19-ийн оронд 577 эрсдлийн төлөө
+     бичигдэж, өмнөх гарын үсгүүдтэй зөрчилдөнө. */
+function risksForPage() {
+  var mine = risksForView();      /* кэш сэргээх гаж нөлөөг нь ашиглана */
+  if (!riskIsHseStaff()) return mine;
+  var all = (DB.risks || []).slice();
+  return all.length ? all : mine;
+}
 function risksForView() {
   /* ⚠ loadDB нь хэд хэдэн удаа ажиллаж DB-г бүтнээр солидог тул R2-оос ирсэн
      эрсдэл завсарт дарагдаж, зурах үед хоосон болдог байв. Хоосон бол
@@ -11439,7 +11476,7 @@ function riskMxPass(r) {
 var RISK_TAB = 'risks';
 
 function riskTabList(list) {
-  var admin = isAdmin() || isDeptHead();
+  var admin = riskPageAdmin();
   /* ⚠ Хуудсан дээрх тоо нь давхардал нэгтгэсний ДАРААХ тоо тул табан дээр ч
      ижил байх ёстой — өмнө нь таб «515», хуудас «361» гэж зөрдөг байв. */
   var nRisk = (list || []).length;
@@ -11530,12 +11567,12 @@ function riskDirViewSet(v) {
      өөр өөр тоо ярина. Задаргаа нь «Дэлгэрэнгүй» товчны цаана хэвээр. */
 function riskDirBrief() {
   var v = RISK_DIR_VIEW;
-  if (!v) v = (riskDirScope() || isAdmin()) ? 'brief' : 'detail';
+  if (!v) v = (riskDirScope() || isAdmin() || riskIsHseStaff()) ? 'brief' : 'detail';
   return v === 'brief';
 }
 /* Тойм/задаргаа сэлгэх товч хэнд харагдах вэ — захирал ба админд.
    Админд хэрэгтэй нь: захирал юу харж байгааг өөрөө шалгаж чадна. */
-function riskDirCanBrief() { return !!riskDirScope() || isAdmin(); }
+function riskDirCanBrief() { return !!riskDirScope() || isAdmin() || riskIsHseStaff(); }
 
 /* ⚠ Кирилл дээр \b ажиллахгүй тул хэрэглэхгүй. Богино үг (жишээ нь «гал»)
    өөр үгийн дотор таарахаас сэргийлж бүтэн хэлбэрээр нь бичив. */
@@ -12482,10 +12519,10 @@ function renderHazards() {
   var me = myEmp();
   var myDept = (SESSION && SESSION.dept) || (me && me.dept) || '';
   var myPos = (me && (me.role || me.pos)) || '';
-  var list = risksForView();
+  var list = risksForPage();
 
   /* Ажилтанд бүтэцтэй эрсдэл байхгүй бол — хуучин HTML дашбоард руу шилжинэ */
-  if (!isAdmin() && !isDeptHead() && !list.length) {
+  if (!riskPageAdmin() && !list.length) {
     sec.style.padding = '0';
     if (RISK_DEPTS === null) {
       sec.innerHTML = '<div style="padding:40px;text-align:center;color:#94A3B8">' +
@@ -12499,7 +12536,7 @@ function renderHazards() {
 
   sec.style.padding = '';
   var head, sub;
-  if (isAdmin()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
+  if (isAdmin() || riskIsHseStaff()) { head = 'Эрсдэлийн үнэлгээ'; sub = 'Бүх алба'; }
   else if (isDeptHead()) { head = 'Эрсдэлийн үнэлгээ'; sub = myDept || 'Таны алба'; }
   /* ⚠ ЗАХИРАЛ өмнө нь ажилтанд зориулсан «Таны хариуцах АЖЛЫН БАЙРНЫ
      эрсдлийн үнэлгээ» гэсэн гарчиг хардаг байв — учир нь дээрх нөхцлүүдэд
@@ -12522,11 +12559,11 @@ function renderHazards() {
 
   var H = '<div class="page-header"><div><h1>' + head + '</h1>' +
     '<p class="page-subtitle">' + esc(sub) + '</p></div>' +
-    ((!isAdmin() && !isDeptHead() && riskCanAdd())
+    ((!riskPageAdmin() && riskCanAdd())
       ? '<div class="page-actions">' +
         '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button></div>'
       : '') +
-    ((isAdmin() || isDeptHead())
+    (riskPageAdmin()
       ? '<div class="page-actions">' +
         '<button class="btn btn-primary" data-risk-add="1"><i class="ti ti-plus"></i> Эрсдэл нэмэх</button>' +
         '<button class="btn btn-secondary" data-risk-rel="1" title="Автокран, өндөрт гагнуур зэрэг нэг удаагийн ажлын эрсдлийг ажилтанд нээнэ"><i class="ti ti-lock-open"></i> Ажилбар нээх</button>' +
@@ -12562,7 +12599,7 @@ function renderHazards() {
       '</div></div></div>';
   } else {
     /* Ажлын байрных нь үнэлгээ хийгдээгүй үед ТОДОРХОЙ хэлнэ */
-    if (!isAdmin() && !isDeptHead() && RISK_VIEW_SCOPE === 'dept') {
+    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'dept') {
       H += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.65">' +
         '<b>ℹ️ Таны ажлын байрны («' + esc(myPos || '—') + '») эрсдэлийн үнэлгээ хараахан хийгдээгүй байна.</b><br>' +
         'Доор <b>' + esc(myDept) + '</b>-ны эрсдэлүүдийг харуулж байна — өөрт хамаарахыг уншиж, ' +
@@ -12570,7 +12607,7 @@ function renderHazards() {
     }
     /* ИТА-гийн ахлах инженерт ЯМАР хэсгийн эрсдэл харагдаж байгааг ил хэлнэ —
        эс бөгөөс «яагаад албаны бүх эрсдэл харагдахгүй байна» гэж эргэлзэнэ. */
-    if (!isAdmin() && !isDeptHead() && RISK_VIEW_SCOPE === 'unit') {
+    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'unit') {
       var _u = ''; try { _u = ackUnitOf(myEmp()); } catch (e) {}
       H += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#1E40AF;line-height:1.65">' +
         '<b>ℹ️ Доор <b>' + esc(_u || 'таны хэсгийн') + '</b> хэсэгт хамаарах эрсдэлүүдийг харуулж байна.</b><br>' +
@@ -12579,7 +12616,7 @@ function renderHazards() {
     /* ⭐ ТАБ — эрсдэл, танилцалт, арга хэмжээ гурвыг нэг цэсэнд, тус тусдаа.
        Ингэснээр админы хуудас 3 дахин багасаж, хайх зүйл нь шууд олдоно. */
     H += riskTabsHTML(list);
-    var admin = isAdmin() || isDeptHead();
+    var admin = riskPageAdmin();
 
     if (RISK_TAB === 'mea') {
       /* Агуулгыг доор renderMeasurePage/renderMeasureAdminPage дүүргэнэ */
