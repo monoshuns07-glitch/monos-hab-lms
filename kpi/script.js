@@ -28231,6 +28231,12 @@ function renderTasks() {
       return taskCanApprove(t);
     }
     if (admin) return true;
+    /* ⭐ «Аюул арилгах» ангилалтай даалгавар — ХАБЭА алба ба ГҮЙЦЭТГЭХ
+       ЗАХИРАЛД сонголтод ороогүй ч ҮРГЭЛЖ харагдана. Аюул арилгах ажлын
+       явцыг тэд хянадаг тул алба хооронд нуугдаж болохгүй.
+       ⚠ Батлагдаагүй даалгаврын шалгуурын ДАРАА тавьсан — батлагдаагүй
+         ажил энэ дүрмээр задрахгүй. */
+    if (t.category === 'hazard' && (riskIsHseStaff() || riskDirScope() === 'all')) return true;
     if (boss && !dh) {
       if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
       if (scopeAll) return true;
