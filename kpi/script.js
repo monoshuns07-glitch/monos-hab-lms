@@ -9569,6 +9569,7 @@ function ackFold(label, inner, bd, n) {
    ══════════════════════════════════════════════════════════════════════ */
 var ACK_JOBS = {};                 /* jobKey → store {version, rows:[{uid,code,at,…}]} */
 var ACK_JOBS_LOADED = false;
+var ACK_JOBS_BUSY = false;   /* ачаалалт явж байгаа эсэх — давхар дуудалтаас хамгаална */
 
 function ackJobFile(job) { return ACK_PREFIX + 'job-' + riskSlug(job) + '.json'; }
 /* Тухайн ажлын эрсдэлүүд (бүх алба) */
@@ -9631,14 +9632,21 @@ function ackJobSignedCount(job) {
 }
 /* Надад нээгдсэн ажлуудын хуудсыг татна (ackRefreshMine дотроос) */
 async function ackJobsLoad(me, force) {
-  var jobs = Object.keys(RISK_RELEASES || {}).filter(function (job) {
+  var rel = Object.keys(RISK_RELEASES || {});
+  var jobs = rel.filter(function (job) {
     var rows = ackJobRows(job);
     return rows.length && (!me || riskIsReleasedTo(rows[0], me));
   });
   for (var i = 0; i < jobs.length; i++) {
     try { ACK_JOBS[jobs[i]] = await ackLoadKey(ackJobFile(jobs[i]), force); } catch (e) {}
   }
-  ACK_JOBS_LOADED = true;
+  /* ⚠⚠ ЭНД «ачаалсан» гэж БОДЛОГООР тэмдэглэнэ.
+     ackJobRows() нь DB.risks дээр тулгуурладаг тул ЭРСДЭЛ ирж амжаагүй
+     үед jobs ХООСОН гарна. Өмнө нь ямар ч тохиолдолд ACK_JOBS_LOADED=true
+     болгодог байсан тул гарын үсгийн файл сессийн турш ОГТ татагддаггүй,
+     нэгтгэлд «зурсан 0» гарч, баннер нь зурсан хүнээс дахин шаарддаг байв.
+     Одоо: үнэхээр ачаалсан, ЭСВЭЛ нээгдсэн ажил огт байхгүй үед л тэмдэглэнэ. */
+  if (jobs.length || !rel.length) ACK_JOBS_LOADED = true;
   return ACK_JOBS;
 }
 async function ackJobsLoadAll(force) { return await ackJobsLoad(null, force); }
@@ -11188,9 +11196,16 @@ function riskEmpDetail(empId) {
    ажилтнууд эрсдэлийнхээ тоотойгоо харагдана.
    ══════════════════════════════════════════════════════════════════════ */
 function riskGroupedHTML(list) {
-  if (!ACK_JOBS_LOADED && (isAdmin() || isDeptHead() || riskIsBoss())) {
-    ACK_JOBS_LOADED = true;
-    ackJobsLoadAll().then(function () { try { renderHazards(); } catch (e) {} }).catch(function () {});
+  /* ⚠ Тугийг ЭНД урьдчилж тавихаа болив — ackJobsLoad өөрөө үнэхээр
+     ачаалсан үедээ тавина. Эрсдэл ирээгүй байхад дуудагдвал дараагийн
+     зурагдалтад ДАХИН оролдоно. ACK_JOBS_BUSY нь давхар дуудалт,
+     хязгааргүй давталтаас хамгаална. */
+  if (!ACK_JOBS_LOADED && !ACK_JOBS_BUSY && (DB.risks || []).length &&
+      (isAdmin() || isDeptHead() || riskIsBoss())) {
+    ACK_JOBS_BUSY = true;
+    ackJobsLoadAll()
+      .then(function () { ACK_JOBS_BUSY = false; try { renderHazards(); } catch (e) {} })
+      .catch(function () { ACK_JOBS_BUSY = false; });
   }
   var byDept = {};
   list.forEach(function (r) { (byDept[r.dept || 'Тодорхойгүй'] = byDept[r.dept || 'Тодорхойгүй'] || []).push(r); });
