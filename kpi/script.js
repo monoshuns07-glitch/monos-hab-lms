@@ -945,10 +945,14 @@ async function loadDB() {
         } catch (e) { console.error('[risks] албаар шүүх алдаа — бүгдийг татна', e); }
         /* ⚠ Өмнө нь алба бүрийг ДАРААЛЖ татдаг байсан тул утасны сүлжээнд
            (70–300мс саатал × 11 алба) 3–10 секунд иддэг байв. Одоо ЗЭРЭГ. */
-        var _parts = await Promise.all(_want.map(function (w) {
+        /* ⭐ Олон албанд хамаарах эрсдлийг ХҮН БҮР татна — эс бөгөөс тэр нь
+           зөвхөн нэг албанд харагдана. Албаны файлуудтай ЗЭРЭГ татна. */
+        var _jobs = _want.map(function (w) {
           return riskR2GetJson(RISK_R2_PREFIX + 'd/' + w.slug + '.json')
             .catch(function () { return null; });
-        }));
+        });
+        _jobs.push(riskR2GetJson(RISK_SHARED_FILE).catch(function () { return null; }));
+        var _parts = await Promise.all(_jobs);
         var _out = [];
         _parts.forEach(function (_p) { if (Array.isArray(_p)) _out = _out.concat(_p); });
         if (_out.length) {
@@ -1588,6 +1592,30 @@ async function loadCols(opt) {
    зочлоход сүлжээ ч ашиглахгүй.
    ══════════════════════════════════════════════════════════════════════ */
 var RISK_R2_PREFIX = 'risks/';
+/* ══ ОЛОН АЛБАНД ХАМААРАХ ЭРСДЭЛ ═══════════════════════════════════════
+   Нэг аюул (жишээ нь «агуулах руу эргэх замын осол») олон албанд хамаарна.
+   Өмнө нь алба тус бүрд ТУСДАА бичлэг үүсгэдэг байсан тул нэг зүйл 11 удаа
+   давтагдаж, тоо 11-ээр өсөж, засварлахад 11 газар засах хэрэгтэй болж байв.
+   Одоо НЭГ бичлэг, доторх `depts` жагсаалт нь хэнд хамаарахыг заана.
+
+   ⚠ ХААНА ХАДГАЛАГДАХ ВЭ: ажилтан ердөө ӨӨРИЙН албаны файлыг татдаг тул
+     олон албын эрсдлийг аль нэг албаны файлд хийвэл бусад нь харахгүй.
+     Тиймээс тусдаа `risks/_shared.json` файлд хадгална — түүнийг ХҮН БҮР
+     татна. Файл жижиг тул нэмэлт ачаалал багатай. */
+var RISK_SHARED_FILE = 'risks/_shared.json';
+function riskIsShared(r) { return !!(r && r.depts && r.depts.length > 1); }
+/* Энэ эрсдэл ямар албадад хамаарах вэ */
+function riskDeptsOf(r) {
+  if (!r) return [];
+  if (r.depts && r.depts.length) return r.depts;
+  return r.dept ? [r.dept] : [];
+}
+function riskInDept(r, dept) {
+  if (!dept) return true;
+  var ds = riskDeptsOf(r);
+  if (!ds.length) return true;            /* алба заагаагүй = хүн бүрд */
+  return ds.some(function (d) { return riskSameDept(d, dept); });
+}
 var RISK_R2_INDEX = RISK_R2_PREFIX + 'index.json';
 var RISK_CACHE_KEY = 'kpi_risks_cache_v1';
 var RISK_INDEX = null;             // R2 дээрх index.json (алба тус бүрийн агуулгын hash)
@@ -2140,7 +2168,11 @@ async function riskR2Publish(rows, onStep, opts) {
   /* scopeDepts — энэ хэрэглэгч ЗӨВХӨН эдгээр албанд эрх мэдэлтэй.
      Өгөгдвөл бусад албаны бичлэгийг ХӨНДӨХГҮЙ, индекст нь хэвээр үлдээнэ. */
   var scope = opts.scopeDepts || null;
-  var list = riskDedupe(rows || []);
+  var _all0 = riskDedupe(rows || []);
+  /* ⚠ Олон албын эрсдлийг албаны файлд БҮҮ хий — тусдаа _shared.json-д.
+     Эс бөгөөс зөвхөн нэг албанд харагдана. */
+  var shared = _all0.filter(riskIsShared);
+  var list = _all0.filter(function (r) { return !riskIsShared(r); });
   var byDept = {};
   list.forEach(function (r) {
     var d = riskCanonDept(r.dept) || 'Тодорхойгүй';
@@ -2167,6 +2199,18 @@ async function riskR2Publish(rows, onStep, opts) {
   }
   /* hash = тухайн албаны эрсдлийн АГУУЛГЫН хураангуй. Танилцалтын гарын
      үсэг үүнд холбогдоно: агуулга нь өөрчлөгдсөн алба л дахин зурна. */
+  /* ⚠ ХУВААЛЦСАН ФАЙЛЫГ ЗӨВХӨН БҮТЭН БАЙХАД НЬ БИЧНЭ. Хэрэглэгч бүр
+     _shared.json-ыг бүтнээр татдаг тул санах ойд бүрэн байдаг. Гэхдээ
+     хэсэгчилсэн нийтлэлтэд (scopeDepts) шүүгдээд хоосон болвол файлыг
+     хоослох аюултай — тиймээс хоосон бол ОГТ ХӨНДӨХГҮЙ. */
+  if (shared.length) {
+    try {
+      await riskR2PutJson(RISK_SHARED_FILE, shared);
+      if (onStep) onStep('хуваалцсан ' + shared.length);
+    } catch (e) {
+      throw new Error('Олон албын эрсдлийг хадгалж чадсангүй: ' + ((e && e.message) || e));
+    }
+  }
   var mine = names.map(function (n) {
     return { name: n, slug: riskSlug(n), n: byDept[n].length, hash: ackHashOf(byDept[n]) };
   });
@@ -3136,10 +3180,22 @@ function actionRiskAdd() {
     st.innerHTML = '';
 
     var _now = Date.now();
-    var recs = plan.map(function (pl, i) {
+    /* ⚠ ОЛОН АЛБА = НЭГ БИЧЛЭГ. Өмнө нь алба тус бүрд бичлэг үүсгэдэг
+       байсан тул нэг аюул 11 удаа давтагдаж, жагсаалт бөглөрч, засварлахад
+       11 газар засах хэрэгтэй болж байв. Одоо `depts` жагсаалт нь хэнд
+       хамаарахыг заана (riskAppliesTo, _riskSeenByRaw хоёул үүнийг уншина). */
+    var _allD = plan.map(function (p) { return p.dept; });
+    var _multi = _allD.length > 1;
+    var _plan1 = _multi
+      ? [{ dept: _allD[0], depts: _allD,
+           positions: plan.reduce(function (a, p) { return a.concat(p.positions); }, []),
+           empIds: plan.reduce(function (a, p) { return a.concat(p.empIds); }, []) }]
+      : plan;
+    var recs = _plan1.map(function (pl, i) {
       return {
         id: 'RSK-' + _now + '-' + i,
-        dept: pl.dept, position: pl.positions.join(', '),
+        dept: pl.dept, depts: pl.depts || null,
+        position: pl.positions.join(', '),
         positions: pl.positions, empIds: pl.empIds,
         site: site, workplace: g('raWorkplace'),
         hazard: hz, process: g('raProc'),
@@ -3167,7 +3223,9 @@ function actionRiskAdd() {
         : who === 'pos'
           ? plan.reduce(function (a, p) { return a + p.positions.length; }, 0) + ' ажлын байранд'
           : 'бүх ажилтанд';
-      toast('✓ ' + recs.length + ' бичлэг нэмэгдлээ — ' + plan.length + ' алба · ' + nWho, 'success');
+      toast(recs.length === 1 && plan.length > 1
+        ? '✓ Нэмэгдлээ — НЭГ эрсдэл, ' + plan.length + ' албанд харагдана · ' + nWho
+        : '✓ Нэмэгдлээ — ' + plan.length + ' алба · ' + nWho, 'success');
       closeModal(); renderHazards();
     } else {
       st.innerHTML = '<span style="color:#DC2626">Байршуулж чадсангүй. Дахин оролдоно уу.</span>';
@@ -3263,6 +3321,9 @@ async function riskPersist(msg, opts) {
     var _rows = DB.risks || [];
     if (scopeD) {
       _rows = _rows.filter(function (r) {
+        /* ⚠ Олон албын эрсдэл нэг албанд ч харьяалагдахгүй тул шүүлтэд
+           унана — тэгвэл _shared.json хоосорно. Үргэлж үлдээнэ. */
+        if (riskIsShared(r)) return true;
         return scopeD.some(function (sd) { return riskSameDept(sd, r.dept); });
       });
     }
@@ -10647,7 +10708,8 @@ function riskAppliesTo(r, emp) {
   if (!r || !emp) return false;
   /* Нэг удаагийн ажил — зөвхөн НЭЭГДСЭН ажилтанд */
   if (r.onDemand) return riskIsReleasedTo(r, emp);
-  if (r.dept && emp.dept && !riskSameDept(r.dept, emp.dept)) return false;
+  /* Олон албанд хамаарах эрсдэл — жагсаалтад нь байвал харагдана */
+  if (emp.dept && !riskInDept(r, emp.dept)) return false;
   var ids = (r.empIds || []);
   if (ids.length) return ids.indexOf(emp.id) >= 0 || ids.indexOf(emp.uid) >= 0;
   /* Ажилбарын үнэлгээнд «албан тушаал» гэж ажлын нэр (автокран, гагнуур …)
@@ -10776,7 +10838,7 @@ function _riskSeenByRaw(emp) {
     /* ⭐ Менежерт хэсэг (шугам/цех) оноосон бол ЗӨВХӨН тэр хэсгийнх */
     var sec = sec0;
     var deptAll = all.filter(function (r) {
-      if (r.dept && !riskSameDept(r.dept, emp.dept)) return false;
+      if (!riskInDept(r, emp.dept)) return false;
       /* Нэг удаагийн ажил (автокран, өндөрт гагнуур) нээгдээгүй бол
          албаны жагсаалтад ч харагдахгүй — зөвхөн нээлгэсэн хүнд. */
       if (r.onDemand && !riskIsReleasedTo(r, emp)) return false;
@@ -12663,10 +12725,22 @@ function riskDetailHTML(r) {
   H += '<div class="risk-det-cols">';
 
   /* ── ЗҮҮН: аюул юунаас үүсдэг ── */
-  var s1 = riskFactBox('⚙️', 'Ямар ажил хийж байхад', r.process) +
+  /* ⚠ `site` (сонгосон обьект) ба `workplace` нь бүртгэгдэж байсан ч
+     дэлгэрэнгүйд ХАРУУЛДАГГҮЙ байв — хэрэглэгч «Зүүн агуулах» гэж сонгоод
+     хаана ч харагдахгүй болохоор нь алдагдсан гэж бодож байлаа. */
+  var s1 = riskFactBox('🏭', 'Обьект', r.site) +
+    riskFactBox('👷', 'Ямар ажлын байранд', r.workplace) +
+    riskFactBox('⚙️', 'Ямар ажил хийж байхад', r.process) +
     riskFactBox('📍', 'Аюулын байршил', r.location) +
     riskFactBox('❓', 'Шалтгаан', r.cause) +
-    riskFactBox('🏷️', 'Ангилал', r.category);
+    riskFactBox('🏷️', 'Ангилал', r.category) +
+    (riskIsShared(r)
+      ? riskFactBox('🏢', 'Хамрах алба (' + r.depts.length + ')', r.depts.join(' · ')) : '') +
+    /* Эрсдэл оруулсан хүн — ЗӨВХӨН эрхтэй хүмүүст (ХАБЭА, админ, дарга).
+       Ажилтанд хэрэггүй, бас хэн оруулсныг харуулах нь дотоод мэдээлэл. */
+    ((r.createdBy && riskPageAdmin())
+      ? riskFactBox('✍️', 'Эрсдэл оруулсан',
+          esc(r.createdBy) + (r.createdDay ? ' · ' + esc(r.createdDay) : '')) : '');
   H += '<div>';
   if (s1) {
     H += '<div class="card" style="padding:15px 17px;margin-bottom:12px">' +
