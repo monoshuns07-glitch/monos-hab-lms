@@ -9798,6 +9798,35 @@ function ackJobsPending(me) {
    уншина — хэн нэгэнд «зурсан 2», нөгөөд нь «зурсан 0» гэж харагдана
    (эрсдэл нь албаар тус тусад нь татагддаг тул хэш нь агшин бүрд өөр).
    Файлын хувилбар нь бүх хүнд ИЖИЛ тул түүнийг ч хүлээн зөвшөөрнө. */
+/* ══ ТҮР ЗУУРЫН ОНОШИЛГОО ══════════════════════════════════════════════
+   «зурсан 0» гэж яагаад гарч байгааг ТААМАГЛАХГҮЙ, бодит утгыг харуулна.
+   Зөвхөн хаягт ?debug=ack гэж нэмсэн үед. Асуудал шийдэгдмэгц УСТГАНА. */
+function ackDebugHTML(job) {
+  try {
+    if (String(location.search || '').indexOf('debug=ack') < 0) return '';
+    var st = ACK_JOBS[job];
+    var rows = ackJobRows(job);
+    var me = null; try { me = (ACK_ME && ACK_ME.me) || myEmp(); } catch (e) {}
+    var vNow = '';
+    try { vNow = String(ackJobVersion(job)); } catch (e) { vNow = 'алдаа'; }
+    var d = [
+      'ACK_JOBS түлхүүр: ' + (st ? 'БАЙНА' : 'АЛГА'),
+      'мөр: ' + (st && st.rows ? st.rows.length : '—'),
+      'файлын ver: ' + (st ? String(st.version) : '—'),
+      'бодсон ver: ' + vNow,
+      'ackJobRows: ' + rows.length,
+      'DB.risks: ' + ((DB.risks || []).length),
+      'RISK_RELEASES: ' + Object.keys(RISK_RELEASES || {}).length,
+      'LOADED: ' + ACK_JOBS_LOADED + ' · BUSY: ' + (typeof ACK_JOBS_BUSY !== 'undefined' ? ACK_JOBS_BUSY : '?'),
+      'миний uid: ' + ((me && me.uid) || '—'),
+      'ACK_JOBS түлхүүрүүд: [' + Object.keys(ACK_JOBS || {}).join(' | ') + ']'
+    ];
+    return '<div style="font-family:Consolas,monospace;font-size:10.5px;color:#334155;background:#F1F5F9;' +
+      'border:1px dashed #94A3B8;border-radius:8px;padding:6px 9px;margin-top:5px;line-height:1.6;' +
+      'white-space:pre-wrap;word-break:break-all">🔍 ' + esc(d.join('\n')) + '</div>';
+  } catch (e) { return '<div style="font-size:10.5px;color:#DC2626">🔍 оношилгоо: ' + esc((e && e.message) || e) + '</div>'; }
+}
+
 function ackJobVerSet(job) {
   var st = ACK_JOBS[job], out = {};
   try { out[String(ackJobVersion(job))] = 1; } catch (e) {}
@@ -11436,7 +11465,8 @@ function riskGroupedHTML(list) {
         var od = p.indexOf('🔓') === 0;
         var relN = od ? ((RISK_RELEASES[p.slice(2).trim()] || {}).empIds || []).length : 0;
         var label = od ? (p + ' <span style="font-size:11px;color:' + (relN ? '#15803D' : '#B45309') + ';font-weight:700">· нэг удаагийн ажил · ' +
-          (relN ? 'нээлттэй ' + relN + ' хүнд · зурсан ' + ackJobSignedCount(p.slice(2).trim()) : 'хэнд ч нээгээгүй') + '</span>') : esc(p);
+          (relN ? 'нээлттэй ' + relN + ' хүнд · зурсан ' + ackJobSignedCount(p.slice(2).trim()) : 'хэнд ч нээгээгүй') + '</span>' +
+          ackDebugHTML(p.slice(2).trim())) : esc(p);
         return '<div class="dash-click" data-risk-posf="' + esc(od ? p.slice(2).trim() : p) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px' +
           (od ? ';background:#FFFBEB;border:1px solid #FDE68A' : '') + '">' +
           '<i class="ti ' + (od ? 'ti-lock-open' : 'ti-briefcase') + '" style="font-size:14px;color:' + (od ? '#B45309' : '#7C3AED') + ';flex-shrink:0"></i>' +
@@ -32683,6 +32713,7 @@ function mustChangePwShow() {
 var WM_FILE = 'meetings/_weekly.json';
 var WM_ROWS = [], WM_OK = false, WM_BUSY = false;
 var WM_FILTER = { unit: '', year: 0 };      /* '' / 0 = бүгд */
+var WM_TAB = 'list';                        /* list = уулзалтууд · info = ХАБЭА-н мэдээлэл */
 
 /* Уулзалт хийдэг нэгжүүд.
    ⚠ `key` нь бүртгэлд хадгалагдана — ӨӨРЧИЛВӨЛ хуучин тэмдэглэл эзэнгүй
@@ -32729,6 +32760,19 @@ function wmItemEmpty(it) {
   return !(String(it.say || '').trim() || String(it.act || '').trim() ||
            String(it.moved || '').trim() || String(it.done || '').trim());
 }
+/* ХАБЭА-н албанаас тухайн уулзалтаар хүргэсэн МЭДЭЭЛЛҮҮД.
+   ⚠ Нэг уулзалтаар нэг л сэдэв ярьдаггүй (зааварчилгаа + ослын сэрэмжлүүлэг +
+     даатгалын мэдээлэл …) тул жагсаалт болгов (2026-09-04).
+   Хуучин ганц мөр (`r.hse`) бичлэгийг эвдэлгүй уншина — БҮҮ УСТГА. */
+function wmTopics(r) {
+  if (!r) return [];
+  if (Array.isArray(r.topics)) {
+    return r.topics.filter(function (t) { return String(t || '').trim(); });
+  }
+  return String(r.hse || '').trim() ? [String(r.hse).trim()] : [];
+}
+/* Нэгтгэхэд ижил сэдвийг ижил гэж таних түлхүүр (үсгийн том жижиг, илүү зай үл хамаарна) */
+function wmTopicKey(t) { return String(t || '').trim().toLowerCase().replace(/\s+/g, ' '); }
 
 /* ── ХАДГАЛАЛТ ─────────────────────────────────────────────────────────
    ⚠ meetings/_weekly.json нь R2_CACHEABLE-д ОРОХГҮЙ — бичихийн өмнө уншиж
@@ -32997,6 +33041,69 @@ function wmSummaryHTML(list) {
     tot.done + '</td><td></td></tr></tbody></table></div>';
 }
 
+/* ── ХАБЭА-Н МЭДЭЭЛЛИЙН САМБАР ─────────────────────────────────────────
+   «ХАБЭА-н албаны зүгээс» хүргэсэн мэдээллийг сэдвээр нь нэгтгэнэ: юуг
+   хэдэн удаа, ямар нэгжид хүргэсэн, хамгийн сүүлд хэзээ.
+   ⚠ Сэдвийг ЯГ БИЧСЭН ТЕКСТЭЭР нь бүлэглэнэ (үсгийн том жижиг, илүү зайг
+     үл тооно). Өөр өөрөөр бичвэл тусдаа мөр болно — систем утга
+     ТААМАГЛАХГҮЙ, эс бөгөөс буруу нэгтгэж тоо гуйвуулна. */
+function wmInfoHTML(list) {
+  var map = {}, units = {}, total = 0, last = '';
+  list.forEach(function (r) {
+    wmTopics(r).forEach(function (t) {
+      var k = wmTopicKey(t); if (!k) return;
+      total++;
+      if (!map[k]) map[k] = { text: t, n: 0, units: {}, last: '' };
+      map[k].n++; map[k].units[r.unit] = 1; units[r.unit] = 1;
+      var d = String(r.date || '');
+      if (d > map[k].last) map[k].last = d;
+      if (d > last) last = d;
+    });
+  });
+  var keys = Object.keys(map).sort(function (a, b) {
+    return map[b].n - map[a].n || String(map[b].last).localeCompare(String(map[a].last));
+  });
+  if (!keys.length) {
+    return emptyBox('ХАБЭА-н албанаас хүргэсэн мэдээлэл одоогоор бүртгэгдээгүй байна.');
+  }
+  var html = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' +
+    statCard('Хүргэсэн мэдээлэл', total, 'ti-speakerphone', '#4F46E5') +
+    statCard('Ялгаатай сэдэв', keys.length, 'ti-bookmarks', '#0891B2') +
+    statCard('Хамрагдсан нэгж', Object.keys(units).length, 'ti-building-factory', '#16A34A') +
+    statCard('Сүүлийн уулзалт', wmDate(last) || '—', 'ti-calendar', '#B45309') +
+    '</div>';
+
+  var th = function (t, a) {
+    return '<th style="padding:6px 8px;text-align:' + (a || 'center') + ';font-size:11px;' +
+      'color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">' + t + '</th>';
+  };
+  html += '<div class="card" style="padding:13px 15px;overflow-x:auto">' +
+    '<div style="font-size:13.5px;font-weight:800;color:#1E293B;margin-bottom:2px">' +
+    'Сэдвээр нэгтгэсэн</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-bottom:8px">' +
+    'Хамгийн олон давтагдсанаас эхэлж эрэмбэлэв</div>' +
+    '<table style="width:100%;border-collapse:collapse;min-width:560px"><thead><tr>' +
+    th('№') + th('Сэдэв', 'left') + th('Удаа') + th('Нэгж', 'left') + th('Сүүлд', 'right') +
+    '</tr></thead><tbody>' +
+    keys.map(function (k, i) {
+      var m = map[k];
+      var chips = Object.keys(m.units).map(function (u) {
+        return '<span style="background:' + wmUnitColor(u) + '18;color:' + wmUnitColor(u) +
+          ';border-radius:6px;padding:2px 7px;font-size:11px;font-weight:700;' +
+          'margin-right:4px;display:inline-block">' + esc(wmUnitAb(u)) + '</span>';
+      }).join('');
+      return '<tr style="border-top:1px solid #F1F5F9">' +
+        '<td style="padding:8px;text-align:center;font-size:12px;color:#94A3B8">' + (i + 1) + '</td>' +
+        '<td style="padding:8px;font-size:12.5px;color:#1E293B;line-height:1.5">' + wmNl(m.text) + '</td>' +
+        '<td style="padding:8px;text-align:center;font-size:14px;font-weight:800;color:#4F46E5">' +
+        m.n + '</td>' +
+        '<td style="padding:8px;white-space:nowrap">' + chips + '</td>' +
+        '<td style="padding:8px;text-align:right;font-size:12px;color:#64748B">' +
+        esc(wmDate(m.last)) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  return html;
+}
+
 /* ── ХУУДАС ───────────────────────────────────────────────────────────── */
 var WM_MONTHS = ['01 сар', '02 сар', '03 сар', '04 сар', '05 сар', '06 сар',
                  '07 сар', '08 сар', '09 сар', '10 сар', '11 сар', '12 сар'];
@@ -33038,6 +33145,24 @@ function renderWmeet() {
     statCard('Шийдвэрлэгдээгүй', nOpen, 'ti-progress', '#D97706') +
     statCard('Биелсэн', nDone, 'ti-circle-check', '#16A34A') +
     '</div>';
+
+  /* Таб — уулзалтын жагсаалт / ХАБЭА-н мэдээллийн самбар */
+  html += '<div style="display:flex;gap:6px;border-bottom:1.5px solid #E2E8F0;margin-bottom:16px">' +
+    [['list', 'ti-list-details', 'Уулзалтууд'], ['info', 'ti-speakerphone', 'ХАБЭА-н мэдээлэл']]
+      .map(function (t) {
+        var on = WM_TAB === t[0];
+        return '<button data-wm-tab="' + t[0] + '" style="cursor:pointer;font-family:inherit;' +
+          'background:none;border:none;border-bottom:2.5px solid ' + (on ? '#4F46E5' : 'transparent') +
+          ';color:' + (on ? '#4F46E5' : '#64748B') + ';font-size:13.5px;font-weight:' +
+          (on ? '800' : '600') + ';padding:9px 15px;margin-bottom:-1.5px">' +
+          '<i class="ti ' + t[1] + '"></i> ' + t[2] + '</button>';
+      }).join('') + '</div>';
+
+  if (WM_TAB === 'info') {
+    sec.innerHTML = html + wmInfoHTML(mine);
+    wmWire(sec);
+    return;
+  }
 
   html += wmSummaryHTML(mine);
 
@@ -33137,9 +33262,11 @@ function wmCard(r) {
       '<span style="margin-left:auto;font-size:12px;color:#94A3B8"><i class="ti ti-calendar"></i> ' +
       esc(wmDate(r.date)) + '</span>' +
     '</div>' +
-    (String(r.hse || '').trim()
+    (wmTopics(r).length
       ? '<div style="font-size:12.5px;color:#64748B;line-height:1.5;margin-bottom:4px">' +
-        '<b style="color:#94A3B8;font-weight:700">ХАБЭА:</b> ' + cut(r.hse, 160) + '</div>' : '') +
+        '<b style="color:#94A3B8;font-weight:700">ХАБЭА:</b> ' +
+        wmTopics(r).map(function (t) { return cut(t, 110); }).join(' <span style="color:#CBD5E1">·</span> ') +
+        '</div>' : '') +
     its.map(itemRow).join('') +
     '</div>';
 }
@@ -33150,6 +33277,8 @@ function wmWire(sec) {
   sec.addEventListener('click', function (ev) {
     if (ev.target.closest('#wmAdd')) { wmForm(''); return; }
     if (ev.target.closest('#wmXls')) { wmExcel(); return; }
+    var tb = ev.target.closest('[data-wm-tab]');
+    if (tb) { WM_TAB = tb.getAttribute('data-wm-tab'); renderWmeet(); return; }
     var u = ev.target.closest('[data-wm-unit]');
     if (u) { WM_FILTER.unit = u.getAttribute('data-wm-unit'); renderWmeet(); return; }
     var y = ev.target.closest('[data-wm-year]');
@@ -33176,7 +33305,17 @@ function wmDetail(id) {
     '<span style="margin-left:auto;font-size:12.5px;color:#64748B">' +
     '<i class="ti ti-calendar"></i> ' + esc(wmDate(r.date)) + '</span></div>' +
     '<div style="background:#F8FAFC;border:1px solid #EEF1F4;border-radius:11px;padding:10px 13px">' +
-    fld('ХАБЭА-н албаны зүгээс', r.hse) + '</div>';
+    (function () {
+      var ts = wmTopics(r);
+      if (!ts.length) return fld('ХАБЭА-н албаны зүгээс', '');
+      return '<div style="font-size:11px;color:#94A3B8;font-weight:700;text-transform:uppercase;' +
+        'letter-spacing:.3px;margin-bottom:4px">ХАБЭА-н албаны зүгээс — ' + ts.length + '</div>' +
+        ts.map(function (t, i) {
+          return '<div style="display:flex;gap:8px;padding:3px 0">' +
+            '<span style="flex-shrink:0;color:#4F46E5;font-weight:800;font-size:12px">' + (i + 1) + '.</span>' +
+            '<div style="font-size:13px;color:#1E293B;line-height:1.6">' + wmNl(t) + '</div></div>';
+        }).join('');
+    })() + '</div>';
 
   if (!its.length) {
     html += '<div style="font-size:12.5px;color:#94A3B8;margin-top:12px;text-align:center">' +
@@ -33265,11 +33404,38 @@ function wmFormPaint(node, items) {
   }).join('');
 }
 
+/* ХАБЭА-н мэдээллийн блок — санал хүсэлттэй ижил зарчмаар өсөн нэмэгдэнэ */
+function wmTopicHTML(i, t) {
+  return '<div class="wm-topic" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:7px">' +
+    '<span style="flex-shrink:0;width:22px;height:22px;border-radius:7px;background:#4F46E5;' +
+    'color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;' +
+    'justify-content:center;margin-top:7px">' + (i + 1) + '</span>' +
+    '<textarea class="wm-topic-t" rows="2" style="flex:1" ' +
+    'placeholder="ж: Замын хөдөлгөөнд болгоомжтой оролцох зааварчилгаа">' + esc(t || '') + '</textarea>' +
+    '<button type="button" data-wm-rm-t="' + i + '" title="Энэ мэдээллийг хасах" ' +
+    'style="flex-shrink:0;cursor:pointer;font-family:inherit;border:1px solid #FECACA;' +
+    'background:#fff;color:#B91C1C;border-radius:8px;padding:7px 9px;font-size:12px;' +
+    'margin-top:7px"><i class="ti ti-x"></i></button></div>';
+}
+function wmTopicRead(node) {
+  var out = [];
+  $('.wm-topic .wm-topic-t', node).forEach(function (el) { out.push(String(el.value || '').trim()); });
+  return out;
+}
+function wmTopicPaint(node, list) {
+  var box = node.querySelector('#wmTopics');
+  if (!box) return;
+  box.innerHTML = (list.length ? list : ['']).map(function (t, i) {
+    return wmTopicHTML(i, t);
+  }).join('');
+}
+
 function wmForm(id) {
   if (!wmCanEdit()) { toast('Зөвхөн ХАБЭА-н алба бүртгэнэ', 'warn'); return; }
   var r = id ? wmAll().filter(function (x) { return x.id === id; })[0] : null;
   if (id && !r) { toast('Тэмдэглэл олдсонгүй', 'error'); return; }
   var its = r ? wmItems(r).slice() : [];
+  var tps = r ? wmTopics(r).slice() : [];
 
   var node = elc('form', 'form');
   node.innerHTML =
@@ -33282,9 +33448,14 @@ function wmForm(id) {
         esc(u.name) + '</option>';
     }).join('') + '</select>' +
     '<div class="fld-hint">Сонгосон нэгжийн дарга, ахлах, менежерүүдэд энэ тэмдэглэл харагдана</div></div>' +
-    '<div class="form-group"><label>ХАБЭА-н албаны зүгээс <span class="req">*</span></label>' +
-    '<textarea id="wmHse" rows="3" placeholder="Уулзалтаар хүргэсэн мэдээлэл, зааварчилгаа, сургалт…">' +
-    esc((r && r.hse) || '') + '</textarea></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">' +
+    '<b style="font-size:13px;color:#1E293B">ХАБЭА-н албаны зүгээс <span class="req">*</span></b>' +
+    '<span style="font-size:11.5px;color:#94A3B8">— хүргэсэн мэдээлэл бүрийг тусад нь</span></div>' +
+    '<div id="wmTopics"></div>' +
+    '<button type="button" id="wmMoreTopic" style="width:100%;cursor:pointer;font-family:inherit;' +
+    'border:1.5px dashed #C7D2FE;background:#EEF2FF;color:#4F46E5;border-radius:11px;' +
+    'padding:9px;font-size:13px;font-weight:800">' +
+    '<i class="ti ti-plus"></i> Мэдээлэл нэмэх</button>' +
     '<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">' +
     '<b style="font-size:13px;color:#1E293B">Санал хүсэлтүүд</b>' +
     '<span style="font-size:11.5px;color:#94A3B8">— тус бүр нь өөрийн арга хэмжээ, ' +
@@ -33295,6 +33466,7 @@ function wmForm(id) {
     'padding:10px;font-size:13px;font-weight:800">' +
     '<i class="ti ti-plus"></i> Санал хүсэлт нэмэх</button>';
   wmFormPaint(node, its);
+  wmTopicPaint(node, tps);
 
   /* ⚠ Огнооны нүдэнд Enter дарахад маягт «илгээгдэж» хуудас дахин ачаалагдана
      — бөглөсөн бүхэн алга болно. Тиймээс submit-ыг бүрмөсөн хаана. */
@@ -33303,6 +33475,25 @@ function wmForm(id) {
   /* Нэмэх / хасах — дэлгэц дээрх утгыг УНШААД дахин зурна, эс бөгөөс
      бөглөсөн зүйл нь арчигдана. */
   node.addEventListener('click', function (ev) {
+    /* ⚠ #wmMoreTopic-ыг ЭХЛЭЭД шалгана — closest('#wmMore') нь өөр id тул
+       давхцахгүй ч дараалал нь уншихад ойлгомжтой байг. */
+    if (ev.target.closest('#wmMoreTopic')) {
+      ev.preventDefault();
+      var ct = wmTopicRead(node); ct.push('');
+      wmTopicPaint(node, ct);
+      var tb = $('#wmTopics textarea', node);
+      if (tb.length) { try { tb[tb.length - 1].focus(); } catch (e) {} }
+      return;
+    }
+    var rt = ev.target.closest('[data-wm-rm-t]');
+    if (rt) {
+      ev.preventDefault();
+      var ti = _f(rt.getAttribute('data-wm-rm-t')), tl = wmTopicRead(node);
+      if (tl.length <= 1) { wmTopicPaint(node, ['']); return; }   /* сүүлчийнхийг цэвэрлэнэ */
+      tl.splice(ti, 1);
+      wmTopicPaint(node, tl);
+      return;
+    }
     if (ev.target.closest('#wmMore')) {
       ev.preventDefault();
       var cur = wmFormRead(node); cur.push({});
@@ -33332,10 +33523,10 @@ function wmForm(id) {
     var v = {
       date: (node.querySelector('#wmDate') || {}).value || '',
       unit: (node.querySelector('#wmUnit') || {}).value || '',
-      hse: String((node.querySelector('#wmHse') || {}).value || '').trim(),
+      topics: wmTopicRead(node).filter(function (t) { return t; }),
       items: wmFormRead(node).filter(function (it) { return !wmItemEmpty(it); })
     };
-    if (!v.date || !v.unit || !v.hse) {
+    if (!v.date || !v.unit || !v.topics.length) {
       toast('Огноо, нэгж, ХАБЭА-н мэдээллийг бөглөнө үү', 'warn');
       return;
     }
@@ -33361,9 +33552,10 @@ function wmSubmit(old, v) {
     if (old) {
       for (var i = 0; i < list.length; i++) {
         if (list[i] && list[i].id === old.id) {
-          list[i].date = v.date; list[i].unit = v.unit; list[i].hse = v.hse;
-          list[i].items = v.items;
+          list[i].date = v.date; list[i].unit = v.unit;
+          list[i].topics = v.topics; list[i].items = v.items;
           /* хуучин хавтгай талбарууд үлдвэл хоёр газар зөрнө — арилгана */
+          delete list[i].hse;
           delete list[i].say; delete list[i].act; delete list[i].moved; delete list[i].done;
           list[i].updatedAt = now; list[i].updatedBy = who;
           break;
@@ -33374,7 +33566,7 @@ function wmSubmit(old, v) {
     }
     newId = wmNextId(list, _f(String(v.date).slice(0, 4)) || new Date().getFullYear());
     list.push({
-      id: newId, date: v.date, unit: v.unit, hse: v.hse, items: v.items,
+      id: newId, date: v.date, unit: v.unit, topics: v.topics, items: v.items,
       at: now, byUid: (me && me.uid) || (SESSION && SESSION.uid) || '', byName: who
     });
     return list;
@@ -33437,6 +33629,75 @@ var WM_COLS = [
   { h: 'Биелэлт',               w: 24.2 }
 ];
 
+/* «ХАБЭА-н мэдээлэл» ба «Мэдээллийн нэгтгэл» хуудсууд.
+   Хэрэглэгчийн хүсэлт (2026-09-04): албанаас хүргэсэн мэдээллийг ТУСАД нь
+   бүртгэл, дата болгон авах. Мэдээлэл тус бүр НЭГ МӨР болно. */
+function wmExcelInfoSheets(wb, recs, border, FONT) {
+  var flat = [];
+  recs.forEach(function (r) {
+    wmTopics(r).forEach(function (t) { flat.push({ date: r.date, unit: r.unit, t: t }); });
+  });
+  if (!flat.length) return;
+
+  var paint = function (ws, heads, widths, rows) {
+    ws.columns = widths.map(function (w) { return { width: w }; });
+    var hr = ws.getRow(1);
+    heads.forEach(function (h, i) {
+      var c = hr.getCell(i + 1);
+      c.value = h;
+      c.font = { name: 'Times New Roman', size: 11, bold: true };
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      c.border = border;
+    });
+    hr.height = 21.6;
+    rows.forEach(function (vals, ri) {
+      var row = ws.getRow(ri + 2);
+      vals.forEach(function (v, i) {
+        var c = row.getCell(i + 1);
+        if (v instanceof Date) { c.value = v; c.numFmt = 'yyyy.mm.dd'; }
+        else c.value = v;
+        c.font = FONT;
+        c.alignment = { vertical: 'top', wrapText: true,
+          horizontal: (i <= 1) ? 'center' : 'left' };
+        c.border = border;
+      });
+    });
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  };
+  var dt = function (d) {
+    var m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : wmDate(d);
+  };
+
+  /* ① Бүртгэл — мөр бүр нэг мэдээлэл */
+  paint(wb.addWorksheet('ХАБЭА-н мэдээлэл', {
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+  }), ['№', 'Он сар', 'Алба хэлтэс', 'ХАБЭА-н албаны зүгээс хүргэсэн мэдээлэл'],
+    [5.5, 12.7, 22, 80],
+    flat.map(function (x, i) { return [i + 1, dt(x.date), wmUnitName(x.unit), x.t]; }));
+
+  /* ② Нэгтгэл — сэдэв бүр хэдэн удаа, хаана */
+  var map = {};
+  flat.forEach(function (x) {
+    var k = wmTopicKey(x.t); if (!k) return;
+    if (!map[k]) map[k] = { text: x.t, n: 0, units: {}, last: '' };
+    map[k].n++; map[k].units[x.unit] = 1;
+    if (String(x.date || '') > map[k].last) map[k].last = String(x.date || '');
+  });
+  var keys = Object.keys(map).sort(function (a, b) {
+    return map[b].n - map[a].n || String(map[b].last).localeCompare(String(map[a].last));
+  });
+  paint(wb.addWorksheet('Мэдээллийн нэгтгэл', {
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
+  }), ['№', 'Хэдэн удаа', 'Сэдэв', 'Ямар нэгжид хүргэсэн', 'Сүүлд'],
+    [5.5, 11, 60, 45, 12.7],
+    keys.map(function (k, i) {
+      var m = map[k];
+      return [i + 1, m.n, m.text,
+        Object.keys(m.units).map(wmUnitAb).join(', '), dt(m.last)];
+    }));
+}
+
 function wmExcel() {
   var recs = wmFiltered().slice().sort(function (a, b) {
     return String(a.date || '').localeCompare(String(b.date || ''));
@@ -33493,7 +33754,11 @@ function wmExcel() {
           its.forEach(function (it) {
             no++;
             var row = ws.getRow(rowAt);
-            var vals = [no, null, wmUnitAb(r.unit), r.hse || '',
+            var tps = wmTopics(r);
+            var vals = [no, null, wmUnitAb(r.unit),
+                        tps.length > 1
+                          ? tps.map(function (x, xi) { return (xi + 1) + '. ' + x; }).join('\n')
+                          : (tps[0] || ''),
                         it.say || '', it.act || '', it.moved || '', it.done || ''];
             vals.forEach(function (v, i) {
               var cell = row.getCell(i + 1);
@@ -33526,6 +33791,8 @@ function wmExcel() {
         });
         ws.views = [{ state: 'frozen', ySplit: 2 }];
       });
+
+      wmExcelInfoSheets(wb, recs, border, FONT);
 
       wb.xlsx.writeBuffer().then(function (out) {
         var nm = '7-хоногийн-уулзалт' +
