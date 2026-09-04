@@ -973,6 +973,10 @@ async function loadDB() {
     var _t2 = Date.now();
     await Promise.all([
       (async function () {
+        /* ⚠ Байршлын тохиргоог мэдээллээс ӨМНӨ ачаална. repVisible() нь
+           «би байршлын эзэн үү» гэдгийг шалгадаг тул тохиргоо ирээгүй
+           байхад эзэн нь өөрийн мэдээллийг л хардаг байв (2026-09-04). */
+        try { await wkLocLoad(); } catch (e) {}
         try {
           _R2_REPS = await repR2Load();
           if (Array.isArray(_R2_REPS)) { _rOk = true; console.log('[reports] R2-оос ' + _R2_REPS.length); }
