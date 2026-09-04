@@ -2809,15 +2809,29 @@ function actionRiskAdd() {
     toast('Таны алба тодорхойлогдсонгүй. Хуудсаа шинэчлээд дахин оролдоно уу.', 'warn');
     return;
   }
-  var lockDept = isDeptHead() ? ((SESSION && SESSION.dept) || '')
-    : ((mySec || bossAdd) ? myDeptAdd : '');
+  /* ⚠ 2026-09-04 — хэрэглэгчийн шийдвэр: дарга, ахлах, менежер нар ОЛОН
+     албанд эрсдэл нэмнэ. Энэ нь 2026-08-29-ний «зөвхөн өөрийн алба»
+     хязгаарлалтыг ЗОРИУД буцаасан явдал.
+     Хэсэг оноосон энгийн ажилтан (mySec) хэвээр түгжээтэй — тэр нь дарга биш. */
+  var freeDept = isAdmin() || isDeptHead() || bossAdd || riskIsHseStaff();
+  var lockDept = freeDept ? '' : (mySec ? myDeptAdd : '');
   var depts = deptList();
-  var emps = (DB.employees || []).filter(function (e) {
-    return !lockDept || riskSameDept(lockDept, e.dept);
-  });
-  var poss = [];
-  emps.forEach(function (e) { var p = (e.pos || e.role || '').trim(); if (p && poss.indexOf(p) < 0) poss.push(p); });
-  poss.sort();
+  /* Сонгосон албадаас хамаарч ажилтан, ажлын байрыг ДАХИН боддог тул
+     статик жагсаалт байхаа больсон. */
+  var empsOfDepts = function (ds) {
+    return (DB.employees || []).filter(function (e) {
+      return (ds || []).some(function (d) { return riskSameDept(d, e.dept); });
+    });
+  };
+  var possOfDept = function (d) {
+    var out = [];
+    (DB.employees || []).forEach(function (e) {
+      if (!riskSameDept(d, e.dept)) return;
+      var p = (e.pos || e.role || '').trim();
+      if (p && out.indexOf(p) < 0) out.push(p);
+    });
+    return out.sort();
+  };
 
   var fld = function (id, label, ph, tag) {
     return '<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;' +
@@ -2892,29 +2906,144 @@ function actionRiskAdd() {
     '<div id="raPnh"></div>' +
     fld('raResp', 'Хэн хяналт тавих', 'Жишээ: Ээлжийн ахлах') +
     fld('raDue', 'Хэзээ / хугацаа', 'Жишээ: Өдөр бүр, эсвэл 2026-09-01') +
-    '<div style="margin-bottom:11px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Алба</label>' +
+    /* ③ ХАМРАХ ХҮРЭЭ — олон алба, дараа нь хэнд */
+    '<div style="border:1.5px solid #C7D2FE;background:#F8FAFF;border-radius:12px;padding:12px 13px;margin-bottom:11px">' +
+    '<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#3730A3;text-transform:uppercase;margin-bottom:9px">Хэнд хамаарах вэ</div>' +
+    '<label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Алба <span style="color:#DC2626">*</span></label>' +
     (lockDept
-      ? '<input value="' + esc(lockDept) + '" disabled style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;background:#F8FAFC;font-size:13.5px;font-family:inherit">'
-      : '<select id="raDept" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">' +
-        depts.map(function (d) { return '<option>' + esc(d) + '</option>'; }).join('') + '</select>') + '</div>' +
-    '<div style="margin-bottom:8px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Хэнд харуулах вэ</label>' +
+      ? '<input value="' + esc(lockDept) + '" disabled style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;background:#F1F5F9;font-size:13.5px;font-family:inherit">'
+      : '<div style="max-height:148px;overflow:auto;border:1.5px solid #E2E8F0;border-radius:9px;padding:8px;background:#fff">' +
+        '<label style="display:block;font-size:12.5px;font-weight:800;color:#4F46E5;padding:3px 0;cursor:pointer">' +
+        '<input type="checkbox" id="raDeptAll"> Бүх алба (' + depts.length + ')</label>' +
+        '<div style="height:1px;background:#E2E8F0;margin:6px 0"></div>' +
+        depts.map(function (d) {
+          return '<label style="display:block;font-size:12.5px;padding:3px 0;cursor:pointer">' +
+            '<input type="checkbox" class="raDept" value="' + esc(d) + '"> ' + esc(d) +
+            '<span style="color:#94A3B8"> · ' + empsOfDepts([d]).length + '</span></label>';
+        }).join('') + '</div>') +
+    '<div style="margin-top:10px"><label style="display:block;font-size:11.5px;font-weight:700;color:#64748B;margin-bottom:4px">Хэнд харуулах вэ</label>' +
     '<select id="raWho" style="width:100%;padding:9px 12px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13.5px;font-family:inherit">' +
-    '<option value="all">Албаны БҮХ ажилтанд</option>' +
+    '<option value="all">Сонгосон албадын БҮХ ажилтанд</option>' +
     '<option value="pos">Сонгосон АЖЛЫН БАЙРНУУДАД</option>' +
     '<option value="emp">Сонгосон ХҮМҮҮСТ</option></select></div>' +
-    '<div id="raPosBox" style="display:none;max-height:150px;overflow:auto;border:1px solid #E2E8F0;border-radius:9px;padding:8px;margin-bottom:8px">' +
-    poss.map(function (p, i) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="checkbox" class="raPos" value="' + esc(p) + '"> ' + esc(p) + '</label>'; }).join('') +
-    (poss.length ? '' : '<div style="font-size:12px;color:#94A3B8">Ажлын байр олдсонгүй</div>') + '</div>' +
-    '<div id="raEmpBox" style="display:none;max-height:170px;overflow:auto;border:1px solid #E2E8F0;border-radius:9px;padding:8px;margin-bottom:8px">' +
-    emps.map(function (e) { return '<label style="display:block;font-size:12.5px;padding:3px 0"><input type="checkbox" class="raEmp" value="' + esc(e.id) + '"> ' + esc(e.name || '—') + ' <span style="color:#94A3B8">· ' + esc(e.pos || e.role || '') + '</span></label>'; }).join('') +
-    (emps.length ? '' : '<div style="font-size:12px;color:#94A3B8">Ажилтан олдсонгүй</div>') + '</div>' +
+    '<div id="raPosBox" style="display:none;margin-top:8px"></div>' +
+    '<div id="raEmpBox" style="display:none;margin-top:8px"></div>' +
+    '<div id="raScopeSum" style="margin-top:9px;font-size:12px;color:#4338CA;font-weight:700"></div>' +
+    '</div>' +
     '<div id="raSt" style="margin-top:6px;font-size:12.5px"></div>');
 
+  /* Сонгосон албад — түгжээтэй бол ганц */
+  function selDepts() {
+    if (lockDept) return [lockDept];
+    return Array.prototype.map.call(node.querySelectorAll('.raDept:checked'), function (c) { return c.value; });
+  }
+  /* ⚠ Алба солигдоход жагсаалт ДАХИН угсрагддаг тул тэмдэглэсэн зүйл
+     алга болно. Сонголтыг санаж, дахин зурахдаа сэргээнэ. */
+  var pickedPos = {}, pickedEmp = {};
+  function rememberPicks() {
+    Array.prototype.forEach.call(node.querySelectorAll('.raPos'), function (c) {
+      pickedPos[c.getAttribute('data-d') + '||' + c.value] = c.checked;
+    });
+    Array.prototype.forEach.call(node.querySelectorAll('.raEmp'), function (c) {
+      pickedEmp[c.value] = c.checked;
+    });
+  }
+  /* Зөвхөн хураангуй мөрийг шинэчилнэ — жагсаалтыг дахин зурахгүй
+     (260 мөрийг дахин зурвал гүйлгэсэн байрлал, фокус алдагдана). */
+  function drawSum() {
+    var sum = node.querySelector('#raScopeSum'); if (!sum) return;
+    var ds = selDepts(), who = (node.querySelector('#raWho') || {}).value || 'all';
+    var txt;
+    if (!ds.length) txt = '<span style="color:#B45309">Алба сонгоогүй байна</span>';
+    else if (who === 'pos') txt = ds.length + ' алба · ' + node.querySelectorAll('.raPos:checked').length + ' ажлын байр';
+    else if (who === 'emp') txt = ds.length + ' алба · ' + node.querySelectorAll('.raEmp:checked').length + ' хүн';
+    else txt = ds.length + ' алба · ' + empsOfDepts(ds).length + ' ажилтан';
+    sum.innerHTML = txt + (ds.length > 1
+      ? ' <span style="color:#64748B;font-weight:600">— алба тус бүрд нэг бичлэг үүснэ</span>' : '');
+  }
+  /* Ажлын байр ба ажилтныг АЛБААР бүлэглэж дахин угсарна. Ижил нэртэй
+     ажлын байр («Ажилтан», «Менежер») олон албанд байдаг тул нийтлэг
+     жагсаалтад холилдож, буруу хүнд эрсдэл очих эрсдэлтэй. */
+  function drawScope() {
+    var ds = selDepts();
+    var pb = node.querySelector('#raPosBox'), eb = node.querySelector('#raEmpBox');
+    var who = (node.querySelector('#raWho') || {}).value || 'all';
+    var hint = '<div style="font-size:12px;color:#94A3B8;padding:8px">Эхлээд алба сонгоно уу.</div>';
+    if (pb) pb.innerHTML = !ds.length ? hint :
+      '<div style="max-height:170px;overflow:auto;border:1.5px solid #E2E8F0;border-radius:9px;padding:8px;background:#fff">' +
+      ds.map(function (d) {
+        var ps = possOfDept(d);
+        if (!ps.length) return '';
+        return '<div style="margin-bottom:7px">' +
+          '<div style="font-size:11px;font-weight:800;color:#4F46E5;text-transform:uppercase;letter-spacing:.04em;padding:2px 0">' + esc(d) + '</div>' +
+          ps.map(function (p) {
+            return '<label style="display:block;font-size:12.5px;padding:2px 0 2px 10px;cursor:pointer">' +
+              '<input type="checkbox" class="raPos" data-d="' + esc(d) + '" value="' + esc(p) + '"' +
+              (pickedPos[d + '||' + p] ? ' checked' : '') + '> ' + esc(p) + '</label>';
+          }).join('') + '</div>';
+      }).join('') + '</div>';
+    if (eb) eb.innerHTML = !ds.length ? hint :
+      '<input id="raEmpQ" placeholder="Нэр, ажлын байраар хайх…" style="width:100%;padding:8px 11px;border:1.5px solid #E2E8F0;border-radius:9px;font-size:13px;font-family:inherit;margin-bottom:7px">' +
+      '<div style="max-height:200px;overflow:auto;border:1.5px solid #E2E8F0;border-radius:9px;padding:8px;background:#fff">' +
+      ds.map(function (d) {
+        var mine = empsOfDepts([d]);
+        if (!mine.length) return '';
+        return '<div class="raEmpGrp" style="margin-bottom:7px">' +
+          '<div style="display:flex;align-items:center;gap:7px;padding:2px 0">' +
+          '<div style="flex:1;min-width:0;font-size:11px;font-weight:800;color:#4F46E5;text-transform:uppercase;letter-spacing:.04em">' + esc(d) + '</div>' +
+          '<button type="button" class="raEmpAll" data-d="' + esc(d) + '" style="border:1px solid #C7D2FE;background:#EEF2FF;color:#4338CA;border-radius:7px;padding:2px 9px;font-size:11px;font-weight:800;font-family:inherit;cursor:pointer">бүгд</button></div>' +
+          mine.map(function (e) {
+            return '<label class="raEmpRow" data-nm="' + esc(((e.name || '') + ' ' + (e.pos || e.role || '')).toLowerCase()) + '" style="display:block;font-size:12.5px;padding:2px 0 2px 10px;cursor:pointer">' +
+              '<input type="checkbox" class="raEmp" data-d="' + esc(d) + '" value="' + esc(e.id) + '"' +
+              (pickedEmp[e.id] ? ' checked' : '') + '> ' + esc(e.name || '—') +
+              '<span style="color:#94A3B8"> · ' + esc(e.pos || e.role || '') + '</span></label>';
+          }).join('') + '</div>';
+      }).join('') + '</div>';
+    if (pb) pb.style.display = who === 'pos' ? 'block' : 'none';
+    if (eb) eb.style.display = who === 'emp' ? 'block' : 'none';
+    drawSum();
+  }
+  /* «бүгд» товч — тухайн албаны БҮХ ажилтныг тэмдэглэнэ/арилгана */
+  node.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest && ev.target.closest('.raEmpAll');
+    if (!b) return;
+    ev.preventDefault();
+    var d = b.getAttribute('data-d');
+    var cs = Array.prototype.filter.call(node.querySelectorAll('.raEmp'), function (c) {
+      return c.getAttribute('data-d') === d;
+    });
+    var on = !cs.every(function (c) { return c.checked; });
+    cs.forEach(function (c) { c.checked = on; });
+    rememberPicks(); drawSum();
+  });
+  /* Хайлт — мөрийг нуух зөвхөн, тэмдэглэгээ хэвээр үлдэнэ */
+  node.addEventListener('input', function (ev) {
+    if (!ev.target || ev.target.id !== 'raEmpQ') return;
+    var q = String(ev.target.value || '').trim().toLowerCase();
+    Array.prototype.forEach.call(node.querySelectorAll('.raEmpRow'), function (l) {
+      l.style.display = (!q || (l.getAttribute('data-nm') || '').indexOf(q) >= 0) ? 'block' : 'none';
+    });
+  });
   node.addEventListener('change', function (ev) {
+    var t = ev.target; if (!t) return;
+    if (t.id === 'raDeptAll') {
+      Array.prototype.forEach.call(node.querySelectorAll('.raDept'), function (c) { c.checked = t.checked; });
+      drawScope(); return;
+    }
+    if (t.className === 'raDept' || (t.classList && t.classList.contains('raDept'))) {
+      var all = node.querySelector('#raDeptAll');
+      if (all) all.checked = node.querySelectorAll('.raDept').length ===
+        node.querySelectorAll('.raDept:checked').length;
+      rememberPicks(); drawScope(); return;
+    }
+    if (t.classList && (t.classList.contains('raPos') || t.classList.contains('raEmp'))) {
+      rememberPicks(); drawSum(); return;
+    }
     if (ev.target && ev.target.id === 'raWho') {
       var v = ev.target.value;
       node.querySelector('#raPosBox').style.display = v === 'pos' ? 'block' : 'none';
       node.querySelector('#raEmpBox').style.display = v === 'emp' ? 'block' : 'none';
+      drawSum();
     }
     /* «Бусад» сонгоход шинэ байршил бичих талбар нээгдэнэ */
     if (ev.target && ev.target.id === 'raSite') {
@@ -2930,6 +3059,16 @@ function actionRiskAdd() {
     if (box) box.innerHTML = pnhHint();
   }
   drawPnh();
+  /* Анхдагчаар өөрийн албыг тэмдэглэнэ — өмнөх зан төлөв хэвээр үлдэнэ,
+     бусад албыг нэмж сонгох нь хэрэглэгчийн санаачилга. */
+  try {
+    if (!lockDept && myDeptAdd) {
+      Array.prototype.forEach.call(node.querySelectorAll('.raDept'), function (c) {
+        if (riskSameDept(c.value, myDeptAdd)) c.checked = true;
+      });
+    }
+  } catch (e) {}
+  drawScope();
 
   var save = elc('button', 'btn btn-primary', '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах');
   save.style.width = '100%';
@@ -2947,46 +3086,88 @@ function actionRiskAdd() {
     }
     if (!hz || !act) { st.innerHTML = '<span style="color:#DC2626">Аюул ба арга хэмжээг заавал бөглөнө үү.</span>'; return; }
     var P = +g('raP') || 1, N = +g('raN') || 1, Hh = +g('raH') || 1;
-    var dept = lockDept || g('raDept') || (depts[0] || '');
     var who = g('raWho');
-    var positions = [], empIds = [];
-    if (who === 'pos') Array.prototype.forEach.call(node.querySelectorAll('.raPos:checked'), function (c) { positions.push(c.value); });
-    if (who === 'emp') Array.prototype.forEach.call(node.querySelectorAll('.raEmp:checked'), function (c) { empIds.push(c.value); });
-    if (who === 'pos' && !positions.length) { st.innerHTML = '<span style="color:#DC2626">Ажлын байр сонгоно уу.</span>'; return; }
-    if (who === 'emp' && !empIds.length) { st.innerHTML = '<span style="color:#DC2626">Ажилтан сонгоно уу.</span>'; return; }
+    var ds = selDepts();
+    if (!ds.length) { st.innerHTML = '<span style="color:#DC2626">Дор хаяж нэг алба сонгоно уу.</span>'; return; }
 
-    var rec = {
-      id: 'RSK-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-      dept: dept, position: positions.join(', '), positions: positions, empIds: empIds,
-      site: site, workplace: g('raWorkplace'),
-      hazard: hz, process: g('raProc'),
-      /* Дэлгэрэнгүй/хэвлэлт нь `location`-ыг уншдаг. Нарийн байршил бичээгүй
-         бол дор хаяж обьектын нэр харагдана — хоосон мөр гарахгүй. */
-      location: g('raLoc') || site,
-      cause: g('raCause'),
-      actions: act, responsible: g('raResp'), due: g('raDue'),
-      p: P, n: N, h: Hh, pv: [P], nv: [N], hv: [Hh],
-      r: P * N * Hh, rAfter: 0, rOk: true, unscored: false,
-      category: 'Зааварчилгаа',
-      /* ⭐ Хэсэг оноосон хүн нэмвэл ТЭР ХЭСЭГТ бүртгэгдэнэ (riskSectionOf нь
-         src замын 3 дахь хэсгээс хэсгийн нэрийг уншдаг) */
-      src: mySec ? ('ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД/' + dept + '/' + mySec + '/Гараар нэмсэн.xlsx') : '',
-      addedBy: mySec ? 'section' : (isAdmin() ? 'admin' : 'depthead'),
-      /* ⭐ «Шинээр нэмэгдсэн» хэсэг ҮҮГЭЭР танина. Excel/ZIP импорт нь
-         createdAt тавьдаг ч энэ тугийг тавьдаггүй тул 887 мөрийн бөөн
-         импорт «шинэ» болж халихгүй. */
-      addedVia: 'manual',
-      createdAt: new Date().toISOString(),
-      createdDay: todayISO(),
-      createdBy: (SESSION && SESSION.email) || 'admin'
+    /* ⚠ Алба тус бүрд ТУСДАА бичлэг үүснэ. dept нь ганц мөр текст бөгөөд
+       R2-д файл байрлуулах (risks/d/<slug>.json), индекс, албаар шүүх,
+       танилцалт бүгд түүнээс хамаардаг — массив болговол систем даяар
+       эвдрэл гарна. Тиймээс 5 алба сонгоход 5 бичлэг үүснэ. */
+    var pickFor = function (cls, d) {
+      return Array.prototype.filter.call(node.querySelectorAll('.' + cls + ':checked'), function (c) {
+        return c.getAttribute('data-d') === d;
+      }).map(function (c) { return c.value; });
     };
+    var plan = [];
+    ds.forEach(function (d) {
+      var positions = who === 'pos' ? pickFor('raPos', d) : [];
+      var empIds = who === 'emp' ? pickFor('raEmp', d) : [];
+      /* Тухайн албанд юу ч сонгоогүй бол ТЭР албыг алгасана — хоосон
+         хамрах хүрээтэй бичлэг үүсгэхгүй. */
+      if (who === 'pos' && !positions.length) return;
+      if (who === 'emp' && !empIds.length) return;
+      plan.push({ dept: d, positions: positions, empIds: empIds });
+    });
+    if (!plan.length) {
+      st.innerHTML = '<span style="color:#DC2626">' +
+        (who === 'pos' ? 'Дор хаяж нэг ажлын байр сонгоно уу.'
+          : who === 'emp' ? 'Дор хаяж нэг ажилтан сонгоно уу.' : 'Алба сонгоно уу.') + '</span>';
+      return;
+    }
+
     save.disabled = true; save.innerHTML = '<i class="ti ti-loader"></i> Хадгалж байна…';
-    (DB.risks = DB.risks || []).push(rec);
-    var idx = await riskPersist('Шинэ эрсдэл');
+    /* ⚠⚠ ЗААВАЛ: өөр албанд бичихийн ӨМНӨ тэр албаны ОДОО БАЙГАА эрсдлийг
+       татаж авна. riskR2Publish нь албаны файлыг БҮТНЭЭР дарж бичдэг тул
+       дутуу датагаар нийтэлбэл тэр албаны бүх эрсдэл УСТАНА. Дарга нар
+       ердөө өөрийн албаныхаа эрсдлийг ачаалдаг тул энэ нь бодит аюул. */
+    try {
+      for (var _i = 0; _i < plan.length; _i++) {
+        st.innerHTML = '<span style="color:#64748B">' + esc(plan[_i].dept) +
+          ' — одоо байгаа эрсдлийг татаж байна…</span>';
+        await riskEnsureDeptLoaded(plan[_i].dept);
+      }
+    } catch (e) {
+      save.disabled = false; save.innerHTML = '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах';
+      st.innerHTML = '<span style="color:#DC2626">' + esc((e && e.message) || 'Татаж чадсангүй') +
+        '. Дата эвдрэхээс сэргийлж ХАДГАЛСАНГҮЙ.</span>';
+      return;
+    }
+    st.innerHTML = '';
+
+    var _now = Date.now();
+    var recs = plan.map(function (pl, i) {
+      return {
+        id: 'RSK-' + _now + '-' + i,
+        dept: pl.dept, position: pl.positions.join(', '),
+        positions: pl.positions, empIds: pl.empIds,
+        site: site, workplace: g('raWorkplace'),
+        hazard: hz, process: g('raProc'),
+        location: g('raLoc') || site,
+        cause: g('raCause'),
+        actions: act, responsible: g('raResp'), due: g('raDue'),
+        p: P, n: N, h: Hh, pv: [P], nv: [N], hv: [Hh],
+        r: P * N * Hh, rAfter: 0, rOk: true, unscored: false,
+        category: 'Зааварчилгаа',
+        src: mySec ? ('ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД/' + pl.dept + '/' + mySec + '/Гараар нэмсэн.xlsx') : '',
+        addedBy: mySec ? 'section' : (isAdmin() ? 'admin' : 'depthead'),
+        addedVia: 'manual',
+        createdAt: new Date().toISOString(),
+        createdDay: todayISO(),
+        createdBy: (SESSION && SESSION.email) || 'admin'
+      };
+    });
+    (DB.risks = DB.risks || []).push.apply(DB.risks, recs);
+    var idx = await riskPersist('Шинэ эрсдэл',
+      { scopeDepts: plan.map(function (p) { return p.dept; }) });
     save.disabled = false; save.innerHTML = '<i class="ti ti-plus"></i> Нэмээд ажилтнуудад харуулах';
     if (idx) {
-      var n = who === 'emp' ? empIds.length : (who === 'pos' ? positions.length + ' ажлын байр' : 'албаны бүх ажилтан');
-      toast('✓ Нэмэгдлээ — ' + (who === 'emp' ? n + ' хүнд' : n) + ' харагдана', 'success');
+      var nWho = who === 'emp'
+        ? plan.reduce(function (a, p) { return a + p.empIds.length; }, 0) + ' хүнд'
+        : who === 'pos'
+          ? plan.reduce(function (a, p) { return a + p.positions.length; }, 0) + ' ажлын байранд'
+          : 'бүх ажилтанд';
+      toast('✓ ' + recs.length + ' бичлэг нэмэгдлээ — ' + plan.length + ' алба · ' + nWho, 'success');
       closeModal(); renderHazards();
     } else {
       st.innerHTML = '<span style="color:#DC2626">Байршуулж чадсангүй. Дахин оролдоно уу.</span>';
@@ -3026,7 +3207,30 @@ async function actionRiskToR2(btn) {
 
 /* Оруулалтын дараа дуудна: DB.risks-ийг R2 руу нийтэлж, үр дүнг хэлнэ.
    Firestore-д огт хүрэхгүй тул квот зарцуулахгүй. */
-async function riskPersist(msg) {
+/* ══ ӨӨР АЛБАНД БИЧИХИЙН ӨМНӨ ТЭР АЛБАНЫ ЭРСДЛИЙГ ТАТНА ══════════════
+   ⚠⚠ riskR2Publish нь албаны файлыг БҮТНЭЭР дарж бичдэг. Дарга нар
+      ердөө өөрийн албаныхаа эрсдлийг ачаалдаг тул өөр албанд ганц шинэ
+      мөр нэмээд нийтэлбэл тэр албаны 221 эрсдэл 1 болж УСТАНА.
+      Тиймээс бичихийн өмнө индекс дэх тоотой нь тулгаж, дутуу бол
+      бүтнээр нь татаж нэгтгэнэ. */
+async function riskEnsureDeptLoaded(dept) {
+  var canon = riskCanonDept(dept) || dept;
+  var d = ((RISK_INDEX && RISK_INDEX.depts) || []).filter(function (x) {
+    return riskSameDept(x.name, canon);
+  })[0];
+  var want = d ? (d.n || 0) : 0;
+  var have = (DB.risks || []).filter(function (r) { return riskSameDept(r.dept, canon); }).length;
+  if (!d || have >= want) return true;      /* индекст алга = эрсдэлгүй алба */
+  var rows = await riskR2GetJson(RISK_R2_PREFIX + 'd/' + d.slug + '.json', { fresh: true });
+  if (!Array.isArray(rows)) throw new Error(canon + ' албаны эрсдлийг татаж чадсангүй');
+  DB.risks = riskDedupe((DB.risks || []).concat(rows));
+  riskCacheBust();
+  try { console.log('[risks] ' + canon + ' — ' + rows.length + ' мөр урьдчилан татав'); } catch (e) {}
+  return true;
+}
+
+async function riskPersist(msg, opts) {
+  opts = opts || {};
   /* ⚠ Оруулалт нь DB.risks руу НЭМДЭГ тул дахин оруулахад давхарладаг байв
      (байршуулалт унасан ч мөрүүд санах ойд үлдэнэ). Хадгалахын өмнө үргэлж
      давхардлыг арилгана — ижил алба+ажлын байр+аюул+үйл ажиллагаа нэг л удаа. */
@@ -3043,12 +3247,26 @@ async function riskPersist(msg) {
     /* Админ бүх албыг ачаалдаг тул бүрэн нийтэлнэ. Бусад нь ЗӨВХӨН
        өөрийн албандаа — бусдын датаг хамгаална. */
     var scopeD = null;
-    if (!isAdmin()) {
+    if (opts.scopeDepts && opts.scopeDepts.length) {
+      /* Дуудагч ямар албанд бичихээ ил заасан (олон албанд эрсдэл нэмэх).
+         Тэр албадын дата бүтэн эсэхийг riskEnsureDeptLoaded баталгаажуулсан. */
+      scopeD = opts.scopeDepts.map(function (d) { return riskCanonDept(d) || d; });
+    } else if (!isAdmin()) {
       var myD = (SESSION && SESSION.dept) || '';
       try { var _me = myEmp(); if (_me && _me.dept) myD = _me.dept; } catch (e) {}
       if (myD) scopeD = [myD];
     }
-    var idx = await riskR2Publish(DB.risks || [], function (s) {
+    /* ⚠ Зөвхөн хамрах хүрээний мөрийг нийтэлнэ. Өмнө нь БҮХ мөрийг
+       дамжуулдаг байсан тул санах ойд өөр албаны мөр байвал riskR2Publish
+       «бичих эрх алга» гэж унадаг байв. Хамрах хүрээнд ороогүй албаны
+       файл хөндөгдөхгүй, индекст нь хэвээр үлдэнэ. */
+    var _rows = DB.risks || [];
+    if (scopeD) {
+      _rows = _rows.filter(function (r) {
+        return scopeD.some(function (sd) { return riskSameDept(sd, r.dept); });
+      });
+    }
+    var idx = await riskR2Publish(_rows, function (s) {
       try { console.log('[riskR2] ' + s); } catch (e) {}
     }, { scopeDepts: scopeD });
     toast('✓ ' + n + ' эрсдэл ' + idx.depts.length + ' албанд байршлаа', 'success');
@@ -31871,6 +32089,18 @@ function wmNextId(list, year) {
    «ахлах» нь ЧХЛ-ийн ахлах химич, ИТА-гийн ахлах инженерийг ч хамруулна. */
 var WM_BOSS_POS = /дарга|ахлах|менежер|эрхлэгч/i;
 
+/* ⭐ ЗАХИРАЛ — харьяа албадынхаа НЭГТГЭЛИЙГ хардаг (2026-09-04).
+   ⚠ «Үйлдвэрлэл хариуцсан захирал» гэсэн албан тушаалд «дарга/ахлах/менежер»
+     гэсэн үг БАЙХГҮЙ тул WM_BOSS_POS-д огт таарахгүй — тусад нь дүрэм хэрэгтэй.
+   Албадын хүрээг RISK_PROD_DEPTS-ээс авна (эрсдэлийн хэсэгтэй нэг эх сурвалж:
+   хуурай хүнс · шингэн хүнс · чанарын хяналт · чанарын баталгаа · инженер техник).
+     → Ложистик энд ОРОХГҮЙ, тэр албаны даргад л харагдана.
+   ⚠ Гүйцэтгэх захирлыг ЗОРИУДААР оруулаагүй — хэрэглэгч зөвхөн үйлдвэрлэл
+     хариуцсан захирлыг заасан. Хэрэгтэй бол доор нэг мөр нэмэхэд хангалттай. */
+var WM_DIRS = [
+  { pos: /үйлдвэрлэл\s*хариуцсан\s*захирал/i, depts: RISK_PROD_DEPTS }
+];
+
 function wmMyEmp() { try { return myEmp(); } catch (e) { return null; } }
 /* ХАБЭА-н АЛБАНЫ ажилтан уу — бүртгэх, бүх нэгжийн уулзалт харах эрхтэй.
    Шалгуур нь ЗӨВХӨН АЛБА. Албан тушаалаар нь бас шүүж үзсэн боловч буруу байв:
@@ -31890,11 +32120,21 @@ function wmIsHse() {
 function wmMyUnits() {
   var me = wmMyEmp();
   if (!me) return [];
+  var myPos = String(me.pos || me.role || '');
+  /* Захирал — албаныхаа БУС, харьяалагдах БҮХ нэгжийн тэмдэглэлийг хардаг.
+     (Б.Баянжаргал нь бүртгэлээрээ ХХҮ-д харьяалагддаг ч зөвхөн ХХҮ-г харах нь
+     буруу — түүнд үйлдвэрлэлийн бүх нэгжийн нэгтгэл хэрэгтэй.) */
+  for (var d = 0; d < WM_DIRS.length; d++) {
+    if (!WM_DIRS[d].pos.test(myPos)) continue;
+    var re = WM_DIRS[d].depts;
+    return WM_UNITS.filter(function (u) { return !re || re.test(u.dept); })
+      .map(function (u) { return u.key; });
+  }
   var myDept = String(me.dept || '');
   /* ⚠ Алба нь мэдэгдэхгүй бол ЮУ Ч харуулахгүй — riskSameDept нь хоосон
      утгыг «тийм» гэж үздэг тул шалгахгүй бол бүх нэгж нээгдэнэ. */
   if (!myDept) return [];
-  if (!WM_BOSS_POS.test(String(me.pos || me.role || ''))) return [];
+  if (!WM_BOSS_POS.test(myPos)) return [];
   var sec = '', role = 'emp';
   try { sec = ackSecOf(me) || ''; } catch (e) {}
   try { role = ackRoleOf(me); } catch (e) {}
@@ -32008,6 +32248,55 @@ function wmFiltered() {
   });
 }
 
+/* ── НЭГТГЭЛ ───────────────────────────────────────────────────────────
+   Хэд хэдэн нэгж хардаг хүнд (ХАБЭА-н алба, захирал) нэгжээр задалсан тойм.
+   ⚠ Тоонууд нь хуудсан дээрх жагсаалттай ЯГ ИЖИЛ олонлогоос гарна — нэг
+     зүйлийг хоёр газар өөрөөр тоолохгүй (энэ аппын хуучин алдаа). */
+function wmSummaryHTML(list) {
+  var keys = wmIsHse() ? WM_UNITS.map(function (u) { return u.key; }) : wmMyUnits();
+  if (keys.length < 2) return '';
+  var tot = { n: 0, i: 0, done: 0 };
+  var body = keys.map(function (k) {
+    var rs = list.filter(function (r) { return r.unit === k; });
+    var its = [];
+    rs.forEach(function (r) { its = its.concat(wmItems(r)); });
+    var done = its.filter(function (it) { return wmState(it).k === 'done'; }).length;
+    var last = rs.map(function (r) { return String(r.date || ''); }).sort().pop() || '';
+    tot.n += rs.length; tot.i += its.length; tot.done += done;
+    var u = wmUnit(k), open = its.length - done;
+    return '<tr style="border-top:1px solid #F1F5F9">' +
+      '<td style="padding:7px 8px"><span style="display:inline-block;width:8px;height:8px;' +
+      'border-radius:3px;background:' + (u ? u.c : '#94A3B8') + ';margin-right:7px"></span>' +
+      '<b style="font-size:12.5px;color:#1E293B">' + esc(u ? u.name : k) + '</b></td>' +
+      '<td style="padding:7px 8px;text-align:center;font-size:12.5px">' + rs.length + '</td>' +
+      '<td style="padding:7px 8px;text-align:center;font-size:12.5px">' + its.length + '</td>' +
+      '<td style="padding:7px 8px;text-align:center;font-size:12.5px;font-weight:800;color:' +
+      (open ? '#D97706' : '#94A3B8') + '">' + open + '</td>' +
+      '<td style="padding:7px 8px;text-align:center;font-size:12.5px;font-weight:800;color:' +
+      (done ? '#16A34A' : '#94A3B8') + '">' + done + '</td>' +
+      '<td style="padding:7px 8px;text-align:right;font-size:12px;color:' +
+      (last ? '#64748B' : '#DC2626') + '">' + (last ? esc(wmDate(last)) : 'уулзалт алга') + '</td></tr>';
+  }).join('');
+  var th = function (t, a) {
+    return '<th style="padding:6px 8px;text-align:' + (a || 'center') + ';font-size:11px;' +
+      'color:#94A3B8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">' + t + '</th>';
+  };
+  return '<div class="card" style="padding:13px 15px;margin-bottom:12px;overflow-x:auto">' +
+    '<div style="font-size:13.5px;font-weight:800;color:#1E293B;margin-bottom:6px">' +
+    'Нэгжүүдийн нэгтгэл</div>' +
+    '<table style="width:100%;border-collapse:collapse;min-width:520px"><thead><tr>' +
+    th('Нэгж', 'left') + th('Уулзалт') + th('Санал') + th('Шийдвэрлээгүй') + th('Биелсэн') +
+    th('Сүүлийн уулзалт', 'right') + '</tr></thead><tbody>' + body +
+    '<tr style="border-top:2px solid #E2E8F0">' +
+    '<td style="padding:8px;font-size:12.5px;font-weight:800;color:#1E293B">Нийт</td>' +
+    '<td style="padding:8px;text-align:center;font-size:13px;font-weight:800">' + tot.n + '</td>' +
+    '<td style="padding:8px;text-align:center;font-size:13px;font-weight:800">' + tot.i + '</td>' +
+    '<td style="padding:8px;text-align:center;font-size:13px;font-weight:800;color:#D97706">' +
+    (tot.i - tot.done) + '</td>' +
+    '<td style="padding:8px;text-align:center;font-size:13px;font-weight:800;color:#16A34A">' +
+    tot.done + '</td><td></td></tr></tbody></table></div>';
+}
+
 /* ── ХУУДАС ───────────────────────────────────────────────────────────── */
 var WM_MONTHS = ['01 сар', '02 сар', '03 сар', '04 сар', '05 сар', '06 сар',
                  '07 сар', '08 сар', '09 сар', '10 сар', '11 сар', '12 сар'];
@@ -32049,6 +32338,8 @@ function renderWmeet() {
     statCard('Шийдвэрлэгдээгүй', nOpen, 'ti-progress', '#D97706') +
     statCard('Биелсэн', nDone, 'ti-circle-check', '#16A34A') +
     '</div>';
+
+  html += wmSummaryHTML(mine);
 
   /* Нэгжийн шүүлт — нэгээс олон нэгж харагддаг хүнд л утгатай */
   var cnt = {};
