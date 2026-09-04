@@ -3259,6 +3259,28 @@ function riskDupeGroups() {
 
 async function actionRiskMergeDupes(btn) {
   if (!riskPageAdmin()) { toast('Зөвхөн ХАБЭА, админ', 'error'); return; }
+
+  /* ⚠⚠ ЭХЛЭЭД БҮХ АЛБЫГ АЧААЛНА. riskDupeGroups() нь санах ойд байгаа
+     эрсдлийг л хардаг. Хэрэглэгч ердөө өөрийн албаны эрсдлийг ачаалдаг
+     тул өмнө нь 14 хуулбарын ердөө 2 нь (ачаалагдсан 2 алба) олдож,
+     үлдсэн 12 нь хэвээр үлдсэн. Бүлэглэхээс ӨМНӨ бүгдийг татна. */
+  var old0 = btn ? btn.innerHTML : '';
+  var idxD = ((RISK_INDEX && RISK_INDEX.depts) || []).map(function (d) { return d.name; });
+  if (idxD.length) {
+    if (btn) { btn.disabled = true; }
+    try {
+      for (var _k = 0; _k < idxD.length; _k++) {
+        if (btn) btn.innerHTML = '<i class="ti ti-loader"></i> Уншиж байна ' + (_k + 1) + '/' + idxD.length;
+        await riskEnsureDeptLoaded(idxD[_k]);
+      }
+    } catch (e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = old0; }
+      toast('Албадыг уншиж чадсангүй: ' + ((e && e.message) || e) + '. Юу ч өөрчлөгдөөгүй.', 'error');
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.innerHTML = old0; }
+  }
+
   var groups = riskDupeGroups();
   if (!groups.length) { toast('Давхардсан эрсдэл олдсонгүй', 'info'); return; }
 
@@ -3293,8 +3315,13 @@ async function actionRiskMergeDupes(btn) {
       var keep = g[0];
       var ds = [], ps = [], es = [];
       g.forEach(function (r) {
-        var d = riskCanonDept(r.dept) || r.dept;
-        if (d && ds.indexOf(d) < 0) ds.push(d);
+        /* ⚠ riskDeptsOf — аль хэдийн нэгтгэгдсэн бичлэгийн `depts`
+           жагсаалтыг ч уншина. Зөвхөн r.dept уншвал өмнөх нэгтгэлтээр
+           цуглуулсан албад алдагдана. */
+        riskDeptsOf(r).forEach(function (d0) {
+          var d = riskCanonDept(d0) || d0;
+          if (d && ds.indexOf(d) < 0) ds.push(d);
+        });
         (r.positions || []).forEach(function (p) { if (ps.indexOf(p) < 0) ps.push(p); });
         (r.empIds || []).forEach(function (x) { if (es.indexOf(x) < 0) es.push(x); });
         if (r !== keep) dropIds[r.id] = 1;
@@ -13053,10 +13080,13 @@ function renderHazards() {
            байсан — одоо арга хэмжээ нь эрсдлийн дэлгэрэнгүй дотроо
            гүйцэтгэгддэг тул энэ товч хэрэггүй боллоо. */
         /* Давхардал БАЙВАЛ л гарна — цэвэр үед цэс бөглөрөхгүй */
-        ((function () { try { return riskDupeGroups().length; } catch (e) { return 0; } })()
-          ? '<button class="btn btn-secondary" data-risk-mergedup="1" style="background:#FEF3C7;color:#92400E;border-color:#FDE68A" ' +
-            'title="Нэг үйлдлээр үүссэн давхардсан бичлэгийг нэг болгож нэгтгэнэ">' +
-            '<i class="ti ti-layers-difference"></i> Давхардал нэгтгэх</button>' : '') +
+        /* ⚠ Өмнө нь «давхардал байвал л» гэж нуудаг байсан нь найдваргүй:
+           riskDupeGroups() санах ойг л хардаг тул ачаалагдаагүй албаны
+           давхардал байсан ч товч гардаггүй. Одоо үргэлж харагдана —
+           дарахад бүх албыг уншаад, олдохгүй бол тэгж хэлнэ. */
+        '<button class="btn btn-secondary" data-risk-mergedup="1" style="background:#FEF3C7;color:#92400E;border-color:#FDE68A" ' +
+        'title="Нэг үйлдлээр үүссэн давхардсан бичлэгийг нэг болгож нэгтгэнэ">' +
+        '<i class="ti ti-layers-difference"></i> Давхардал нэгтгэх</button>' +
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
         '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
