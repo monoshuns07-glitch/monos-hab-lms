@@ -2972,6 +2972,10 @@ function actionRiskAdd() {
          src замын 3 дахь хэсгээс хэсгийн нэрийг уншдаг) */
       src: mySec ? ('ЭРСДЛИЙН ҮНЭЛГЭЭНҮҮД/' + dept + '/' + mySec + '/Гараар нэмсэн.xlsx') : '',
       addedBy: mySec ? 'section' : (isAdmin() ? 'admin' : 'depthead'),
+      /* ⭐ «Шинээр нэмэгдсэн» хэсэг ҮҮГЭЭР танина. Excel/ZIP импорт нь
+         createdAt тавьдаг ч энэ тугийг тавьдаггүй тул 887 мөрийн бөөн
+         импорт «шинэ» болж халихгүй. */
+      addedVia: 'manual',
       createdAt: new Date().toISOString(),
       createdDay: todayISO(),
       createdBy: (SESSION && SESSION.email) || 'admin'
@@ -11512,15 +11516,23 @@ function riskTabList(list) {
        ⚠ БҮРМӨСӨН нуухгүй: батлах гинжин хэлхээг хүсэлт гаргагч ӨӨРӨӨ
          сонгодог тул захирлыг шат болгон сонгосон тохиолдол гарч болно.
          Тэр үед таб буцаж гарна — эс бөгөөс хүсэлт мөнхөд гацна. */
+    /* ⚠ Захирал хувцас, ХХХ-ийн захиалгад ОРОЛЦДОГГҮЙ — батлах үүрэг нь
+       албаны дарга, ХАБЭА дээр байдаг тул түүнд хүсэлт шууд ирдэггүй.
+       Тиймээс энэ таб түүнд огт хэрэггүй.
+       ⚠⚠ Өмнө нь ackRoleOf(myEmp())-оор шалгадаг байсан нь АЖИЛТНЫ
+          ЖАГСААЛТ ачаалагдахаас өмнө myEmp() нь null буцаадаг тул role
+          «emp» гэж гарч, таб нэг хором гарч ирээд алга болдог байв.
+          riskDirScope() нь SESSION.pos-оос шууд уншдаг — жагсаалт
+          хүлээхгүй, эхний зурагдалтаас л зөв ажиллана.
+       ⚠ БҮРМӨСӨН нуухгүй: батлах гинжин хэлхээг хүсэлт гаргагч ӨӨРӨӨ
+         сонгодог тул захирлыг шат болгон сонгосон тохиолдол гарч болно.
+         Тэр үед таб буцаж гарна — эс бөгөөс хүсэлт мөнхөд гацна. */
     var hideReq = false;
-    try {
-      var role0 = ackRoleOf(myEmp());
-      if (role0 === 'ceo' || role0 === 'prod') {
-        var mineReq = 0;
-        try { mineReq = reqMine((myEmp() || {}).uid).length; } catch (e2) {}
-        hideReq = (rq === 0 && mineReq === 0);
-      }
-    } catch (e) {}
+    if (riskDirScope()) {
+      var mineReq = 0;
+      try { mineReq = reqMine((myEmp() || {}).uid).length; } catch (e2) {}
+      hideReq = (rq === 0 && mineReq === 0);
+    }
     if (!hideReq) {
       tabs.push({ key: 'req', icon: 'ti-shirt', label: 'Хувцас, ХХХ-ийн хүсэлт', n: rq, tone: rq ? '#DC2626' : '' });
     }
@@ -11882,6 +11894,77 @@ function riskDirDashHTML(list, subtitle) {
   }
 
   return H;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ШИНЭЭР НЭМЭГДСЭН ЭРСДЭЛ — хуучин эрсдэлүүдийн ДЭЭР, тусад нь
+   ══════════════════════════════════════════════════════════════════════
+   «Эрсдэл нэмэх» цэснээс нэмэгдсэн эрсдлүүд 887 мөрийн дунд живж,
+   шинээр юу орсныг хэн ч анзаардаггүй байв. Одоо тэдгээр нь тусдаа
+   хэсэгт, хамгийн сүүлийнхээс нь эхлэн харагдана.
+
+   ⚠ ЭДГЭЭР НЬ ҮНДСЭН ЖАГСААЛТААС ХАСАГДАХГҮЙ. Доорх зураглал, матриц,
+     жагсаалт дээр одоогийн эрэмбээрээ (эрсдлийн оноогоор) хэвээр
+     харагдана — энэ хэсэг нь зөвхөн «сүүлд юу нэмэгдсэн бэ» гэдгийг
+     түрүүлж үзүүлнэ. Тоо давхардаж тоологдохгүй.
+
+   ⚠ Нэг ч ийм эрсдэл байхгүй бол ЮУ Ч БУЦААХГҮЙ — хуудас өмнөх шигээ
+     хэвээр харагдана. (2026-09 байдлаар ийм эрсдэл огт байхгүй.) */
+function riskIsNew(r) {
+  if (!r) return false;
+  if (r.addedVia === 'manual') return true;
+  /* Энэ тугийг оруулахаас ӨМНӨ нэмэгдсэн бичлэгүүдийг ч танина:
+     addedBy-г ЗӨВХӨН actionRiskAdd бичдэг, импорт бичдэггүй. */
+  return !!(r.addedBy && r.createdAt);
+}
+function riskNewAt(r) {
+  var t = Date.parse((r && r.createdAt) || '');
+  return isNaN(t) ? 0 : t;
+}
+function riskNewSectionHTML(list) {
+  var rows;
+  try { rows = riskEmpMerged(list || []).filter(riskIsNew); } catch (e) { return ''; }
+  if (!rows.length) return '';
+  rows.sort(function (a, b) { return riskNewAt(b) - riskNewAt(a); });
+  var MAX = 12;
+  var show = rows.slice(0, MAX), more = rows.length - show.length;
+  var who = { admin: 'ХАБЭА мэргэжилтэн', depthead: 'Албаны дарга', section: 'Хэсгийн хариуцагч' };
+
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border:1.5px solid #C7D2FE;background:#F8FAFF">' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">' +
+    '<i class="ti ti-sparkles" style="font-size:19px;color:#4F46E5"></i>' +
+    '<div style="font-size:15px;font-weight:800;color:#312E81">Шинээр нэмэгдсэн эрсдэлүүд</div>' +
+    '<span style="background:#4F46E5;color:#fff;border-radius:999px;padding:2px 10px;' +
+    'font-size:12px;font-weight:800">' + rows.length + '</span></div>' +
+    '<div style="font-size:12.5px;color:#64748B;margin-bottom:12px;line-height:1.6">' +
+    '«Эрсдэл нэмэх» цэснээс нэмэгдсэн, хамгийн сүүлийнхээс нь эхлэв. ' +
+    'Эдгээр нь доорх үндсэн жагсаалтад ч хэвээр байна.</div>' +
+    show.map(function (r) {
+      var L = riskLevel(r), sc = riskScore(r);
+      var pos = r.position || (r.positions || []).join(', ') || 'Бүх ажилтан';
+      var when = '';
+      try { when = ackDateMn(r.createdAt); } catch (e) { when = ''; }
+      return '<div data-risk-open="' + esc(r.id) + '" style="cursor:pointer;background:#fff;' +
+        'border:1px solid #E2E8F0;border-left:4px solid ' + L.color + ';border-radius:12px;' +
+        'padding:11px 13px;margin-bottom:7px">' +
+        '<div style="display:flex;align-items:flex-start;gap:11px">' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13.5px;font-weight:700;color:#1E293B;line-height:1.4">' +
+        esc(r.hazard || 'Нэргүй эрсдэл') + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px;line-height:1.55">' +
+        esc(riskDeptShort(r.dept || '')) + ' · ' + esc(pos) +
+        (when ? ' · <b style="color:#4F46E5">' + esc(when) + '</b>' : '') +
+        (who[r.addedBy] ? ' · ' + esc(who[r.addedBy]) : '') + '</div></div>' +
+        '<div style="flex-shrink:0;text-align:center">' +
+        '<div style="font-size:18px;font-weight:900;color:' + L.color + ';line-height:1;' +
+        'font-family:\'Bricolage Grotesque\',sans-serif">' + (Math.round(sc * 10) / 10) + '</div>' +
+        '<div style="font-size:10.5px;font-weight:700;color:' + L.color + ';background:' + L.bg + ';' +
+        'border-radius:6px;padding:2px 7px;margin-top:4px">' + L.code + '</div>' +
+        '</div></div></div>';
+    }).join('') +
+    (more > 0 ? '<div style="font-size:12px;color:#94A3B8;padding-top:4px">…бас ' + more +
+      ' эрсдэл. Бүгдийг доорх жагсаалтаас үзнэ үү.</div>' : '') +
+    '</div>';
 }
 
 function riskDeptBarHTML(list) {
@@ -12640,6 +12723,9 @@ function renderHazards() {
       /* ТАНИЛЦАЛТ — хүн бүр (захирал, хариуцагч, ажилтан) гарын үсэг зурна */
       H += ackBannerHTML();
       /* Ажилтанд — эрэмбэлсэн, энгийн хэлээр. Админ/туслах админд — дашбоард. */
+      /* ⭐ ШИНЭЭР НЭМЭГДСЭН — хуучин эрсдэлүүдийн ДЭЭР, тусад нь.
+         Хоосон бол '' буцаана тул одоогийн хуудас огт өөрчлөгдөхгүй. */
+      H += riskNewSectionHTML(list);
       if (_brief) H += riskDirDashHTML(list, sub);
       else H += admin ? riskDashHTML(list, sub) + riskAdminSectionsHTML(list)
                       : riskEmpBriefHTML(list, myPos, myDept);
