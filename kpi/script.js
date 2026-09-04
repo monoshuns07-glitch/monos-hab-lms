@@ -9792,35 +9792,6 @@ function ackJobsPending(me) {
    уншина — хэн нэгэнд «зурсан 2», нөгөөд нь «зурсан 0» гэж харагдана
    (эрсдэл нь албаар тус тусад нь татагддаг тул хэш нь агшин бүрд өөр).
    Файлын хувилбар нь бүх хүнд ИЖИЛ тул түүнийг ч хүлээн зөвшөөрнө. */
-/* ══ ТҮР ЗУУРЫН ОНОШИЛГОО ══════════════════════════════════════════════
-   «зурсан 0» гэж яагаад гарч байгааг ТААМАГЛАХГҮЙ, бодит утгыг харуулна.
-   Зөвхөн хаягт ?debug=ack гэж нэмсэн үед. Асуудал шийдэгдмэгц УСТГАНА. */
-function ackDebugHTML(job) {
-  try {
-    if (String(location.search || '').indexOf('debug=ack') < 0) return '';
-    var st = ACK_JOBS[job];
-    var rows = ackJobRows(job);
-    var me = null; try { me = (ACK_ME && ACK_ME.me) || myEmp(); } catch (e) {}
-    var vNow = '';
-    try { vNow = String(ackJobVersion(job)); } catch (e) { vNow = 'алдаа'; }
-    var d = [
-      'ACK_JOBS түлхүүр: ' + (st ? 'БАЙНА' : 'АЛГА'),
-      'мөр: ' + (st && st.rows ? st.rows.length : '—'),
-      'файлын ver: ' + (st ? String(st.version) : '—'),
-      'бодсон ver: ' + vNow,
-      'ackJobRows: ' + rows.length,
-      'DB.risks: ' + ((DB.risks || []).length),
-      'RISK_RELEASES: ' + Object.keys(RISK_RELEASES || {}).length,
-      'LOADED: ' + ACK_JOBS_LOADED + ' · BUSY: ' + (typeof ACK_JOBS_BUSY !== 'undefined' ? ACK_JOBS_BUSY : '?'),
-      'миний uid: ' + ((me && me.uid) || '—'),
-      'ACK_JOBS түлхүүрүүд: [' + Object.keys(ACK_JOBS || {}).join(' | ') + ']'
-    ];
-    return '<div style="font-family:Consolas,monospace;font-size:10.5px;color:#334155;background:#F1F5F9;' +
-      'border:1px dashed #94A3B8;border-radius:8px;padding:6px 9px;margin-top:5px;line-height:1.6;' +
-      'white-space:pre-wrap;word-break:break-all">🔍 ' + esc(d.join('\n')) + '</div>';
-  } catch (e) { return '<div style="font-size:10.5px;color:#DC2626">🔍 оношилгоо: ' + esc((e && e.message) || e) + '</div>'; }
-}
-
 function ackJobVerSet(job) {
   var st = ACK_JOBS[job], out = {};
   try { out[String(ackJobVersion(job))] = 1; } catch (e) {}
@@ -11459,8 +11430,7 @@ function riskGroupedHTML(list) {
         var od = p.indexOf('🔓') === 0;
         var relN = od ? ((RISK_RELEASES[p.slice(2).trim()] || {}).empIds || []).length : 0;
         var label = od ? (p + ' <span style="font-size:11px;color:' + (relN ? '#15803D' : '#B45309') + ';font-weight:700">· нэг удаагийн ажил · ' +
-          (relN ? 'нээлттэй ' + relN + ' хүнд · зурсан ' + ackJobSignedCount(p.slice(2).trim()) : 'хэнд ч нээгээгүй') + '</span>' +
-          ackDebugHTML(p.slice(2).trim())) : esc(p);
+          (relN ? 'нээлттэй ' + relN + ' хүнд · зурсан ' + ackJobSignedCount(p.slice(2).trim()) : 'хэнд ч нээгээгүй') + '</span>') : esc(p);
         return '<div class="dash-click" data-risk-posf="' + esc(od ? p.slice(2).trim() : p) + '" style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px' +
           (od ? ';background:#FFFBEB;border:1px solid #FDE68A' : '') + '">' +
           '<i class="ti ' + (od ? 'ti-lock-open' : 'ti-briefcase') + '" style="font-size:14px;color:' + (od ? '#B45309' : '#7C3AED') + ';flex-shrink:0"></i>' +
