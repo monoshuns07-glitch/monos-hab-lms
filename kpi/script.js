@@ -33419,7 +33419,7 @@ function wmTopicHTML(i, t) {
 }
 function wmTopicRead(node) {
   var out = [];
-  $('.wm-topic .wm-topic-t', node).forEach(function (el) { out.push(String(el.value || '').trim()); });
+  $$('.wm-topic .wm-topic-t', node).forEach(function (el) { out.push(String(el.value || '').trim()); });
   return out;
 }
 function wmTopicPaint(node, list) {
@@ -33481,7 +33481,7 @@ function wmForm(id) {
       ev.preventDefault();
       var ct = wmTopicRead(node); ct.push('');
       wmTopicPaint(node, ct);
-      var tb = $('#wmTopics textarea', node);
+      var tb = $$('#wmTopics textarea', node);
       if (tb.length) { try { tb[tb.length - 1].focus(); } catch (e) {} }
       return;
     }
