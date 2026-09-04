@@ -16231,6 +16231,34 @@ function wkInMyDept(r, dept) {
   return false;
 }
 
+/* ══ ӨӨРИЙМСӨГ ХАРАГДАЦ ══════════════════════════════════════════════════
+   Хуудас «систем» биш, «миний ажлын байр» шиг мэдрэгдэх нь чухал.
+   Цагаас хамаарсан мэндчилгээ + нэр. Нэр нь ижил форматтай (Б.Даваадорж). */
+function wkGreetHTML() {
+  var h = new Date().getHours();
+  var g = (h >= 5 && h < 12) ? 'Өглөөний мэнд' : (h >= 12 && h < 18) ? 'Өдрийн мэнд' : 'Оройн мэнд';
+  var nm = '';
+  try { var me = myEmp(); if (me) nm = empShortName(me); } catch (e) {}
+  if (!nm) { try { nm = shortenPersonName((SESSION && SESSION.name) || ''); } catch (e) {} }
+  return nm ? (g + ', ' + nm) : 'Аюул мэдээлэх · Ажлын захиалга';
+}
+/* ⭐ «Та энэ сард юу хийсэн бэ» — хүн өөрийн хувь нэмрийг хардаг.
+   Зөвхөн ӨӨРИЙН мэдээлснээр, энэ сарын дотор. */
+function wkMyImpactHTML(mineRep) {
+  var now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  var mine = (mineRep || []).filter(function (r) {
+    var d = new Date(r.createdAt);
+    return !isNaN(d.getTime()) && d.getFullYear() === y && d.getMonth() === m;
+  });
+  if (!mine.length) return '';
+  var fixed = mine.filter(function (r) { return wkStatus(r) === 'closed'; }).length;
+  return '<div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;' +
+    'padding:9px 13px;margin-top:10px;font-size:12.5px;color:#3730A3;line-height:1.55">' +
+    '✋ Та энэ сард <b>' + mine.length + '</b> удаа мэдээлсэн' +
+    (fixed ? ', <b>' + fixed + '</b> нь шийдэгдсэн' : ' — шийдэгдэхийг хүлээж байна') +
+    '.</div>';
+}
+
 function wkMyGate() {
   var dept = '';
   var me = null; try { me = myEmp(); } catch (e) {}
@@ -17816,9 +17844,9 @@ function wkListHTML(all) {
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
-    /* ⭐ Хэрэглэгчийн ӨӨРИЙНХ нь алба нэрээрээ гарна — «ерөнхий систем» биш,
-       «манай албаны хуудас» гэсэн мэдрэмж төрүүлнэ. */
-    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">Аюул мэдээлэх · Ажлын захиалга</div>' +
+    /* ⭐ НЭРЭЭР нь мэндчилж, ӨӨРИЙНХ нь албыг харуулна — «ерөнхий систем»
+       биш, «миний хуудас» гэсэн мэдрэмж төрүүлнэ. */
+    '<div><div style="font-size:15px;font-weight:800;color:#1E293B">' + esc(wkGreetHTML()) + '</div>' +
     '<div style="font-size:12px;color:#94A3B8">' +
     (myDept ? esc(myDept) + ' · ' : '') + 'Мэдээл → хүлээн ав → гүйцэтгэ → батал</div></div>' +
     '<button class="btn btn-primary" data-wk-new="1" style="margin-left:auto">' +
@@ -17835,18 +17863,38 @@ function wkListHTML(all) {
         (t.n ? '<span style="margin-left:6px;background:' + (on ? 'rgba(255,255,255,.25)' : (t.tone || '#EEF2FF')) +
           ';color:' + (on ? '#fff' : (t.tone ? '#fff' : '#4F46E5')) + ';border-radius:6px;padding:1px 6px;' +
           'font-size:11px;font-weight:800">' + t.n + '</span>' : '') + '</button>';
-    }).join('') + '</div></div>';
+    }).join('') + '</div>' + wkMyImpactHTML(mineRep) + '</div>';
 
   if (!list.length) {
+    /* ⭐ Хоосон дэлгэц нь «юу ч алга» гэсэн хүйтэн мэдэгдэл биш, тухайн
+       хүний нөхцөлд тохирсон, сайн мэдээ мэт байх нь зөв. Албаны нэрийг
+       нэрлэвэл «манай тухай» болно. */
+    var dLbl = myDept ? esc(myDept) : 'Танай алба';
+    var eIcon = '📋', eHead = '', eSub = '';
+    if (WK_TAB === 'all') {
+      eIcon = '✅'; eHead = 'Нээлттэй ажил алга — бүгд шийдэгдсэн байна';
+      eSub = 'Хугацаа хэтэрсэн, хүлээгдэж буй зүйл байхгүй.';
+    } else if (WK_TAB === 'dept') {
+      eIcon = '✅'; eHead = dLbl + ' — шийдэх зүйл алга';
+      eSub = 'Манай албанаас захиалсан ажил бүгд хаагдсан байна.';
+    } else if (WK_TAB === 'in') {
+      eIcon = '✅'; eHead = dLbl + '-д шинэ зүйл ирээгүй байна';
+      eSub = 'Одоогоор хүлээж авах ажил алга.';
+    } else if (WK_TAB === 'my') {
+      eIcon = '🙌'; eHead = 'Та одоогоор ажил хүлээж аваагүй байна';
+      eSub = '«Ирсэн» табаас сонгож хүлээж авна.';
+    } else if (WK_TAB === 'done') {
+      eIcon = '🕓'; eHead = 'Дууссан ажил хараахан алга';
+      eSub = 'Ажил бүрэн хаагдмагц энд хуримтлагдана.';
+    } else {
+      eIcon = '✋'; eHead = 'Та хараахан мэдээлэл илгээгээгүй байна';
+      eSub = 'Аюул, эвдрэл харвал «Шинэ мэдээлэл» товчоор мэдээлээрэй — ' +
+        'таны мэдээлэл бусдыг гэмтлээс хамгаална.';
+    }
     return H + '<div class="card" style="padding:30px;text-align:center">' +
-      '<div style="font-size:28px">📋</div>' +
-      '<div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:6px">' +
-      (WK_TAB === 'all' ? 'Нээлттэй ажил алга — бүгд дууссан байна'
-        : WK_TAB === 'in' ? 'Танай албанд шинэ зүйл алга'
-        : WK_TAB === 'my' ? 'Та ажил хүлээж аваагүй байна'
-          : WK_TAB === 'done' ? 'Дууссан зүйл алга' : 'Та мэдээлэл илгээгээгүй байна') + '</div>' +
-      (WK_TAB === 'rep' ? '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px">' +
-        'Дээрх «Шинэ мэдээлэл» товчоор эхэлнэ үү.</div>' : '') + '</div>';
+      '<div style="font-size:28px">' + eIcon + '</div>' +
+      '<div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:6px">' + eHead + '</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px;line-height:1.5">' + eSub + '</div></div>';
   }
   return H + list.map(wkRowHTML).join('');
 }
