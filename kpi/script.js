@@ -9600,28 +9600,33 @@ function ackJobsPending(me) {
     if (!riskIsReleasedTo(rows[0], me)) return;
     var ver = ackJobVersion(job);
     var st = ACK_JOBS[job];
-    var signed = st && (st.rows || []).some(function (x) { return x.uid === me.uid && String(x.version) === String(ver); });
+    /* Тоололтой ИЖИЛ дүрэм — эс бөгөөс нэгтгэлд «зурсан» гэж гараад
+       баннер нь дахин шаардсаар байх зөрчил үүснэ. */
+    var signed = !!ackJobSignedRow(job, me.uid);
     if (!signed) out.push({ job: job, rows: rows, ver: ver });
   });
   return out;
 }
-/* Аль хувилбартай тулгах вэ. Эрсдэл бүрэн ачаалагдсан бол ОДООГИЙН хэшээр
-   (эрсдэл засагдсан бол дахин зурах ёстой). Дутуу бол ФАЙЛЫН өөрийнх нь
-   хувилбараар — эс бөгөөс зурсан хүн «зураагүй» болж тоологдоно. */
-function ackJobVerFor(job) {
-  var st = ACK_JOBS[job];
-  if (ackRisksReady()) return ackJobVersion(job);
-  return (st && st.version) ? String(st.version) : ackJobVersion(job);
+/* Хүлээн зөвшөөрөх хувилбарууд: одоогийн тооцоолсон БОЛОН файлын өөрийнх нь.
+   ⚠ Зөвхөн орон нутгийн хэшээр шалгавал нэг ижил файлыг хүн бүр өөрөөр
+   уншина — хэн нэгэнд «зурсан 2», нөгөөд нь «зурсан 0» гэж харагдана
+   (эрсдэл нь албаар тус тусад нь татагддаг тул хэш нь агшин бүрд өөр).
+   Файлын хувилбар нь бүх хүнд ИЖИЛ тул түүнийг ч хүлээн зөвшөөрнө. */
+function ackJobVerSet(job) {
+  var st = ACK_JOBS[job], out = {};
+  try { out[String(ackJobVersion(job))] = 1; } catch (e) {}
+  if (st && st.version != null && st.version !== 0) out[String(st.version)] = 1;
+  return out;
 }
 function ackJobSignedRow(job, uid) {
   var st = ACK_JOBS[job]; if (!st) return null;
-  var ver = ackJobVerFor(job);
-  return (st.rows || []).filter(function (x) { return x.uid === uid && String(x.version) === String(ver); })[0] || null;
+  var ok = ackJobVerSet(job);
+  return (st.rows || []).filter(function (x) { return x.uid === uid && ok[String(x.version)]; })[0] || null;
 }
 function ackJobSignedCount(job) {
   var st = ACK_JOBS[job]; if (!st) return 0;
-  var ver = ackJobVerFor(job), seen = {};
-  (st.rows || []).forEach(function (x) { if (String(x.version) === String(ver) && x.uid) seen[x.uid] = 1; });
+  var ok = ackJobVerSet(job), seen = {};
+  (st.rows || []).forEach(function (x) { if (ok[String(x.version)] && x.uid) seen[x.uid] = 1; });
   return Object.keys(seen).length;
 }
 /* Надад нээгдсэн ажлуудын хуудсыг татна (ackRefreshMine дотроос) */
