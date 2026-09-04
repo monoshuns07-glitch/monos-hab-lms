@@ -15397,7 +15397,7 @@ function rfDashData(all) {
     kind: { odt: 0, hazard: 0, job: 0 },
     kindRows: { odt: [], hazard: [], job: [] },
     kindMonth: {},                 /* 'odt|2026-08' → [мөрүүд] */
-    urg: [0, 0, 0, 0, 0], urgRows: [[], [], [], [], []],
+    urg: {}, urgRows: {},          /* зэрэглэлээр (админ нэмж/хасч болно) */
     byDept: {}, byPlace: {}, byMonth: {},
     deptRows: {}, placeRows: {},
     /* ⭐ Маягтад бөглөгддөг ч чартад ороогүй байсан талбарууд */
@@ -15454,8 +15454,9 @@ function rfDashData(all) {
     } else {
       d.hazSkip.push(r);
     }
-    var uu = Math.min(5, Math.max(1, wkUrg(r)));
-    d.urg[uu - 1]++; d.urgRows[uu - 1].push(r);
+    var uu = wkUrgClamp(wkUrg(r));
+    d.urg[uu] = (d.urg[uu] || 0) + 1;
+    (d.urgRows[uu] = d.urgRows[uu] || []).push(r);
 
     /* Шатууд */
     d.stage.rep.push(r);
@@ -15734,25 +15735,31 @@ function rfKindHTML(d) {
    ⚠ «Эрсдэлийн зэрэг» нь ГУРАВ (бага/дунд/өндөр) — тэр нь мэдээлсэн
    хүний үнэлгээ, зөв. Харин Work order-ийн урсгал нь 1–5 зэрэгтэй бөгөөд
    ХУГАЦАА түүнээс тооцогддог тул тусад нь харуулна. */
+/* Зэрэглэл нь 5-аас их байж болох тул өнгийг хязгаараар нь авна */
+function rfUrgCol(n) {
+  var i = Math.min(RF_URG.length, Math.max(1, Number(n) || 1)) - 1;
+  return RF_URG[i] || RF_URG[RF_URG.length - 1];
+}
 function rfUrgHTML(d) {
-  var tot = d.urg.reduce(function (a, b) { return a + b; }, 0);
+  var _L = wkUrgLevels();
+  var tot = _L.reduce(function (a, n) { return a + (d.urg[n] || 0); }, 0);
   if (!tot) return '';
-  var max = Math.max.apply(null, d.urg);
-  var body = [5, 4, 3, 2, 1].map(function (n) {
-    var v = d.urg[n - 1], w = Math.max(v ? 3 : 0, (v / max) * 100);
+  var max = Math.max.apply(null, _L.map(function (n) { return d.urg[n] || 0; }).concat([1]));
+  var body = _L.map(function (n) {
+    var v = d.urg[n] || 0, w = Math.max(v ? 3 : 0, (v / max) * 100);
     var key = rfDrill('Яаралтай зэрэг ' + n, wkHoursText(wkUrgHours(n)) + '-ийн дотор хийгдэх ёстой',
-      d.urgRows[n - 1]);
+      d.urgRows[n] || []);
     return '<div' + rfHit(key, 'Зэрэг ' + n + ': ' + v) + 'class="rf-hit" style="display:flex;' +
       'align-items:center;gap:10px;margin-bottom:7px;cursor:pointer;border-radius:9px;padding:2px 5px;' +
       'margin-left:-5px;margin-right:-5px">' +
-      '<span style="flex:0 0 auto;width:22px;height:22px;border-radius:7px;background:' + RF_URG[n - 1] +
+      '<span style="flex:0 0 auto;width:22px;height:22px;border-radius:7px;background:' + rfUrgCol(n) +
       ';color:' + (n >= 4 ? '#fff' : '#7F1D1D') + ';font-size:12px;font-weight:900;display:flex;' +
       'align-items:center;justify-content:center">' + n + '</span>' +
       '<span style="flex:0 0 76px;font-size:11.5px;color:' + RF_INK.s + '">' +
       esc(wkHoursText(wkUrgHours(n))) + '</span>' +
       '<span style="flex:1;height:15px;background:#F1F5F9;border-radius:8px;position:relative;overflow:hidden">' +
       '<span style="position:absolute;left:0;top:0;height:100%;width:' + w + '%;background:linear-gradient(90deg,' +
-      RF_URG[n - 1] + 'CC,' + RF_URG[n - 1] + ');border-radius:8px"></span></span>' +
+      rfUrgCol(n) + 'CC,' + rfUrgCol(n) + ');border-radius:8px"></span></span>' +
       '<span style="flex:0 0 28px;text-align:right;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
       ';font-variant-numeric:tabular-nums">' + v + '</span></div>';
   }).join('');
@@ -16288,8 +16295,8 @@ function rfExportXlsx(all) {
           var vs = RF_KIND_ORDER.map(function (k) { return (d.kindMonth[k + '|' + mk] || []).length; });
           return [rfMonLabel(mk)].concat(vs).concat([vs.reduce(function (a, b) { return a + b; }, 0)]);
         })));
-      add('Яаралтай зэрэг', [['Зэрэг', 'Хугацаа', 'Тоо', 'Хувь']].concat([5, 4, 3, 2, 1].map(function (n) {
-        return [n, wkHoursText(wkUrgHours(n)), d.urg[n - 1], pct(d.urg[n - 1], d.n)];
+      add('Яаралтай зэрэг', [['Зэрэг', 'Хугацаа', 'Тоо', 'Хувь']].concat(wkUrgLevels().map(function (n) {
+        return [n, wkHoursText(wkUrgHours(n)), d.urg[n] || 0, pct(d.urg[n] || 0, d.n)];
       })));
       add('Хариуцах алба', [['Алба', 'Тоо', 'Хувь'],
         [WK_GATES[0].name, d.gate.hab, pct(d.gate.hab, d.n)],
@@ -16840,9 +16847,29 @@ async function wkUrgSave(map) {
   WK_URG = map; WK_URG_OK = true;
   return await riskR2PutJson(WK_URG_FILE, { updatedAt: new Date().toISOString(), map: map });
 }
+/* ⚠ 2026-09-04: Зэрэглэлийг админ НЭМЖ, ХАСАЖ болно. Өмнө нь код дотор
+   5,4,3,2,1 гэж хатуу бичигдсэн байсан тул тохиргооноос өөрчлөх боломжгүй байв.
+   Жагсаалт нь тохиргооны түлхүүрүүдээс үүснэ (томоос жижиг рүү). */
+function wkUrgLevels() {
+  var m = WK_URG || WK_URG_DEF;
+  var a = Object.keys(m).map(Number).filter(function (n) { return n > 0 && isFinite(n); });
+  if (!a.length) a = Object.keys(WK_URG_DEF).map(Number);
+  return a.sort(function (x, y) { return y - x; });
+}
+/* Хуучин бичлэгийн зэрэг устсан бол ХАМГИЙН ОЙРЫН зэрэгт тооцно */
+function wkUrgClamp(n) {
+  var L = wkUrgLevels();
+  n = Number(n) || 0;
+  if (L.indexOf(n) >= 0) return n;
+  var best = L[0], bd = 1e9;
+  L.forEach(function (x) { var d = Math.abs(x - n); if (d < bd) { bd = d; best = x; } });
+  return best;
+}
 function wkUrgHours(n) {
   var m = WK_URG || WK_URG_DEF;
-  var v = m[String(n)] != null ? m[String(n)] : WK_URG_DEF[n];
+  var v = m[String(n)];
+  if (v == null) v = m[String(wkUrgClamp(n))];
+  if (v == null) v = WK_URG_DEF[n];
   return Number(v) || 24;
 }
 /* Цагийг хүн уншихаар */
@@ -17055,7 +17082,7 @@ function wkNewModal() {
     /* ── ② ЯАРАЛТАЙ ── */
     if (sel.kind) {
       H += wkStep(2, 'Хэр яаралтай вэ?', !!sel.urg);
-      H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + [5, 4, 3, 2, 1].map(function (n) {
+      H += '<div style="display:flex;gap:7px;flex-wrap:wrap">' + wkUrgLevels().map(function (n) {
         var on = sel.urg === n, col = wkUrgColor(n);
         return '<button type="button" data-wk-urg="' + n + '" style="flex:1;min-width:78px;' +
           'border:2px solid ' + (on ? col : '#E2E8F0') + ';background:' + (on ? col : '#fff') +
@@ -17837,7 +17864,7 @@ function wkUrgModal(id) {
       '<div style="font-size:12.5px;color:#475569;line-height:1.7;margin-bottom:11px">' +
       'Мэдээлсэн хүн <b>' + r.wkUrg + '</b> гэж санал болгосон. Албаны хувьд зөв эсэхийг ' +
       'баталгаажуулна уу — хугацаа үүнээс тооцогдоно.</div>' +
-      '<div style="display:flex;gap:7px;flex-wrap:wrap">' + [5, 4, 3, 2, 1].map(function (n) {
+      '<div style="display:flex;gap:7px;flex-wrap:wrap">' + wkUrgLevels().map(function (n) {
         var on = cur === n, col = wkUrgColor(n);
         return '<button type="button" data-u="' + n + '" style="flex:1;min-width:76px;border:2px solid ' +
           (on ? col : '#E2E8F0') + ';background:' + (on ? col : '#fff') + ';border-radius:11px;' +
@@ -18689,7 +18716,10 @@ function wkAdminModal() {
         H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
           'Ажилтан <b>5</b> дарвал хэдэн цагийн дотор шийдвэрлэх ёстой вэ? ' +
           'Энэ хугацаанаас хойш «хугацаа хэтэрсэн» гэж тооцогдоно.</div>';
-        H += [5, 4, 3, 2, 1].map(function (n) {
+        /* Зэрэглэлүүд ТОХИРГООНООС — админ нэмж, хасч болно */
+        var lv = Object.keys(urg).map(Number).filter(function (x) { return x > 0; })
+          .sort(function (a, b) { return b - a; });
+        H += lv.map(function (n) {
           var col = wkUrgColor(n);
           return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;' +
             'border-bottom:1px solid #F1F5F9">' +
@@ -18701,8 +18731,26 @@ function wkAdminModal() {
             'font-family:inherit;font-size:13px;text-align:right">' +
             '<span style="font-size:12.5px;color:#64748B">цаг</span>' +
             '<span style="margin-left:auto;font-size:12.5px;font-weight:700;color:#334155">' +
-            wkHoursText(urg[n] || 24) + '</span></div>';
+            wkHoursText(urg[n] || 24) + '</span>' +
+            (lv.length > 1
+              ? '<button data-wa-udel="' + n + '" title="Энэ зэрэглэлийг хасах" ' +
+                'style="border:none;background:#FEE2E2;color:#991B1B;border-radius:9px;padding:8px 12px;' +
+                'cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700;flex-shrink:0">' +
+                '<i class="ti ti-trash"></i></button>'
+              : '<span style="width:44px;flex-shrink:0"></span>') +
+            '</div>';
         }).join('');
+        H += '<div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">' +
+          '<input id="waNewUn" type="number" min="1" max="99" placeholder="зэрэг" ' +
+          'style="width:86px;border:1.5px solid #E2E8F0;border-radius:10px;padding:10px;' +
+          'font-family:inherit;font-size:13px;text-align:center">' +
+          '<input id="waNewUh" type="number" min="1" max="8760" placeholder="цаг" ' +
+          'style="width:96px;border:1.5px solid #E2E8F0;border-radius:10px;padding:10px;' +
+          'font-family:inherit;font-size:13px;text-align:right">' +
+          '<button id="waAddU" class="btn btn-secondary btn-sm">＋ Зэрэглэл нэмэх</button></div>';
+        H += '<div style="font-size:11.5px;color:#94A3B8;margin-top:9px;line-height:1.6">' +
+          'Зэрэглэл хассан ч өмнө тэрхүү зэрэглэлээр бүртгэгдсэн ажлууд хэвээр үлдэж, ' +
+          'хамгийн ойрын зэрэглэлийн хугацаагаар тооцогдоно.</div>';
       } else {
         H += '<div style="font-size:12.5px;color:#64748B;line-height:1.7;margin-bottom:13px">' +
           'Ажилтан мэдээлэхдээ эхлээд <b>бүлэг</b>, дараа нь <b>дэд байршил</b> сонгоно. ' +
@@ -18770,6 +18818,25 @@ function wkAdminModal() {
     node.addEventListener('click', function (ev) {
       var b;
       if ((b = ev.target.closest('[data-wa-tab]'))) { grab(); tab = b.getAttribute('data-wa-tab'); draw(); return; }
+      if ((b = ev.target.closest('[data-wa-udel]'))) {
+        grab();
+        var dn = b.getAttribute('data-wa-udel');
+        if (Object.keys(urg).length <= 1) { toast('Дор хаяж нэг зэрэглэл үлдэх ёстой', 'warn'); return; }
+        if (!confirm('«' + dn + '» зэрэглэлийг хасах уу?\n\nӨмнө энэ зэрэглэлээр бүртгэгдсэн ажлууд ' +
+          'хэвээр үлдэж, хамгийн ойрын зэрэглэлийн хугацаагаар тооцогдоно.')) return;
+        delete urg[dn]; delete urg[Number(dn)];
+        draw(); return;
+      }
+      if (ev.target.closest('#waAddU')) {
+        grab();
+        var nEl = node.querySelector('#waNewUn'), hEl = node.querySelector('#waNewUh');
+        var nn = parseInt(nEl && nEl.value, 10), hh = parseInt(hEl && hEl.value, 10);
+        if (!(nn > 0 && nn < 100)) { toast('Зэрэглэл 1–99 хооронд байна', 'warn'); return; }
+        if (!(hh > 0 && hh <= 8760)) { toast('Хугацаа 1–8760 цаг байна', 'warn'); return; }
+        if (urg[nn] != null) { toast('«' + nn + '» зэрэглэл аль хэдийн байна', 'warn'); return; }
+        urg[nn] = hh;
+        draw(); return;
+      }
       if ((b = ev.target.closest('[data-wa-gdel]'))) {
         grab();
         var gi = +b.getAttribute('data-wa-gdel');
