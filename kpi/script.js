@@ -3237,6 +3237,89 @@ function actionRiskAdd() {
 /* ══ АДМИН: одоо байгаа эрсдлийг R2 руу нэг товчоор шилжүүлнэ ══════════
    Дахин оруулах шаардлагагүй — санах ойд ачаалагдсан эрсдлийг шууд нийтэлнэ.
    Үүний дараа хүн бүр R2-оос уншина, Firestore-ийн уншилт огт зарцуулагдахгүй. */
+/* ══ НЭГ УДААГИЙН ЦЭВЭРЛЭГЭЭ: ДАВХАРДСАН ЭРСДЛИЙГ НЭГТГЭНЭ ═══════════
+   2026-09-04-нд «олон алба» боломж эхлээд алба тус бүрд ТУСДАА бичлэг
+   үүсгэдэг байсан тул «Бүх алба» сонгоход нэг аюул 11 удаа давтагдсан.
+   Энэ товч тэдгээрийг НЭГ хуваалцсан бичлэг болгож нэгтгэнэ.
+
+   ТАНИХ ГАРЫН ҮСЭГ: нэг үйлдлээр үүссэн бичлэгүүд ЯГ ИЖИЛ createdAt
+   (миллисекунд хүртэл), ижил аюул, ижил үйл ажиллагаатай байдаг.
+   Энэ гурав давхцах магадлал өөр тохиолдолд бараг тэг. Гараар нэмсэн
+   (addedVia:'manual') бичлэгийг л хөндөнө — импортын 887 мөрт хүрэхгүй. */
+function riskDupeGroups() {
+  var g = {};
+  (DB.risks || []).forEach(function (r) {
+    if (!r || r.addedVia !== 'manual' || !r.createdAt) return;
+    var k = r.createdAt + '||' + (r.hazard || '') + '||' + (r.process || '');
+    (g[k] = g[k] || []).push(r);
+  });
+  return Object.keys(g).map(function (k) { return g[k]; })
+    .filter(function (a) { return a.length > 1; });
+}
+
+async function actionRiskMergeDupes(btn) {
+  if (!riskPageAdmin()) { toast('Зөвхөн ХАБЭА, админ', 'error'); return; }
+  var groups = riskDupeGroups();
+  if (!groups.length) { toast('Давхардсан эрсдэл олдсонгүй', 'info'); return; }
+
+  var lines = groups.map(function (g) {
+    return '• «' + String(g[0].hazard || '').slice(0, 40) + '» — ' + g.length + ' хуулбар';
+  }).join('\n');
+  var nDrop = groups.reduce(function (a, g) { return a + g.length - 1; }, 0);
+  if (!confirm('Давхардсан ' + groups.length + ' эрсдэл олдлоо:\n\n' + lines +
+    '\n\nТус бүрийг НЭГ бичлэг болгож нэгтгэх үү?\n' +
+    '• ' + nDrop + ' илүү хуулбар устана\n' +
+    '• Үлдэх бичлэг нь ижил албадад хэвээр харагдана\n' +
+    '• Агуулга (аюул, арга хэмжээ, оноо) огт өөрчлөгдөхгүй')) return;
+
+  var old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Нэгтгэж байна…'; }
+  try {
+    /* ⚠ Хуулбарыг албаны файлаас ХАСАХЫН тулд тэр албаны БҮХ эрсдэл санах
+       ойд байх ёстой — эс бөгөөс нийтлэхэд файл дутуу бичигдэж, тэр албаны
+       бусад эрсдэл устана. */
+    var touched = {};
+    groups.forEach(function (g) {
+      g.forEach(function (r) { var d = riskCanonDept(r.dept) || r.dept; if (d) touched[d] = 1; });
+    });
+    var names = Object.keys(touched);
+    for (var i = 0; i < names.length; i++) {
+      if (btn) btn.innerHTML = '<i class="ti ti-loader"></i> ' + (i + 1) + '/' + names.length;
+      await riskEnsureDeptLoaded(names[i]);
+    }
+
+    var dropIds = {};
+    groups.forEach(function (g) {
+      var keep = g[0];
+      var ds = [], ps = [], es = [];
+      g.forEach(function (r) {
+        var d = riskCanonDept(r.dept) || r.dept;
+        if (d && ds.indexOf(d) < 0) ds.push(d);
+        (r.positions || []).forEach(function (p) { if (ps.indexOf(p) < 0) ps.push(p); });
+        (r.empIds || []).forEach(function (x) { if (es.indexOf(x) < 0) es.push(x); });
+        if (r !== keep) dropIds[r.id] = 1;
+      });
+      keep.depts = ds.length > 1 ? ds : null;
+      keep.positions = ps; keep.position = ps.join(', '); keep.empIds = es;
+    });
+    DB.risks = (DB.risks || []).filter(function (r) { return !dropIds[r.id]; });
+    riskCacheBust();
+
+    var idx = await riskPersist('Давхардлыг нэгтгэж байна', { scopeDepts: names });
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    if (idx) {
+      toast('✓ ' + groups.length + ' эрсдэл нэгтгэгдэж, ' + nDrop + ' хуулбар устлаа', 'success');
+      renderHazards();
+    } else {
+      toast('Хадгалж чадсангүй — хуудсаа шинэчлээд дахин оролдоно уу', 'error');
+    }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+    console.error('[mergeDupes]', e);
+    toast('⚠️ Нэгтгэж чадсангүй: ' + ((e && e.message) || e) + '. Юу ч өөрчлөгдөөгүй.', 'error');
+  }
+}
+
 async function actionRiskToR2(btn) {
   if (!isAdmin()) { toast('Зөвхөн админ', 'error'); return; }
   DB.risks = riskDedupe(DB.risks || []); riskCacheBust();   // давхардлыг эхлээд арилгана
@@ -12885,6 +12968,8 @@ function riskWire(sec, redraw) {
     /* «R2 руу шилжүүлэх» — санах ойд байгаа эрсдлийг R2 руу нийтэлнэ */
     var mg = ev.target.closest('[data-risk-tor2]');
     if (mg) { actionRiskToR2(mg); return; }
+    var md = ev.target.closest('[data-risk-mergedup]');
+    if (md) { actionRiskMergeDupes(md); return; }
     /* «Эрсдэл нэмэх» — гараар шинэ эрсдэл/зааварчилгаа */
     var ra = ev.target.closest('[data-risk-add]');
     if (ra) { actionRiskAdd(); return; }
@@ -12967,6 +13052,11 @@ function renderHazards() {
         /* ⚠ «Арга хэмжээ хувиарлах» нь Даалгавар цэс рүү даалгавар үүсгэдэг
            байсан — одоо арга хэмжээ нь эрсдлийн дэлгэрэнгүй дотроо
            гүйцэтгэгддэг тул энэ товч хэрэггүй боллоо. */
+        /* Давхардал БАЙВАЛ л гарна — цэвэр үед цэс бөглөрөхгүй */
+        ((function () { try { return riskDupeGroups().length; } catch (e) { return 0; } })()
+          ? '<button class="btn btn-secondary" data-risk-mergedup="1" style="background:#FEF3C7;color:#92400E;border-color:#FDE68A" ' +
+            'title="Нэг үйлдлээр үүссэн давхардсан бичлэгийг нэг болгож нэгтгэнэ">' +
+            '<i class="ti ti-layers-difference"></i> Давхардал нэгтгэх</button>' : '') +
         '<button class="btn btn-secondary" data-risk-tpl="1"><i class="ti ti-file-download"></i> Загвар татах</button>' +
         '<button class="btn btn-primary" data-risk-tplin="1"><i class="ti ti-file-check"></i> Загвараар оруулах</button>' +
         '<button class="btn btn-secondary" data-risk-folder="1"><i class="ti ti-folder-plus"></i> Фолдер / ZIP</button>' +
