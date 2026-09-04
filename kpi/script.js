@@ -13011,11 +13011,20 @@ function riskBigHead(num, title, sub, color) {
     '</span></div>';
 }
 /* Дэлгэрэнгүйн дээд талын хураангуй чип */
+/* ⚠ Урт бичвэрийг ТАСЛАХГҮЙ — фонтыг нь багасгаад бүтнээр нь багтаана.
+   Өмнө нь «нэг удаа хийгдээд эрсдэл хаагдана.» гэсэн хугацаа 22
+   тэмдэгтээр таслагдаж «…хийгдээд эрсд» болж, утга нь ойлгогдохгүй байв.
+   Хугацаа, арга хэмжээ зэрэг нь өгүүлбэрээр бичигддэг тул тасалж болохгүй. */
 function riskChip(label, value, color, bg) {
-  return '<div style="flex:1;min-width:104px;background:' + (bg || '#F8FAFC') + ';border:1px solid ' +
+  var _n = String(value == null ? '' : value).replace(/<[^>]*>/g, '').length;
+  var _fs = _n > 60 ? '11px' : _n > 44 ? '11.5px' : _n > 28 ? '12.5px' : '14px';
+  /* Урт бичвэртэй карт илүү өргөн зай эзэлнэ — эс бөгөөс 5 мөр болж сунана */
+  var _basis = _n > 30 ? '190px' : '104px';
+  return '<div style="flex:1;min-width:' + _basis + ';background:' + (bg || '#F8FAFC') + ';border:1px solid ' +
     (color ? color + '33' : '#E2E8F0') + ';border-radius:11px;padding:8px 11px">' +
     '<div style="font-size:10px;font-weight:800;color:#94A3B8;letter-spacing:.4px">' + label + '</div>' +
-    '<div style="font-size:14px;font-weight:800;color:' + (color || '#334155') + ';margin-top:2px;line-height:1.35">' + value + '</div></div>';
+    '<div style="font-size:' + _fs + ';font-weight:800;color:' + (color || '#334155') +
+    ';margin-top:2px;line-height:1.35;word-break:break-word;overflow-wrap:anywhere">' + value + '</div></div>';
 }
 
 function riskDetailHTML(r) {
@@ -13056,7 +13065,7 @@ function riskDetailHTML(r) {
     (mCnt ? riskChip('ХИЙХ АЖИЛ', mDone + ' / ' + mCnt + ' биелсэн',
       mDone >= mCnt ? '#059669' : '#D97706', mDone >= mCnt ? '#F0FDF4' : '#FFFBEB') : '') +
     (mRule ? riskChip('МӨРДӨХ ДҮРЭМ', mRule + ' дүрэм', '#4F46E5', '#EEF2FF') : '') +
-    (r.due ? riskChip('ХУГАЦАА', esc(String(r.due).slice(0, 22)), '#334155') : '') +
+    (r.due ? riskChip('ХУГАЦАА', esc(String(r.due)), '#334155') : '') +
     (after > 0 ? riskChip('АРГА ХЭМЖЭЭНИЙ ДАРАА', sc + ' → ' + after + (drop > 0 ? ' (−' + drop + '%)' : ''),
       '#059669', '#F0FDF4') : '') +
     '</div></div>';
