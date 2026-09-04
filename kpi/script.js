@@ -32945,7 +32945,12 @@ function wmSubmit(old, v) {
   }).catch(function (e) {
     fin();
     console.error('[wmeet] хадгалалт', e);
-    toast('Хадгалж чадсангүй: ' + ((e && e.message) || e), 'error');
+    /* ⚠ «R2 401/403» гэсэн тоо ганцаараа юу ч хэлэхгүй. Бичих эрх олгогдоогүй
+       шалтгааныг (R2_GRANT_WHY) хамт харуулбал асуудлыг шууд олно. */
+    var why = '';
+    try { why = R2_GRANT_WHY || ''; } catch (e2) {}
+    toast('Хадгалж чадсангүй: ' + ((e && e.message) || e) +
+      (why ? ' · ' + why : ''), 'error');
   });
 }
 

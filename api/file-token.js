@@ -28,7 +28,11 @@ const ADMIN_EMAILS = ['buynt666@gmail.com'];
 /* Нэвтэрсэн хүн бүрд зөвшөөрөгдөх угтварууд (клиент дээр merge-ээр бичдэг хамтын файлууд) */
 const USER_PREFIXES = [
   'ack/', 'measures/', 'risks/', 'training/', 'tasks/', 'reports/', 'workflow/', 'workorders/',
-  'notify/', 'requests/', 'push/', 'sys/', 'evidence/', 'att_task_', 'vid_task_', 'uploads/'
+  'notify/', 'requests/', 'push/', 'sys/', 'evidence/', 'att_task_', 'vid_task_', 'uploads/',
+  /* 7 хоногийн ХАБЭА уулзалт (meetings/_weekly.json). ⚠ Энд нэмээгүйгээс болж
+     ХАБЭА-н албаны ажилтнууд уулзалт бүртгэж чадахгүй «R2 401» өгч байв
+     (2026-09-04). ШИНЭ хамтын файл нэмэх бүрд ЭНЭ ЖАГСААЛТЫГ БАС ЗАС. */
+  'meetings/'
 ];
 function keyAllowed(key, isAdmin) {
   if (isAdmin) return true;
