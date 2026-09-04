@@ -15397,6 +15397,14 @@ function reportNotifyHab(r) {
     try { lead = ackLeadFor(r.dept, ''); } catch (e) {}
     if (hab) to.push(hab);
     if (lead && (!hab || lead.uid !== hab.uid)) to.push(lead);
+    /* ⭐ БАЙРШЛЫН ЭЗЭН — «хаана болсон» гэдгээр нь хариуцагчид нь очно.
+       Өмнө нь зөвхөн мэдээлсэн хүний албаны даргад очдог байсан тул
+       өөр албаны хүн манай байршилд ажил захиалахад мэдэгддэггүй байв. */
+    try {
+      wkLocOwnerEmps(r).forEach(function (e) {
+        if (e && e.uid && !to.some(function (x) { return x && x.uid === e.uid; })) to.push(e);
+      });
+    } catch (e0) {}
     if (!to.length) return;
     ntfSend(to, {
       kind: 'report', url: '/kpi/?page=reportflow',
@@ -17046,6 +17054,9 @@ function wkKindOf(r) {
 }
 
 /* ── ЯАРАЛТАЙ ЗЭРЭГ 1–5 ── админаас цагийг тохируулна ── */
+/* «Манай алба» табын дотоод шүүлт: төрөл ба байршил */
+var WK_DEPT_KIND = 'all';      /* all | wk (ажлын захиалга) | hz (аюул) */
+var WK_DEPT_LOC = '';          /* '' = бүх байршил, эсвэл бүлгийн нэр */
 var WK_URG_FILE = 'workflow/_urgency.json';
 var WK_URG_DEF = { 5: 12, 4: 24, 3: 72, 2: 168, 1: 720 };   /* цагаар */
 var WK_URG = null, WK_URG_OK = false;
@@ -17200,12 +17211,146 @@ function wkMyDeptName() {
   if (!d && SESSION) d = SESSION.dept || '';
   return d;
 }
+/* «Манай алба» табын шүүлтийн мөр — төрөл ба байршил */
+function wkDeptFilterHTML(rows, locs) {
+  var nWk = rows.filter(function (r) { return !!r.wkKind; }).length;
+  var nHz = rows.length - nWk;
+  var chip = function (attr, val, label, n, on) {
+    return '<button data-' + attr + '="' + esc(val) + '" style="border:1.5px solid ' +
+      (on ? '#4F46E5' : '#E2E8F0') + ';background:' + (on ? '#EEF2FF' : '#fff') +
+      ';color:' + (on ? '#3730A3' : '#475569') + ';border-radius:999px;padding:5px 12px;cursor:pointer;' +
+      'font-family:inherit;font-size:12px;font-weight:' + (on ? '800' : '600') + '">' + esc(label) +
+      (n != null ? '<span style="margin-left:6px;opacity:.75;font-weight:700">' + n + '</span>' : '') +
+      '</button>';
+  };
+  var H = '<div style="margin-top:11px;padding-top:11px;border-top:1px solid #F1F5F9">' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    '<span style="font-size:11.5px;color:#94A3B8;margin-right:2px">ТӨРӨЛ</span>' +
+    chip('wk-dkind', 'all', 'Бүгд', rows.length, WK_DEPT_KIND === 'all') +
+    chip('wk-dkind', 'wk', 'Ажлын захиалга', nWk, WK_DEPT_KIND === 'wk') +
+    chip('wk-dkind', 'hz', 'Аюул', nHz, WK_DEPT_KIND === 'hz') + '</div>';
+  if ((locs || []).length > 1) {
+    H += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px">' +
+      '<span style="font-size:11.5px;color:#94A3B8;margin-right:2px">БАЙРШИЛ</span>' +
+      chip('wk-dloc', '', 'Бүх байршил', null, !WK_DEPT_LOC) +
+      locs.map(function (x) {
+        var sh = x.g;
+        try { var gg = (wkLocGroups() || []).filter(function (y) { return y && y.name === x.g; })[0];
+          if (gg && gg.short) sh = gg.short; } catch (e) {}
+        return chip('wk-dloc', x.g, sh, x.n, WK_DEPT_LOC === x.g);
+      }).join('') + '</div>';
+  }
+  return H + '</div>';
+}
+
+/* Тохиргооны унтраалгад: албад + удирдах албан тушаалтнууд */
+function wkOwnerOptions(cur) {
+  var depts = {}, people = [];
+  try {
+    (DB.employees || []).forEach(function (e) {
+      if (!e || e.onLeave) return;
+      if (e.dept) depts[e.dept] = 1;
+      var p = String(e.pos || e.role || '');
+      if (/дарга|менежер|инженер|захирал/i.test(p)) people.push(e);
+    });
+  } catch (e) {}
+  people.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); });
+  var val = cur && cur.uid ? ('u:' + cur.uid) : (cur && cur.dept ? ('d:' + cur.dept) : '');
+  var opt = function (v, l) {
+    return '<option value="' + esc(v) + '"' + (v === val ? ' selected' : '') + '>' + esc(l) + '</option>';
+  };
+  return opt('', '— хариуцагч заагаагүй —') +
+    '<optgroup label="Алба (даргад нь очно)">' +
+    Object.keys(depts).sort().map(function (d) { return opt('d:' + d, d); }).join('') +
+    '</optgroup><optgroup label="Тодорхой хүн">' +
+    people.map(function (e) {
+      return opt('u:' + e.uid, (e.name || '') + ' — ' + String(e.pos || e.role || '').slice(0, 34));
+    }).join('') + '</optgroup>';
+}
+
+/* ══ БАЙРШЛЫН ХАРИУЦАХ ЭЗЭН (2026-09-04) ══════════════════════════
+   Байршлын бүлэг бүрд «хариуцах алба» эсвэл «хариуцах хүн» тохируулна
+   (Тохиргоо → 📍 Байршил). Тохируулсны дараа тэр байршилд ирсэн аюул,
+   ажлын захиалга нь ЭЗЭНД нь мэдэгдэж, жагсаалтад нь харагдана.
+   ⚠ Нэр давхцахаас хамаарахаа болино: «Агуулах» гэдэг алба байхгүй ч
+     Ложистикийн албанд харьяалуулж болно. */
+function wkLocOwnerOf(groupName) {
+  var out = { dept: '', uid: '', name: '' };
+  var g = String(groupName || '').trim();
+  if (!g) return out;
+  try {
+    var gs = wkLocGroups();
+    for (var i = 0; i < gs.length; i++) {
+      var x = gs[i];
+      if (!x) continue;
+      if (String(x.name || '') === g || String(x.id || '') === g) {
+        out.dept = String(x.ownerDept || '');
+        out.uid = String(x.ownerUid || '');
+        out.name = String(x.ownerName || '');
+        return out;
+      }
+    }
+  } catch (e) {}
+  return out;
+}
+/* Тухайн бичлэгийн байршлыг хариуцах хүмүүс (мэдэгдэл, жагсаалтад) */
+function wkLocOwnerEmps(r) {
+  var out = [], seen = {};
+  var o = wkLocOwnerOf(r && r.locGroup);
+  var add = function (e) { if (e && e.uid && !seen[e.uid]) { seen[e.uid] = 1; out.push(e); } };
+  if (o.uid) { try { add(woEmpByUid(o.uid)); } catch (e) {} }
+  if (o.dept) {
+    try { add(ackLeadFor(o.dept, '')); } catch (e) {}
+    /* ⚠ Зарим албанд «дарга» гэсэн албан тушаал байхгүй (ИТА нь хоёр ахлах
+       инженертэй). Тэр үед мэдэгдэл эзэнгүй үлдэхгүйн тулд тухайн албаны
+       БҮХ ахлахад очно. */
+    if (!out.length) {
+      try {
+        (DB.employees || []).forEach(function (e) {
+          if (!e || e.onLeave || !e.uid) return;
+          if (!riskSameDept(o.dept, e.dept || '')) return;
+          if (/дарга|ахлах|менежер/i.test(String(e.pos || e.role || ''))) add(e);
+        });
+      } catch (e) {}
+    }
+  }
+  return out;
+}
+/* Би энэ бичлэгийн байршлыг хариуцаж байна уу */
+function wkIsLocOwnerMe(r) {
+  try {
+    var uid = (SESSION && SESSION.uid) || '';
+    if (!uid) return false;
+    var o = wkLocOwnerOf(r && r.locGroup);
+    if (o.uid && o.uid === uid) return true;
+    if (o.dept) {
+      var d = wkMyDeptName();
+      if (d && riskSameDept(d, o.dept)) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+/* Би ямар нэг байршлыг хариуцдаг хүн үү (эрх шалгахад) */
+function wkAmLocOwner() {
+  try {
+    var uid = (SESSION && SESSION.uid) || '', d = wkMyDeptName();
+    var gs = wkLocGroups();
+    for (var i = 0; i < gs.length; i++) {
+      var x = gs[i]; if (!x) continue;
+      if (uid && String(x.ownerUid || '') === uid) return true;
+      if (d && x.ownerDept && riskSameDept(d, x.ownerDept)) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 /* Энэ бичлэг миний албанд хамаарах уу */
 function wkInMyDept(r, dept) {
   if (!r || !dept) return false;
   try {
     if (riskSameDept(dept, reportDept(r))) return true;       /* мэдээлсэн хүний алба */
     if (r.locGroup && riskSameDept(dept, r.locGroup)) return true;  /* ажлын байршил */
+    if (wkIsLocOwnerMe(r)) return true;                       /* байршлын эзэн */
   } catch (e) {}
   return false;
 }
@@ -18810,15 +18955,17 @@ function wkListHTML(all) {
 
   /* ⭐ Албаны даргад — өөрийн албаны БҮХ ажил (нээлттэй нь дээр эрэмбэлэгдэнэ) */
   var myDept = wkMyDeptName();
-  var deptRows = wkIsDeptBoss()
-    ? rows.filter(function (r) { return wkInMyDept(r, myDept); })
+  var _amOwner = false;
+  try { _amOwner = wkAmLocOwner(); } catch (e) {}
+  var deptRows = (wkIsDeptBoss() || _amOwner)
+    ? rows.filter(function (r) { return wkInMyDept(r, myDept) || wkIsLocOwnerMe(r); })
     : [];
   var deptOpen = deptRows.filter(function (r) { return wkStatus(r) !== 'closed'; }).length;
 
   var tabs = [];
   if (seeAll) tabs.push({ k: 'all', l: 'Бүх ажил', n: allOpen.length,
     tone: lateN ? '#C81E3A' : (allOpen.length ? '#4F46E5' : '') });
-  if (deptRows.length || wkIsDeptBoss()) tabs.push({ k: 'dept', l: 'Манай албанаас захиалсан', n: deptOpen,
+  if (deptRows.length || wkIsDeptBoss() || _amOwner) tabs.push({ k: 'dept', l: 'Манай алба', n: deptOpen,
     tone: deptOpen ? '#4F46E5' : '' });
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
   if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
@@ -18831,6 +18978,23 @@ function wkListHTML(all) {
   var list = WK_TAB === 'all' ? allOpen : WK_TAB === 'dept' ? deptRows
     : WK_TAB === 'in' ? inbox : WK_TAB === 'my' ? mineClaim
     : WK_TAB === 'done' ? done : mineRep;
+
+  /* ⭐ «Манай алба» табын дотоод шүүлт (2026-09-04):
+     төрлөөр — ажлын захиалга уу, аюул уу; байршлаар — ШХҮ, ХХҮ, Агуулах…
+     Албаны дарга «манай байршилд юу болж байна» гэдгийг шууд харна. */
+  var deptLocs = [];
+  if (WK_TAB === 'dept') {
+    var _lc = {};
+    deptRows.forEach(function (r) { var g = String(r.locGroup || '').trim(); if (g) _lc[g] = (_lc[g] || 0) + 1; });
+    deptLocs = Object.keys(_lc).sort(function (a, b) { return _lc[b] - _lc[a]; })
+      .map(function (g) { return { g: g, n: _lc[g] }; });
+    list = list.filter(function (r) {
+      if (WK_DEPT_KIND === 'wk' && !r.wkKind) return false;
+      if (WK_DEPT_KIND === 'hz' && r.wkKind) return false;
+      if (WK_DEPT_LOC && String(r.locGroup || '') !== WK_DEPT_LOC) return false;
+      return true;
+    });
+  }
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
@@ -18853,7 +19017,9 @@ function wkListHTML(all) {
         (t.n ? '<span style="margin-left:6px;background:' + (on ? 'rgba(255,255,255,.25)' : (t.tone || '#EEF2FF')) +
           ';color:' + (on ? '#fff' : (t.tone ? '#fff' : '#4F46E5')) + ';border-radius:6px;padding:1px 6px;' +
           'font-size:11px;font-weight:800">' + t.n + '</span>' : '') + '</button>';
-    }).join('') + '</div>' + wkMyImpactHTML(mineRep) + '</div>';
+    }).join('') + '</div>' +
+    (WK_TAB === 'dept' ? wkDeptFilterHTML(deptRows, deptLocs) : '') +
+    wkMyImpactHTML(mineRep) + '</div>';
 
   if (!list.length) {
     /* ⭐ Хоосон дэлгэц нь «юу ч алга» гэсэн хүйтэн мэдэгдэл биш, тухайн
@@ -18983,6 +19149,12 @@ function wkAdminModal() {
             '<button data-wa-gdel="' + gi + '" title="Бүлгийг устгах" style="border:1.5px solid #FECACA;' +
             'background:#FEF2F2;color:#B91C1C;border-radius:8px;padding:6px 10px;cursor:pointer;' +
             'font-family:inherit;font-size:12px">✕</button></div>' +
+            /* ⭐ Хариуцагч — энд ирсэн аюул, ажлын захиалга ХЭНД очих вэ */
+            '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">' +
+            '<span style="font-size:12px;color:#64748B;flex-shrink:0">Хариуцагч:</span>' +
+            '<select data-wa-gown="' + gi + '" style="flex:1;min-width:200px;border:1.5px solid #E2E8F0;' +
+            'border-radius:8px;padding:6px 9px;font-family:inherit;font-size:12.5px;background:#fff">' +
+            wkOwnerOptions({ dept: g.ownerDept || '', uid: g.ownerUid || '' }) + '</select></div>' +
             '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding-left:11px;' +
             'border-left:2.5px solid #E2E8F0">' +
             (g.subs || []).map(function (sb, si) {
@@ -19020,6 +19192,16 @@ function wkAdminModal() {
       Array.prototype.forEach.call(node.querySelectorAll('[data-wa-gs]'), function (el) {
         groups[+el.getAttribute('data-wa-gs')].short = el.value.trim();
       });
+      Array.prototype.forEach.call(node.querySelectorAll('[data-wa-gown]'), function (el) {
+        var g = groups[+el.getAttribute('data-wa-gown')], v = String(el.value || '');
+        if (!g) return;
+        g.ownerDept = ''; g.ownerUid = ''; g.ownerName = '';
+        if (v.indexOf('d:') === 0) g.ownerDept = v.slice(2);
+        else if (v.indexOf('u:') === 0) {
+          g.ownerUid = v.slice(2);
+          try { var e = woEmpByUid(g.ownerUid); if (e) { g.ownerName = e.name || ''; g.ownerDept = ''; } } catch (x) {}
+        }
+      });
       Array.prototype.forEach.call(node.querySelectorAll('[data-wa-urg]'), function (el) {
         var v = parseInt(el.value, 10); if (v > 0) urg[+el.getAttribute('data-wa-urg')] = v;
       });
@@ -19030,6 +19212,9 @@ function wkAdminModal() {
 
     node.addEventListener('input', function (ev) {
       if (ev.target.closest('[data-wa-urg]')) { grab(); draw(); }
+    });
+    node.addEventListener('change', function (ev) {
+      if (ev.target.closest('[data-wa-gown]')) grab();
     });
     node.addEventListener('click', function (ev) {
       var b;
@@ -19537,6 +19722,9 @@ function rfNeedAllRows() {
        хийж буй ажил алга болно (жишээ: ИТА-гийн инженер цай цехэд засвар
        хийхэд хуурай хүнсний даргад харагдахгүй байв). */
     if (wkBossPos()) return true;
+    /* Байршил хариуцагч (жишээ: Оффисыг үйл ажиллагааны менежер) — түүнд
+       ӨӨР албаны хүний мэдээлсэн ажил хэрэгтэй тул бүх мөр татна */
+    try { if (wkAmLocOwner()) return true; } catch (e2) {}
     var d = (SESSION && SESSION.dept) || '';
     return /Хөдөлмөрийн\s*аюулгүй/i.test(d) || /нженер\s*техник/i.test(d);
   } catch (e) { return false; }
@@ -21065,6 +21253,10 @@ function rfAfter(sec, admin, pending) {
     if (ev.target.closest('[data-wk-admin]')) { wkAdminModal(); return; }
     var wt = ev.target.closest('[data-wk-tab]');
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
+    var dk = ev.target.closest('[data-wk-dkind]');
+    if (dk) { ev.stopPropagation(); WK_DEPT_KIND = dk.getAttribute('data-wk-dkind'); renderReportflow(); return; }
+    var dl = ev.target.closest('[data-wk-dloc]');
+    if (dl) { ev.stopPropagation(); WK_DEPT_LOC = dl.getAttribute('data-wk-dloc'); renderReportflow(); return; }
     var wc = ev.target.closest('[data-wk-claim]');
     if (wc) { ev.stopPropagation(); wkClaim(wc.getAttribute('data-wk-claim')); return; }
     var wuc = ev.target.closest('[data-wk-unclaim]');
