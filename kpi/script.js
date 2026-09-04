@@ -1653,54 +1653,42 @@ function riskUidsForSection(sec) {
   });
   return out;
 }
+/* ⚠ 2026-09-04 — хэрэглэгчийн шийдвэр: багийг ТААМАГЛАХГҮЙ.
+   Өмнө нь хэсгийн менежер, албаны дарга, инженерийг автоматаар нэмдэг
+   байсан. Гэхдээ таамаглал заримдаа буруу гарна (нэг албанд хэд хэдэн
+   менежер, хэсэг оноогоогүй) бөгөөд чимээгүй буруу бөглөх нь хамгийн муу.
+   Одоо: АВТОМАТААР ЗӨВХӨН ОРУУЛЖ БУЙ ХҮН. Бусдыг нь оруулагч өөрөө
+   сонгоно — харин жагсаалт нь урьдчилан шүүгдсэн тул 260 хүнээс хайхгүй. */
 function riskTeamSuggest(o) {
+  var out = [];
+  try {
+    var me = myEmp();
+    if (me) out.push({ uid: me.uid || '', id: me.id || '', name: me.name || '',
+                       pos: me.pos || me.role || '', dept: me.dept || '', why: 'оруулсан' });
+  } catch (e) {}
+  return out;
+}
+
+/* Багт нэмэх боломжтой хүмүүсийг ГУРВАН бүлэгт хуваана.
+   · leads  — сонгосон АЛБАНЫ дарга, менежерүүд
+   · ita    — Инженер техникийн албаны БҮХ ажилтан (тоног төхөөрөмж, засвар)
+   · other  — үлдсэн бүгд (нөөц — дээрх хоёрт байхгүй хүн хэрэгтэй болвол)
+   ⚠ Аль нэг бүлэг хоосон байвал сонголт нь мохоо болно — тиймээс `other`
+     үргэлж байлгана, эс бөгөөс хэрэгтэй хүнээ нэмж чадахгүй мухардана. */
+function riskTeamCandidates(o) {
   o = o || {};
-  var out = [], seen = {};
   var emps = [];
   try { emps = empAll() || []; } catch (e) {}
-  var push = function (e, why) {
-    if (!e) return;
-    var k = e.uid || e.id; if (!k || seen[k]) return;
-    seen[k] = 1;
-    out.push({ uid: e.uid || '', id: e.id || '', name: e.name || '',
-               pos: e.pos || e.role || '', dept: e.dept || '', why: why || '' });
-  };
-  try { push(myEmp(), 'оруулсан'); } catch (e) {}
-
-  var sec = riskSecOfSite(o.site);
-  if (sec) {
-    var uids = riskUidsForSection(sec);
-    emps.forEach(function (e) { if (uids.indexOf(e.uid) >= 0) push(e, sec + ' хариуцагч'); });
-  }
-
-  /* ⚠ «Бүх алба» сонгоход 14 даргыг цуглуулбал баг утгагүй болно —
-     тиймээс 1–2 алба сонгосон үед л албаны удирдлагыг нэмнэ. */
   var ds = o.depts || [];
-  if (ds.length && ds.length <= 2) {
-    ds.forEach(function (d) {
-      var lead = emps.filter(function (e) {
-        return riskSameDept(e.dept, d) && /дарга|менежер/i.test(e.pos || e.role || '');
-      })[0];
-      if (lead) push(lead, riskDeptShort(d) + ' удирдлага');
-    });
-  }
-
-  var ps = o.positions || [];
-  if (ps.length === 1) {
-    var one = emps.filter(function (e) {
-      if (!riskNameMatch(ps[0], e.pos || e.role || '')) return false;
-      return !ds.length || ds.some(function (d) { return riskSameDept(e.dept, d); });
-    })[0];
-    if (one) push(one, ps[0]);
-  }
-
-  if (/тоног\s*төхөөрөмж|механизм|машин|цахилгаан|засвар/i.test(String(o.hazard || '') + ' ' + String(o.process || ''))) {
-    var eng = emps.filter(function (e) {
-      return /инженер/i.test(e.pos || e.role || '') && /инженер\s*техник/i.test(e.dept || '');
-    })[0];
-    if (eng) push(eng, 'тоног төхөөрөмж');
-  }
-  return out;
+  var isLead = function (e) { return /дарга|менежер|ахлах/i.test(e.pos || e.role || ''); };
+  var inSel = function (e) { return ds.some(function (d) { return riskSameDept(e.dept, d); }); };
+  var isIta = function (e) { return /инженер\s*техник/i.test(e.dept || ''); };
+  var leads = emps.filter(function (e) { return ds.length && inSel(e) && isLead(e); });
+  var ita = emps.filter(isIta);
+  var taken = {};
+  leads.concat(ita).forEach(function (e) { taken[e.uid || e.id] = 1; });
+  var other = emps.filter(function (e) { return !taken[e.uid || e.id]; });
+  return { leads: leads, ita: ita, other: other };
 }
 
 function riskInDept(r, dept) {
@@ -3073,8 +3061,14 @@ function actionRiskAdd() {
     '<div style="font-size:11px;font-weight:800;letter-spacing:.05em;color:#065F46;text-transform:uppercase">Үнэлгээний баг</div>' +
     '<div style="font-size:11.5px;color:#059669">сонголтоос автоматаар — засаж болно</div></div>' +
     '<div id="raTeam"></div>' +
-    '<select id="raTeamAdd" style="width:100%;margin-top:8px;padding:8px 11px;border:1.5px solid #BBF7D0;border-radius:9px;font-size:13px;font-family:inherit;background:#fff">' +
-    '<option value="">+ хүн нэмэх…</option></select>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">' +
+    ['raTeamLead', 'raTeamIta', 'raTeamOther'].map(function (id, i) {
+      return '<div style="flex:1;min-width:170px">' +
+        '<label style="display:block;font-size:11px;font-weight:700;color:#065F46;margin-bottom:3px">' +
+        ['Албаны удирдлагаас', 'Инженер техникийн албанаас', 'Бусад ажилтнаас'][i] + '</label>' +
+        '<select id="' + id + '" class="raTeamPick" style="width:100%;padding:8px 10px;border:1.5px solid #BBF7D0;' +
+        'border-radius:9px;font-size:12.5px;font-family:inherit;background:#fff"></select></div>';
+    }).join('') + '</div>' +
     '</div>' +
     '<div id="raSt" style="margin-top:6px;font-size:12.5px"></div>');
 
@@ -3179,24 +3173,30 @@ function actionRiskAdd() {
           return '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #BBF7D0;' +
             'border-radius:999px;padding:5px 6px 5px 11px;font-size:12.5px">' +
             '<b style="color:#065F46">' + esc(t.name || '—') + '</b>' +
-            (t.why ? '<span style="color:#94A3B8;font-size:11px">' + esc(t.why) + '</span>' : '') +
+            (t.pos ? '<span style="color:#94A3B8;font-size:11px">' + esc(t.pos) + '</span>' : '') +
             '<button type="button" class="raTeamDel" data-k="' + esc(t.uid || t.id) + '" ' +
             'title="Хасах" style="border:none;background:#ECFDF5;color:#059669;border-radius:50%;width:19px;height:19px;' +
             'line-height:1;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit">×</button></span>';
         }).join('') + '</div>'
-      : '<div style="font-size:12px;color:#94A3B8">Хараахан бүрдээгүй — сонголтоо хийнэ үү, эсвэл доороос нэмнэ үү.</div>';
-    /* Нэмэх жагсаалт — багт ороогүй хүмүүс */
-    var sel = node.querySelector('#raTeamAdd'); if (!sel) return;
+      : '<div style="font-size:12px;color:#94A3B8">Багт хэн ч алга.</div>';
+
     var have = {}; list.forEach(function (t) { have[t.uid || t.id] = 1; });
-    var all = [];
-    try { all = empAll() || []; } catch (e) {}
-    sel.innerHTML = '<option value="">+ хүн нэмэх…</option>' +
-      all.filter(function (e) { return !have[e.uid || e.id]; })
-        .map(function (e) {
+    var C = riskTeamCandidates({ depts: selDepts() });
+    var fill = function (id, rows, empty) {
+      var sel = node.querySelector('#' + id); if (!sel) return;
+      var free = rows.filter(function (e) { return !have[e.uid || e.id]; });
+      sel.innerHTML = '<option value="">' + (free.length ? '— сонгох —' : esc(empty)) + '</option>' +
+        free.map(function (e) {
           return '<option value="' + esc(e.uid || e.id) + '">' + esc(e.name || '—') +
             ' · ' + esc(e.pos || e.role || '') + '</option>';
         }).join('');
+      sel.disabled = !free.length;
+    };
+    fill('raTeamLead', C.leads, 'эхлээд алба сонгоно уу');
+    fill('raTeamIta', C.ita, 'алга');
+    fill('raTeamOther', C.other, 'алга');
   }
+
   node.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest && ev.target.closest('.raTeamDel');
     if (!b) return;
@@ -3221,13 +3221,8 @@ function actionRiskAdd() {
   });
   /* Хайлт — мөрийг нуух зөвхөн, тэмдэглэгээ хэвээр үлдэнэ */
   node.addEventListener('input', function (ev) {
-    /* Аюулын бичвэрээс «тоног төхөөрөмж» гэдгийг таньдаг тул бичих
-       үед нь баг шинэчлэгдэнэ. Бичих бүрд биш — түр хүлээгээд. */
-    if (ev.target && (ev.target.id === 'raHaz' || ev.target.id === 'raProc')) {
-      clearTimeout(drawTeam._t);
-      drawTeam._t = setTimeout(function () { try { drawTeam(); } catch (e) {} }, 500);
-      return;
-    }
+    /* ⚠ Өмнө нь аюулын бичвэрээс «тоног төхөөрөмж» гэж таньж багт инженер
+       нэмдэг байсан — таамаглахаа больсон тул энэ хэрэггүй боллоо. */
     if (!ev.target || ev.target.id !== 'raEmpQ') return;
     var q = String(ev.target.value || '').trim().toLowerCase();
     Array.prototype.forEach.call(node.querySelectorAll('.raEmpRow'), function (l) {
@@ -3259,10 +3254,9 @@ function actionRiskAdd() {
     if (ev.target && ev.target.id === 'raSite') {
       var ob = node.querySelector('#raSiteOtherBox');
       if (ob) ob.style.display = (ev.target.value === RISK_SITE_OTHER) ? 'block' : 'none';
-      drawTeam();
     }
-    /* Багт хүн нэмэх */
-    if (ev.target && ev.target.id === 'raTeamAdd' && ev.target.value) {
+    /* Багт хүн нэмэх — гурван шүүсэн жагсаалтын аль нэгээс */
+    if (ev.target && ev.target.className === 'raTeamPick' && ev.target.value) {
       var k2 = ev.target.value, all2 = [];
       try { all2 = empAll() || []; } catch (e2) {}
       var e3 = all2.filter(function (x) { return (x.uid || x.id) === k2; })[0];
