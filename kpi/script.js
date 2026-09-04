@@ -11509,11 +11509,24 @@ function riskTabList(list) {
      үүнийг ил бичнэ, эс бөгөөс «бид аюулгүй болчихсон» гэсэн буруу
      дүр зураг өгнө. */
 
-/* '' = автоматаар (захиралд тойм, бусдад задаргаа) · 'brief' · 'detail' */
-var RISK_DIR_VIEW = '';
+/* '' = автоматаар · 'brief' · 'detail'
+   ⚠ Сонголтыг localStorage-д хадгална. Эс бөгөөс задаргаан дээр ажиллаж
+     байгаа ХАБЭА мэргэжилтэн хуудас сэргээх бүрд тойм руу буцаж, өдөрт
+     хэдэн арван удаа дахин дардаг болно. */
+var RISK_DIR_VIEW = (function () {
+  try { return localStorage.getItem('kpi_risk_dirview') || ''; } catch (e) { return ''; }
+})();
+function riskDirViewSet(v) {
+  RISK_DIR_VIEW = v;
+  try { localStorage.setItem('kpi_risk_dirview', v); } catch (e) {}
+}
+/* Тойм хэнд АНХДАГЧААР нээгдэх вэ — захирлууд БА ХАБЭА мэргэжилтэн (админ).
+   ⚠ ХАБЭА ахлах нь захиралд юу харагдаж байгааг ЯГ ТЭР ХЭЛБЭРЭЭР харах
+     ёстой: тайлангаа тэр бэлддэг, зөрүүтэй хоёр дэлгэц харвал захиралтай
+     өөр өөр тоо ярина. Задаргаа нь «Дэлгэрэнгүй» товчны цаана хэвээр. */
 function riskDirBrief() {
   var v = RISK_DIR_VIEW;
-  if (!v) v = riskDirScope() ? 'brief' : 'detail';
+  if (!v) v = (riskDirScope() || isAdmin()) ? 'brief' : 'detail';
   return v === 'brief';
 }
 /* Тойм/задаргаа сэлгэх товч хэнд харагдах вэ — захирал ба админд.
@@ -12389,7 +12402,7 @@ function riskWire(sec, redraw) {
     /* Тойм ⇄ Дэлгэрэнгүй сэлгэх */
     var dv = ev.target.closest('[data-risk-dirview]');
     if (dv) {
-      RISK_DIR_VIEW = dv.getAttribute('data-risk-dirview');
+      riskDirViewSet(dv.getAttribute('data-risk-dirview'));
       /* Тойм руу буцахад шүүлтүүр үлдвэл тоо нь дутуу харагдана */
       if (RISK_DIR_VIEW === 'brief') RISK_FILTER = { level: '', q: '', cell: 0, dept: '', mx: '' };
       redraw(); return;
@@ -12398,6 +12411,8 @@ function riskWire(sec, redraw) {
     var dd = ev.target.closest('[data-risk-dirdept]');
     if (dd) {
       RISK_FILTER = { level: '', q: '', cell: 0, dept: dd.getAttribute('data-risk-dirdept'), mx: '' };
+      /* Албанаас задаргаа руу орох нь НЭГ УДААГИЙН үйлдэл — сонголтыг
+         хадгалахгүй, эс бөгөөс дараагийн удаа тойм нээгдэхээ болино. */
       RISK_DIR_VIEW = 'detail';
       redraw(); return;
     }
