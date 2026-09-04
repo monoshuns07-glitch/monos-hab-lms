@@ -31648,8 +31648,17 @@ function mustChangePwShow() {
    «Excel татах» нь яг энэ бүтэц, яг тэр загвараар (Times New Roman, сар
    бүр тусдаа хуудас) гарна — хуучин файлаа үргэлжлүүлэн хөтөлж болно.
 
+   ⭐ НЭГ УУЛЗАЛТ → ОЛОН САНАЛ ХҮСЭЛТ (2026-09-04, хэрэглэгчийн хүсэлт).
+      Нэг уулзалтаар агуулгын хувьд өөр өөр хэдэн ч санал гарч болно.
+      Тиймээс санал бүр нь бүтэн мөр — өөрийн ГЭСЭН авах арга хэмжээ,
+      шилжүүлэлт, биелэлттэй (`r.items[]`). Excel дээр санал бүр НЭГ МӨР
+      болж бууна; уулзалтын огноо/алба/ХАБЭА-н мэдээлэл нь нэгтгэсэн
+      нүдээр дамжина.
+   ⚠ Хуучин (v427-428) хавтгай бүтэц — `r.say/act/moved/done` — ч уншигдана,
+     `wmItems()` түүнийг нэг санал болгож хувиргана. БҮҮ УСТГА.
+
    ⭐ ХЭН ХАРАХ ВЭ (хэрэглэгчийн шаардлага, 2026-09-04):
-     · ХАБЭА-н албаны ажилтнууд (4 хүн) — БҮХ уулзалт, бүртгэх/засах эрхтэй
+     · ХАБЭА-н албаны ажилтнууд — БҮХ уулзалт, бүртгэх/засах эрхтэй
      · Уулзалт хийсэн НЭГЖИЙН дарга, ахлах, менежерүүд — ЗӨВХӨН өөрийн
        нэгжийн тэмдэглэл, зөвхөн УНШИНА
      · Бусад бүх ажилтанд цэс нь огт харагдахгүй
@@ -31691,6 +31700,22 @@ function wmUnit(k) {
 function wmUnitName(k) { var u = wmUnit(k); return u ? u.name : String(k || '—'); }
 function wmUnitAb(k)   { var u = wmUnit(k); return u ? u.ab   : String(k || '—'); }
 function wmUnitColor(k){ var u = wmUnit(k); return u ? u.c    : '#64748B'; }
+
+/* Нэг уулзалтын доторх санал хүсэлтүүд.
+   ⚠ Хуучин хавтгай бичлэгийг эвдэлгүй уншина (v427-428-д items байгаагүй). */
+function wmItems(r) {
+  if (!r) return [];
+  if (Array.isArray(r.items)) return r.items;
+  if (r.say || r.act || r.moved || r.done) {
+    return [{ say: r.say || '', act: r.act || '', moved: r.moved || '', done: r.done || '' }];
+  }
+  return [];
+}
+function wmItemEmpty(it) {
+  if (!it) return true;
+  return !(String(it.say || '').trim() || String(it.act || '').trim() ||
+           String(it.moved || '').trim() || String(it.done || '').trim());
+}
 
 /* ── ХАДГАЛАЛТ ─────────────────────────────────────────────────────────
    ⚠ meetings/_weekly.json нь R2_CACHEABLE-д ОРОХГҮЙ — бичихийн өмнө уншиж
@@ -31844,13 +31869,26 @@ function wmDate(d) { return String(d || '').slice(0, 10).replace(/-/g, '.'); }
 function wmYearOf(r) { return _f(String((r && r.date) || '').slice(0, 4)); }
 function wmMonthOf(r) { return _f(String((r && r.date) || '').slice(5, 7)); }
 function wmNl(s) { return esc(String(s || '')).replace(/\n/g, '<br>'); }
-/* Төлөв нь ТУСДАА талбар БИШ — бөглөсөн нүднээс гарна. Excel загварт
-   төлөвийн багана байхгүй тул нэмбэл хоёр газар зөрөх эрсдэлтэй. */
-function wmState(r) {
-  if (r && String(r.done || '').trim())  return { k: 'done', label: 'Биелсэн',       c: '#16A34A' };
-  if (r && String(r.moved || '').trim()) return { k: 'run',  label: 'Явцтай',        c: '#2563EB' };
-  if (r && String(r.act || '').trim())   return { k: 'wait', label: 'Хүлээгдэж буй', c: '#D97706' };
-  return { k: 'info', label: 'Мэдээлэл', c: '#64748B' };
+/* НЭГ САНАЛЫН төлөв — тусдаа талбар БИШ, бөглөсөн нүднээс гарна. Excel
+   загварт төлөвийн багана байхгүй тул нэмбэл хоёр газар зөрөх эрсдэлтэй. */
+function wmState(it) {
+  if (it && String(it.done || '').trim())  return { k: 'done', label: 'Биелсэн',       c: '#16A34A' };
+  if (it && String(it.moved || '').trim()) return { k: 'run',  label: 'Шилжүүлсэн',    c: '#2563EB' };
+  if (it && String(it.act || '').trim())   return { k: 'wait', label: 'Хүлээгдэж буй', c: '#D97706' };
+  return { k: 'new', label: 'Шийдвэрлээгүй', c: '#DC2626' };
+}
+/* УУЛЗАЛТЫН нэгдсэн төлөв — доторх саналуудаас */
+function wmRecState(r) {
+  var its = wmItems(r);
+  if (!its.length) return { k: 'info', label: 'Зөвхөн мэдээлэл', c: '#64748B' };
+  var done = its.filter(function (it) { return wmState(it).k === 'done'; }).length;
+  if (done === its.length) return { k: 'done', label: 'Бүгд биелсэн', c: '#16A34A' };
+  if (done) return { k: 'part', label: done + ' / ' + its.length + ' биелсэн', c: '#2563EB' };
+  if (its.some(function (it) { return wmState(it).k === 'run'; }))
+    return { k: 'run', label: 'Шилжүүлсэн', c: '#2563EB' };
+  if (its.some(function (it) { return wmState(it).k === 'wait'; }))
+    return { k: 'wait', label: 'Хүлээгдэж буй', c: '#D97706' };
+  return { k: 'new', label: 'Шийдвэрлээгүй', c: '#DC2626' };
 }
 function wmPill(txt, color) {
   return '<span style="background:' + color + '18;color:' + color + ';border-radius:100px;' +
@@ -31894,9 +31932,10 @@ function renderWmeet() {
   }
 
   var mine = wmVisible(), shown = wmFiltered();
-  var nDone = mine.filter(function (r) { return wmState(r).k === 'done'; }).length;
-  var nOpen = mine.filter(function (r) { var s = wmState(r).k; return s === 'run' || s === 'wait'; }).length;
-  var nSay  = mine.filter(function (r) { return String(r.say || '').trim(); }).length;
+  var items = [];
+  mine.forEach(function (r) { items = items.concat(wmItems(r)); });
+  var nDone = items.filter(function (it) { return wmState(it).k === 'done'; }).length;
+  var nOpen = items.length - nDone;
 
   var html = '<div class="page-header"><div><h1>7 хоногийн ХАБЭА уулзалт</h1>' +
     '<p class="page-subtitle">' + (wmIsHse()
@@ -31908,9 +31947,9 @@ function renderWmeet() {
     '</div></div>';
 
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' +
-    statCard('Нийт тэмдэглэл', mine.length, 'ti-clipboard-text', '#3730A3') +
-    statCard('Албанаас гарсан санал', nSay, 'ti-message-2', '#0891B2') +
-    statCard('Хүлээгдэж буй', nOpen, 'ti-progress', '#D97706') +
+    statCard('Уулзалт', mine.length, 'ti-calendar-week', '#3730A3') +
+    statCard('Санал хүсэлт', items.length, 'ti-message-2', '#0891B2') +
+    statCard('Шийдвэрлэгдээгүй', nOpen, 'ti-progress', '#D97706') +
     statCard('Биелсэн', nDone, 'ti-circle-check', '#16A34A') +
     '</div>';
 
@@ -31977,29 +32016,43 @@ function renderWmeet() {
 }
 
 function wmCard(r) {
-  var S = wmState(r), col = wmUnitColor(r.unit);
-  var line = function (label, val, color) {
-    if (!String(val || '').trim()) return '';
-    var txt = String(val);
-    return '<div style="margin-top:7px"><div style="font-size:11px;color:#94A3B8;font-weight:700;' +
-      'text-transform:uppercase;letter-spacing:.3px">' + label + '</div>' +
-      '<div style="font-size:13px;color:' + (color || '#334155') + ';line-height:1.55">' +
-      wmNl(txt.length > 220 ? txt.slice(0, 220) + '…' : txt) + '</div></div>';
+  var S = wmRecState(r), col = wmUnitColor(r.unit), its = wmItems(r);
+  var cut = function (s, n) {
+    s = String(s || '');
+    return wmNl(s.length > n ? s.slice(0, n) + '…' : s);
+  };
+  var itemRow = function (it, i) {
+    var st = wmState(it);
+    return '<div style="display:flex;gap:9px;padding:7px 0;border-top:1px dashed #EEF1F4">' +
+      '<span style="flex-shrink:0;width:20px;height:20px;border-radius:6px;background:' + st.c + '15;' +
+      'color:' + st.c + ';font-size:11px;font-weight:800;display:flex;align-items:center;' +
+      'justify-content:center;margin-top:1px">' + (i + 1) + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;color:#1E293B;line-height:1.5">' +
+      (String(it.say || '').trim() ? cut(it.say, 150)
+        : '<span style="color:#94A3B8">(санал бичээгүй)</span>') + '</div>' +
+      (String(it.act || '').trim()
+        ? '<div style="font-size:12px;color:#64748B;margin-top:3px">' +
+          '<i class="ti ti-arrow-right"></i> ' + cut(it.act, 110) + '</div>' : '') +
+      '</div>' +
+      '<span style="flex-shrink:0">' + wmPill(esc(st.label), st.c) + '</span>' +
+      '</div>';
   };
   return '<div data-wm-open="' + esc(r.id) + '" style="background:#fff;border:1px solid #EEF1F4;' +
     'border-left:3px solid ' + col + ';border-radius:12px;padding:13px 16px;margin-bottom:10px;cursor:pointer">' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">' +
       '<span style="font-family:\'Bricolage Grotesque\',sans-serif;font-size:12px;font-weight:800;color:#94A3B8">' +
       esc(r.id || '') + '</span>' +
       wmPill(esc(wmUnitAb(r.unit)), col) +
       wmPill(esc(S.label), S.c) +
+      (its.length ? wmPill(its.length + ' санал', '#475569') : '') +
       '<span style="margin-left:auto;font-size:12px;color:#94A3B8"><i class="ti ti-calendar"></i> ' +
       esc(wmDate(r.date)) + '</span>' +
     '</div>' +
-    line('ХАБЭА-н албаны зүгээс', r.hse) +
-    line('Тухайн албаны санал', r.say, '#1E293B') +
-    line('Авах арга хэмжээ', r.act) +
-    line('Биелэлт', r.done, '#15803D') +
+    (String(r.hse || '').trim()
+      ? '<div style="font-size:12.5px;color:#64748B;line-height:1.5;margin-bottom:4px">' +
+        '<b style="color:#94A3B8;font-weight:700">ХАБЭА:</b> ' + cut(r.hse, 160) + '</div>' : '') +
+    its.map(itemRow).join('') +
     '</div>';
 }
 
@@ -32022,24 +32075,43 @@ function wmWire(sec) {
 function wmDetail(id) {
   var r = wmAll().filter(function (x) { return x.id === id; })[0];
   if (!r || !wmCanSee(r)) { toast('Тэмдэглэл олдсонгүй', 'error'); return; }
-  var S = wmState(r);
-  var row = function (label, val) {
-    return '<div style="padding:9px 0;border-bottom:1px solid #F1F5F9">' +
+  var S = wmRecState(r), its = wmItems(r);
+  var fld = function (label, val, muted) {
+    return '<div style="margin-top:8px">' +
       '<div style="font-size:11px;color:#94A3B8;font-weight:700;text-transform:uppercase;' +
-      'letter-spacing:.3px;margin-bottom:3px">' + label + '</div>' +
-      '<div style="font-size:13.5px;color:#1E293B;line-height:1.6">' +
+      'letter-spacing:.3px;margin-bottom:2px">' + label + '</div>' +
+      '<div style="font-size:13px;color:' + (muted ? '#64748B' : '#1E293B') + ';line-height:1.6">' +
       (String(val || '').trim() ? wmNl(val) : '<span style="color:#CBD5E1">—</span>') + '</div></div>';
   };
   var html = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
     wmPill(esc(wmUnitName(r.unit)), wmUnitColor(r.unit)) + wmPill(esc(S.label), S.c) +
     '<span style="margin-left:auto;font-size:12.5px;color:#64748B">' +
     '<i class="ti ti-calendar"></i> ' + esc(wmDate(r.date)) + '</span></div>' +
-    row('ХАБЭА-н албаны зүгээс', r.hse) +
-    row('Тухайн албаны санал', r.say) +
-    row('Авах арга хэмжээ', r.act) +
-    row('Шилжүүлсэн эсэх, явц', r.moved) +
-    row('Биелэлт', r.done) +
-    '<div style="font-size:11.5px;color:#94A3B8;margin-top:11px;line-height:1.7">' +
+    '<div style="background:#F8FAFC;border:1px solid #EEF1F4;border-radius:11px;padding:10px 13px">' +
+    fld('ХАБЭА-н албаны зүгээс', r.hse) + '</div>';
+
+  if (!its.length) {
+    html += '<div style="font-size:12.5px;color:#94A3B8;margin-top:12px;text-align:center">' +
+      'Энэ уулзалтад санал хүсэлт гараагүй.</div>';
+  } else {
+    html += '<div style="font-size:12px;color:#94A3B8;font-weight:800;text-transform:uppercase;' +
+      'letter-spacing:.4px;margin:14px 0 7px">Санал хүсэлт — ' + its.length + '</div>';
+    its.forEach(function (it, i) {
+      var st = wmState(it);
+      html += '<div style="border:1px solid #EEF1F4;border-left:3px solid ' + st.c +
+        ';border-radius:11px;padding:10px 13px;margin-bottom:9px">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<span style="font-size:12px;font-weight:800;color:#475569">' + (i + 1) + '-р санал</span>' +
+        '<span style="margin-left:auto">' + wmPill(esc(st.label), st.c) + '</span></div>' +
+        fld('Тухайн албаны санал', it.say) +
+        fld('Авах арга хэмжээ', it.act) +
+        fld('Шилжүүлсэн эсэх, явц', it.moved, true) +
+        fld('Биелэлт', it.done) +
+        '</div>';
+    });
+  }
+
+  html += '<div style="font-size:11.5px;color:#94A3B8;margin-top:11px;line-height:1.7">' +
     'Бүртгэсэн: ' + esc(r.byName || '—') + ' · ' + esc(String(r.at || '').slice(0, 16).replace('T', ' ')) +
     (r.updatedBy ? '<br>Сүүлд зассан: ' + esc(r.updatedBy) + ' · ' +
       esc(String(r.updatedAt || '').slice(0, 16).replace('T', ' ')) : '') + '</div>';
@@ -32055,36 +32127,136 @@ function wmDetail(id) {
     if (ev.target.closest('[data-wm-edit]')) { closeModal(); wmForm(r.id); return; }
     if (ev.target.closest('[data-wm-del]')) { closeModal(); wmDelete(r.id); return; }
   });
-  buildModal(esc(r.id) + ' · Уулзалтын тэмдэглэл', node, { width: 'min(580px, 96vw)' });
+  buildModal(r.id + ' · Уулзалтын тэмдэглэл', node, { width: 'min(600px, 96vw)' });
 }
 
-/* ── БҮРТГЭХ / ЗАСАХ ─────────────────────────────────────────────────── */
+/* ── БҮРТГЭХ / ЗАСАХ ───────────────────────────────────────────────────
+   ⚠ formModal() ХЭРЭГЛЭХГҮЙ — тэр нь тогтмол талбартай бөгөөд «санал нэмэх»
+     гэсэн ӨСӨН НЭМЭГДЭХ хэсгийг барьж чадахгүй. Тиймээс маягтыг гараар
+     эвлүүлж, buildModal-ын footer-ээр товчоо өгнө. */
+function wmItemHTML(i, it) {
+  it = it || {};
+  var ta = function (cls, label, val, ph, rows) {
+    return '<div class="form-group" style="margin-bottom:8px">' +
+      '<label style="font-size:12px">' + label + '</label>' +
+      '<textarea class="' + cls + '" rows="' + (rows || 2) + '"' +
+      (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>' + esc(val || '') + '</textarea></div>';
+  };
+  return '<div class="wm-item" style="border:1.5px solid #E2E8F0;border-radius:12px;' +
+    'padding:11px 13px 4px;margin-bottom:10px;background:#F8FAFC">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+    '<span style="width:22px;height:22px;border-radius:7px;background:#4F46E5;color:#fff;' +
+    'font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">' +
+    (i + 1) + '</span>' +
+    '<b style="font-size:13px;color:#1E293B">Санал хүсэлт</b>' +
+    '<button type="button" data-wm-rm="' + i + '" title="Энэ саналыг хасах" ' +
+    'style="margin-left:auto;cursor:pointer;font-family:inherit;border:1px solid #FECACA;' +
+    'background:#fff;color:#B91C1C;border-radius:8px;padding:3px 9px;font-size:11.5px;' +
+    'font-weight:700"><i class="ti ti-x"></i> Хасах</button></div>' +
+    ta('wm-say', 'Тухайн албаны санал', it.say, 'Ажилтнуудын мэдээлсэн аюул, хүсэлт…') +
+    ta('wm-act', 'Авах арга хэмжээ', it.act, 'Юу хийхээр шийдсэн бэ') +
+    ta('wm-moved', 'Шилжүүлсэн эсэх, явц', it.moved, 'ж: ИТА руу ажлын захиалга өгсөн') +
+    ta('wm-done', 'Биелэлт', it.done, '') +
+    '</div>';
+}
+/* Маягт дээрх саналуудыг УНШИНА (дэлгэц дээрх утга нь эх сурвалж) */
+function wmFormRead(node) {
+  var out = [];
+  $$('.wm-item', node).forEach(function (b) {
+    var g = function (cls) { var el = b.querySelector('.' + cls); return el ? el.value : ''; };
+    out.push({ say: g('wm-say').trim(), act: g('wm-act').trim(),
+      moved: g('wm-moved').trim(), done: g('wm-done').trim() });
+  });
+  return out;
+}
+function wmFormPaint(node, items) {
+  var box = node.querySelector('#wmItems');
+  if (!box) return;
+  box.innerHTML = (items.length ? items : [{}]).map(function (it, i) {
+    return wmItemHTML(i, it);
+  }).join('');
+}
+
 function wmForm(id) {
   if (!wmCanEdit()) { toast('Зөвхөн ХАБЭА-н алба бүртгэнэ', 'warn'); return; }
   var r = id ? wmAll().filter(function (x) { return x.id === id; })[0] : null;
   if (id && !r) { toast('Тэмдэглэл олдсонгүй', 'error'); return; }
-  formModal({
-    title: r ? ('Тэмдэглэл засах · ' + r.id) : '7 хоногийн уулзалт бүртгэх',
-    width: 'min(620px, 96vw)',
-    submitLabel: r ? 'Хадгалах' : 'Бүртгэх',
-    fields: [
-      { name: 'date', label: 'Он сар өдөр', type: 'date', required: true,
-        value: (r && r.date) || _ymd(new Date()) },
-      { name: 'unit', label: 'Алба хэлтэс — уулзалт хийсэн нэгж', type: 'select', required: true,
-        value: (r && r.unit) || WM_UNITS[0].key,
-        hint: 'Сонгосон нэгжийн дарга, ахлах, менежерүүдэд энэ тэмдэглэл харагдана',
-        options: WM_UNITS.map(function (u) { return { value: u.key, label: u.name }; }) },
-      { name: 'hse', label: 'ХАБЭА-н албаны зүгээс', type: 'textarea', rows: 3, required: true,
-        value: (r && r.hse) || '', placeholder: 'Уулзалтаар хүргэсэн мэдээлэл, зааварчилгаа, сургалт…' },
-      { name: 'say', label: 'Тухайн албаны санал', type: 'textarea', rows: 3,
-        value: (r && r.say) || '', placeholder: 'Ажилтнуудын мэдээлсэн аюул, хүсэлт, санал…' },
-      { name: 'act', label: 'Авах арга хэмжээ', type: 'textarea', rows: 3, value: (r && r.act) || '' },
-      { name: 'moved', label: 'Шилжүүлсэн эсэх, явц', type: 'textarea', rows: 2,
-        value: (r && r.moved) || '', placeholder: 'ж: ИТА руу ажлын захиалга өгсөн' },
-      { name: 'done', label: 'Биелэлт', type: 'textarea', rows: 2, value: (r && r.done) || '' }
-    ],
-    onSubmit: function (v) { wmSubmit(r, v); }
+  var its = r ? wmItems(r).slice() : [];
+
+  var node = elc('form', 'form');
+  node.innerHTML =
+    '<div class="form-group"><label>Он сар өдөр <span class="req">*</span></label>' +
+    '<input type="date" id="wmDate" value="' + esc((r && r.date) || _ymd(new Date())) + '"></div>' +
+    '<div class="form-group"><label>Алба хэлтэс — уулзалт хийсэн нэгж <span class="req">*</span></label>' +
+    '<select id="wmUnit">' + WM_UNITS.map(function (u) {
+      return '<option value="' + esc(u.key) + '"' +
+        (((r && r.unit) || WM_UNITS[0].key) === u.key ? ' selected' : '') + '>' +
+        esc(u.name) + '</option>';
+    }).join('') + '</select>' +
+    '<div class="fld-hint">Сонгосон нэгжийн дарга, ахлах, менежерүүдэд энэ тэмдэглэл харагдана</div></div>' +
+    '<div class="form-group"><label>ХАБЭА-н албаны зүгээс <span class="req">*</span></label>' +
+    '<textarea id="wmHse" rows="3" placeholder="Уулзалтаар хүргэсэн мэдээлэл, зааварчилгаа, сургалт…">' +
+    esc((r && r.hse) || '') + '</textarea></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin:16px 0 8px">' +
+    '<b style="font-size:13px;color:#1E293B">Санал хүсэлтүүд</b>' +
+    '<span style="font-size:11.5px;color:#94A3B8">— тус бүр нь өөрийн арга хэмжээ, ' +
+    'шилжүүлэлт, биелэлттэй</span></div>' +
+    '<div id="wmItems"></div>' +
+    '<button type="button" id="wmMore" style="width:100%;cursor:pointer;font-family:inherit;' +
+    'border:1.5px dashed #C7D2FE;background:#EEF2FF;color:#4F46E5;border-radius:11px;' +
+    'padding:10px;font-size:13px;font-weight:800">' +
+    '<i class="ti ti-plus"></i> Санал хүсэлт нэмэх</button>';
+  wmFormPaint(node, its);
+
+  /* ⚠ Огнооны нүдэнд Enter дарахад маягт «илгээгдэж» хуудас дахин ачаалагдана
+     — бөглөсөн бүхэн алга болно. Тиймээс submit-ыг бүрмөсөн хаана. */
+  node.addEventListener('submit', function (ev) { ev.preventDefault(); });
+
+  /* Нэмэх / хасах — дэлгэц дээрх утгыг УНШААД дахин зурна, эс бөгөөс
+     бөглөсөн зүйл нь арчигдана. */
+  node.addEventListener('click', function (ev) {
+    if (ev.target.closest('#wmMore')) {
+      ev.preventDefault();
+      var cur = wmFormRead(node); cur.push({});
+      wmFormPaint(node, cur);
+      var boxes = $$('.wm-item textarea', node);
+      var last = boxes[boxes.length - 4];       /* шинэ блокийн эхний талбар */
+      if (last) { try { last.focus(); } catch (e) {} }
+      return;
+    }
+    var rm = ev.target.closest('[data-wm-rm]');
+    if (rm) {
+      ev.preventDefault();
+      var i = _f(rm.getAttribute('data-wm-rm')), list = wmFormRead(node);
+      if (list.length <= 1) { wmFormPaint(node, [{}]); return; }   /* сүүлчийнхийг цэвэрлэнэ */
+      list.splice(i, 1);
+      wmFormPaint(node, list);
+      return;
+    }
   });
+
+  var foot = elc('div', 'modal-foot');
+  var cancel = elc('button', 'btn btn-secondary', 'Цуцлах');
+  cancel.type = 'button'; cancel.addEventListener('click', closeModal);
+  var save = elc('button', 'btn btn-primary', r ? 'Хадгалах' : 'Бүртгэх');
+  save.type = 'button';
+  save.addEventListener('click', function () {
+    var v = {
+      date: (node.querySelector('#wmDate') || {}).value || '',
+      unit: (node.querySelector('#wmUnit') || {}).value || '',
+      hse: String((node.querySelector('#wmHse') || {}).value || '').trim(),
+      items: wmFormRead(node).filter(function (it) { return !wmItemEmpty(it); })
+    };
+    if (!v.date || !v.unit || !v.hse) {
+      toast('Огноо, нэгж, ХАБЭА-н мэдээллийг бөглөнө үү', 'warn');
+      return;
+    }
+    wmSubmit(r, v);
+    closeModal();
+  });
+  foot.appendChild(cancel); foot.appendChild(save);
+  buildModal(r ? ('Тэмдэглэл засах · ' + r.id) : '7 хоногийн уулзалт бүртгэх',
+    node, { width: 'min(640px, 96vw)', footer: foot });
 }
 
 function wmSubmit(old, v) {
@@ -32102,7 +32274,9 @@ function wmSubmit(old, v) {
       for (var i = 0; i < list.length; i++) {
         if (list[i] && list[i].id === old.id) {
           list[i].date = v.date; list[i].unit = v.unit; list[i].hse = v.hse;
-          list[i].say = v.say; list[i].act = v.act; list[i].moved = v.moved; list[i].done = v.done;
+          list[i].items = v.items;
+          /* хуучин хавтгай талбарууд үлдвэл хоёр газар зөрнө — арилгана */
+          delete list[i].say; delete list[i].act; delete list[i].moved; delete list[i].done;
           list[i].updatedAt = now; list[i].updatedBy = who;
           break;
         }
@@ -32112,15 +32286,15 @@ function wmSubmit(old, v) {
     }
     newId = wmNextId(list, _f(String(v.date).slice(0, 4)) || new Date().getFullYear());
     list.push({
-      id: newId, date: v.date, unit: v.unit,
-      hse: v.hse, say: v.say, act: v.act, moved: v.moved, done: v.done,
+      id: newId, date: v.date, unit: v.unit, hse: v.hse, items: v.items,
       at: now, byUid: (me && me.uid) || (SESSION && SESSION.uid) || '', byName: who
     });
     return list;
   }, null).then(function (ok) {
     fin();
     if (ok) {
-      toast(old ? '✓ Хадгалагдлаа' : '✓ ' + (newId || '') + ' бүртгэгдлээ', 'success');
+      toast(old ? '✓ Хадгалагдлаа' : '✓ ' + (newId || '') + ' бүртгэгдлээ · ' +
+        v.items.length + ' санал', 'success');
       renderWmeet();
     } else {
       toast('⚠ Серверт хадгалагдсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
@@ -32136,7 +32310,9 @@ function wmDelete(id) {
   if (!wmCanEdit()) return;
   var r = wmAll().filter(function (x) { return x.id === id; })[0];
   if (!r) return;
-  if (!confirm(r.id + ' тэмдэглэлийг бүрмөсөн устгах уу?\n\nЭргэж буцахгүй.')) return;
+  var n = wmItems(r).length;
+  if (!confirm(r.id + ' тэмдэглэлийг бүрмөсөн устгах уу?' +
+    (n ? '\n\nДоторх ' + n + ' санал хүсэлт хамт устана.' : '') + '\n\nЭргэж буцахгүй.')) return;
   wmSaveMerge(function (list) {
     return list.filter(function (x) { return !(x && x.id === id); });
   }, null).then(function () {
@@ -32151,6 +32327,9 @@ function wmDelete(id) {
    Хэрэглэгчийн одоо хөтөлж байгаа файлтай ЯГ ИЖИЛ: сар бүр тусдаа хуудас,
    дээр нь «7 хоногийн уулзалтын тэмдэглэл» гарчиг (A1:H1 нэгтгэсэн),
    доор нь 8 багана. Үсэг нь Times New Roman — эх загвартай адил.
+   ⭐ САНАЛ БҮР НЭГ МӨР. Нэг уулзалтад 3 санал байвал 3 мөр гарч, огноо /
+     алба / ХАБЭА-н мэдээллийн нүд нь тэр 3 мөрөнд НЭГТГЭГДЭНЭ (merge) —
+     цаасан дээр нэг уулзалт нэг блок болж харагдана.
    ⚠ Загвар ФАЙЛ хэрэглэхгүй: эх Excel-д бодит уулзалтын тэмдэглэл (нэр,
      гомдол) байгаа бөгөөд энэ repo НИЙТЭД НЭЭЛТТЭЙ тул хуулбарыг нь
      commit хийж БОЛОХГҮЙ. Тиймээс хуудсыг ExcelJS-ээр эвлүүлж байна. */
@@ -32166,10 +32345,10 @@ var WM_COLS = [
 ];
 
 function wmExcel() {
-  var rows = wmFiltered().slice().sort(function (a, b) {
+  var recs = wmFiltered().slice().sort(function (a, b) {
     return String(a.date || '').localeCompare(String(b.date || ''));
   });
-  if (!rows.length) { toast('Татах тэмдэглэл алга', 'warn'); return; }
+  if (!recs.length) { toast('Татах тэмдэглэл алга', 'warn'); return; }
   var t = toast('Excel бэлтгэж байна…', 'info');
   var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
 
@@ -32179,10 +32358,11 @@ function wmExcel() {
       var wb = new ExcelJS.Workbook();
       var thin = { style: 'thin', color: { argb: 'FF000000' } };
       var border = { top: thin, left: thin, bottom: thin, right: thin };
+      var FONT = { name: 'Times New Roman', size: 11 };
 
       /* Сараар нь бүлэглэнэ — хоосон сарын хуудас үүсгэхгүй */
       var byMonth = {};
-      rows.forEach(function (r) {
+      recs.forEach(function (r) {
         var m = wmMonthOf(r) || 1;
         (byMonth[m] = byMonth[m] || []).push(r);
       });
@@ -32212,31 +32392,44 @@ function wmExcel() {
         });
         hr.height = 21.6;
 
-        /* Дараагийн мөрүүд — бүртгэл */
-        byMonth[m].forEach(function (r, idx) {
-          var row = ws.getRow(idx + 3);
-          var vals = [idx + 1, null, wmUnitAb(r.unit), r.hse || '', r.say || '',
-                      r.act || '', r.moved || '', r.done || ''];
-          vals.forEach(function (v, i) {
-            var cell = row.getCell(i + 1);
-            if (i === 1) {
-              /* ⚠ ЗААВАЛ UTC-ээр байгуулна. new Date('2026-01-05T00:00:00') нь
-                 ОРОН НУТГИЙН шөнө дунд болох ба ExcelJS үүнийг UTC рүү
-                 хөрвүүлэхэд УБ (+08) цагаар нэг хоног ухарч, Excel дээр
-                 01-05 нь 01-04 болж харагдаж байв. */
-              var dp = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-              if (dp) {
-                cell.value = new Date(Date.UTC(+dp[1], +dp[2] - 1, +dp[3]));
-                cell.numFmt = 'yyyy.mm.dd';
-              } else cell.value = wmDate(r.date);
-            } else cell.value = v;
-            cell.font = { name: 'Times New Roman', size: 11 };
-            cell.alignment = {
-              vertical: 'top', wrapText: true,
-              horizontal: (i <= 2) ? 'center' : 'left'
-            };
-            cell.border = border;
+        var rowAt = 3, no = 0;
+        byMonth[m].forEach(function (r) {
+          var its = wmItems(r);
+          if (!its.length) its = [{}];              /* саналгүй уулзалт ч мөр авна */
+          var first = rowAt;
+          its.forEach(function (it) {
+            no++;
+            var row = ws.getRow(rowAt);
+            var vals = [no, null, wmUnitAb(r.unit), r.hse || '',
+                        it.say || '', it.act || '', it.moved || '', it.done || ''];
+            vals.forEach(function (v, i) {
+              var cell = row.getCell(i + 1);
+              if (i === 1) {
+                /* ⚠ ЗААВАЛ UTC-ээр байгуулна. new Date('2026-01-05T00:00:00') нь
+                   ОРОН НУТГИЙН шөнө дунд болох ба ExcelJS үүнийг UTC рүү
+                   хөрвүүлэхэд УБ (+08) цагаар нэг хоног ухарч, Excel дээр
+                   01-05 нь 01-04 болж харагдаж байв. */
+                var dp = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (dp) {
+                  cell.value = new Date(Date.UTC(+dp[1], +dp[2] - 1, +dp[3]));
+                  cell.numFmt = 'yyyy.mm.dd';
+                } else cell.value = wmDate(r.date);
+              } else cell.value = v;
+              cell.font = FONT;
+              cell.alignment = {
+                vertical: 'top', wrapText: true,
+                horizontal: (i <= 2) ? 'center' : 'left'
+              };
+              cell.border = border;
+            });
+            rowAt++;
           });
+          /* Нэг уулзалтын огноо / алба / ХАБЭА-н нүдийг нэгтгэнэ */
+          if (rowAt - first > 1) {
+            [2, 3, 4].forEach(function (col) {
+              try { ws.mergeCells(first, col, rowAt - 1, col); } catch (e) {}
+            });
+          }
         });
         ws.views = [{ state: 'frozen', ySplit: 2 }];
       });
