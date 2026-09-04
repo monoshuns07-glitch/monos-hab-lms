@@ -8777,15 +8777,28 @@ function ackCompanyVersion() {
   return ackHashOf(DB.risks || []);
 }
 
+/* ⚠⚠ АМЖИЛТГҮЙ УНШИЛТЫГ КЭШЛЭХГҮЙ.
+   Өмнө нь сүлжээ түр саатсан ч, алдаа гарсан ч { version:0, rows:[] }
+   гэсэн ХООСОН утгыг ACK_STORE-д бичдэг байв. Дараагийн дуудалт
+   `if (ACK_STORE[key]) return ...` дээр таарч, ДАХИН УНШИХГҮЙ — тиймээс
+   ганц түр саатал сессийн турш «зурсан 0» болгодог байсан. Энэ нь
+   «заримдаа ажиллаад заримдаа болдоггүй» шинжийг тайлбарлана.
+   Одоо: 200 (мөртэй) ба 404 (үнэхээр хэн ч зураагүй) л кэшлэгдэнэ.
+   Алдаа гарвал кэшлэхгүй — дараагийн дуудалт дахин оролдоно.
+   Буцаах утга дээр _ok тугийг тавьж, дуудагч тал найдвартай эсэхийг мэднэ. */
 async function ackLoadKey(key, force) {
   if (!force && ACK_STORE[key]) return ACK_STORE[key];
   try {
-    var j = await riskR2GetJson(key);
-    if (j && Array.isArray(j.rows)) { ACK_STORE[key] = j; return j; }
-    if (j === null) { ACK_STORE[key] = { version: 0, rows: [] }; return ACK_STORE[key]; }
-  } catch (e) { if (ACK_STORE[key]) return ACK_STORE[key]; }
-  ACK_STORE[key] = ACK_STORE[key] || { version: 0, rows: [] };
-  return ACK_STORE[key];
+    var j = await riskR2GetJson(key, { fresh: !!force });
+    if (j && Array.isArray(j.rows)) { j._ok = true; ACK_STORE[key] = j; return j; }
+    if (j === null) {                       /* 404 — файл үнэхээр алга */
+      ACK_STORE[key] = { version: 0, rows: [], _ok: true };
+      return ACK_STORE[key];
+    }
+  } catch (e) {
+    if (ACK_STORE[key]) return ACK_STORE[key];
+  }
+  return { version: 0, rows: [], _ok: false };   /* КЭШЛЭХГҮЙ */
 }
 async function ackSaveKey(key, store) {
   ACK_STORE[key] = store;
@@ -9838,8 +9851,15 @@ async function ackJobsLoad(me, force) {
     var rows = ackJobRows(job);
     return rows.length && (!me || riskIsReleasedTo(rows[0], me));
   });
+  var allOk = true;
   for (var i = 0; i < jobs.length; i++) {
-    try { ACK_JOBS[jobs[i]] = await ackLoadKey(ackJobFile(jobs[i]), force); } catch (e) {}
+    try {
+      var st = await ackLoadKey(ackJobFile(jobs[i]), force);
+      /* ⚠ Найдваргүй (уншилт нурсан) үр дүнгээр АЛЬ ХЭДИЙН ачаалагдсан
+         зүйлийг ДАРАХГҮЙ — эс бөгөөс нэг саатал зөв датаг устгана. */
+      if (st && st._ok !== false) ACK_JOBS[jobs[i]] = st;
+      else { allOk = false; if (!ACK_JOBS[jobs[i]]) ACK_JOBS[jobs[i]] = st; }
+    } catch (e) { allOk = false; }
   }
   /* ⚠⚠ ЭНД «ачаалсан» гэж БОДЛОГООР тэмдэглэнэ.
      ackJobRows() нь DB.risks дээр тулгуурладаг тул ЭРСДЭЛ ирж амжаагүй
@@ -9851,7 +9871,9 @@ async function ackJobsLoad(me, force) {
      «нээгдсэн ажил байхгүй» биш, RISK_RELEASES хараахан ИРЖ АМЖААГҮЙ
      гэсэн үг байж болно — тэр үед тэмдэглэвэл дахин оролдохгүй болно.
      Дуудагч тал (riskGroupedHTML) нь releases ирсний дараа л дуудна. */
-  if (jobs.length) ACK_JOBS_LOADED = true;
+  /* Бүх файл найдвартай уншигдсан үед л тэмдэглэнэ — нэг нь ч нурсан бол
+     дараагийн зурагдалтад ДАХИН оролдоно. */
+  if (jobs.length && allOk) ACK_JOBS_LOADED = true;
   return ACK_JOBS;
 }
 async function ackJobsLoadAll(force) { return await ackJobsLoad(null, force); }
