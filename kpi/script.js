@@ -11489,6 +11489,347 @@ function riskTabList(list) {
 
 /* ══ ЗАХИРЛЫН АЛБАДЫН ТОВЧНУУД ══
    ЧХЛ дээр дарвал ЧХЛ-ийн бүх эрсдэл л харагдана. «Бүгд» гэвэл нийтээр. */
+/* ══════════════════════════════════════════════════════════════════════
+   ЗАХИРЛЫН ТОЙМ ДЭЛГЭЦ
+   ══════════════════════════════════════════════════════════════════════
+   Захирлууд (гүйцэтгэх · үйлдвэрлэл · борлуулалт) нь 800+ эрсдлийн
+   ЖАГСААЛТЫГ хардаг байв — 5×5 матриц, түвшний шүүлтүүр, дараа нь олон
+   зуун мөр. Энэ нь ХАБЭА мэргэжилтний ажлын хэрэгсэл болохоос захирлын
+   шийдвэрийн хэрэгсэл биш.
+
+   Одоо захиралд ТОЙМ нээгдэнэ: нэг дэлгэцэнд байдал, албадын зураглал,
+   гүйцэд бус байдал, хамгийн өндөр эрсдлүүд, компанийн хэмжээний сэдэв.
+   Задаргаа алга болоогүй — «Дэлгэрэнгүй» товчны цаана хэвээр байна.
+
+   ⚠ ЗАРЧИМ: бүх тоо riskDirStats()-ийн НЭГ олонлогоос гарна. Өмнө нь
+     нэг зүйлийг хоёр газар тоолж, таб дээр «515», хуудсан дээр «361»
+     гэж зөрдөг байсан алдаа энд давтагдахгүй.
+   ⚠ «Дараа» гэдэг нь ТӨЛӨВЛӨСӨН үлдэгдэл эрсдэл — арга хэмжээ бүрэн
+     хэрэгжсэн тохиолдолд хүрэх утга. Биелсэн баримт БИШ. Дэлгэц дээр
+     үүнийг ил бичнэ, эс бөгөөс «бид аюулгүй болчихсон» гэсэн буруу
+     дүр зураг өгнө. */
+
+/* '' = автоматаар (захиралд тойм, бусдад задаргаа) · 'brief' · 'detail' */
+var RISK_DIR_VIEW = '';
+function riskDirBrief() {
+  var v = RISK_DIR_VIEW;
+  if (!v) v = riskDirScope() ? 'brief' : 'detail';
+  return v === 'brief';
+}
+/* Тойм/задаргаа сэлгэх товч хэнд харагдах вэ — захирал ба админд.
+   Админд хэрэгтэй нь: захирал юу харж байгааг өөрөө шалгаж чадна. */
+function riskDirCanBrief() { return !!riskDirScope() || isAdmin(); }
+
+/* ⚠ Кирилл дээр \b ажиллахгүй тул хэрэглэхгүй. Богино үг (жишээ нь «гал»)
+   өөр үгийн дотор таарахаас сэргийлж бүтэн хэлбэрээр нь бичив. */
+var RISK_THEMES = [
+  { name: 'Машин, тоног төхөөрөмж', re: /механизм|тоног төхөөрөмж|эргэлдэ|хавчуул|таслуул|сэнс|дамжуур/i },
+  { name: 'Ачаа өргөх, эргономик',  re: /ачаа|өргө|нуруу|бөхий|эргономик|давтамжтай хөдөлгөөн/i },
+  { name: 'Унаж бэртэх, өндөр',     re: /өндөр|унах|унаж|шатан|халтир|гулгаа|бүдэр/i },
+  { name: 'Тээвэр, зам',            re: /тээврийн хэрэгсл|автомашин|замын хөдөлгөөн|жолооч|сэрээт ачигч|форклифт/i },
+  { name: 'Цахилгаан',              re: /цахилгаан|гүйдэл|цохиулах/i },
+  { name: 'Хими, уур, түлэгдэлт',   re: /химийн|уусмал|шүлт|хүчил|ууранд|түлэгд|хордох/i },
+  { name: 'Сэтгэл зүйн ачаалал',    re: /сэтгэл зүй|стресс|ядрал|сэтгэлийн|дарамт/i },
+  { name: 'Дуу чимээ, тоос',        re: /дуу чимээ|тоосон|тоосжил|чичирхийлэл|сонсгол/i },
+  { name: 'Түймэр, дэлбэрэлт',      re: /түймэр|галын|галд |дэлбэр/i }
+];
+
+/* Захиралд харагдах БҮХ тоог нэг дор бодно */
+function riskDirStats(list) {
+  var all = riskEmpMerged(list || []);
+  var S = {
+    all: all, total: all.length,
+    lv: {}, unscored: 0, high: 0,
+    noAct: 0, noDue: 0, noOwner: 0, noAfter: 0,
+    sumR: 0, nR: 0, sumB: 0, sumA: 0, nA: 0,
+    depts: [], themes: [], top: []
+  };
+  RISK_LEVELS.forEach(function (L) { S.lv[L.code] = 0; });
+
+  var byD = {};
+  all.forEach(function (r) {
+    var un = riskIsUnscored(r);
+    var sc = riskScore(r), af = riskScoreAfter(r);
+    if (un) S.unscored++;
+    else {
+      var L = riskLevel(r);
+      S.lv[L.code] = (S.lv[L.code] || 0) + 1;
+      if (L.code === 'A' || L.code === 'B') S.high++;
+      S.sumR += sc; S.nR++;
+      if (af > 0) { S.sumB += sc; S.sumA += af; S.nA++; } else S.noAfter++;
+    }
+    if (!String(r.actions || '').trim()) S.noAct++;
+    if (!String(r.due || '').trim()) S.noDue++;
+    if (!String(r.responsible || '').trim()) S.noOwner++;
+
+    var dn = riskCanonDept(r.dept) || r.dept || '—';
+    var d = byD[dn] || (byD[dn] = { name: dn, n: 0, high: 0, uns: 0, sum: 0, ns: 0, lv: {} });
+    d.n++;
+    if (un) d.uns++;
+    else {
+      var L2 = riskLevel(r);
+      d.lv[L2.code] = (d.lv[L2.code] || 0) + 1;
+      if (L2.code === 'A' || L2.code === 'B') d.high++;
+      d.sum += sc; d.ns++;
+    }
+  });
+  S.avg = S.nR ? Math.round(S.sumR / S.nR * 10) / 10 : 0;
+  S.drop = S.sumB ? Math.round((1 - S.sumA / S.sumB) * 100) : 0;
+
+  S.depts = Object.keys(byD).map(function (k) {
+    var d = byD[k];
+    d.avg = d.ns ? Math.round(d.sum / d.ns * 10) / 10 : 0;
+    return d;
+  }).sort(function (a, b) { return (b.high - a.high) || (b.avg - a.avg) || (b.n - a.n); });
+
+  /* Сэдэв — нэг эрсдэл олон сэдэвт орж болно (аюул нь үнэхээр давхар байдаг) */
+  S.themes = RISK_THEMES.map(function (t) {
+    var n = 0, hi = 0, sum = 0, ns = 0;
+    all.forEach(function (r) {
+      var hay = String(r.hazard || '') + ' ' + String(r.process || '') + ' ' + String(r.cause || '');
+      if (!t.re.test(hay)) return;
+      n++;
+      if (riskIsUnscored(r)) return;
+      var c = riskLevel(r).code;
+      if (c === 'A' || c === 'B') hi++;
+      sum += riskScore(r); ns++;
+    });
+    return { name: t.name, n: n, high: hi, avg: ns ? Math.round(sum / ns * 10) / 10 : 0 };
+  }).filter(function (t) { return t.n > 0; })
+    .sort(function (a, b) { return (b.high - a.high) || (b.n - a.n); });
+
+  S.top = all.filter(function (r) { return !riskIsUnscored(r); })
+    .sort(function (a, b) { return riskScore(b) - riskScore(a); }).slice(0, 10);
+  return S;
+}
+
+/* Тойм ⇄ Задаргаа сэлгэх мөр */
+function riskDirViewBarHTML(brief) {
+  if (!riskDirCanBrief()) return '';
+  var b = function (v, ic, tx, on) {
+    return '<button data-risk-dirview="' + v + '" style="cursor:pointer;font-family:inherit;border:none;' +
+      'background:' + (on ? '#fff' : 'transparent') + ';color:' + (on ? '#4F46E5' : '#64748B') + ';' +
+      'box-shadow:' + (on ? '0 1px 3px rgba(15,23,42,.12)' : 'none') + ';border-radius:9px;padding:7px 14px;' +
+      'font-size:13px;font-weight:' + (on ? '800' : '600') + ';display:inline-flex;align-items:center;gap:6px">' +
+      '<i class="ti ti-' + ic + '"></i>' + tx + '</button>';
+  };
+  return '<div style="display:inline-flex;gap:3px;background:#F1F5F9;border-radius:12px;padding:3px;margin-bottom:13px">' +
+    b('brief', 'layout-dashboard', 'Тойм', brief) +
+    b('detail', 'list-details', 'Дэлгэрэнгүй', !brief) + '</div>';
+}
+
+/* ⭐ ЗАХИРЛЫН ТОЙМ — нэг дэлгэц */
+function riskDirDashHTML(list, subtitle) {
+  var S = riskDirStats(list);
+  if (!S.total) return riskDirViewBarHTML(true) +
+    '<div class="card" style="padding:34px"><div class="empty-state">' +
+    '<i class="ti ti-shield-search"></i><div>Эрсдэлийн үнэлгээ ачаалагдсангүй</div></div></div>';
+
+  var card = function (inner, pad) {
+    return '<div class="card" style="padding:' + (pad || '16px 18px') + ';margin-bottom:13px">' + inner + '</div>';
+  };
+  var h = function (t, s) {
+    return '<div style="font-size:15px;font-weight:800;color:#1E293B">' + t + '</div>' +
+      (s ? '<div style="font-size:12.5px;color:#64748B;margin-top:2px;line-height:1.55">' + s + '</div>' : '');
+  };
+  var H = riskDirViewBarHTML(true);
+
+  /* ── 1. БАЙДЛЫН ТОЙМ ───────────────────────────────────────────── */
+  var tile = function (n, lab, col, bg, bd) {
+    return '<div style="flex:1;min-width:132px;background:' + bg + ';border:1.5px solid ' + bd + ';' +
+      'border-radius:14px;padding:13px 15px">' +
+      '<div style="font-size:30px;font-weight:900;color:' + col + ';line-height:1;' +
+      'font-family:\'Bricolage Grotesque\',sans-serif">' + n + '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:' + col + ';margin-top:5px;line-height:1.4">' + lab + '</div></div>';
+  };
+  H += card(
+    h('Эрсдэлийн үнэлгээний тойм',
+      esc(subtitle || '') + ' · ' + S.depts.length + ' алба') +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:13px">' +
+    tile(S.total, 'Нийт эрсдэл', '#312E81', '#EEF2FF', '#C7D2FE') +
+    tile(S.high, 'Анхаарах (A, B түвшин)', S.high ? '#DC2626' : '#059669',
+         S.high ? '#FEF2F2' : '#F0FDF4', S.high ? '#FECACA' : '#BBF7D0') +
+    tile(S.unscored, 'Үнэлгээ хийгдээгүй', S.unscored ? '#D97706' : '#059669',
+         S.unscored ? '#FFFBEB' : '#F0FDF4', S.unscored ? '#FDE68A' : '#BBF7D0') +
+    tile(S.avg, 'Дундаж эрсдэл R', '#475569', '#F8FAFC', '#E2E8F0') +
+    '</div>' +
+    /* Түвшний хуваарилалт — нэг мөр туузаар */
+    '<div style="margin-top:14px">' +
+    '<div style="display:flex;height:11px;border-radius:99px;overflow:hidden;background:#F1F5F9">' +
+    RISK_LEVELS.slice().reverse().map(function (L) {
+      var n = S.lv[L.code] || 0; if (!n) return '';
+      return '<div title="' + esc(L.code + ' · ' + L.name + ' — ' + n) + '" style="width:' +
+        (n * 100 / Math.max(1, S.nR)) + '%;background:' + L.color + '"></div>';
+    }).join('') + '</div>' +
+    '<div style="display:flex;gap:11px;flex-wrap:wrap;margin-top:8px">' +
+    RISK_LEVELS.slice().reverse().map(function (L) {
+      var n = S.lv[L.code] || 0;
+      return '<span style="font-size:11.5px;color:#64748B;display:inline-flex;align-items:center;gap:5px">' +
+        '<span style="width:9px;height:9px;border-radius:3px;background:' + L.color + ';display:inline-block"></span>' +
+        esc(L.name) + ' <b style="color:#334155">' + n + '</b></span>';
+    }).join('') + '</div></div>'
+  );
+
+  /* ── 2. АРГА ХЭМЖЭЭНИЙ ТӨЛӨВ ───────────────────────────────────── */
+  var gap = function (n, lab, tip) {
+    var ok = !n;
+    return '<div style="flex:1;min-width:150px;border:1.5px solid ' + (ok ? '#BBF7D0' : '#E2E8F0') + ';' +
+      'background:' + (ok ? '#F0FDF4' : '#fff') + ';border-radius:12px;padding:11px 13px">' +
+      '<div style="font-size:22px;font-weight:900;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif;' +
+      'color:' + (ok ? '#059669' : '#B45309') + '">' + n + '</div>' +
+      '<div style="font-size:12px;font-weight:700;color:#334155;margin-top:4px">' + lab + '</div>' +
+      '<div style="font-size:11px;color:#94A3B8;margin-top:2px;line-height:1.45">' + tip + '</div></div>';
+  };
+  var effect = '';
+  if (S.nA) {
+    var LB = riskLevel(S.sumB / S.nA), LA = riskLevel(S.sumA / S.nA);
+    effect = '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:12px">' +
+      '<div style="flex:1;min-width:120px;text-align:center;background:' + LB.bg + ';border:1px solid ' + LB.bd +
+      ';border-radius:12px;padding:11px 8px">' +
+      '<div style="font-size:11px;font-weight:700;color:#94A3B8">ОДООГИЙН ДУНДАЖ</div>' +
+      '<div style="font-size:23px;font-weight:900;color:' + LB.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.2">' +
+      (Math.round(S.sumB / S.nA * 10) / 10) + '</div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:' + LB.color + '">' + LB.code + ' · ' + esc(LB.name) + '</div></div>' +
+      '<div style="font-size:21px;color:#CBD5E1">→</div>' +
+      '<div style="flex:1;min-width:120px;text-align:center;background:' + LA.bg + ';border:1px solid ' + LA.bd +
+      ';border-radius:12px;padding:11px 8px">' +
+      '<div style="font-size:11px;font-weight:700;color:#94A3B8">ТӨЛӨВЛӨСНӨӨР</div>' +
+      '<div style="font-size:23px;font-weight:900;color:' + LA.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.2">' +
+      (Math.round(S.sumA / S.nA * 10) / 10) + '</div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:' + LA.color + '">' + LA.code + ' · ' + esc(LA.name) + '</div></div>' +
+      '</div>' +
+      '<div style="margin-top:9px;background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:11px;padding:10px 13px;' +
+      'font-size:12px;color:#92400E;line-height:1.6">' +
+      '<b>Төлөвлөсөн арга хэмжээ бүрэн хэрэгжвэл эрсдэл ' + S.drop + '%-иар буурна.</b><br>' +
+      'Энэ нь ТӨЛӨВЛӨГӨӨНИЙ тоо — биелэлтийн баримт биш. ' + S.nA + ' эрсдэлд дараах үнэлгээ бүртгэгдсэн, ' +
+      S.noAfter + '-д бүртгэгдээгүй.</div>';
+  }
+  H += card(
+    h('Арга хэмжээний төлөв', 'Эрсдэл бүрд арга хэмжээ, хугацаа, хариуцагч бүрэн заагдсан эсэх') +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:12px">' +
+    gap(S.noAct, 'Арга хэмжээ бичээгүй', 'Юу хийхийг заагаагүй') +
+    gap(S.noDue, 'Хугацаа заагаагүй', 'Хэзээ дуусахыг заагаагүй') +
+    gap(S.noOwner, 'Хариуцагч заагаагүй', 'Хэн хийхийг заагаагүй') +
+    '</div>' + effect
+  );
+
+  /* ── 3. АЛБАДЫН ЗУРАГЛАЛ ───────────────────────────────────────── */
+  var maxN = S.depts.reduce(function (m, d) { return Math.max(m, d.n); }, 1);
+  H += card(
+    h('Албадын зураглал', 'Анхаарах эрсдлийн тоогоор эрэмбэлэв · мөр дээр дарвал тухайн албаны задаргаа нээгдэнэ') +
+    '<div style="margin-top:11px">' +
+    S.depts.map(function (d) {
+      var bar = RISK_LEVELS.slice().reverse().map(function (L) {
+        var n = d.lv[L.code] || 0; if (!n) return '';
+        return '<div style="width:' + (n * 100 / Math.max(1, d.n)) + '%;background:' + L.color + '"></div>';
+      }).join('') + (d.uns ? '<div style="width:' + (d.uns * 100 / Math.max(1, d.n)) + '%;background:#CBD5E1"></div>' : '');
+      return '<button data-risk-dirdept="' + esc(d.name) + '" style="width:100%;display:block;text-align:left;' +
+        'cursor:pointer;font-family:inherit;background:#fff;border:1px solid #E2E8F0;border-radius:12px;' +
+        'padding:11px 13px;margin-bottom:7px">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:145px">' +
+        '<div style="font-size:13.5px;font-weight:700;color:#1E293B;line-height:1.35">' + esc(d.name) + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:2px">' + d.n + ' эрсдэл · дундаж R ' + d.avg +
+        (d.uns ? ' · ' + d.uns + ' үнэлгээгүй' : '') + '</div></div>' +
+        (d.high
+          ? '<span style="flex-shrink:0;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:8px;' +
+            'padding:3px 9px;font-size:11.5px;font-weight:800">' + d.high + ' анхаарах</span>'
+          : '<span style="flex-shrink:0;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0;border-radius:8px;' +
+            'padding:3px 9px;font-size:11.5px;font-weight:800">✓</span>') +
+        '<i class="ti ti-chevron-right" style="color:#CBD5E1;flex-shrink:0"></i>' +
+        '</div>' +
+        '<div style="display:flex;height:7px;border-radius:99px;overflow:hidden;background:#F1F5F9;margin-top:8px;' +
+        'width:' + Math.max(18, Math.round(d.n * 100 / maxN)) + '%">' + bar + '</div>' +
+        '</button>';
+    }).join('') + '</div>'
+  );
+
+  /* ── 4. ХАМГИЙН ӨНДӨР ЭРСДЭЛ ───────────────────────────────────── */
+  H += card(
+    h('Хамгийн өндөр ' + S.top.length + ' эрсдэл', 'Мөр дээр дарвал дэлгэрэнгүй, арга хэмжээ нь нээгдэнэ') +
+    '<div style="margin-top:11px">' +
+    S.top.map(function (r) {
+      var L = riskLevel(r), sc = riskScore(r), af = riskScoreAfter(r);
+      var LA = af ? riskLevel(af) : null;
+      return '<div data-risk-open="' + esc(r.id) + '" style="cursor:pointer;border:1px solid #E2E8F0;' +
+        'border-left:4px solid ' + L.color + ';border-radius:12px;padding:11px 13px;margin-bottom:7px;background:#fff">' +
+        '<div style="display:flex;align-items:flex-start;gap:11px">' +
+        '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:13.5px;font-weight:700;color:#1E293B;line-height:1.4">' + esc(r.hazard || 'Нэргүй эрсдэл') + '</div>' +
+        '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px;line-height:1.5">' +
+        esc(riskDeptShort(r.dept || '')) + (r.position ? ' · ' + esc(r.position) : '') + '</div></div>' +
+        '<div style="flex-shrink:0;text-align:center;min-width:74px">' +
+        '<div style="font-size:19px;font-weight:900;color:' + L.color + ';font-family:\'Bricolage Grotesque\',sans-serif;line-height:1">' +
+        (Math.round(sc * 10) / 10) + '</div>' +
+        (LA ? '<div style="font-size:11px;color:#94A3B8;margin-top:3px">→ <b style="color:' + LA.color + '">' +
+              (Math.round(af * 10) / 10) + '</b></div>'
+            : '<div style="font-size:11px;color:#CBD5E1;margin-top:3px">→ —</div>') +
+        '</div></div></div>';
+    }).join('') + '</div>'
+  );
+
+  /* ── 5. СЭДЭВЧИЛСЭН ЗУРАГЛАЛ ───────────────────────────────────── */
+  if (S.themes.length) {
+    var maxT = S.themes.reduce(function (m, t) { return Math.max(m, t.n); }, 1);
+    H += card(
+      h('Компанийн хэмжээний сэдэв',
+        'Албадыг хөндлөн огтолсон аюулын төрөл — нэг эрсдэл олон сэдэвт орж болно') +
+      '<div style="margin-top:11px">' +
+      S.themes.map(function (t) {
+        return '<div style="display:flex;align-items:center;gap:11px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+          '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:700;color:#1E293B">' + esc(t.name) + '</div>' +
+          '<div style="height:6px;border-radius:99px;background:#EEF2FF;margin-top:5px;width:' +
+          Math.max(10, Math.round(t.n * 100 / maxT)) + '%"><div style="height:100%;border-radius:99px;background:#6366F1;width:100%"></div></div>' +
+          '</div>' +
+          '<div style="flex-shrink:0;text-align:right;min-width:96px">' +
+          '<div style="font-size:15px;font-weight:900;color:#334155;font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.1">' + t.n + '</div>' +
+          '<div style="font-size:11px;color:' + (t.high ? '#DC2626' : '#94A3B8') + ';margin-top:2px">' +
+          (t.high ? t.high + ' анхаарах' : 'дундаж R ' + t.avg) + '</div></div></div>';
+      }).join('') + '</div>'
+    );
+  }
+
+  /* ── 6. ТАНИЛЦСАН БАЙДАЛ ───────────────────────────────────────── */
+  if (ACK_ADMIN && ACK_ADMIN.rows) {
+    var R = ACK_ADMIN.rows;
+    var tot = R.reduce(function (a, x) { return a + x.n; }, 0);
+    var dn = R.reduce(function (a, x) { return a + x.done; }, 0);
+    var pct = tot ? Math.round(dn * 100 / tot) : 0;
+    H += card(
+      h('Танилцсан байдал', 'Ажилтан эрсдэлийн үнэлгээтэйгээ танилцаж гарын үсэг зурсан эсэх') +
+      '<div style="display:flex;align-items:center;gap:13px;flex-wrap:wrap;margin-top:12px">' +
+      '<div><div style="font-size:27px;font-weight:900;line-height:1;font-family:\'Bricolage Grotesque\',sans-serif;color:' +
+      (pct >= 90 ? '#059669' : pct >= 50 ? '#D97706' : '#DC2626') + '">' + pct + '%</div>' +
+      '<div style="font-size:11.5px;color:#64748B;font-weight:700">' + dn + ' / ' + tot + ' ажилтан</div></div>' +
+      '<div style="flex:1;min-width:150px;height:9px;background:#F1F5F9;border-radius:99px;overflow:hidden">' +
+      '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6366F1,#059669);border-radius:99px"></div></div>' +
+      '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Дахин шалгах</button></div>' +
+      '<div style="margin-top:11px">' +
+      R.slice().sort(function (a, b) { return (a.n ? a.done / a.n : 1) - (b.n ? b.done / b.n : 1); })
+        .map(function (x) {
+          var p = x.n ? Math.round(x.done * 100 / x.n) : 0;
+          return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">' +
+            '<div style="flex:1;min-width:0;font-size:12.5px;color:#334155">' + esc(x.dept) + '</div>' +
+            '<div style="width:88px;height:6px;background:#F1F5F9;border-radius:99px;overflow:hidden;flex-shrink:0">' +
+            '<div style="height:100%;width:' + p + '%;background:' + (p === 100 ? '#059669' : p >= 50 ? '#F59E0B' : '#DC2626') + '"></div></div>' +
+            '<div style="width:62px;text-align:right;font-size:11.5px;font-weight:700;color:#64748B;flex-shrink:0">' +
+            x.done + ' / ' + x.n + '</div></div>';
+        }).join('') + '</div>'
+    );
+  } else {
+    H += card(
+      '<div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">' +
+      '<i class="ti ti-writing-sign" style="font-size:20px;color:#4F46E5"></i>' +
+      '<div style="flex:1;min-width:190px">' + h('Танилцсан байдал',
+        'Ажилтнууд эрсдэлийн үнэлгээтэйгээ танилцсан эсэхийг албаар харна') + '</div>' +
+      '<button class="btn btn-secondary btn-sm" data-ack-scan="1"><i class="ti ti-refresh"></i> Шалгах</button></div>'
+    );
+  }
+
+  return H;
+}
+
 function riskDeptBarHTML(list) {
   var ds = riskDirDepts();
   if (!ds.length) return '';
@@ -12045,6 +12386,21 @@ function riskWire(sec, redraw) {
   if (sec._riskDashWired) return;
   sec._riskDashWired = true;
   sec.addEventListener('click', function (ev) {
+    /* Тойм ⇄ Дэлгэрэнгүй сэлгэх */
+    var dv = ev.target.closest('[data-risk-dirview]');
+    if (dv) {
+      RISK_DIR_VIEW = dv.getAttribute('data-risk-dirview');
+      /* Тойм руу буцахад шүүлтүүр үлдвэл тоо нь дутуу харагдана */
+      if (RISK_DIR_VIEW === 'brief') RISK_FILTER = { level: '', q: '', cell: 0, dept: '', mx: '' };
+      redraw(); return;
+    }
+    /* Тоймын албаны мөр — тэр албаны задаргаа руу шууд оруулна */
+    var dd = ev.target.closest('[data-risk-dirdept]');
+    if (dd) {
+      RISK_FILTER = { level: '', q: '', cell: 0, dept: dd.getAttribute('data-risk-dirdept'), mx: '' };
+      RISK_DIR_VIEW = 'detail';
+      redraw(); return;
+    }
     var lv = ev.target.closest('[data-risk-lv]');
     if (lv) { var n = lv.getAttribute('data-risk-lv'); RISK_FILTER.level = (RISK_FILTER.level === n ? '' : n); RISK_FILTER.cell = 0; redraw(); return; }
     /* Захирлын албаны сонголт */
@@ -12202,15 +12558,18 @@ function renderHazards() {
       H += ackAdminHTML();
     } else {
       RISK_TAB = 'risks';
-      /* Захирлуудад — албадаар хуваасан товчнууд */
-      H += riskDeptBarHTML(list);
+      /* ⭐ ЗАХИРАЛД — тойм дэлгэц. Задаргаа нь «Дэлгэрэнгүй» товчны цаана. */
+      var _brief = riskDirBrief();
+      /* Тоймд албадын зураглал өөрөө бий тул товчны мөр давхардуулахгүй */
+      if (!_brief) H += riskDeptBarHTML(list);
       /* ⭐ Нэг удаагийн ажлын үнэлгээ — дээд самбар (админ/удирдлагад) */
       H += riskJobsPanelHTML();
       /* ТАНИЛЦАЛТ — хүн бүр (захирал, хариуцагч, ажилтан) гарын үсэг зурна */
       H += ackBannerHTML();
       /* Ажилтанд — эрэмбэлсэн, энгийн хэлээр. Админ/туслах админд — дашбоард. */
-      H += admin ? riskDashHTML(list, sub) + riskAdminSectionsHTML(list)
-                 : riskEmpBriefHTML(list, myPos, myDept);
+      if (_brief) H += riskDirDashHTML(list, sub);
+      else H += admin ? riskDashHTML(list, sub) + riskAdminSectionsHTML(list)
+                      : riskEmpBriefHTML(list, myPos, myDept);
     }
   }
   sec.innerHTML = H;
