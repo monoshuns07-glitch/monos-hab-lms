@@ -28811,6 +28811,40 @@ function pplExport(stats) {
 }
 
 
+/* Даалгаврын цэсний шүүлт: all | open | late | review | pending | closed */
+var TASK_VIEW = 'all';
+
+/* Дуусах хугацаа хүртэл хэд үлдсэн — картад ойлгомжтой бичиг */
+function taskDueChip(x) {
+  if (!x || !x.dueDate || taskIsClosed(x)) return '';
+  var due = _dayNum(x.dueDate), today = _dayNum(new Date());
+  if (isNaN(due) || isNaN(today)) return '';
+  var d = due - today, txt, col;
+  if (d < 0) { txt = (-d) + ' хоног хэтэрсэн'; col = '#C81E3A'; }
+  else if (d === 0) { txt = 'Өнөөдөр дуусна'; col = '#DC2626'; }
+  else if (d === 1) { txt = 'Маргааш дуусна'; col = '#D97706'; }
+  else if (d <= 3) { txt = d + ' хоног үлдсэн'; col = '#D97706'; }
+  else { txt = d + ' хоног үлдсэн'; col = '#64748B'; }
+  return '<span style="margin-left:auto;font-size:12px;font-weight:800;color:' + col +
+    ';white-space:nowrap">' + (d < 0 ? '⏰ ' : '') + txt + '</span>';
+}
+
+/* Дарж шүүдэг тоон хайрцаг */
+function taskStatCard(key, label, val, icon, color, sub) {
+  var on = TASK_VIEW === key;
+  return '<div data-task-view="' + key + '" style="flex:1;min-width:132px;background:' +
+    (on ? color + '0F' : '#fff') + ';border:1.5px solid ' + (on ? color : '#EEF1F4') +
+    ';border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;' +
+    'transition:border-color .15s">' +
+    '<div style="width:36px;height:36px;border-radius:9px;background:' + color + '1A;color:' + color +
+    ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + icon + '"></i></div>' +
+    '<div style="min-width:0"><div style="font-size:20px;font-weight:700;' +
+    'font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.1;color:' + (on ? color : '#0F1117') + '">' + val + '</div>' +
+    '<div style="font-size:12px;color:#8A94A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' +
+    (sub ? '<div style="font-size:11px;font-weight:700;color:' + sub[1] + ';margin-top:1px">' + sub[0] + '</div>' : '') +
+    '</div></div>';
+}
+
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;
   sec.style.padding = '';
@@ -28873,13 +28907,26 @@ function renderTasks() {
     ((boss || taskCanRequest()) ? '<div class="page-actions"><button class="btn btn-primary" id="taskAdd"><i class="ti ti-plus"></i> Даалгавар нэмэх</button></div>' : '') +
     '</div>';
 
-  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px">' +
-    statCard('Нийт даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
-    statCard('Хийгдэх', open.length, 'ti-clock', '#D97706') +
-    statCard('Хянагдаж буй', review.length, 'ti-eye-search', '#7C3AED') +
-    statCard('Хугацаа хэтэрсэн', overdue.length, 'ti-alarm', '#DC2626') +
-    statCard('Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
+  /* ⚠ 2026-09-05: «Хугацаа хэтэрсэн» нь «Хийгдэх»-ийн ДОТОР байдаг тул
+     тусдаа хайрцаг болгоход нэг даалгавар хоёр удаа тоологдож, тоонууд
+     нийлдэггүй байв. Одоо тэр нь «Хийгдэх»-ийн доорх улаан тэмдэглэгээ.
+     Хайрцаг бүр дээр дарахад тухайн бүлэг нь ШҮҮГДЭНЭ. */
+  var lateOpen = open.filter(function (x) { return taskOverdueDays(x) > 0; }).length;
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' +
+    taskStatCard('all', 'Бүх даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
+    taskStatCard('open', 'Хийгдэх', open.length, 'ti-clock', '#D97706',
+      lateOpen ? ['⏰ ' + lateOpen + ' хугацаа хэтэрсэн', '#C81E3A'] : null) +
+    taskStatCard('review', 'Хянагдаж буй', review.length, 'ti-eye-search', '#7C3AED') +
+    (pending.length ? taskStatCard('pending', 'Батлах хүлээж буй', pending.length, 'ti-clock-pause', '#B45309') : '') +
+    taskStatCard('closed', 'Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
     '</div>';
+  if (TASK_VIEW !== 'all') {
+    html += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;font-size:12.5px;color:#64748B">' +
+      '<span>Шүүлт идэвхтэй</span>' +
+      '<button data-task-view="all" style="border:1.5px solid #E2E8F0;background:#fff;border-radius:999px;' +
+      'padding:4px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;color:#334155">' +
+      '✕ Бүгдийг харах</button></div>';
+  }
 
   function statusPill(x) {
     if (x.status === 'approved') {
@@ -28921,7 +28968,7 @@ function renderTasks() {
         (!closedT && x.priority && x.priority !== 'normal' ? '<span style="background:' + pr.color + '18;color:' + pr.color + ';border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">' + esc(pr.label) + '</span>' : '') +
         (od ? '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">⏰ ' + od + ' хоног хэтэрсэн</span>' : '') +
         (!od && soon ? '<span style="background:#D9770618;color:#D97706;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хугацаа ойртсон</span>' : '') +
-        statusPill(x) + '</div>' +
+        statusPill(x) + taskDueChip(x) + '</div>' +
         taskBodyHTML(x) +
         '<div style="font-size:11px;color:#94A3B8;margin-top:6px;display:flex;gap:10px;flex-wrap:wrap">' +
         '<span><i class="ti ti-building"></i> ' + targetLabel + '</span>' +
@@ -28982,14 +29029,21 @@ function renderTasks() {
         '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">⏳ Таны батлах ёстой ' + myApprove.length + ' даалгавар</div>' +
         '<div style="font-size:12.5px;color:#B45309">Доод шатны ажилтны өгсөн даалгавар. Батлагдтал гүйцэтгэгчид харагдахгүй.</div></div>';
     }
-    html += '<h3 style="margin:0 0 10px;font-size:15px;color:#B45309">Батлах хүлээж буй ' + pending.length + '</h3>' +
-      pending.map(pCard).join('');
+    if (TASK_VIEW === 'all' || TASK_VIEW === 'pending') {
+      html += '<h3 style="margin:0 0 10px;font-size:15px;color:#B45309">Батлах хүлээж буй ' + pending.length + '</h3>' +
+        pending.map(pCard).join('');
+    }
   }
 
-  html += (review.length ? '<h3 style="margin:' + (pending.length ? '18px' : '0') + ' 0 10px;font-size:15px;color:#7C3AED">Хянагдаж буй ' + review.length + '</h3>' + review.map(taskCard).join('') : '') +
-    '<h3 style="margin:' + ((review.length || pending.length) ? '18px' : '0') + ' 0 10px;font-size:15px">Хийгдэх ' + open.length + '</h3>' +
-    (open.length ? open.map(taskCard).join('') : emptyBox('Хийгдэх даалгавар алга')) +
-    (closed.length ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Баталгаажсан ' + closed.length + '</h3>' + closed.map(taskCard).join('') : '');
+  /* ⭐ Шүүлт идэвхтэй бол ЗӨВХӨН тухайн бүлгийг харуулна */
+  var _V = TASK_VIEW;
+  var _show = function (k) { return _V === 'all' || _V === k; };
+  var _openList = (_V === 'late') ? open.filter(function (x) { return taskOverdueDays(x) > 0; }) : open;
+  html += ((review.length && _show('review')) ? '<h3 style="margin:' + (pending.length ? '18px' : '0') + ' 0 10px;font-size:15px;color:#7C3AED">Хянагдаж буй ' + review.length + '</h3>' + review.map(taskCard).join('') : '') +
+    ((_show('open') || _V === 'late') ? '<h3 style="margin:' + ((review.length || pending.length) ? '18px' : '0') + ' 0 10px;font-size:15px">' +
+      (_V === 'late' ? 'Хугацаа хэтэрсэн ' : 'Хийгдэх ') + _openList.length + '</h3>' +
+      (_openList.length ? _openList.map(taskCard).join('') : emptyBox('Хийгдэх даалгавар алга')) : '') +
+    ((closed.length && _show('closed')) ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Баталгаажсан ' + closed.length + '</h3>' + closed.map(taskCard).join('') : '');
 
   sec.innerHTML = html;
 
@@ -28997,6 +29051,15 @@ function renderTasks() {
     sec._taskWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#taskAdd')) { actionAddTask(); return; }
+
+      /* Тоон хайрцаг дээр дарж шүүнэ */
+      var vw = ev.target.closest('[data-task-view]');
+      if (vw) {
+        var k = vw.getAttribute('data-task-view');
+        TASK_VIEW = (TASK_VIEW === k && k !== 'all') ? 'all' : k;
+        renderTasks();
+        return;
+      }
 
       /* Даалгавар доторх «Эрсдэлийн дэлгэрэнгүй» */
       var ro = ev.target.closest('[data-risk-open]');
