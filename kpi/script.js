@@ -18938,13 +18938,10 @@ function wkCanReassign(r) {
   try {
     if (!r || wkStatus(r) !== 'claimed') return false;
     if (isAdmin()) return true;
-    var me = null;
-    try { me = reqMe(); } catch (e) {}
-    var uid = (me && me.uid) || (SESSION && SESSION.uid) || '';
-    if (!uid) return false;
-    if (r.wkClaimBy && r.wkClaimBy.uid === uid) return true;   /* гүйцэтгэгч өөрөө */
-    if (wkIsOwnerMe(r, uid)) return true;                      /* хариуцагч */
-    return wkCanAssign(r);                                     /* удирдлага ч болно */
+    /* ⚠ ЗӨВХӨН удирдлага (албаны дарга, ахлах, менежер, захирал) даалгана.
+       Энгийн ажилтан ажлаа өөр хүн рүү шидэхгүй — хийж чадахгүй бол
+       «Хүлээн авснаа цуцлах»-аар буцаана, ажил дахин нээлттэй болно. */
+    return wkCanAssign(r);
   } catch (e) { return false; }
 }
 
