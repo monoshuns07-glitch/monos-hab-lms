@@ -19586,7 +19586,7 @@ function wkFilterBarHTML(base, shown) {
     '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">' +
     kinds.map(function (k) {
       var on = WK_F_KIND === k[0];
-      return '<button data-wk-kind="' + k[0] + '" style="border:1.5px solid ' +
+      return '<button data-wk-fkind="' + k[0] + '" style="border:1.5px solid ' +
         (on ? k[3] : '#E2E8F0') + ';background:' + (on ? k[3] : '#fff') +
         ';color:' + (on ? '#fff' : '#334155') + ';border-radius:9px;padding:6px 11px;cursor:pointer;' +
         'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + k[1] +
@@ -22061,8 +22061,10 @@ function rfAfter(sec, admin, pending) {
     var wt = ev.target.closest('[data-wk-tab]');
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     /* ── Шүүлт: төрөл, цэвэрлэх, хугацаа хэтэрсэн ── */
-    var kb = ev.target.closest('[data-wk-kind]');
-    if (kb) { ev.stopPropagation(); WK_F_KIND = kb.getAttribute('data-wk-kind'); renderReportflow(); return; }
+    /* ⚠ Тэмдгийн нэр нь маягтын «data-wk-kind»-аас ЗААВАЛ өөр байх ёстой —
+       эс бөгөөс шинэ мэдээллийн маягтад төрөл сонгох товч ажиллахгүй болно. */
+    var kb = ev.target.closest('[data-wk-fkind]');
+    if (kb) { ev.stopPropagation(); WK_F_KIND = kb.getAttribute('data-wk-fkind'); renderReportflow(); return; }
     var fb = ev.target.closest('[data-wk-f]');
     if (fb) {
       ev.stopPropagation();
