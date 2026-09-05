@@ -19467,10 +19467,10 @@ var WK_TAB = 'in';
 /* ══ АЮУЛ / АЖИЛ — ХАЙХ, ШҮҮХ ═══════════════════════════════════════
    ⚠ Өмнө нь ажил ба аюул нэг жагсаалтад хольцтой байж, хайлт огт
    байгаагүй. Энэ шүүлт нь БҮХ таб дээр ажиллана. */
-var WK_Q = '', WK_KIND = 'all', WK_LOC = '', WK_ST = '', WK_LATE = false;
+var WK_F_Q = '', WK_F_KIND = 'all', WK_F_LOC = '', WK_F_ST = '', WK_F_LATE = false;
 
 function wkFilterOn() {
-  return !!(WK_Q || WK_KIND !== 'all' || WK_LOC || WK_ST || WK_LATE);
+  return !!(WK_F_Q || WK_F_KIND !== 'all' || WK_F_LOC || WK_F_ST || WK_F_LATE);
 }
 
 /* Хайлтад хамрах бүх текстийг нэг мөр болгоно */
@@ -19488,15 +19488,15 @@ function wkHay(r) {
 }
 
 function wkFilterApply(list) {
-  var q = String(WK_Q || '').trim().toLowerCase();
+  var q = String(WK_F_Q || '').trim().toLowerCase();
   return (list || []).filter(function (r) {
     var isJob = false;
     try { isJob = wkKindOf(r).k === 'job'; } catch (e) {}
-    if (WK_KIND === 'job' && !isJob) return false;
-    if (WK_KIND === 'hz' && isJob) return false;
-    if (WK_LOC && String(r.locGroup || '') !== WK_LOC) return false;
-    if (WK_ST && wkStatus(r) !== WK_ST) return false;
-    if (WK_LATE) { var t = wkTime(r); if (!t || !t.late) return false; }
+    if (WK_F_KIND === 'job' && !isJob) return false;
+    if (WK_F_KIND === 'hz' && isJob) return false;
+    if (WK_F_LOC && String(r.locGroup || '') !== WK_F_LOC) return false;
+    if (WK_F_ST && wkStatus(r) !== WK_F_ST) return false;
+    if (WK_F_LATE) { var t = wkTime(r); if (!t || !t.late) return false; }
     if (q && wkHay(r).indexOf(q) < 0) return false;
     return true;
   });
@@ -19536,28 +19536,28 @@ function wkFilterBarHTML(base, shown) {
     '<div style="position:relative;margin-bottom:9px">' +
     '<i class="ti ti-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);' +
     'color:#94A3B8;font-size:15px"></i>' +
-    '<input id="wkSearch" value="' + esc(WK_Q) + '" placeholder="Хайх — тайлбар, байршил, хүний нэр…" ' +
+    '<input id="wkSearch" value="' + esc(WK_F_Q) + '" placeholder="Хайх — тайлбар, байршил, хүний нэр…" ' +
     'style="width:100%;border:1.5px solid #E2E8F0;border-radius:10px;padding:9px 34px 9px 34px;' +
     'font-family:inherit;font-size:13.5px;background:#fff">' +
-    (WK_Q ? '<button data-wk-f="clearq" style="position:absolute;right:8px;top:50%;' +
+    (WK_F_Q ? '<button data-wk-f="clearq" style="position:absolute;right:8px;top:50%;' +
       'transform:translateY(-50%);border:none;background:#F1F5F9;color:#64748B;border-radius:7px;' +
       'width:22px;height:22px;cursor:pointer;font-family:inherit;font-weight:800;line-height:1">✕</button>' : '') +
     '</div>' +
     /* Төрөл + сонголтууд */
     '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">' +
     kinds.map(function (k) {
-      var on = WK_KIND === k[0];
+      var on = WK_F_KIND === k[0];
       return '<button data-wk-kind="' + k[0] + '" style="border:1.5px solid ' +
         (on ? k[3] : '#E2E8F0') + ';background:' + (on ? k[3] : '#fff') +
         ';color:' + (on ? '#fff' : '#334155') + ';border-radius:9px;padding:6px 11px;cursor:pointer;' +
         'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + k[1] +
         '<span style="margin-left:5px;opacity:.75;font-weight:700">' + k[2] + '</span></button>';
     }).join('') +
-    (locOpts.length > 1 ? sel('loc', WK_LOC, locOpts) : '') +
-    sel('st', WK_ST, [['', 'Бүх төлөв'], ['new', 'Шинэ'], ['claimed', 'Хүлээж авсан'],
+    (locOpts.length > 1 ? sel('loc', WK_F_LOC, locOpts) : '') +
+    sel('st', WK_F_ST, [['', 'Бүх төлөв'], ['new', 'Шинэ'], ['claimed', 'Хүлээж авсан'],
       ['executed', 'Гүйцэтгэсэн'], ['closed', 'Дууссан']]) +
-    (nLate ? '<button data-wk-f="late" style="border:1.5px solid ' + (WK_LATE ? '#C81E3A' : '#FECACA') +
-      ';background:' + (WK_LATE ? '#C81E3A' : '#FEF2F2') + ';color:' + (WK_LATE ? '#fff' : '#991B1B') +
+    (nLate ? '<button data-wk-f="late" style="border:1.5px solid ' + (WK_F_LATE ? '#C81E3A' : '#FECACA') +
+      ';background:' + (WK_F_LATE ? '#C81E3A' : '#FEF2F2') + ';color:' + (WK_F_LATE ? '#fff' : '#991B1B') +
       ';border-radius:9px;padding:6px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
       'font-weight:800">⏰ Хугацаа хэтэрсэн ' + nLate + '</button>' : '') +
     '</div>' +
@@ -21993,8 +21993,8 @@ function rfAfter(sec, admin, pending) {
     var wf = ev.target.closest && ev.target.closest('[data-wk-f]');
     if (wf) {
       var k = wf.getAttribute('data-wk-f');
-      if (k === 'loc') WK_LOC = wf.value || '';
-      else if (k === 'st') WK_ST = wf.value || '';
+      if (k === 'loc') WK_F_LOC = wf.value || '';
+      else if (k === 'st') WK_F_ST = wf.value || '';
       else return;
       renderReportflow();
     }
@@ -22004,7 +22004,7 @@ function rfAfter(sec, admin, pending) {
   sec.addEventListener('input', function (ev) {
     var si = ev.target.closest && ev.target.closest('#wkSearch');
     if (!si) return;
-    WK_Q = si.value || '';
+    WK_F_Q = si.value || '';
     clearTimeout(sec._wkQT);
     sec._wkQT = setTimeout(function () { wkKeepFocus(renderReportflow); }, 180);
   });
@@ -22019,14 +22019,14 @@ function rfAfter(sec, admin, pending) {
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     /* ── Шүүлт: төрөл, цэвэрлэх, хугацаа хэтэрсэн ── */
     var kb = ev.target.closest('[data-wk-kind]');
-    if (kb) { ev.stopPropagation(); WK_KIND = kb.getAttribute('data-wk-kind'); renderReportflow(); return; }
+    if (kb) { ev.stopPropagation(); WK_F_KIND = kb.getAttribute('data-wk-kind'); renderReportflow(); return; }
     var fb = ev.target.closest('[data-wk-f]');
     if (fb) {
       ev.stopPropagation();
       var fk = fb.getAttribute('data-wk-f');
-      if (fk === 'clear') { WK_Q = ''; WK_KIND = 'all'; WK_LOC = ''; WK_ST = ''; WK_LATE = false; }
-      else if (fk === 'clearq') WK_Q = '';
-      else if (fk === 'late') WK_LATE = !WK_LATE;
+      if (fk === 'clear') { WK_F_Q = ''; WK_F_KIND = 'all'; WK_F_LOC = ''; WK_F_ST = ''; WK_F_LATE = false; }
+      else if (fk === 'clearq') WK_F_Q = '';
+      else if (fk === 'late') WK_F_LATE = !WK_F_LATE;
       else return;
       renderReportflow(); return;
     }
