@@ -18895,12 +18895,31 @@ function wkCanAssign(r) {
     var me = null;
     try { me = reqMe(); } catch (e) {}
     var uid = (me && me.uid) || (SESSION && SESSION.uid) || '';
-    if (!uid) return false;
     /* ⚠ Мэдээлсэн хүн ӨӨРӨӨ хүн томилохгүй — ажил хуваарилалт нь
-       хариуцсан ахлахын шийдвэр байх ёстой. */
-    if (wkIsSelf(r, uid)) return false;
-    var gate = (r && r.wkGate) || 'both';
-    return wkAsgUids(gate).indexOf(uid) >= 0;
+       хариуцсан удирдлагын шийдвэр байх ёстой (2026-09-05). */
+    if (uid && wkIsSelf(r, uid)) return false;
+    if (wkIsDirector()) return true;
+    if (!wkGateHas(r, wkMyGate())) return false;
+    var pos = '';
+    try { var m2 = myEmp(); if (m2) pos = String(m2.pos || m2.role || ''); } catch (e) {}
+    if (!pos && SESSION) pos = String(SESSION.pos || '');
+    return /дарга|ахлах|менежер/i.test(pos);
+  } catch (e) { return false; }
+}
+/* ── ШИЛЖҮҮЛЭХ ЭРХ ──────────────────────────────────────────────
+   ⚠ ИТА-гийн ахлах инженерүүд (Б.Даваадорж, Б.Даваа-Очир) томилогдсон
+   ажлыг ӨӨРСДӨӨ хийдэггүй — албаныхаа тохирох ажилтанд даалгадаг.
+   Тиймээс томилогдсон хүн ажлаа өөр хүнд шилжүүлж чадна. */
+function wkCanReassign(r) {
+  try {
+    if (!r || wkStatus(r) !== 'claimed') return false;
+    if (isAdmin()) return true;
+    var me = null;
+    try { me = reqMe(); } catch (e) {}
+    var uid = (me && me.uid) || (SESSION && SESSION.uid) || '';
+    if (!uid) return false;
+    if (r.wkClaimBy && r.wkClaimBy.uid === uid) return true;   /* эзэмшигч өөрөө */
+    return wkCanAssign(r);                                     /* удирдлага ч болно */
   } catch (e) { return false; }
 }
 
@@ -18938,15 +18957,19 @@ function wkGateStaff(r) {
 function wkAssignModal(id) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) return;
-  if (!wkCanAssign(r)) { toast('Танд томилох эрх байхгүй', 'warn'); return; }
+  var _isRe = wkStatus(r) === 'claimed';
+  if (_isRe ? !wkCanReassign(r) : !wkCanAssign(r)) { toast('Танд томилох эрх байхгүй', 'warn'); return; }
   var staff = wkGateStaff(r);
   if (!staff.length) { toast('Тухайн албаны ажилтны жагсаалт ачаалагдаагүй байна', 'warn'); return; }
 
   var node = elc('div', '');
   node.innerHTML =
     '<div style="font-size:13px;color:#64748B;line-height:1.6;margin-bottom:12px">' +
-    'Энэ ажлыг хэн хийхийг сонгоно уу. Томилогдсон хүнд мэдэгдэл очиж, ажил нь ' +
-    '«Хийгдэж байна» төлөвт шилжинэ.</div>' +
+    (_isRe
+      ? 'Энэ ажлыг одоо <b>' + esc((r.wkClaimBy && r.wkClaimBy.name) || '') + '</b> хүлээж авсан байна. ' +
+        'Албаныхаа өөр ажилтанд даалгах бол сонгоно уу — шинэ хүнд мэдэгдэл очно.'
+      : 'Энэ ажлыг хэн хийхийг сонгоно уу. Томилогдсон хүнд мэдэгдэл очиж, ажил нь ' +
+        '«Хийгдэж байна» төлөвт шилжинэ.') + '</div>' +
     '<input id="wkAsQ" placeholder="Нэрээр хайх…" style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;' +
     'border-radius:11px;font-family:inherit;font-size:14px;margin-bottom:10px;box-sizing:border-box">' +
     '<div id="wkAsList" style="max-height:340px;overflow:auto;border:1px solid #E2E8F0;border-radius:11px">' +
@@ -18975,17 +18998,26 @@ function wkAssignModal(id) {
     var byName = '';
     try { var me2 = myEmp(); byName = (me2 && me2.name) || (SESSION && SESSION.email) || ''; } catch (e) {}
     wkPatch(id, function (x) {
+      var prev = x.wkClaimBy;
+      if (prev && prev.uid && prev.uid !== emp.uid) {
+        x.wkHandLog = (x.wkHandLog || []).concat([{
+          from: { uid: prev.uid, name: prev.name || '' },
+          to: { uid: emp.uid, name: emp.name || '' },
+          by: byName, at: new Date().toISOString()
+        }]);
+      }
       x.wkClaimBy = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
         at: new Date().toISOString(), assignedBy: byName };
-    }, '✓ ' + emp.name + ' -д томиллоо');
+    }, '✓ ' + emp.name + (_isRe ? ' -д даалгалаа' : ' -д томиллоо'));
     try {
       ntfSend([emp], { kind: 'wk', url: '/kpi/?page=reportflow',
-        title: '📌 Танд ажил томилогдлоо',
-        body: (byName ? byName + ' томиллоо · ' : '') + String(r.desc || '').slice(0, 80) });
+        title: _isRe ? '📌 Танд ажил даалгалаа' : '📌 Танд ажил томилогдлоо',
+        body: (byName ? byName + (_isRe ? ' даалгалаа · ' : ' томиллоо · ') : '') +
+          String(r.desc || '').slice(0, 80) });
     } catch (e) {}
     try { closeModal(); } catch (e) {}
   });
-  buildModal('Хүн томилох', node, { width: 'min(520px, 96vw)' });
+  buildModal(_isRe ? 'Өөр хүнд даалгах' : 'Хүн томилох', node, { width: 'min(520px, 96vw)' });
 }
 
 /* ── Яаралтай шаардах (захирал) ── */
@@ -19154,6 +19186,9 @@ function wkRowHTML(r) {
   /* Дарга/админ/захирал — хэн ч аваагүй бол ГАРААР хүн томилно */
   if (st === 'new' && wkCanAssign(r))
     acts.push(['wk-assign', 'Хүн томилох', '#0891B2', 'ti-user-plus']);
+  /* Томилогдсон ажлыг албаныхаа өөр хүнд даалгах */
+  if (st === 'claimed' && wkCanReassign(r))
+    acts.push(['wk-assign', 'Өөр хүнд даалгах', '#7C3AED', 'ti-user-share']);
   /* Захирал — хүлээж авахгүй байгааг сэрээнэ */
   if ((isAdmin() || wkIsDirector()) && st !== 'closed')
     acts.push(['wk-demand', 'Яаралтай шаардах', '#B91C1C', 'ti-alert-triangle']);
