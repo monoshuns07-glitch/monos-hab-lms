@@ -2811,3 +2811,29 @@ img, video, canvas, svg, table { max-width: 100%; }
 .page.bento-dark [style*="solid #C7D2FE"]:not([style*="border-left:4px"]) { border-color: rgba(79,70,229,.40) !important; }
 .page.bento-dark [style*="solid #DDD6FE"]:not([style*="border-left:4px"]) { border-color: rgba(124,58,237,.40) !important; }
 .page.bento-dark [style*="solid #FEF3C7"]:not([style*="border-left:4px"]) { border-color: rgba(217,119,6,.30) !important; }
+
+/* Нэмэлт: хар дэвсгэр дээр бүдэг үлдэж байсан өнгүүд */
+.page.bento-dark [style*="color:#78350F"] { color: #FCD34D !important; }
+.page.bento-dark [style*="color:#8A6D3B"] { color: #E9C46A !important; }
+.page.bento-dark [style*="color:#C2410C"] { color: #FDBA74 !important; }
+.page.bento-dark [style*="color:#0F172A"] { color: #E8ECF5 !important; }
+.page.bento-dark [style*="color:#1A1815"] { color: #E8ECF5 !important; }
+.page.bento-dark [style*="color:#B6BECA"] { color: #7E8798 !important; }
+.page.bento-dark [style*="color:#047857"] { color: #6EE7B7 !important; }
+.page.bento-dark [style*="color:#065F46"] { color: #6EE7B7 !important; }
+.page.bento-dark [style*="color:#14532D"] { color: #86EFAC !important; }
+.page.bento-dark [style*="color:#0F766E"] { color: #5EEAD4 !important; }
+.page.bento-dark [style*="color:#115E59"] { color: #5EEAD4 !important; }
+.page.bento-dark [style*="color:#3F7A4F"] { color: #86EFAC !important; }
+.page.bento-dark [style*="color:#0e8e59"] { color: #4ADE80 !important; }
+.page.bento-dark [style*="color:#4D7C0F"] { color: #BEF264 !important; }
+.page.bento-dark [style*="color:#65A30D"] { color: #BEF264 !important; }
+.page.bento-dark [style*="color:#312E81"] { color: #A5B4FC !important; }
+.page.bento-dark [style*="color:#6366F1"] { color: #A5B4FC !important; }
+.page.bento-dark [style*="color:#3B82F6"] { color: #93C5FD !important; }
+.page.bento-dark [style*="color:#0EA5E9"] { color: #7DD3FC !important; }
+.page.bento-dark [style*="color:#6D28D9"] { color: #C4B5FD !important; }
+.page.bento-dark [style*="color:#8B5CF6"] { color: #C4B5FD !important; }
+.page.bento-dark [style*="color:#A21CAF"] { color: #F0ABFC !important; }
+.page.bento-dark [style*="color:#BE123C"] { color: #FDA4AF !important; }
+.page.bento-dark [style*="color:#dc2626"] { color: #F87171 !important; }
