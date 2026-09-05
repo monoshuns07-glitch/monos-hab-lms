@@ -1872,6 +1872,8 @@ code {
   .topbar { padding: 0 16px; }
   .counter-num { font-size: 64px; }
   .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .set-nav { white-space: nowrap; flex-shrink: 0; }
 }
 
 /* ============================================================

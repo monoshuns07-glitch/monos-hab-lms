@@ -21980,6 +21980,82 @@ function renderSuggestions() {
 }
 
 /* ============ Тохиргоо ============ */
+
+/* ══ ТОХИРГООНЫ ДЭД ЦЭС ═══════════════════════════════════════════════
+   ⚠ Энэ цэсийг ГАРААР бүү бич. Хуудсанд байгаа картуудаас өөрөө үүснэ —
+   ингэснээр шинэ карт нэмэхэд цэс нь дагаж шинэчлэгдэж, аль ч хэсэгтэй
+   холбоогүй «эзэнгүй цэс» дахин үүсэхгүй. */
+function setNavActive(a) {
+  var nav = a.parentElement;
+  if (!nav) return;
+  [].slice.call(nav.children).forEach(function (n) { n.classList.remove('active'); });
+  a.classList.add('active');
+}
+
+/* Очсон хэсгээ товч хугацаанд тодруулна — хаашаа үсэрснийг нүд шууд олно */
+function setNavFlash(card) {
+  if (!card) return;
+  var old = card.style.boxShadow;
+  card.style.transition = 'box-shadow .25s';
+  card.style.boxShadow = '0 0 0 3px rgba(79,70,229,.38)';
+  setTimeout(function () { card.style.boxShadow = old || ''; }, 1400);
+}
+
+function setNavBuild() {
+  var page = document.querySelector('.page[data-page="settings"]');
+  if (!page) return;
+  var nav = page.querySelector('.settings-nav');
+  var body = page.querySelector('.settings-body');
+  if (!nav || !body) return;
+
+  var cards = [].slice.call(body.children).filter(function (c) {
+    return c.classList && c.classList.contains('card') && c.querySelector('h3');
+  });
+  if (!cards.length) { nav.innerHTML = ''; nav._sig = ''; return; }
+
+  /* Картууд өөрчлөгдөөгүй бол дахин зурахгүй — гүйлгэлт үсрэхгүй */
+  var sig = cards.map(function (c) { return txt(c.querySelector('h3')); }).join('|');
+  if (nav._sig === sig) return;
+  nav._sig = sig;
+
+  nav.innerHTML = cards.map(function (c, i) {
+    if (!c.id) c.id = 'setSec' + i;
+    var h = c.querySelector('h3');
+    var icEl = h.querySelector('i');
+    var icm = icEl ? String(icEl.className || '').match(/ti-[a-z0-9-]+/) : null;
+    return '<a class="set-nav' + (i ? '' : ' active') + '" data-set-jump="' + esc(c.id) + '">' +
+      '<i class="ti ' + (icm ? icm[0] : 'ti-adjustments') + '"></i>' +
+      '<span>' + esc(txt(h)) + '</span></a>';
+  }).join('');
+
+  if (!nav._wired) {
+    nav._wired = true;
+    nav.addEventListener('click', function (e) {
+      var a = e.target.closest ? e.target.closest('[data-set-jump]') : null;
+      if (!a) return;
+      var card = document.getElementById(a.getAttribute('data-set-jump'));
+      if (!card) return;
+      setNavActive(a);
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      catch (_) { card.scrollIntoView(); }
+      setNavFlash(card);
+    });
+  }
+
+  /* Гүйлгэхэд цэс өөрөө дагана — хаана явааг үргэлж харуулна */
+  try {
+    if (nav._io) nav._io.disconnect();
+    nav._io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var a = nav.querySelector('[data-set-jump="' + en.target.id + '"]');
+        if (a) setNavActive(a);
+      });
+    }, { rootMargin: '-12% 0px -72% 0px', threshold: 0 });
+    cards.forEach(function (c) { nav._io.observe(c); });
+  } catch (e) {}
+}
+
 function renderSettings() {
   var body = $('.page[data-page="settings"] .settings-body');
   if (!body) return;
@@ -22068,6 +22144,12 @@ function renderSettings() {
     /* Аюулын ангилал, дараа нь системийн эрүүл мэнд — хамгийн доор */
     try { wkHazMount(body); } catch (e) {}
     try { sysHealthMount(body); } catch (e) {}
+    /* ⚠ Дээрх хоёр карт нь сүлжээнээс ХОЖУУ ирдэг тул дэд цэсийг хэд
+       хэдэн удаа давтан үүсгэнэ — эс бөгөөс тэд цэсэнд ороогүй үлдэнэ. */
+    try { setNavBuild(); } catch (e) {}
+    [900, 2500, 6000].forEach(function (ms) {
+      setTimeout(function () { try { setNavBuild(); } catch (e2) {} }, ms);
+    });
   }, 0);
 }
 function updateConfigSums() {
@@ -32290,12 +32372,9 @@ function handleClick(e) {
     }
     return;
   }
-  if (el.classList.contains('set-nav')) {
-    $$('.set-nav').forEach(function (n) { n.classList.remove('active'); });
-    el.classList.add('active');
-    toast(txt(el) + ' хэсэг', 'info');
-    return;
-  }
+  /* ⚠ Дэд цэс нь одоо ӨӨРИЙН сонсогчтой (setNavBuild) — энд зөвхөн
+     доорх «текстээр таних» дүрмүүдэд орохоос сэргийлж шууд гарна. */
+  if (el.classList.contains('set-nav')) return;
 
   /* --- Хэрэглэгчийн цэс --- */
   if (el.classList.contains('user-card')) { e.stopPropagation(); openUserMenu(el); return; }
