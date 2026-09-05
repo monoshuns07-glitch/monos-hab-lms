@@ -135,6 +135,16 @@
       /* ⚠ updateViaCache:'none' — эс бөгөөс хөтөч sw.js-ийг өөрөө кэшлээд
          шинэ service worker хэзээ ч ирэхгүй байх эрсдэлтэй. */
       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+        .then(function (reg) {
+          /* ⚠ 2026-09-05: sw.js шинэчлэгдсэн ч утсан дээрх ХУУЧИН хувилбар
+             мэдэгдлийг боловсруулсаар байв (яаралтай мэдэгдлийн шинэчлэл
+             хүрэхгүй байсан шалтгаан). Апп нээх бүрд шалгуулна. */
+          try { reg.update(); } catch (e) {}
+          /* Апп нүүр рүү буцаж ирэх бүрд ч шалгана */
+          document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) { try { reg.update(); } catch (e) {} }
+          });
+        })
         .catch(function () {});
     });
   }
