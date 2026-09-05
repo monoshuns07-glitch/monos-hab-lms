@@ -19246,9 +19246,9 @@ function wkProofHTML(r) {
     'padding:12px 14px;margin-bottom:13px">' +
     '<div style="font-size:11px;font-weight:900;color:#475569;letter-spacing:.05em;margin-bottom:7px">' +
     '🧾 ГҮЙЦЭТГЭЛИЙН БАТАЛГАА</div>' +
-    '<div style="font-size:12.5px;color:#334155;line-height:1.6">' +
-    '<b>' + esc(who || '—') + '</b>' + (pos ? ' · ' + esc(pos) : '') +
-    (when ? ' · ' + esc(when) : '') + '</div>' +
+    '<div style="font-size:12px;color:#64748B;margin-bottom:7px">' +
+    esc(who || '—') + (pos ? ' · ' + esc(pos) : '') + (when ? ' · ' + esc(when) : '') +
+    ' — ажлыг хийж дуусгасны дараа авсан</div>' +
     (note ? '<div style="font-size:13px;color:#1E293B;line-height:1.6;margin-top:6px;' +
       'white-space:pre-wrap">' + esc(note) + '</div>' : '') +
     (img ? '<img src="' + img + '" alt="Гүйцэтгэлийн зураг" ' +
@@ -20558,7 +20558,20 @@ function openReportDetail(id) {
      аюул, ОДТ-д ХАБЭА-н албаны ажилтан бүр баталгаажуулна.
      Өмнө зөвхөн админ чаддаг тул мэдээлэл баталгаажилгүй уддаг байв. */
   var canVer = canVerifyReport(r);
-  var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
+  /* ⚠ 2026-09-05: Мэдээлэхэд хавсаргасан зураг ГАРЧИГГҮЙ байсан тул доор нь
+     гарах «Гүйцэтгэлийн баталгаа»-гийн зурагтай нийлж, аль нь аль болох нь
+     ялгагдахгүй байв. Одоо хоёулаа гарчигтай тусдаа блок. */
+  var photo = r.photo
+    ? '<div style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;' +
+      'padding:12px 14px;margin-bottom:13px">' +
+      '<div style="font-size:11px;font-weight:900;color:#475569;letter-spacing:.05em;margin-bottom:7px">' +
+      '📷 МЭДЭЭЛЭХЭД ХАВСАРГАСАН ЗУРАГ</div>' +
+      '<div style="font-size:12px;color:#64748B;margin-bottom:8px">' +
+      esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—') +
+      ' · ' + esc(String(r.createdAt || '').slice(0, 10)) + ' — асуудлыг мэдээлэх үед авсан</div>' +
+      '<img src="' + r.photo + '" alt="Мэдээлсэн зураг" ' +
+      'style="width:100%;border-radius:11px;display:block"></div>'
+    : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
   /* ⭐ Ажлын захиалга бол ЯВЦ + ДАРААГИЙН АЛХМЫГ хамгийн дээр нь */
   /* ⚠ 2026-09-05: ХУУЧИН УРСГАЛЫН ҮЛДЭГДЭЛ. Шинэ бичлэг (wkKind) нь өөрөө
