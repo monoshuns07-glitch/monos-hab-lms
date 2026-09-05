@@ -18130,13 +18130,14 @@ function wkChainHTML(r) {
     /* ⚠ Хугацаа хэтэрч, хэн ч аваагүй тул СИСТЕМ өөрөө оноосон бол түүнийг
        ил хэлнэ — эс бөгөөс тэр хүн ажлыг сонгож аваад хийхгүй байгаа мэт
        ХУДАЛ харагдана (2026-09-05). */
-    if (!closed && cl.auto) {
+    var execed = closed || st === 'executed';   /* ажлаа хийж дуусгасан уу */
+    if (!execed && cl.auto) {
       b = cell('🤖', 'СИСТЕМЭЭС ОНООСОН', doer,
         'хэн ч аваагүй тул хугацаа хэтрэхэд автоматаар оноогдсон', '#B45309', false);
     } else {
-      b = cell(closed ? '🔧' : '🛠', closed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
+      b = cell(execed ? '🔧' : '🛠', execed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
         day(wkDoneTime(r) || cl.at) + (cl.assignedBy ? ' · ' + cl.assignedBy + ' томилсон' : ''),
-        '#B45309', false);
+        execed ? '#15803D' : '#B45309', false);
     }
   } else {
     var g = null; try { g = wkGate(r.wkGate); } catch (e) {}
@@ -18153,11 +18154,22 @@ function wkChainHTML(r) {
   if (closed) {
     c = cell('✅', 'ШАЛГАЖ БАТАЛГААЖУУЛСАН',
       wkPersonName(ac.uid, ac.name) || '—', day(ac.at), '#0ca30c', false);
+  } else if (st === 'executed') {
+    /* ⭐ Ажил хийгдсэн — одоо ХҮЛЭЭЛТ ЗАХИАЛАГЧ дээр. Үүнийг ил хэлэхгүй бол
+       гүйцэтгэгч сунжруулж байгаа мэт харагдана. */
+    var waitD = '';
+    try {
+      var h = Math.round((Date.now() - Date.parse(r.wkExecAt || '')) / 3600000);
+      if (h >= 1) waitD = wkHoursText(h) + ' болж байна';
+    } catch (e) {}
+    c = cell('⏳', 'БАТЛАХЫГ ХҮЛЭЭЖ БАЙНА',
+      wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || 'захиалагч',
+      waitD, '#4F46E5', false);
   }
 
   var arrow = '<span style="align-self:center;color:#CBD5E1;font-size:15px;flex:0 0 auto">→</span>';
-  var bg = closed ? '#F0FDF4' : (doer ? '#FFFBEB' : '#FEF2F2');
-  var bd = closed ? '#BBF7D0' : (doer ? '#FDE68A' : '#FECACA');
+  var bg = closed ? '#F0FDF4' : (st === 'executed' ? '#EEF2FF' : (doer ? '#FFFBEB' : '#FEF2F2'));
+  var bd = closed ? '#BBF7D0' : (st === 'executed' ? '#C7D2FE' : (doer ? '#FDE68A' : '#FECACA'));
   return '<div style="margin-top:9px;background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;' +
     'padding:10px 12px;display:flex;gap:9px;flex-wrap:wrap;align-items:stretch">' +
     a + arrow + b + (c ? arrow + c : '') + '</div>';
