@@ -18127,17 +18127,21 @@ function wkChainHTML(r) {
   var doer = wkPersonName(cl.uid, cl.name);
   var b;
   if (doer) {
-    /* ⚠ Хугацаа хэтэрч, хэн ч аваагүй тул СИСТЕМ өөрөө оноосон бол түүнийг
-       ил хэлнэ — эс бөгөөс тэр хүн ажлыг сонгож аваад хийхгүй байгаа мэт
-       ХУДАЛ харагдана (2026-09-05). */
-    var execed = closed || st === 'executed';   /* ажлаа хийж дуусгасан уу */
-    if (!execed && cl.auto) {
+    /* ⭐ Бичиг нь ЗӨВХӨН wkStatus-аас гарна. Хэсэгчилсэн туг (closed, doer)
+       дээр тулгуурлаж таамаглахаа болив — яг тэр таамаглалаас болж «ажлаа
+       дуусгасан хүн хийхгүй байгаа мэт», «систем оноосныг өөрөө авсан мэт»
+       гэсэн хоёр худал бичиг гарч байсан (2026-09-05). */
+    var CH = WK_CHAIN[st];
+    if (!CH) {
+      /* Танихгүй төлөв — ЧИМЭЭГҮЙ өнгөрөхгүй, ил хэлнэ */
+      b = cell('❓', 'ТӨЛӨВ ОЙЛГОМЖГҮЙ', doer, 'систем: «' + st + '»', '#B45309', true);
+    } else if (st === 'claimed' && cl.auto) {
       b = cell('🤖', 'СИСТЕМЭЭС ОНООСОН', doer,
         'хэн ч аваагүй тул хугацаа хэтрэхэд автоматаар оноогдсон', '#B45309', false);
     } else {
-      b = cell(execed ? '🔧' : '🛠', execed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
+      b = cell(CH.icon, CH.role, doer,
         day(wkDoneTime(r) || cl.at) + (cl.assignedBy ? ' · ' + cl.assignedBy + ' томилсон' : ''),
-        execed ? '#15803D' : '#B45309', false);
+        CH.color, false);
     }
   } else {
     var g = null; try { g = wkGate(r.wkGate); } catch (e) {}
@@ -18184,6 +18188,14 @@ function wkPersonName(uid, fallback) {
   /* Бүртгэлээс олдоогүй ч хадгалагдсан нэрийг ижил хэлбэрт оруулна */
   return shortenPersonName(fallback);
 }
+/* ⭐ ГАНЦ ЭХ СУРВАЛЖ: төлөв бүрийн картан дээрх бичиг.
+   Шинэ төлөв нэмэхэд ЭНД бичихгүй бол карт «ТӨЛӨВ ОЙЛГОМЖГҮЙ» гэж ил
+   анхааруулна — дуугүй буруу бичих боломжгүй. */
+var WK_CHAIN = {
+  claimed:  { icon: '🛠', role: 'ГҮЙЦЭТГЭЖ БАЙГАА', color: '#B45309' },
+  executed: { icon: '🔧', role: 'ГҮЙЦЭТГЭСЭН',      color: '#15803D' },
+  closed:   { icon: '🔧', role: 'ГҮЙЦЭТГЭСЭН',      color: '#15803D' }
+};
 var WK_STATUS = {
   new: { l: 'Хүлээж аваагүй', c: '#C81E3A', bg: '#FEF2F2' },
   claimed: { l: 'Хийгдэж байна', c: '#E9A100', bg: '#FFFBEB' },
