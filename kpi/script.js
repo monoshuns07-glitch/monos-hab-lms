@@ -977,6 +977,7 @@ async function loadDB() {
            «би байршлын эзэн үү» гэдгийг шалгадаг тул тохиргоо ирээгүй
            байхад эзэн нь өөрийн мэдээллийг л хардаг байв (2026-09-04). */
         try { await wkLocLoad(); } catch (e) {}
+        try { await wkAsgLoad(); } catch (e) {}
         try {
           _R2_REPS = await repR2Load();
           if (Array.isArray(_R2_REPS)) { _rOk = true; console.log('[reports] R2-оос ' + _R2_REPS.length); }
@@ -18856,15 +18857,50 @@ async function reportDeleteHard(id) {
      · Хугацаа дуусахад сервер ӨӨРӨӨ даргад оноодог (wk-escalate) */
 
 /* Томилох эрхтэй юу */
+/* ── ТОМИЛОХ ЭРХТЭЙ ХҮМҮҮС — хаалт тус бүрээр ── */
+var WK_ASG_FILE = 'workflow/_assigners.json';
+var WK_ASG = null, WK_ASG_OK = false;
+async function wkAsgLoad(force) {
+  if (WK_ASG_OK && !force) return WK_ASG;
+  try {
+    var j = await riskR2GetJson(WK_ASG_FILE);
+    WK_ASG = (j && j.map) ? j.map : null;
+  } catch (e) { WK_ASG = null; }
+  WK_ASG_OK = true;
+  return WK_ASG;
+}
+async function wkAsgSave(map) {
+  WK_ASG = map; WK_ASG_OK = true;
+  return await riskR2PutJson(WK_ASG_FILE, { updatedAt: new Date().toISOString(), map: map });
+}
+/* Тухайн хаалтад томилох эрхтэй uid-ууд. Тохиргоо байхгүй бол ахлахууд нь. */
+function wkAsgUids(gate) {
+  var g = String(gate || 'both');
+  var take = function (k) {
+    var a = (WK_ASG && WK_ASG[k]) || null;
+    if (a && a.length) return a.map(function (x) { return typeof x === 'string' ? x : (x && x.uid); }).filter(Boolean);
+    /* нөөц зам — тухайн хаалтын ахлахууд */
+    try { return (wkGateLeads(k) || []).map(function (e) { return e && e.uid; }).filter(Boolean); }
+    catch (e) { return []; }
+  };
+  if (g === 'both') {
+    var o = take('hab').concat(take('ita')), seen = {};
+    return o.filter(function (u) { if (seen[u]) return false; seen[u] = 1; return true; });
+  }
+  return take(g);
+}
 function wkCanAssign(r) {
   try {
     if (isAdmin()) return true;
-    if (wkIsDirector()) return true;
-    if (!wkGateHas(r, wkMyGate())) return false;
-    var pos = '';
-    try { var me = myEmp(); if (me) pos = String(me.pos || me.role || ''); } catch (e) {}
-    if (!pos && SESSION) pos = String(SESSION.pos || '');
-    return /дарга|ахлах|менежер/i.test(pos);
+    var me = null;
+    try { me = reqMe(); } catch (e) {}
+    var uid = (me && me.uid) || (SESSION && SESSION.uid) || '';
+    if (!uid) return false;
+    /* ⚠ Мэдээлсэн хүн ӨӨРӨӨ хүн томилохгүй — ажил хуваарилалт нь
+       хариуцсан ахлахын шийдвэр байх ёстой. */
+    if (wkIsSelf(r, uid)) return false;
+    var gate = (r && r.wkGate) || 'both';
+    return wkAsgUids(gate).indexOf(uid) >= 0;
   } catch (e) { return false; }
 }
 
