@@ -18257,11 +18257,17 @@ function wkClaim(id) {
   }
   var emp = woEmpByUid(me.uid) || me;
   wkPatch(id, function (x) {
-    x.wkClaimBy = { uid: me.uid, name: empFullName(emp) || me.name || '',
+    var _who = { uid: me.uid, name: empFullName(emp) || me.name || '',
       pos: emp.pos || emp.role || '',
       /* И-мэйл нь сервер сэрэмжлүүлгийг нөхөж илгээхэд хэрэгтэй */
       email: emp.email || (SESSION && SESSION.email) || '',
       at: new Date().toISOString() };
+    x.wkClaimBy = _who;
+    /* Хүлээж авсан хүн нь ХАРИУЦАГЧ болно. Дараа нь өөр хүнд даалгасан ч
+       хариуцагч нь ХЭВЭЭР — хариуцлага замдаа алдагдахгүй. */
+    if (!(x.wkOwner && x.wkOwner.uid)) {
+      x.wkOwner = { uid: _who.uid, name: _who.name, pos: _who.pos, at: _who.at };
+    }
   }, '✓ Та энэ ажлыг хүлээж авлаа');
   try {
     var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
@@ -18288,6 +18294,7 @@ function wkUnclaim(id) {
       was: { uid: prev.uid, name: prev.name || '', at: prev.at || '' }, why: String(why || '').slice(0, 200)
     }]);
     x.wkClaimBy = null;                          /* → төлөв дахин «шинэ» */
+    x.wkOwner = null;                            /* хариуцагч ч чөлөөлөгдөнө */
   }, '↩ Хүлээн авалт цуцлагдлаа — ажил дахин нээлттэй боллоо');
   try {
     var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
@@ -18906,6 +18913,23 @@ function wkCanAssign(r) {
     return /дарга|ахлах|менежер/i.test(pos);
   } catch (e) { return false; }
 }
+/* ХАРИУЦАГЧ — хуучин бичлэгт байхгүй бол гүйцэтгэгчийг нь хариуцагч гэж үзнэ */
+function wkOwnerOf(r) {
+  if (!r) return null;
+  if (r.wkOwner && r.wkOwner.uid) return r.wkOwner;
+  return (r.wkClaimBy && r.wkClaimBy.uid) ? r.wkClaimBy : null;
+}
+function wkIsOwnerMe(r, uid) {
+  var o = wkOwnerOf(r);
+  return !!(o && uid && o.uid === uid);
+}
+/* Би энэ ажилд оролцож байна уу (хариуцагч эсвэл гүйцэтгэгч) */
+function wkMineWork(r, uid) {
+  if (!uid) return false;
+  if (r && r.wkClaimBy && r.wkClaimBy.uid === uid) return true;
+  return wkIsOwnerMe(r, uid);
+}
+
 /* ── ШИЛЖҮҮЛЭХ ЭРХ ──────────────────────────────────────────────
    ⚠ ИТА-гийн ахлах инженерүүд (Б.Даваадорж, Б.Даваа-Очир) томилогдсон
    ажлыг ӨӨРСДӨӨ хийдэггүй — албаныхаа тохирох ажилтанд даалгадаг.
@@ -18918,7 +18942,8 @@ function wkCanReassign(r) {
     try { me = reqMe(); } catch (e) {}
     var uid = (me && me.uid) || (SESSION && SESSION.uid) || '';
     if (!uid) return false;
-    if (r.wkClaimBy && r.wkClaimBy.uid === uid) return true;   /* эзэмшигч өөрөө */
+    if (r.wkClaimBy && r.wkClaimBy.uid === uid) return true;   /* гүйцэтгэгч өөрөө */
+    if (wkIsOwnerMe(r, uid)) return true;                      /* хариуцагч */
     return wkCanAssign(r);                                     /* удирдлага ч болно */
   } catch (e) { return false; }
 }
@@ -19008,6 +19033,11 @@ function wkAssignModal(id) {
       }
       x.wkClaimBy = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
         at: new Date().toISOString(), assignedBy: byName };
+      /* Анх томилогдсон хүн = хариуцагч. Даалгах үед хариуцагч ХЭВЭЭР. */
+      if (!(x.wkOwner && x.wkOwner.uid)) {
+        x.wkOwner = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
+          at: new Date().toISOString(), assignedBy: byName };
+      }
     }, '✓ ' + emp.name + (_isRe ? ' -д даалгалаа' : ' -д томиллоо'));
     try {
       ntfSend([emp], { kind: 'wk', url: '/kpi/?page=reportflow',
@@ -19117,7 +19147,13 @@ function wkFlowHTML(r) {
   var at = order.indexOf(st);
   var steps = [
     { l: 'Мэдээлсэн', sub: r.reporterName || '' },
-    { l: 'Хүлээж авсан', sub: (r.wkClaimBy && r.wkClaimBy.name) || '' },
+    { l: 'Хүлээж авсан',
+      sub: ((r.wkClaimBy && r.wkClaimBy.name) || '') +
+        (function () {
+          var o = wkOwnerOf(r);
+          return (o && o.uid && r.wkClaimBy && o.uid !== r.wkClaimBy.uid)
+            ? ' · хариуцагч: ' + o.name : '';
+        })() },
     { l: 'Гүйцэтгэсэн', sub: r.wkExecAt ? String(r.wkExecAt).slice(0, 10) : '' },
     { l: 'Баталсан', sub: r.wkAccept === 'done' ? 'дууссан' : '' }
   ];
@@ -19177,6 +19213,7 @@ function wkRowHTML(r) {
   var myGate = wkMyGate();
   var inMyGate = wkGateHas(r, myGate);
   var claimedByMe = r.wkClaimBy && r.wkClaimBy.uid === me.uid;
+  var ownerMe = wkIsOwnerMe(r, me.uid);          /* хариуцагч — даалгасан ч хэвээр */
 
   /* Товчлуурууд — тухайн хүн ЮУ ХИЙЖ ЧАДАХ вэ */
   var acts = [];
@@ -19201,12 +19238,12 @@ function wkRowHTML(r) {
     acts.push(['wk-move', 'Өөр алба руу', '#64748B', 'ti-arrow-right']);
   if (inMyGate && (st === 'new' || st === 'claimed') && !r.wkUrgBy)
     acts.push(['wk-urg', 'Зэрэг батлах', '#E9A100', 'ti-flag']);
-  if (claimedByMe && st === 'claimed')
+  if ((claimedByMe || ownerMe) && st === 'claimed')
     acts.push(['wk-exec', 'Гүйцэтгэсэн', '#0ca30c', 'ti-checkbox']);
   /* ⚠ Хүлээн авснаа буцаах (2026-09-03): өмнө хүлээж авсан хүн андуурсан ч
      буцааж чаддаггүй, ажил тэр хүн дээр «түгжигддэг» байв. Гүйцэтгэхээс өмнө
      л цуцална; ажил дахин «шинэ» болж, гарц дахь бүх хүнд харагдана. */
-  if ((claimedByMe || isAdmin()) && st === 'claimed')
+  if ((claimedByMe || ownerMe || isAdmin()) && st === 'claimed')
     acts.push(['wk-unclaim', 'Хүлээн авснаа цуцлах', '#64748B', 'ti-hand-off']);
   if (mine && st === 'executed')
     acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
@@ -19241,7 +19278,13 @@ function wkRowHTML(r) {
     wkHazChipsHTML(r) +
     '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
     ' · 👤 ' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName)) +
-    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(wkPersonName(r.wkClaimBy.uid, r.wkClaimBy.name)) : '') + '</div>' +
+    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(wkPersonName(r.wkClaimBy.uid, r.wkClaimBy.name)) : '') +
+    /* Хариуцагч нь гүйцэтгэгчээс ӨӨР бол хоёуланг нь харуулна */
+    (function () {
+      var o = wkOwnerOf(r);
+      if (!o || !o.uid || !r.wkClaimBy || o.uid === r.wkClaimBy.uid) return '';
+      return ' · <span style="color:#7C3AED">🎯 ' + esc(wkPersonName(o.uid, o.name)) + ' хариуцаж байна</span>';
+    })() + '</div>' +
     /* ── ДУУССАН бол гинжин хэлхээг бүтнээр: хэн өгсөн → хэн хийсэн → хэн баталсан.
        Хүн хараад л шууд ойлгохоор, товчилсонгүй. ── */
     wkChainHTML(r) +
@@ -19275,8 +19318,9 @@ function wkListHTML(all) {
   var inbox = rows.filter(function (r) {
     return wkGateHas(r, myGate) && wkStatus(r) !== 'closed';
   });
+  /* ⭐ Хариуцаж байгаа (өөр хүнд даалгасан ч) ажлууд ЭНД ХЭВЭЭР харагдана */
   var mineClaim = rows.filter(function (r) {
-    return r.wkClaimBy && r.wkClaimBy.uid === me.uid && wkStatus(r) !== 'closed';
+    return wkMineWork(r, me.uid) && wkStatus(r) !== 'closed';
   });
   var mineRep = rows.filter(function (r) { return r.reporterUid === me.uid; });
   var toAccept = mineRep.filter(function (r) { return wkStatus(r) === 'executed'; });
@@ -19799,6 +19843,9 @@ async function wkMirrorPush(all, full) {
       loc: wkLocLabel(r) || '',
       desc: String(r.desc || '').slice(0, 120),
       claimUid: (r.wkClaimBy && r.wkClaimBy.uid) || '',
+      /* Хариуцагч — серверийн сэрэмжлүүлэг гүйцэтгэгчээс гадна түүнд ч очно */
+      ownerUid: (function () { var o = wkOwnerOf(r); return (o && o.uid) || ''; })(),
+      ownerName: (function () { var o = wkOwnerOf(r); return (o && o.name) || ''; })(),
       closed: false,
       esc: {
         noclaim: r.wkEscNoClaim || '', half: r.wkEsc50 || '',
@@ -19949,6 +19996,14 @@ function wkEscOne(j) {
     } else if (j.k === 'half') {
       var cl = woEmpByUid(r.wkClaimBy && r.wkClaimBy.uid);
       to = cl ? [cl] : [];
+      /* ⭐ Хариуцагч нь өөр хүн бол түүнд ч сануулна */
+      try {
+        var ow = wkOwnerOf(r);
+        if (ow && ow.uid && (!r.wkClaimBy || ow.uid !== r.wkClaimBy.uid)) {
+          var oe = woEmpByUid(ow.uid);
+          if (oe) to.push(oe);
+        }
+      } catch (e) {}
       title = '⏳ Хугацааны тал өнгөрлөө — ' + (wkTime(r) || {}).text;
       r.wkEsc50 = new Date().toISOString();
     } else if (j.k === 'due') {
