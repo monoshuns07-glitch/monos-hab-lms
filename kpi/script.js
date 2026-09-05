@@ -17866,8 +17866,13 @@ function wkNewModal() {
          Тусдаа «Аюул» төрөл байхаа больж, ажлын захиалга бүр «энэ ажлыг
          хийгээгүйгээс юу болох вэ» гэдгээ хэлдэг болсон. Ингэснээр
          захиалга бүр ямар эрсдэлээс сэргийлж буй нь тоологдоно. */
-      if (sel.kind === 'job') {
-        H += wkStep(sN++, 'Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?',
+      /* ⚠ 2026-09-05: өмнө нь ЗӨВХӨН «Ажил» дээр асуудаг байсан тул
+         ОДТ-ийн ангилал үргэлж хоосон үлдэж, аюулын статистикт ороогүй.
+         Ангилал хамгийн хэрэгтэй нь яг ОДТ дээр. */
+      if (sel.kind === 'job' || sel.kind === 'odt') {
+        H += wkStep(sN++, sel.kind === 'odt'
+          ? 'Энэ нь ямар төрлийн аюул вэ?'
+          : 'Энэ ажлыг хийгээгүйгээс ямар аюул учирч болох вэ?',
           !!(sel.haz || []).length);
         H += '<div style="font-size:11.5px;color:#64748B;margin:-4px 0 8px;line-height:1.5">' +
           'Ангиллаа сонгоно уу — олныг сонгож болно. Дараа нь юу болж болзошгүйг товч бичнэ үү.</div>';
@@ -18116,7 +18121,9 @@ function wkChainHTML(r) {
   var st = wkStatus(r);
   var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
   var closed = st === 'closed';
-  var day = function (v) { return String(v || '').slice(0, 10); };
+  /* ⚠ Зөвхөн өдрөөр бичихэд нэг өдөр бүртгэгдсэн хэдэн ажлын дараалал
+     юунд үндэслэснийг ойлгох аргагүй байв — цаг, минутыг нь ч харуулна. */
+  var day = function (v) { return wkAtText(v) || String(v || '').slice(0, 10); };
 
   /* Нэг нүд. warn=true бол улаанаар анхааруулна. */
   var cell = function (icon, role, name, sub, color, warn) {
@@ -19398,8 +19405,12 @@ function wkRowHTML(r) {
   if (mine && st === 'executed')
     acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
   /* ХАБЭА — ирсэн мэдээллийн аюулын ангиллыг зөв болгоно */
-  if (wkCanFixHaz() && (r.wkHaz || []).length && st !== 'closed')
-    acts.push(['wk-hazfix', 'Аюулын төрөл засах', '#B45309', 'ti-edit']);
+  /* ⚠ Өмнө нь «ангилал АЛЬ ХЭДИЙН байвал» л энэ товч гардаг байсан тул
+     хоосон бичлэгт ангилал оноох арга ОГТ байгаагүй (2026-09-05).
+     Ангилал нь статистикийн шинж чанар учир хаагдсан бичлэгт ч засагдана. */
+  if (wkCanFixHaz())
+    acts.push(['wk-hazfix', (r.wkHaz || []).length ? 'Аюулын төрөл засах' : 'Аюулын төрөл оноох',
+      '#B45309', 'ti-edit']);
 
   return '<div data-wk-open="' + esc(r.id) + '" style="border:1.5px solid ' +
     (t && t.late ? '#FECACA' : inMyGate && st === 'new' ? '#C7D2FE' : '#E2E8F0') +
@@ -19468,9 +19479,37 @@ var WK_TAB = 'in';
    ⚠ Өмнө нь ажил ба аюул нэг жагсаалтад хольцтой байж, хайлт огт
    байгаагүй. Энэ шүүлт нь БҮХ таб дээр ажиллана. */
 var WK_F_Q = '', WK_F_KIND = 'all', WK_F_LOC = '', WK_F_ST = '', WK_F_LATE = false;
+/* Эрэмбэ: '' = анхдагч (шаардлагатай нь дээр), 'new'/'old' = огноо,
+   'urg'/'urg2' = эрсдлийн зэрэг. */
+var WK_F_SORT = '';
+
+/* Он-сар-өдөр-цаг-минут — нэг өдрийн доторх дараалал ч ойлгомжтой байна */
+function wkAtMs(r) {
+  var t = Date.parse(r && (r.createdAt || r.wkDoneAt || r.wkExecAt) || '');
+  return isNaN(t) ? 0 : t;
+}
+function wkAtText(v) {
+  var d = new Date(v);
+  if (isNaN(d.getTime())) return '';
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+    ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function wkSortApply(list) {
+  if (!WK_F_SORT) return list;
+  var out = list.slice();
+  out.sort(function (a, b) {
+    if (WK_F_SORT === 'new') return wkAtMs(b) - wkAtMs(a);
+    if (WK_F_SORT === 'old') return wkAtMs(a) - wkAtMs(b);
+    if (WK_F_SORT === 'urg') return (wkUrg(b) - wkUrg(a)) || (wkAtMs(b) - wkAtMs(a));
+    if (WK_F_SORT === 'urg2') return (wkUrg(a) - wkUrg(b)) || (wkAtMs(b) - wkAtMs(a));
+    return 0;
+  });
+  return out;
+}
 
 function wkFilterOn() {
-  return !!(WK_F_Q || WK_F_KIND !== 'all' || WK_F_LOC || WK_F_ST || WK_F_LATE);
+  return !!(WK_F_Q || WK_F_KIND !== 'all' || WK_F_LOC || WK_F_ST || WK_F_LATE || WK_F_SORT);
 }
 
 /* Хайлтад хамрах бүх текстийг нэг мөр болгоно */
@@ -19556,6 +19595,9 @@ function wkFilterBarHTML(base, shown) {
     (locOpts.length > 1 ? sel('loc', WK_F_LOC, locOpts) : '') +
     sel('st', WK_F_ST, [['', 'Бүх төлөв'], ['new', 'Шинэ'], ['claimed', 'Хүлээж авсан'],
       ['executed', 'Гүйцэтгэсэн'], ['closed', 'Дууссан']]) +
+    sel('sort', WK_F_SORT, [['', '⇅ Анхдагч эрэмбэ'], ['new', '🕒 Шинэ нь эхэнд'],
+      ['old', '🕒 Хуучин нь эхэнд'], ['urg', '🔺 Эрсдэл өндөр нь эхэнд'],
+      ['urg2', '🔻 Эрсдэл бага нь эхэнд']]) +
     (nLate ? '<button data-wk-f="late" style="border:1.5px solid ' + (WK_F_LATE ? '#C81E3A' : '#FECACA') +
       ';background:' + (WK_F_LATE ? '#C81E3A' : '#FEF2F2') + ';color:' + (WK_F_LATE ? '#fff' : '#991B1B') +
       ';border-radius:9px;padding:6px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
@@ -19657,7 +19699,7 @@ function wkListHTML(all) {
   /* ⚠ Өмнө нь энд ЗӨВХӨН «Манай алба» табын шүүлт байсан. Одоо доорх
      ерөнхий шүүлт БҮХ табад ажиллах тул түүнийг хассан. */
   var wkBase = list;
-  list = wkFilterApply(list);
+  list = wkSortApply(wkFilterApply(list));
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
@@ -21995,6 +22037,7 @@ function rfAfter(sec, admin, pending) {
       var k = wf.getAttribute('data-wk-f');
       if (k === 'loc') WK_F_LOC = wf.value || '';
       else if (k === 'st') WK_F_ST = wf.value || '';
+      else if (k === 'sort') WK_F_SORT = wf.value || '';
       else return;
       renderReportflow();
     }
@@ -22024,7 +22067,7 @@ function rfAfter(sec, admin, pending) {
     if (fb) {
       ev.stopPropagation();
       var fk = fb.getAttribute('data-wk-f');
-      if (fk === 'clear') { WK_F_Q = ''; WK_F_KIND = 'all'; WK_F_LOC = ''; WK_F_ST = ''; WK_F_LATE = false; }
+      if (fk === 'clear') { WK_F_Q = ''; WK_F_KIND = 'all'; WK_F_LOC = ''; WK_F_ST = ''; WK_F_LATE = false; WK_F_SORT = ''; }
       else if (fk === 'clearq') WK_F_Q = '';
       else if (fk === 'late') WK_F_LATE = !WK_F_LATE;
       else return;
