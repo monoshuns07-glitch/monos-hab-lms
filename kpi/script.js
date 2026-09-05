@@ -28811,6 +28811,90 @@ function pplExport(stats) {
 }
 
 
+
+/* ══ ХУГАЦААНЫ ТОДОРХОЙ ХАРАГДАЦ ══════════════════════════════════
+   Огноо ганцаараа хангалтгүй — хүн толгойдоо тоолохгүйн тулд «хэдэн
+   хоног үлдсэн» гэдгийг ТОМООР, өнгөтэйгөөр харуулна. */
+function taskDueInfo(x) {
+  var out = { has: false, days: 0, late: false, txt: '', col: '#64748B', pct: 0, date: '' };
+  if (!x || !x.dueDate) return out;
+  var due = _dayNum(x.dueDate), today = _dayNum(new Date());
+  if (isNaN(due) || isNaN(today)) return out;
+  out.has = true; out.date = x.dueDate;
+  var d = due - today;
+  out.days = Math.abs(d);
+  if (taskIsClosed(x)) { out.txt = 'Дууссан'; out.col = '#16A34A'; out.pct = 100; return out; }
+  if (d < 0) { out.late = true; out.txt = out.days + ' хоног хэтэрсэн'; out.col = '#C81E3A'; out.pct = 100; }
+  else if (d === 0) { out.txt = 'Өнөөдөр дуусна'; out.col = '#DC2626'; out.pct = 97; }
+  else if (d === 1) { out.txt = 'Маргааш дуусна'; out.col = '#D97706'; out.pct = 90; }
+  else if (d <= 3) { out.txt = d + ' хоног үлдсэн'; out.col = '#D97706'; }
+  else { out.txt = d + ' хоног үлдсэн'; out.col = '#0891B2'; }
+  /* Эхлэхээс дуусах хүртэлх зайд хэдэн хувь өнгөрснийг харуулна */
+  if (!out.pct) {
+    var st = x.startDate ? _dayNum(x.startDate) : NaN;
+    if (!isNaN(st) && due > st) out.pct = Math.max(3, Math.min(100, Math.round((today - st) / (due - st) * 100)));
+    else out.pct = Math.max(3, Math.min(100, Math.round((1 - d / 14) * 100)));
+  }
+  return out;
+}
+/* Том, тод хугацааны хайрцаг — карт ба дэлгэрэнгүйд хоёуланд */
+function taskDueBox(x, big) {
+  var i = taskDueInfo(x);
+  if (!i.has) return '<div style="font-size:11.5px;color:#94A3B8">Дуусах хугацаа заагаагүй</div>';
+  return '<div style="background:' + i.col + '0F;border:1px solid ' + i.col + '33;border-radius:10px;' +
+    'padding:' + (big ? '9px 12px' : '7px 10px') + '">' +
+    '<div style="display:flex;align-items:baseline;gap:7px;flex-wrap:wrap">' +
+    '<span style="font-size:' + (big ? '16px' : '13.5px') + ';font-weight:900;color:' + i.col + '">' +
+    (i.late ? '⏰ ' : '') + esc(i.txt) + '</span>' +
+    '<span style="font-size:11px;color:#94A3B8">' + esc(i.date) + '</span></div>' +
+    '<div style="height:4px;background:#E9EDF2;border-radius:3px;margin-top:6px;overflow:hidden">' +
+    '<div style="width:' + i.pct + '%;height:100%;background:' + i.col + ';border-radius:3px"></div></div>' +
+    '</div>';
+}
+/* Явцын дөрвөн цэг */
+function taskStepHTML(x) {
+  var at = taskIsUnapproved(x) ? 0 : (x.status === 'submitted' ? 2 : (taskIsClosed(x) ? 3 : 1));
+  var steps = ['Өгсөн', 'Хийгдэж байна', 'Илгээсэн', 'Баталгаажсан'];
+  return '<div style="display:flex;align-items:center;gap:4px;margin-top:8px">' +
+    steps.map(function (l, i) {
+      var on = i <= at, cur = i === at;
+      var c = on ? (cur ? '#4F46E5' : '#16A34A') : '#D8DEE7';
+      return (i ? '<span style="flex:1;height:2px;background:' + (i <= at ? '#A7F3D0' : '#E9EDF2') + '"></span>' : '') +
+        '<span title="' + esc(l) + '" style="width:9px;height:9px;border-radius:50%;background:' + c +
+        (cur ? ';box-shadow:0 0 0 3px ' + c + '26' : '') + ';flex:0 0 auto"></span>';
+    }).join('') +
+    '<span style="margin-left:7px;font-size:10.5px;font-weight:700;color:#64748B;white-space:nowrap">' +
+    esc(steps[at]) + '</span></div>';
+}
+/* Гүйцэтгэгчдийн нэр */
+function taskWhoText(x) {
+  var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
+  var nm = ids.map(function (eid) {
+    var e = (DB.employees || []).filter(function (y) { return y.id === eid; })[0];
+    return e ? (empShortName(e) || e.name) : '';
+  }).filter(Boolean);
+  if (nm.length) return nm.join(', ');
+  return x.dept === 'all' ? 'Бүх алба' : (x.dept || '—');
+}
+/* Урт бичвэрийг таслах */
+function taskClamp(t, n) {
+  t = String(t || '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? (t.slice(0, n - 1) + '…') : t;
+}
+/* Хавсралтын нэрийг богиносгох */
+function taskFileName(u) {
+  var t = String(u || '').split('/').pop().split('?')[0];
+  try { t = decodeURIComponent(t); } catch (e) {}
+  return t.length > 26 ? (t.slice(0, 14) + '…' + t.slice(-9)) : t;
+}
+
+/* Харагдац: board | list. Нарийн дэлгэцэнд автоматаар жагсаалт. */
+var TASK_MODE = '';
+function taskMode() {
+  if (TASK_MODE) return TASK_MODE;
+  try { return (window.innerWidth || 1200) < 900 ? 'list' : 'board'; } catch (e) { return 'board'; }
+}
+
 /* Даалгаврын цэсний шүүлт: all | open | late | review | pending | closed */
 var TASK_VIEW = 'all';
 
@@ -28843,6 +28927,111 @@ function taskStatCard(key, label, val, icon, color, sub) {
     '<div style="font-size:12px;color:#8A94A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' +
     (sub ? '<div style="font-size:11px;font-weight:700;color:' + sub[1] + ';margin-top:1px">' + sub[0] + '</div>' : '') +
     '</div></div>';
+}
+
+
+/* ── БАГАНЫН БОГИНО КАРТ ── дарж дэлгэрэнгүйг нээнэ ── */
+function taskMiniCard(x, ctx) {
+  var pr = taskPrio(x), i = taskDueInfo(x);
+  var closedT = taskIsClosed(x);
+  var acts = [];
+  var ids = (x.empIds && x.empIds.length) ? x.empIds : (x.empId ? [x.empId] : []);
+  var mine = ctx.me && ids.indexOf(ctx.me.id) > -1;
+  if (taskIsUnapproved(x)) {
+    if (taskCanApprove(x)) {
+      acts.push('<button class="btn btn-sm btn-primary" data-task-ok="' + esc(x.id) + '">Батлах</button>');
+      acts.push('<button class="btn btn-sm" style="background:#FEE2E2;color:#991B1B;border-color:#FECACA" data-task-no="' + esc(x.id) + '">Буцаах</button>');
+    }
+  } else if (x.status === 'submitted') {
+    if (canReviewTask(x)) acts.push('<button class="btn btn-sm btn-primary" data-task-review="' + esc(x.id) + '">Хянах</button>');
+  } else if (closedT) {
+    if (canReviewTask(x)) acts.push('<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '">Дүн засах</button>');
+  } else if (!closedT && (mine || (ctx.emp && !ids.length))) {
+    acts.push('<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '">Илгээх</button>');
+  }
+  return '<div data-task-open="' + esc(x.id) + '" style="background:#fff;border:1px solid #E9EDF2;' +
+    'border-left:4px solid ' + (i.late ? '#C81E3A' : pr.color) + ';border-radius:11px;padding:11px 12px;' +
+    'margin-bottom:9px;cursor:pointer">' +
+    '<div style="display:flex;align-items:flex-start;gap:7px">' +
+    '<div style="flex:1;min-width:0;font-size:13.5px;font-weight:700;color:' + (closedT ? '#64748B' : '#0F1117') +
+    ';line-height:1.35">' + esc(taskClamp(x.title, 70)) + '</div>' +
+    (x.priority && x.priority !== 'normal'
+      ? '<span style="flex:0 0 auto;background:' + pr.color + '18;color:' + pr.color + ';border-radius:100px;' +
+        'padding:2px 8px;font-size:10.5px;font-weight:800">' + esc(pr.label) + '</span>' : '') +
+    '</div>' +
+    (x.desc ? '<div style="font-size:12px;color:#8A94A6;margin-top:4px;line-height:1.45">' +
+      esc(taskClamp(x.desc, 92)) + '</div>' : '') +
+    '<div style="font-size:11.5px;color:#64748B;margin-top:7px;display:flex;align-items:center;gap:5px">' +
+    '<i class="ti ti-user"></i> ' + esc(taskClamp(taskWhoText(x), 34)) + '</div>' +
+    '<div style="margin-top:8px">' + taskDueBox(x, false) + '</div>' +
+    (acts.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">' + acts.join('') + '</div>' : '') +
+    '</div>';
+}
+
+/* ── ЯВЦЫН САМБАР ── */
+function taskBoardHTML(cols, ctx) {
+  return '<div style="display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding-bottom:6px">' +
+    cols.map(function (c) {
+      return '<div style="flex:1 1 0;min-width:250px;background:#F7F9FB;border:1px solid #EEF1F4;' +
+        'border-radius:14px;padding:11px 11px 4px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + c.color + '"></span>' +
+        '<span style="font-size:13px;font-weight:800;color:#334155">' + esc(c.label) + '</span>' +
+        '<span style="margin-left:auto;background:' + c.color + '18;color:' + c.color + ';border-radius:100px;' +
+        'padding:1px 9px;font-size:11.5px;font-weight:800">' + c.rows.length + '</span></div>' +
+        (c.rows.length ? c.rows.map(function (x) { return taskMiniCard(x, ctx); }).join('')
+          : '<div style="font-size:12px;color:#B6BECC;text-align:center;padding:18px 8px">' + esc(c.empty) + '</div>') +
+        '</div>';
+    }).join('') + '</div>';
+}
+
+/* ── ДЭЛГЭРЭНГҮЙ ЦОНХ ── картын бүх мэдээлэл энд ── */
+function taskDetailModal(id) {
+  var x = (DB.tasks || []).filter(function (t) { return t.id === id; })[0];
+  if (!x) return;
+  var pr = taskPrio(x);
+  var row = function (l, v, col) {
+    if (!v) return '';
+    return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #F1F5F9">' +
+      '<span style="flex:0 0 122px;font-size:12px;color:#8A94A6">' + esc(l) + '</span>' +
+      '<span style="flex:1;font-size:13px;font-weight:600;color:' + (col || '#1E293B') + '">' + v + '</span></div>';
+  };
+  var node = elc('div', '');
+  node.innerHTML =
+    '<div style="font-size:16px;font-weight:800;color:#0F1117;line-height:1.35">' + esc(x.title || '') + '</div>' +
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:7px">' +
+    (x.priority && x.priority !== 'normal' ? '<span style="background:' + pr.color + '18;color:' + pr.color +
+      ';border-radius:100px;padding:3px 11px;font-size:11.5px;font-weight:800">' + esc(pr.label) + '</span>' : '') +
+    (x.category && TASK_CAT[x.category] ? '<span style="background:#F1F5F9;color:#475569;border-radius:100px;' +
+      'padding:3px 11px;font-size:11.5px;font-weight:700">' + esc(TASK_CAT[x.category]) + '</span>' : '') +
+    (x.repeat && TASK_REPEAT[x.repeat] ? '<span style="background:#F5F3FF;color:#7C3AED;border-radius:100px;' +
+      'padding:3px 11px;font-size:11.5px;font-weight:700">🔁 ' + esc(TASK_REPEAT[x.repeat]) + '</span>' : '') +
+    '</div>' +
+    taskStepHTML(x) +
+    '<div style="margin:12px 0">' + taskDueBox(x, true) + '</div>' +
+    (x.desc ? '<div style="background:#F8FAFC;border-radius:11px;padding:11px 13px;font-size:13px;' +
+      'color:#334155;line-height:1.6;white-space:pre-wrap;margin-bottom:12px">' + esc(x.desc) + '</div>' : '') +
+    '<div style="margin-bottom:6px">' +
+    row('Гүйцэтгэгч', esc(taskWhoText(x))) +
+    row('Алба', esc(x.dept === 'all' ? 'Бүх алба' : (x.dept || '—'))) +
+    row('Эхлэх', esc(x.startDate || '—')) +
+    row('Дуусах', esc(x.dueDate || '—')) +
+    row('Даалгавар өгсөн', esc(x.createdBy || '—')) +
+    (x.approverName ? row('Батлах хүн', esc(x.approverName)) : '') +
+    (x.submittedAt ? row('Илгээсэн', esc(String(x.submittedAt).slice(0, 10)), '#7C3AED') : '') +
+    (x.status === 'approved' ? row('Үнэлгээ', taskScoreOf(x) + '%', '#16A34A') : '') +
+    '</div>' +
+    (x.refUrl ? '<div style="margin-top:8px"><a href="' + esc(x.refUrl) + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#4F46E5;font-weight:700">' +
+      '<i class="ti ti-paperclip"></i> Заавар файл: ' + esc(taskFileName(x.refUrl)) + '</a></div>' : '') +
+    (x.submitNote ? '<div style="margin-top:10px;background:#F8FAFC;border-radius:10px;padding:9px 12px;' +
+      'font-size:12.5px;color:#475569"><b>Ажилтны тайлбар:</b> ' + esc(x.submitNote) + '</div>' : '') +
+    (x.proofUrl ? '<div style="margin-top:6px"><a href="' + esc(x.proofUrl) + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#0891B2;font-weight:700">' +
+      '<i class="ti ti-photo"></i> Гүйцэтгэлийн нотолгоо: ' + esc(taskFileName(x.proofUrl)) + '</a></div>' : '') +
+    (x.reviewComment ? '<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;' +
+      'padding:9px 12px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар:</b> ' + esc(x.reviewComment) + '</div>' : '');
+  buildModal('Даалгаврын дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
 
 function renderTasks() {
@@ -28920,6 +29109,16 @@ function renderTasks() {
     (pending.length ? taskStatCard('pending', 'Батлах хүлээж буй', pending.length, 'ti-clock-pause', '#B45309') : '') +
     taskStatCard('closed', 'Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
     '</div>';
+  /* Харагдац солих: явцын самбар / жагсаалт */
+  var _mode = taskMode();
+  html += '<div style="display:flex;align-items:center;gap:7px;margin-bottom:14px;flex-wrap:wrap">' +
+    ['board:⌗ Явцын самбар', 'list:☰ Жагсаалт'].map(function (p) {
+      var k = p.split(':')[0], l = p.split(':')[1], on = _mode === k;
+      return '<button data-task-mode="' + k + '" style="border:1.5px solid ' + (on ? '#4F46E5' : '#E2E8F0') +
+        ';background:' + (on ? '#4F46E5' : '#fff') + ';color:' + (on ? '#fff' : '#334155') +
+        ';border-radius:10px;padding:6px 13px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
+        'font-weight:' + (on ? '800' : '600') + '">' + l + '</button>';
+    }).join('') + '</div>';
   if (TASK_VIEW !== 'all') {
     html += '<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;font-size:12.5px;color:#64748B">' +
       '<span>Шүүлт идэвхтэй</span>' +
@@ -29035,6 +29234,28 @@ function renderTasks() {
     }
   }
 
+  /* ⭐ ЯВЦЫН САМБАР — багана бүр нэг шат. Шүүлт идэвхтэй үед ч ажиллана. */
+  if (_mode === 'board') {
+    var _ctx = { me: me, emp: emp };
+    var _V0 = TASK_VIEW;
+    var _pick = function (k, arr) { return (_V0 === 'all' || _V0 === k) ? arr : []; };
+    var _lateOnly = open.filter(function (t) { return taskOverdueDays(t) > 0; });
+    var cols = [
+      { key: 'pending', label: 'Батлах хүлээж буй', color: '#B45309',
+        rows: _pick('pending', pending), empty: 'Батлах хүлээж буй зүйл алга' },
+      { key: 'open', label: (_V0 === 'late' ? 'Хугацаа хэтэрсэн' : 'Хийгдэж байна'), color: '#D97706',
+        rows: (_V0 === 'late' ? _lateOnly : _pick('open', open)), empty: 'Хийгдэх даалгавар алга' },
+      { key: 'review', label: 'Хянагдаж буй', color: '#7C3AED',
+        rows: _pick('review', review), empty: 'Хянах зүйл алга' },
+      { key: 'closed', label: 'Баталгаажсан', color: '#16A34A',
+        rows: _pick('closed', closed), empty: 'Дууссан даалгавар алга' }
+    ];
+    html += taskBoardHTML(cols, _ctx);
+    sec.innerHTML = html;
+    taskWire(sec);
+    return;
+  }
+
   /* ⭐ Шүүлт идэвхтэй бол ЗӨВХӨН тухайн бүлгийг харуулна */
   var _V = TASK_VIEW;
   var _show = function (k) { return _V === 'all' || _V === k; };
@@ -29046,11 +29267,26 @@ function renderTasks() {
     ((closed.length && _show('closed')) ? '<h3 style="margin:18px 0 10px;font-size:15px;color:#94A3B8">Баталгаажсан ' + closed.length + '</h3>' + closed.map(taskCard).join('') : '');
 
   sec.innerHTML = html;
+  taskWire(sec);
+}
 
-  if (!sec._taskWired) {
+function taskWire(sec) {
+  if (!sec) return;
+  {
+    if (sec._taskWired) return;
     sec._taskWired = true;
     sec.addEventListener('click', function (ev) {
       if (ev.target.closest('#taskAdd')) { actionAddTask(); return; }
+
+      /* Харагдац солих */
+      var md = ev.target.closest('[data-task-mode]');
+      if (md) { TASK_MODE = md.getAttribute('data-task-mode'); renderTasks(); return; }
+
+      /* Богино карт дээр дарж дэлгэрэнгүй */
+      var op = ev.target.closest('[data-task-open]');
+      if (op && !ev.target.closest('button') && !ev.target.closest('a')) {
+        taskDetailModal(op.getAttribute('data-task-open')); return;
+      }
 
       /* Тоон хайрцаг дээр дарж шүүнэ */
       var vw = ev.target.closest('[data-task-view]');
