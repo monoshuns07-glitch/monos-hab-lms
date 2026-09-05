@@ -16014,7 +16014,16 @@ function rfDashData(all) {
     }
   });
   if (vN) d.avgVerifyH = vSum / vN;
-  d.open = d.pending + d.inRepair;      /* шийдвэрлэгдээгүй */
+  /* ⚠⚠ 2026-09-05: ӨМНӨ энд `d.pending + d.inRepair` гэж НИЙЛБЭР авдаг байв.
+     Гэтэл нэг мэдээлэл ХОЁУЛАНД нь орж болно: ХАБ хараахан баталгаажуулаагүй
+     (status='reported') атлаа ажилтан аль хэдийн хүлээж авч засварт орсон.
+     Ийм мөр ХОЁР УДАА тоологдож, 13 мэдээлэлтэй атал «19 шийдвэрлэгдээгүй»
+     гэж худал том тоо гардаг байсан. Одоо ДАВХАРДАЛГҮЙ мөрөөр тоолно —
+     доорх дэлгэрэнгүй жагсаалттай яг ижил нөхцөл. */
+  d.openRows = (d.rows || []).filter(function (r) {
+    return r.status === 'reported' || (r.wkClaimBy && r.wkClaimBy.uid && wkStatus(r) !== 'closed');
+  });
+  d.open = d.openRows.length;           /* шийдвэрлэгдээгүй */
   return d;
 }
 
@@ -16052,9 +16061,7 @@ function rfHeroHTML(d) {
     '<div>' +
     '<div style="font-size:12px;font-weight:700;color:' + RF_INK.m + ';letter-spacing:.3px">ШИЙДВЭРЛЭГДЭЭГҮЙ АЮУЛ</div>' +
     '<div' + rfHit(rfDrill('Шийдвэрлэгдээгүй', 'Баталгаажаагүй ба засварт байгаа',
-      d.rows.filter(function (r) {
-        return r.status === 'reported' || (r.wkClaimBy && wkStatus(r) !== 'closed');
-      })), 'Шийдвэрлэгдээгүй') + 'class="rf-hit" style="cursor:pointer;display:inline-block;' +
+      d.openRows || []), 'Шийдвэрлэгдээгүй') + 'class="rf-hit" style="cursor:pointer;display:inline-block;' +
     'font-size:52px;line-height:1.05;font-weight:800;border-radius:11px;padding:0 8px;margin-left:-8px;color:' +
     (d.open ? '#C81E3A' : '#0ca30c') + ';font-family:inherit">' + d.open + '</div>' +
     '<div style="font-size:12.5px;color:' + RF_INK.s + ';margin-top:2px">' +
