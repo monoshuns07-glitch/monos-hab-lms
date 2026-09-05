@@ -18504,6 +18504,9 @@ function wkMoveModal(id) {
       }]);
       x.wkGate = to;
       x.wkClaimBy = null;              /* шинэ алба дахин хүлээж авна */
+      /* ⚠ Хариуцагчийг ч чөлөөлнө — өмнөх албаны ахлах шинэ албаны ажлыг
+         хариуцсан хэвээр үлдэх нь буруу (2026-09-05) */
+      x.wkOwner = null;
     }, '↪ ' + g.ab + ' руу шилжүүллээ');
     if (rr) wkNotifyGate(rr, 'moved');
   });
@@ -19807,6 +19810,10 @@ async function wkMirrorPull(all) {
     if (m.autoAssign && m.autoAssign.uid && !(r.wkClaimBy && r.wkClaimBy.uid)) {
       r.wkClaimBy = { uid: m.autoAssign.uid, name: m.autoAssign.name || '',
         pos: '', at: m.autoAssign.at || new Date().toISOString(), auto: true };
+      if (!(r.wkOwner && r.wkOwner.uid)) {
+        r.wkOwner = { uid: m.autoAssign.uid, name: m.autoAssign.name || '',
+          pos: '', at: r.wkClaimBy.at, auto: true };
+      }
       ch = true;
     }
     if (ch) { n++; try { reportPushToServer(r); } catch (e) {} }
