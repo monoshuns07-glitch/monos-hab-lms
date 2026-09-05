@@ -3,7 +3,7 @@
    HTML/JS-ийг КЭШЛЭХГҮЙ — үргэлж сүлжээнээс шинийг авна (хуучин хувилбар үлдэхээс сэргийлнэ).
    Зөвхөн icon/manifest зэрэг статик жижиг файлыг кэшэлнэ. */
 
-const CACHE = 'monos-hab-static-v4';
+const CACHE = 'monos-hab-static-v5';
 const STATIC_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -76,7 +76,11 @@ self.addEventListener('push', (e) => {
     tag: d.tag || (urgent ? ('mh-urgent-' + (d.id || Date.now())) : 'monos-hab-mea'),
     renotify: true,
     requireInteraction: urgent,
-    vibrate: urgent ? [300, 120, 300, 120, 300, 120, 500] : [90, 45, 90],
+    /* ⚠ Яаралтай үед МАШ УРТ, давтамжтай чичиргээ — гар халаасанд, гар дээр
+       байсан ч анзаарагдана. Нийт ~7 секунд үргэлжилнэ. */
+    vibrate: urgent
+      ? [700, 250, 700, 250, 700, 250, 1200, 350, 700, 250, 700, 250, 1200]
+      : [90, 45, 90],
     data: { url: d.url || '/kpi/?page=tasks', urgent: urgent },
     actions: [{ action: 'open', title: urgent ? 'Одоо хийх' : 'Нээх' }]
   };
