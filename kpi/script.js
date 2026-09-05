@@ -19336,9 +19336,17 @@ function wkRowHTML(r) {
     '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
     '<span style="background:' + k.bg + ';color:' + k.c + ';border-radius:6px;padding:2px 8px;' +
     'font-size:11px;font-weight:900">' + k.ab + '</span>' +
-    '<span style="width:20px;height:20px;border-radius:6px;background:' + wkUrgColor(u) +
+    /* ⚠ Ганц цифр «4» гэдэг нь хэн бүхэнд ойлгомжгүй. Тэр зэрэг ХЭДЭН ХОНОГ
+       гэдгийг ХАЖУУД НЬ бичнэ. Цаг нь тухайн бичлэгт түгжигдсэн утга
+       (`wkHoursOf`) — тохиргоо солигдсон ч энэ ажлын хугацаа хөдлөхгүй. */
+    '<span style="display:inline-flex;align-items:center;gap:5px;background:' + wkUrgColor(u) +
+    '14;border:1px solid ' + wkUrgColor(u) + '3D;border-radius:7px;padding:1px 7px 1px 2px"' +
+    ' title="Яаралтай зэрэг ' + u + ' — ' + esc(wkHoursText(wkHoursOf(r))) + ' дотор хийгдэх ёстой">' +
+    '<span style="width:19px;height:19px;border-radius:5px;background:' + wkUrgColor(u) +
     ';color:#fff;font-size:11.5px;font-weight:900;display:inline-flex;align-items:center;' +
-    'justify-content:center" title="Яаралтай зэрэг">' + u + '</span>' +
+    'justify-content:center;flex:0 0 auto">' + u + '</span>' +
+    '<span style="font-size:11px;font-weight:800;color:' + wkUrgColor(u) + '">' +
+    esc(wkHoursText(wkHoursOf(r))) + '</span></span>' +
     '<span style="background:' + S.bg + ';color:' + S.c + ';border-radius:6px;padding:2px 8px;' +
     'font-size:11px;font-weight:800">' + S.l + '</span>' +
     '<span style="background:#F1F5F9;color:#475569;border-radius:6px;padding:2px 8px;font-size:11px;' +
