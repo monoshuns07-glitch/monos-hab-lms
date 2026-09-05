@@ -19406,8 +19406,11 @@ function wkRowHTML(r) {
     ';border-left:4px solid ' + k.c + ';border-radius:12px;padding:12px 14px;margin-bottom:9px;' +
     'cursor:pointer;background:' + (t && t.late ? '#FFFBFB' : '#fff') + '">' +
     '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:5px">' +
-    '<span style="background:' + k.bg + ';color:' + k.c + ';border-radius:6px;padding:2px 8px;' +
-    'font-size:11px;font-weight:900">' + k.ab + '</span>' +
+    /* Дүүрэн өнгөтэй, том үсэгтэй, дүрстэй — гүйлгэж байхад ажил уу,
+       аюул уу гэдэг нь нэг харцаар ялгарна. */
+    '<span style="background:' + k.c + ';color:#fff;border-radius:6px;padding:2px 9px;' +
+    'font-size:11px;font-weight:900;letter-spacing:.03em">' +
+    (k.k === 'job' ? '🔧 ' : '⚠ ') + esc(String(k.ab).toUpperCase()) + '</span>' +
     /* ⚠ Ганц цифр «4» гэдэг нь хэн бүхэнд ойлгомжгүй. Тэр зэрэг ХЭДЭН ХОНОГ
        гэдгийг ХАЖУУД НЬ бичнэ. Цаг нь тухайн бичлэгт түгжигдсэн утга
        (`wkHoursOf`) — тохиргоо солигдсон ч энэ ажлын хугацаа хөдлөхгүй. */
@@ -19460,6 +19463,127 @@ function wkRowHTML(r) {
 
 /* ── ЖАГСААЛТ ── */
 var WK_TAB = 'in';
+
+/* ══ АЮУЛ / АЖИЛ — ХАЙХ, ШҮҮХ ═══════════════════════════════════════
+   ⚠ Өмнө нь ажил ба аюул нэг жагсаалтад хольцтой байж, хайлт огт
+   байгаагүй. Энэ шүүлт нь БҮХ таб дээр ажиллана. */
+var WK_Q = '', WK_KIND = 'all', WK_LOC = '', WK_ST = '', WK_LATE = false;
+
+function wkFilterOn() {
+  return !!(WK_Q || WK_KIND !== 'all' || WK_LOC || WK_ST || WK_LATE);
+}
+
+/* Хайлтад хамрах бүх текстийг нэг мөр болгоно */
+function wkHay(r) {
+  var p = [r.desc, r.location, r.locGroup, r.locSub, r.dept, r.type,
+           r.reporterName, r.reporterFull, r.wkHazText, r.wkExecNote, r.id];
+  try { if (r.wkClaimBy) p.push(r.wkClaimBy.name, r.wkClaimBy.full); } catch (e) {}
+  try { if (r.wkOwner) p.push(r.wkOwner.name, r.wkOwner.full); } catch (e) {}
+  try {
+    (r.wkHaz || []).forEach(function (h) {
+      var t = wkHazType(h); if (t) p.push(t.mn);
+    });
+  } catch (e) {}
+  return p.filter(Boolean).join(' ').toLowerCase();
+}
+
+function wkFilterApply(list) {
+  var q = String(WK_Q || '').trim().toLowerCase();
+  return (list || []).filter(function (r) {
+    var isJob = false;
+    try { isJob = wkKindOf(r).k === 'job'; } catch (e) {}
+    if (WK_KIND === 'job' && !isJob) return false;
+    if (WK_KIND === 'hz' && isJob) return false;
+    if (WK_LOC && String(r.locGroup || '') !== WK_LOC) return false;
+    if (WK_ST && wkStatus(r) !== WK_ST) return false;
+    if (WK_LATE) { var t = wkTime(r); if (!t || !t.late) return false; }
+    if (q && wkHay(r).indexOf(q) < 0) return false;
+    return true;
+  });
+}
+
+/* Шүүлтийн мөр. `base` — шүүхээс ӨМНӨХ жагсаалт (сонголтуудыг үүнээс
+   гаргана), `shown` — шүүсний дараах тоо. */
+function wkFilterBarHTML(base, shown) {
+  var nJob = 0, nHz = 0, nLate = 0, locs = {};
+  (base || []).forEach(function (r) {
+    var isJob = false;
+    try { isJob = wkKindOf(r).k === 'job'; } catch (e) {}
+    if (isJob) nJob++; else nHz++;
+    var t = wkTime(r); if (t && t.late) nLate++;
+    var g = String(r.locGroup || '').trim(); if (g) locs[g] = (locs[g] || 0) + 1;
+  });
+  var kinds = [
+    ['all', 'Бүгд', base.length, '#4F46E5'],
+    ['job', '🔧 Ажил', nJob, '#1D4ED8'],
+    ['hz', '⚠ Аюул · ОДТ', nHz, '#B45309']
+  ];
+  var sel = function (id, cur, opts) {
+    return '<select data-wk-f="' + id + '" style="border:1.5px solid #E2E8F0;border-radius:9px;' +
+      'padding:7px 9px;font-family:inherit;font-size:12.5px;color:#334155;background:#fff;' +
+      'max-width:190px">' +
+      opts.map(function (o) {
+        return '<option value="' + esc(o[0]) + '"' + (String(cur) === String(o[0]) ? ' selected' : '') +
+          '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select>';
+  };
+  var locOpts = [['', 'Бүх байршил']].concat(
+    Object.keys(locs).sort(function (a, b) { return locs[b] - locs[a]; })
+      .map(function (g) { return [g, g + ' (' + locs[g] + ')']; }));
+
+  return '<div style="margin-top:11px;padding-top:11px;border-top:1px solid #F1F5F9">' +
+    /* Хайх талбар */
+    '<div style="position:relative;margin-bottom:9px">' +
+    '<i class="ti ti-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);' +
+    'color:#94A3B8;font-size:15px"></i>' +
+    '<input id="wkSearch" value="' + esc(WK_Q) + '" placeholder="Хайх — тайлбар, байршил, хүний нэр…" ' +
+    'style="width:100%;border:1.5px solid #E2E8F0;border-radius:10px;padding:9px 34px 9px 34px;' +
+    'font-family:inherit;font-size:13.5px;background:#fff">' +
+    (WK_Q ? '<button data-wk-f="clearq" style="position:absolute;right:8px;top:50%;' +
+      'transform:translateY(-50%);border:none;background:#F1F5F9;color:#64748B;border-radius:7px;' +
+      'width:22px;height:22px;cursor:pointer;font-family:inherit;font-weight:800;line-height:1">✕</button>' : '') +
+    '</div>' +
+    /* Төрөл + сонголтууд */
+    '<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">' +
+    kinds.map(function (k) {
+      var on = WK_KIND === k[0];
+      return '<button data-wk-kind="' + k[0] + '" style="border:1.5px solid ' +
+        (on ? k[3] : '#E2E8F0') + ';background:' + (on ? k[3] : '#fff') +
+        ';color:' + (on ? '#fff' : '#334155') + ';border-radius:9px;padding:6px 11px;cursor:pointer;' +
+        'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + k[1] +
+        '<span style="margin-left:5px;opacity:.75;font-weight:700">' + k[2] + '</span></button>';
+    }).join('') +
+    (locOpts.length > 1 ? sel('loc', WK_LOC, locOpts) : '') +
+    sel('st', WK_ST, [['', 'Бүх төлөв'], ['new', 'Шинэ'], ['claimed', 'Хүлээж авсан'],
+      ['executed', 'Гүйцэтгэсэн'], ['closed', 'Дууссан']]) +
+    (nLate ? '<button data-wk-f="late" style="border:1.5px solid ' + (WK_LATE ? '#C81E3A' : '#FECACA') +
+      ';background:' + (WK_LATE ? '#C81E3A' : '#FEF2F2') + ';color:' + (WK_LATE ? '#fff' : '#991B1B') +
+      ';border-radius:9px;padding:6px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;' +
+      'font-weight:800">⏰ Хугацаа хэтэрсэн ' + nLate + '</button>' : '') +
+    '</div>' +
+    (wkFilterOn()
+      ? '<div style="display:flex;align-items:center;gap:9px;margin-top:9px;font-size:12.5px;color:#64748B">' +
+        '<b style="color:#1E293B">' + shown + '</b> олдлоо (' + base.length + '-аас)' +
+        '<button data-wk-f="clear" style="border:1.5px solid #E2E8F0;background:#fff;border-radius:999px;' +
+        'padding:3px 11px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:700;' +
+        'color:#334155">✕ Шүүлт цэвэрлэх</button></div>'
+      : '') +
+    '</div>';
+}
+
+/* Хуудас дахин зурагдахад бичиж байсан талбарын фокус, курсор хэвээр үлдэнэ.
+   ⚠ Үүнгүйгээр хайх талбарт нэг үсэг бичих бүрд гараас салдаг. */
+function wkKeepFocus(fn) {
+  var el = document.activeElement;
+  var id = el && el.id, a = null, b = null;
+  try { a = el.selectionStart; b = el.selectionEnd; } catch (e) {}
+  fn();
+  if (!id) return;
+  var n = document.getElementById(id);
+  if (!n) return;
+  try { n.focus(); if (a != null && n.setSelectionRange) n.setSelectionRange(a, b); } catch (e) {}
+}
+
 function wkListHTML(all) {
   var me = reqMe() || {};
   var myGate = wkMyGate();
@@ -19530,19 +19654,10 @@ function wkListHTML(all) {
   /* ⭐ «Манай алба» табын дотоод шүүлт (2026-09-04):
      төрлөөр — ажлын захиалга уу, аюул уу; байршлаар — ШХҮ, ХХҮ, Агуулах…
      Албаны дарга «манай байршилд юу болж байна» гэдгийг шууд харна. */
-  var deptLocs = [];
-  if (WK_TAB === 'dept') {
-    var _lc = {};
-    deptRows.forEach(function (r) { var g = String(r.locGroup || '').trim(); if (g) _lc[g] = (_lc[g] || 0) + 1; });
-    deptLocs = Object.keys(_lc).sort(function (a, b) { return _lc[b] - _lc[a]; })
-      .map(function (g) { return { g: g, n: _lc[g] }; });
-    list = list.filter(function (r) {
-      if (WK_DEPT_KIND === 'wk' && !r.wkKind) return false;
-      if (WK_DEPT_KIND === 'hz' && r.wkKind) return false;
-      if (WK_DEPT_LOC && String(r.locGroup || '') !== WK_DEPT_LOC) return false;
-      return true;
-    });
-  }
+  /* ⚠ Өмнө нь энд ЗӨВХӨН «Манай алба» табын шүүлт байсан. Одоо доорх
+     ерөнхий шүүлт БҮХ табад ажиллах тул түүнийг хассан. */
+  var wkBase = list;
+  list = wkFilterApply(list);
 
   var H = '<div class="card" style="padding:14px 16px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px">' +
@@ -19566,8 +19681,21 @@ function wkListHTML(all) {
           ';color:' + (on ? '#fff' : (t.tone ? '#fff' : '#4F46E5')) + ';border-radius:6px;padding:1px 6px;' +
           'font-size:11px;font-weight:800">' + t.n + '</span>' : '') + '</button>';
     }).join('') + '</div>' +
-    (WK_TAB === 'dept' ? wkDeptFilterHTML(deptRows, deptLocs) : '') +
+    wkFilterBarHTML(wkBase, list.length) +
     wkMyImpactHTML(mineRep) + '</div>';
+
+  /* Шүүлтээс болж хоосорсон бол «юу ч алга» гэж БУРУУ хэлэхгүй —
+     хайлтаа өөрчлөх гарц санал болгоно. */
+  if (!list.length && wkBase.length && wkFilterOn()) {
+    return H + '<div class="card" style="padding:30px;text-align:center">' +
+      '<div style="font-size:28px">🔍</div>' +
+      '<div style="font-size:13.5px;font-weight:700;color:#1E293B;margin-top:6px">' +
+      'Хайлтад тохирох зүйл олдсонгүй</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:4px;line-height:1.5">' +
+      'Энэ хэсэгт ' + wkBase.length + ' бичлэг байна. Хайх үгээ богиносгох, эсвэл шүүлтээ цэвэрлэж үзнэ үү.</div>' +
+      '<button data-wk-f="clear" class="btn btn-secondary btn-sm" style="margin-top:12px">' +
+      '✕ Шүүлт цэвэрлэх</button></div>';
+  }
 
   if (!list.length) {
     /* ⭐ Хоосон дэлгэц нь «юу ч алга» гэсэн хүйтэн мэдэгдэл биш, тухайн
@@ -21861,7 +21989,24 @@ function rfAfter(sec, admin, pending) {
   /* ⚠ <select> нь click биш CHANGE үйлдэл өгдөг — тусад нь холбоно */
   sec.addEventListener('change', function (ev) {
     var ds = ev.target.closest && ev.target.closest('[data-rf-dept]');
-    if (ds) { RF_DASH.dept = ds.value || ''; renderReportflow(); }
+    if (ds) { RF_DASH.dept = ds.value || ''; renderReportflow(); return; }
+    var wf = ev.target.closest && ev.target.closest('[data-wk-f]');
+    if (wf) {
+      var k = wf.getAttribute('data-wk-f');
+      if (k === 'loc') WK_LOC = wf.value || '';
+      else if (k === 'st') WK_ST = wf.value || '';
+      else return;
+      renderReportflow();
+    }
+  });
+  /* Хайх талбар — бичих бүрд шүүнэ. Хуудас дахин зурагддаг тул
+     фокусыг гараар буцаана. */
+  sec.addEventListener('input', function (ev) {
+    var si = ev.target.closest && ev.target.closest('#wkSearch');
+    if (!si) return;
+    WK_Q = si.value || '';
+    clearTimeout(sec._wkQT);
+    sec._wkQT = setTimeout(function () { wkKeepFocus(renderReportflow); }, 180);
   });
   sec.addEventListener('click', function (ev) {
     /* ── таб ── */
@@ -21872,6 +22017,19 @@ function rfAfter(sec, admin, pending) {
     if (ev.target.closest('[data-wk-admin]')) { wkAdminModal(); return; }
     var wt = ev.target.closest('[data-wk-tab]');
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
+    /* ── Шүүлт: төрөл, цэвэрлэх, хугацаа хэтэрсэн ── */
+    var kb = ev.target.closest('[data-wk-kind]');
+    if (kb) { ev.stopPropagation(); WK_KIND = kb.getAttribute('data-wk-kind'); renderReportflow(); return; }
+    var fb = ev.target.closest('[data-wk-f]');
+    if (fb) {
+      ev.stopPropagation();
+      var fk = fb.getAttribute('data-wk-f');
+      if (fk === 'clear') { WK_Q = ''; WK_KIND = 'all'; WK_LOC = ''; WK_ST = ''; WK_LATE = false; }
+      else if (fk === 'clearq') WK_Q = '';
+      else if (fk === 'late') WK_LATE = !WK_LATE;
+      else return;
+      renderReportflow(); return;
+    }
     var dk = ev.target.closest('[data-wk-dkind]');
     if (dk) { ev.stopPropagation(); WK_DEPT_KIND = dk.getAttribute('data-wk-dkind'); renderReportflow(); return; }
     var dl = ev.target.closest('[data-wk-dloc]');
