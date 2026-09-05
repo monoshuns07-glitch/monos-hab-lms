@@ -15986,7 +15986,7 @@ function rfDashData(all) {
     }
 
     /* ── Зураг хавсаргасан эсэх (маягтын 5-р алхам) ── */
-    if (r.photo && String(r.photo).length > 100) d.hasPhoto.push(r); else d.noPhoto.push(r);
+    if (hasImg(r.photo)) d.hasPhoto.push(r); else d.noPhoto.push(r);
 
     /* ── Хугацаанд багтсан эсэх ── */
     var hrs = wkUrgHours(wkUrg(r));
@@ -16635,7 +16635,7 @@ function rfExportHTML(all) {
                 : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
               wk: WK_STATUS[wkStatus(r)] ? WK_STATUS[wkStatus(r)].l : '',
               doer: (r.wkClaimBy && r.wkClaimBy.name) || '',
-              photo: r.photo && String(r.photo).length > 100 ? 'тийм' : 'үгүй'
+              photo: hasImg(r.photo) ? 'тийм' : 'үгүй'
             };
           })
         };
@@ -16795,7 +16795,7 @@ function rfExportXlsx(all) {
           (r.wkClaimBy && r.wkClaimBy.name) || '',
           String(r.wkExecAt || '').slice(0, 16).replace('T', ' '),
           r.wkAccept === 'done' ? 'Тийм' : r.wkAccept === 'reject' ? 'Буцаасан' : '',
-          (r.photo && String(r.photo).length > 100) ? 'тийм' : 'үгүй'
+          hasImg(r.photo) ? 'тийм' : 'үгүй'
         ]);
       });
       add('Бүх мэдээлэл', rows);
@@ -18031,7 +18031,7 @@ function wkDoneTime(r) { return (r && (r.wkDoneAt || r.wkExecAt)) || ''; }
 /* Ажил үнэхээр хийгдсэн нотолгоо бий юу */
 function wkHasProof(r) {
   if (!r) return false;
-  if (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) return true;
+  if (hasImg(r.wkExecPhoto)) return true;
   return String(r.wkExecNote || '').trim().length >= 8;
 }
 function wkTrustFlags(r) {
@@ -19239,7 +19239,7 @@ function wkProofHTML(r) {
   var who = (r.wkExecBy && r.wkExecBy.name) || (r.wkClaimBy && r.wkClaimBy.name) || '';
   var pos = (r.wkExecBy && r.wkExecBy.pos) || '';
   var note = String(r.wkExecNote || '').trim();
-  var img = (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) ? r.wkExecPhoto : '';
+  var img = hasImg(r.wkExecPhoto) ? r.wkExecPhoto : '';
   var when = '';
   try { when = ackDateMn(wkDoneTime(r) || r.wkExecAt); } catch (e) { when = String(r.wkExecAt).slice(0, 10); }
   return '<div style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;' +
@@ -19262,7 +19262,7 @@ function wkExecLogHTML(r) {
   var L = (r && r.wkExecLog) || [];
   if (!L.length) return '';
   return L.map(function (x, i) {
-    var img = (x.photo && String(x.photo).length > 100) ? x.photo : '';
+    var img = hasImg(x.photo) ? x.photo : '';
     var d = '';
     try { d = ackDateMn(x.at); } catch (e) { d = String(x.at || '').slice(0, 10); }
     return '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;' +
@@ -20217,6 +20217,17 @@ function imgFailToast(f) {
 
 /* base64 зургийг R2-д байршуулж ХОЛБООС буцаана.
    ⚠ Амжилтгүй бол base64-ээ хэвээр буцаана — зураг хэзээ ч алдагдахгүй. */
+/* ⚠ 2026-09-05: Зураг байгаа эсэхийг «урт нь 100-аас их үү» гэж шалгадаг байв.
+   Тэр нь base64-д зориулсан. Зургийг R2 руу зөөсний дараа утга нь ~89 тэмдэгт
+   ХОЛБООС болсон тул шалгуур унаж, зураг ХАРАГДАХАА БОЛЬСОН. Одоо аль ч
+   хэлбэрийг зөв таьна. */
+function hasImg(v) {
+  var t = String(v || '').trim();
+  if (!t) return false;
+  if (t.indexOf('data:') === 0) return t.length > 100;   /* base64 */
+  return /^https?:\/\//i.test(t);                         /* R2 холбоос */
+}
+
 function wkPhotoToR2(durl, cb) {
   if (!durl || String(durl).indexOf('data:') !== 0) { cb(durl); return; }
   (async function () {
@@ -20398,7 +20409,7 @@ function wkSheetRows(r) {
     ['Дуусах хугацаа', due],
     ['Байршил', wkLocLabel(r) || r.location || ''],
     ['Тайлбар', String(r.desc || '')],
-    ['Зураг хавсаргасан', (r.photo && String(r.photo).length > 100) ? 'Тийм' : 'Үгүй'],
+    ['Зураг хавсаргасан', hasImg(r.photo) ? 'Тийм' : 'Үгүй'],
     [],
     ['МЭДЭЭЛСЭН АЖИЛТАН'],
     ['Овог нэр', r.reporterFull || r.reporterName || ''],
@@ -20413,7 +20424,7 @@ function wkSheetRows(r) {
     ['Хүлээж авсан', (cl.name || '') + (cl.pos ? '  ·  ' + cl.pos : '') + (cl.at ? '   ' + dt(cl.at) : '')],
     ['Гүйцэтгэсэн огноо', dt(r.wkExecAt)],
     ['Гүйцэтгэлийн тайлбар', String(r.wkExecNote || '')],
-    ['Баталгааны зураг', (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) ? 'Тийм' : 'Үгүй'],
+    ['Баталгааны зураг', hasImg(r.wkExecPhoto) ? 'Тийм' : 'Үгүй'],
     ['Мэдээлсэн хүн баталсан',
       r.wkAccept === 'done' ? ('Тийм' + (ac.name ? '  ·  ' + ac.name : '') + (ac.at ? '   ' + dt(ac.at) : ''))
         : r.wkAccept === 'reject' ? ('Буцаасан: ' + (r.wkRejectWhy || '')) : ''],
