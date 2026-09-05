@@ -18778,6 +18778,14 @@ function wkAcceptModal(id) {
       var r2 = wkPatch(id, function (x) {
         x.wkAccept = 'reject'; x.wkRejectWhy = why;
         x.wkRejectAt = new Date().toISOString();
+        /* ⚠ 2026-09-05: ӨМНӨ энд гүйцэтгэлийн зураг, тайлбарыг ШУУД УСТГАДАГ
+           байв. Тиймээс «эхний удаа юу хийсэн бэ, яагаад буцаагдсан бэ»
+           гэдэг баримт бүрмөсөн алга болно. Одоо ТҮҮХЭД хадгална. */
+        x.wkExecLog = (x.wkExecLog || []).concat([{
+          at: x.wkExecAt || '', note: x.wkExecNote || '', photo: x.wkExecPhoto || '',
+          by: (x.wkExecBy && x.wkExecBy.name) || (x.wkClaimBy && x.wkClaimBy.name) || '',
+          rejectWhy: why, rejectAt: x.wkRejectAt
+        }]);
         /* Гүйцэтгэлийг цуцалж, албандаа буцаана */
         x.wkExecAt = ''; x.wkExecNote = ''; x.wkExecPhoto = '';
       }, '↩ Ажил буцаагдлаа');
@@ -19217,6 +19225,54 @@ function wkNextStep(r) {
 }
 
 /* ── Явцын зурвас + дараагийн алхмын хайрцаг ───────────────────────── */
+/* ГҮЙЦЭТГЭЛИЙН БАТАЛГАА — хийсэн ажлын тайлбар, зураг, огноо, гүйцэтгэгч.
+   Гүйцэтгэсэн агшнаас хойш ҮРГЭЛЖ харагдана (батлагдсаны дараа ч). */
+function wkProofHTML(r) {
+  if (!r || !r.wkExecAt) return '';
+  var who = (r.wkExecBy && r.wkExecBy.name) || (r.wkClaimBy && r.wkClaimBy.name) || '';
+  var pos = (r.wkExecBy && r.wkExecBy.pos) || '';
+  var note = String(r.wkExecNote || '').trim();
+  var img = (r.wkExecPhoto && String(r.wkExecPhoto).length > 100) ? r.wkExecPhoto : '';
+  var when = '';
+  try { when = ackDateMn(wkDoneTime(r) || r.wkExecAt); } catch (e) { when = String(r.wkExecAt).slice(0, 10); }
+  return '<div style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:12px;' +
+    'padding:12px 14px;margin-bottom:13px">' +
+    '<div style="font-size:11px;font-weight:900;color:#475569;letter-spacing:.05em;margin-bottom:7px">' +
+    '🧾 ГҮЙЦЭТГЭЛИЙН БАТАЛГАА</div>' +
+    '<div style="font-size:12.5px;color:#334155;line-height:1.6">' +
+    '<b>' + esc(who || '—') + '</b>' + (pos ? ' · ' + esc(pos) : '') +
+    (when ? ' · ' + esc(when) : '') + '</div>' +
+    (note ? '<div style="font-size:13px;color:#1E293B;line-height:1.6;margin-top:6px;' +
+      'white-space:pre-wrap">' + esc(note) + '</div>' : '') +
+    (img ? '<img src="' + img + '" alt="Гүйцэтгэлийн зураг" ' +
+      'style="max-width:100%;border-radius:11px;margin-top:9px;display:block">'
+        : '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">Зураг хавсаргаагүй</div>') +
+    '</div>' + wkExecLogHTML(r);
+}
+
+/* Буцаагдсан өмнөх оролдлогууд — юу хийж, яагаад буцаагдсаныг харуулна */
+function wkExecLogHTML(r) {
+  var L = (r && r.wkExecLog) || [];
+  if (!L.length) return '';
+  return L.map(function (x, i) {
+    var img = (x.photo && String(x.photo).length > 100) ? x.photo : '';
+    var d = '';
+    try { d = ackDateMn(x.at); } catch (e) { d = String(x.at || '').slice(0, 10); }
+    return '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;' +
+      'padding:11px 13px;margin-bottom:11px">' +
+      '<div style="font-size:11px;font-weight:900;color:#B45309;letter-spacing:.05em">' +
+      '↩ БУЦААГДСАН ОРОЛДЛОГО ' + (i + 1) + '</div>' +
+      '<div style="font-size:12.5px;color:#334155;margin-top:5px">' +
+      esc(x.by || '—') + (d ? ' · ' + esc(d) : '') + '</div>' +
+      (x.note ? '<div style="font-size:12.5px;color:#1E293B;margin-top:4px;white-space:pre-wrap">' +
+        esc(x.note) + '</div>' : '') +
+      (img ? '<img src="' + img + '" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">' : '') +
+      (x.rejectWhy ? '<div style="font-size:12px;color:#92400E;margin-top:7px">' +
+        '<b>Буцаасан шалтгаан:</b> ' + esc(x.rejectWhy) + '</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
 function wkFlowHTML(r) {
   if (!r || !r.wkKind) return '';        /* зөвхөн ажлын захиалга/аюулын урсгалд */
   var st = wkStatus(r);
@@ -19260,9 +19316,11 @@ function wkFlowHTML(r) {
     return bar + '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;' +
       'padding:12px 15px;margin-bottom:13px">' +
       '<div style="font-size:13px;font-weight:800;color:#15803D">✅ Ажил бүрэн дууссан</div>' +
-      '<div style="font-size:12.5px;color:#166534;margin-top:3px">Хийх зүйл үлдээгүй.</div></div>';
+      '<div style="font-size:12.5px;color:#166534;margin-top:3px">Хийх зүйл үлдээгүй.</div></div>' +
+      wkProofHTML(r);          /* ⭐ хийсэн ажлын зураг, тайлбар ЭНД ҮЛДЭНЭ */
   }
 
+  var proof = wkProofHTML(r);   /* гүйцэтгэсэн бол баталгааг дараагийн алхмын дээр */
   var nx = wkNextStep(r);
   var t = wkTime(r);
   var late = t && t.late;
@@ -19270,7 +19328,7 @@ function wkFlowHTML(r) {
   var bg = late ? '#FEF2F2' : '#FFFBEB', bd = late ? '#FECACA' : '#FDE68A';
   var ink = late ? '#991B1B' : '#92400E', ink2 = late ? '#B91C1C' : '#B45309';
 
-  return bar +
+  return bar + proof +
     '<div style="background:' + bg + ';border:1.5px solid ' + bd + ';border-radius:12px;' +
     'padding:13px 15px;margin-bottom:13px">' +
     '<div style="font-size:11px;font-weight:900;color:' + ink + ';letter-spacing:.05em;margin-bottom:6px">' +
