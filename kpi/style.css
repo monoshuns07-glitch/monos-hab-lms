@@ -2588,3 +2588,75 @@ img, video, canvas, svg, table { max-width: 100%; }
 @media (pointer: coarse) {
   .btn, .nav-item, [data-rf-tab], [data-wk-tab], [data-rf-kind] { min-height: 40px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   ТӨХӨӨРӨМЖ БҮРД ТОХИРСОН ХАРАГДАЦ  (2026-09-05)
+   ⚠ ЭНЭ ХЭСЭГ ФАЙЛЫН ХАМГИЙН СҮҮЛД БАЙНА — дээрх дүрмүүдийг
+     ЗОРИУДААР дарж бичдэг. Дэлгэцийн хэмжээтэй холбоотой шинэ
+     дүрмийг энд нэм, тэгвэл тохиргоо тарж бутрахгүй.
+
+   Ангилал:  утас ≤560 · том утас 561–768 · таблет 769–1024 ·
+             зөөврийн 1025–1600 · том дэлгэц ≥1601
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── ТАБЛЕТ ба доош (≤1024) ───────────────────────────────────────
+   ⚠ Хажуугийн цэс 264px эзэлдэг тул 820px таблет дээр агуулгад ердөө
+   ~550px үлддэг байв. Одоо цэс товшилтоор гарч, бүтэн өргөн ашиглана.
+   ⚠ Энэ 1024 тоо нь script.js доторх navIsDrawer()-тэй ЗААВАЛ таарна. */
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .22s ease, box-shadow .22s ease;
+    box-shadow: 0 0 0 100vmax rgba(15, 17, 40, 0);
+  }
+  .sidebar.open { transform: translateX(0); box-shadow: 0 0 0 100vmax rgba(15, 17, 40, .45); }
+  .main { margin-left: 0; }
+  .menu-toggle { display: block; }
+  .page { padding: 24px 22px 96px; }
+  .kpi-cat-grid, .training-grid, .ppe-grid,
+  .report-grid, .source-grid, .suggest-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── ГАР УТАС (≤560) ──────────────────────────────────────────────
+   Зорилго: нэг гараар ажиллах. Гарчиг намсаж, зай багасаж, доод
+   хөвөгч товчнуудын ард агуулга НУУГДАХГҮЙ болно. */
+@media (max-width: 560px) {
+  .page { padding: 15px 12px 118px; }
+  .page-header { margin-bottom: 16px; gap: 12px; align-items: flex-start; }
+  .page h1 { font-size: 21px; line-height: 1.25; }
+  .page-subtitle { font-size: 12.5px; line-height: 1.45; }
+  .page-actions { width: 100%; }
+  .page-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .card { padding: 15px 14px; border-radius: 14px; }
+  h2 { font-size: 18px; }
+  h3 { font-size: 15px; }
+  .counter-num { font-size: 48px; }
+  .stat-strip { grid-template-columns: repeat(2, 1fr); gap: 9px; }
+  .btn { padding: 10px 13px; font-size: 13px; }
+  .topbar { gap: 10px; padding: 0 12px; }
+
+  /* Хөвөгч товчнууд — жижгэрч, бие биенээ ч агуулгыг ч дарахгүй.
+     ⚠ «Апп суулгах» нь pwa-init.js дотор inline загвартай тул
+     !important-гүйгээр дарж болохгүй. */
+  #hazardFab { width: 52px; height: 52px; right: 12px; bottom: 12px; }
+  #pwaInstallBtn {
+    right: 12px !important; bottom: 72px !important;
+    padding: 9px 13px !important; font-size: 12px !important;
+    border-radius: 12px !important;
+  }
+}
+
+/* ── ТОМ ДЭЛГЭЦ (≥1601) ───────────────────────────────────────────
+   Мөр хэт урт болбол нүд мөрөө алддаг — агуулгыг голлуулж хязгаарлана. */
+@media (min-width: 1601px) {
+  .page { max-width: 1560px; margin: 0 auto; padding: 32px 36px 72px; }
+  .topbar { padding: 0 36px; }
+}
+
+/* ── ХУРУУГААР АЖИЛЛАХ ТӨХӨӨРӨМЖ ──────────────────────────────────
+   Хулганы нарийн заагчгүй тул дарах талбай доод тал нь 40px байна. */
+@media (pointer: coarse) {
+  .btn, .set-nav, .nav-item { min-height: 40px; }
+  .table-wrap, .table-scroll, .data-table { -webkit-overflow-scrolling: touch; }
+}

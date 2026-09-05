@@ -4443,6 +4443,13 @@ function openMenu(anchor, items, onSelect) {
 }
 
 /* ============ Хуудас солих ============ */
+/* Хажуугийн цэс ТАТАГДДАГ (drawer) горимд байна уу.
+   ⚠ Энэ тоо нь style.css доторх «ТАБЛЕТ ба доош (≤1024)» хэсэгтэй
+   ЗААВАЛ таарч байх ёстой — хоёулаа зэрэг өөрчилнө. */
+function navIsDrawer() {
+  try { return (window.innerWidth || 1200) <= 1024; } catch (e) { return false; }
+}
+
 function switchPage(pageId) {
   // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
   if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
@@ -4469,7 +4476,7 @@ function switchPage(pageId) {
   var bc = $('#bcCurrent');
   if (bc) bc.textContent = pageLabels[pageId] || pageId;
   window.scrollTo({ top: 0, behavior: 'smooth' });
-  if (window.innerWidth < 768) { var sb = $('#sidebar'); if (sb) sb.classList.remove('open'); }
+  if (navIsDrawer()) { var sb = $('#sidebar'); if (sb) sb.classList.remove('open'); }
   if (pageId === 'dashboard') setTimeout(renderCharts, 60);
   // Динамикаар зурагддаг хуудсуудыг шинэчилнэ
   if (pageId === 'reportflow') renderReportflow();
@@ -31858,7 +31865,7 @@ function tourGo(i) {
   // Хаалттай мод цэс / далд хажуугийн цэсийг нээнэ
   var d = el.closest('details');
   while (d) { d.open = true; d = d.parentNode && d.parentNode.closest ? d.parentNode.closest('details') : null; }
-  if (el.closest('.sidebar') && window.innerWidth <= 768) {
+  if (el.closest('.sidebar') && navIsDrawer()) {
     var sb = document.querySelector('.sidebar');
     if (sb && !sb.classList.contains('open')) { sb.classList.add('open'); TOUR.sidebarOpened = true; }
   } else if (TOUR.sidebarOpened && !el.closest('.sidebar')) {
@@ -33174,7 +33181,7 @@ async function init() {
     switchPage('trn-mod');
     var bc = $('#bcCurrent'); if (bc) bc.textContent = TRAINING_MODULES[modKey] || modKey;
     try { renderTrainingModule(modKey); } catch (e2) { console.error('[trn-mod]', e2); }
-    try { if (window.innerWidth < 768) { var sb = $('#sidebar'); if (sb) sb.classList.remove('open'); } } catch (e2) {}
+    try { if (navIsDrawer()) { var sb = $('#sidebar'); if (sb) sb.classList.remove('open'); } } catch (e2) {}
   });
 
   /* Сургалтын ангилал (мод цэс) дээр дарахад тухайн хуудсыг харуулна */
@@ -33219,7 +33226,7 @@ async function init() {
   });
   /* Гар утас: хажуугийн цэс нээлттэй үед гадуур дарахад хаана */
   document.addEventListener('click', function (e) {
-    if (window.innerWidth >= 768) return;
+    if (!navIsDrawer()) return;
     var sb = $('#sidebar');
     if (!sb || !sb.classList.contains('open')) return;
     if (e.target.closest && (e.target.closest('#sidebar') || e.target.closest('.menu-toggle'))) return;
