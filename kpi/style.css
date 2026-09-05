@@ -2671,3 +2671,143 @@ img, video, canvas, svg, table { max-width: 100%; }
   .btn, .set-nav, .nav-item { min-height: 40px; }
   .table-wrap, .table-scroll, .data-table { -webkit-overflow-scrolling: touch; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   BENTO ХАРАГДАЦ — ЗӨВХӨН «Даалгавар» ба «Аюул · Ажлын захиалга»
+   (2026-09-05)
+
+   ⚠ JS-ийн логикт огт хүрэхгүй, ЗӨВХӨН харагдац. Агуулга нь мөрөн дэх
+     style="…"-аар зурагддаг тул [style*="…"] сонгуураар барьж дарна.
+   ⚠ Буцаах бол ЗӨВХӨН энэ блокийг устгахад хангалттай.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── ЗОХИОМЖ — хар, цайвар хоёуланд ── */
+.page.bento .card {
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(16, 20, 40, .04), 0 14px 34px rgba(16, 20, 40, .07);
+}
+.page.bento [data-wk-open],
+.page.bento [data-task-open] { border-radius: 16px !important; }
+
+/* Горим солих товч — хуудасны баруун дээд буланд */
+.page.bento { position: relative; }
+.bento-toggle {
+  position: absolute; top: 14px; right: 16px; z-index: 5;
+  border: 1.5px solid #E2E8F0; background: #fff; color: #334155;
+  border-radius: 999px; padding: 6px 13px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  box-shadow: 0 2px 8px rgba(16, 20, 40, .07);
+}
+.bento-toggle:hover { border-color: #C7D2FE; }
+
+/* ── ХАР ГОРИМ ── */
+.page.bento-dark {
+  background:
+    radial-gradient(900px 480px at 12% -8%, rgba(79, 70, 229, .16), transparent 60%),
+    radial-gradient(760px 420px at 92% -6%, rgba(6, 182, 212, .12), transparent 58%),
+    #0E1117;
+  border-radius: 22px;
+  padding-top: 22px;
+}
+.page.bento-dark .bento-toggle {
+  border-color: #2C3345; background: #1C2130; color: #C7CEDD;
+  box-shadow: none;
+}
+.page.bento-dark .card {
+  background: #171B26 !important;
+  border: 1px solid #262C3C !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 16px 38px rgba(0, 0, 0, .35);
+}
+.page.bento-dark h1,
+.page.bento-dark h2,
+.page.bento-dark h3,
+.page.bento-dark h4 { color: #E8ECF5; }
+.page.bento-dark .page-subtitle { color: #98A1B5; }
+.page.bento-dark .btn-secondary {
+  background: #232838 !important; color: #C7CEDD !important; border-color: #2C3345 !important;
+}
+.page.bento-dark input,
+.page.bento-dark select,
+.page.bento-dark textarea {
+  background: #1C2130 !important; color: #E2E7F1 !important; border-color: #2C3345 !important;
+}
+.page.bento-dark input::placeholder { color: #6C7589 !important; }
+
+/* Дэвсгэр өнгө — мөрөн дэх утгыг харанхуй руу хөрвүүлнэ */
+.page.bento-dark [style*="background:#fff"] { background: #171B26 !important; }
+.page.bento-dark [style*="background:#F8FAFC"] { background: #1C2130 !important; }
+.page.bento-dark [style*="background:#F7F9FB"] { background: #1C2130 !important; }
+.page.bento-dark [style*="background:#F5F7FB"] { background: #1C2130 !important; }
+.page.bento-dark [style*="background:#F1F5F9"] { background: #232838 !important; }
+.page.bento-dark [style*="background:#E2E8F0"] { background: #2C3345 !important; }
+.page.bento-dark [style*="background:#F0FDF4"] { background: rgba(22,163,74,.16) !important; }
+.page.bento-dark [style*="background:#ECFDF5"] { background: rgba(22,163,74,.16) !important; }
+.page.bento-dark [style*="background:#D1FAE5"] { background: rgba(22,163,74,.22) !important; }
+.page.bento-dark [style*="background:#DCFCE7"] { background: rgba(22,163,74,.22) !important; }
+.page.bento-dark [style*="background:#FFFBEB"] { background: rgba(217,119,6,.16) !important; }
+.page.bento-dark [style*="background:#FEF3C7"] { background: rgba(217,119,6,.22) !important; }
+.page.bento-dark [style*="background:#FFF7ED"] { background: rgba(234,88,12,.16) !important; }
+.page.bento-dark [style*="background:#FEF2F2"] { background: rgba(220,38,38,.14) !important; }
+.page.bento-dark [style*="background:#FEE2E2"] { background: rgba(220,38,38,.20) !important; }
+.page.bento-dark [style*="background:#FFFBFB"] { background: rgba(220,38,38,.10) !important; }
+.page.bento-dark [style*="background:#EEF2FF"] { background: rgba(79,70,229,.20) !important; }
+.page.bento-dark [style*="background:#EFF6FF"] { background: rgba(59,130,246,.18) !important; }
+.page.bento-dark [style*="background:#F8FAFF"] { background: rgba(79,70,229,.12) !important; }
+.page.bento-dark [style*="background:#F5F3FF"] { background: rgba(124,58,237,.18) !important; }
+.page.bento-dark [style*="background:#EDE9FE"] { background: rgba(124,58,237,.24) !important; }
+.page.bento-dark [style*="background:#ECFEFF"] { background: rgba(8,145,178,.18) !important; }
+
+/* Текстийн өнгө */
+.page.bento-dark [style*="color:#0F1117"] { color: #E8ECF5 !important; }
+.page.bento-dark [style*="color:#1E293B"] { color: #E2E7F1 !important; }
+.page.bento-dark [style*="color:#334155"] { color: #C7CEDD !important; }
+.page.bento-dark [style*="color:#475569"] { color: #BAC2D3 !important; }
+.page.bento-dark [style*="color:#64748B"] { color: #98A1B5 !important; }
+.page.bento-dark [style*="color:#8A94A6"] { color: #98A1B5 !important; }
+.page.bento-dark [style*="color:#94A3B8"] { color: #828CA1 !important; }
+.page.bento-dark [style*="color:#CBD5E1"] { color: #8B94A8 !important; }
+.page.bento-dark [style*="color:#B6BECC"] { color: #7E8798 !important; }
+.page.bento-dark [style*="color:#7F8FA6"] { color: #98A1B5 !important; }
+.page.bento-dark [style*="color:#DC2626"] { color: #F87171 !important; }
+.page.bento-dark [style*="color:#C81E3A"] { color: #FB7185 !important; }
+.page.bento-dark [style*="color:#B91C1C"] { color: #FCA5A5 !important; }
+.page.bento-dark [style*="color:#991B1B"] { color: #FCA5A5 !important; }
+.page.bento-dark [style*="color:#7F1D1D"] { color: #FCA5A5 !important; }
+.page.bento-dark [style*="color:#16A34A"] { color: #4ADE80 !important; }
+.page.bento-dark [style*="color:#15803D"] { color: #4ADE80 !important; }
+.page.bento-dark [style*="color:#166534"] { color: #86EFAC !important; }
+.page.bento-dark [style*="color:#0ca30c"] { color: #4ADE80 !important; }
+.page.bento-dark [style*="color:#B45309"] { color: #FBBF24 !important; }
+.page.bento-dark [style*="color:#92400E"] { color: #FBBF24 !important; }
+.page.bento-dark [style*="color:#D97706"] { color: #FBBF24 !important; }
+.page.bento-dark [style*="color:#EA580C"] { color: #FB923C !important; }
+.page.bento-dark [style*="color:#4F46E5"] { color: #A5B4FC !important; }
+.page.bento-dark [style*="color:#3730A3"] { color: #A5B4FC !important; }
+.page.bento-dark [style*="color:#5B21B6"] { color: #C4B5FD !important; }
+.page.bento-dark [style*="color:#7C3AED"] { color: #C4B5FD !important; }
+.page.bento-dark [style*="color:#1D4ED8"] { color: #93C5FD !important; }
+.page.bento-dark [style*="color:#0891B2"] { color: #67E8F9 !important; }
+.page.bento-dark [style*="color:#DB2777"] { color: #F9A8D4 !important; }
+
+/* Хүрээ. ⚠ Зүүн ирмэгийн ӨНГӨТ зураас нь төрлийг заадаг тул
+   түүнтэй элемент дээр зөвхөн дээд/баруун/доод талыг нь дарна. */
+.page.bento-dark [style*="solid #E2E8F0"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #E2E8F0"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #EEF1F4"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #EEF1F4"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #E9EDF2"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #E9EDF2"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F1F5F9"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F1F5F9"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F8FAFC"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F8FAFC"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F5F7FB"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #F5F7FB"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #EEF1F4"]:not([style*="border-left:4px"]):not([style*="border-left: 4px"]) { border-color: #262C3C !important; }
+.page.bento-dark [style*="solid #EEF1F4"][style*="border-left:4px"] { border-top-color: #262C3C !important; border-right-color: #262C3C !important; border-bottom-color: #262C3C !important; }
+.page.bento-dark [style*="solid #FDE68A"]:not([style*="border-left:4px"]) { border-color: rgba(217,119,6,.35) !important; }
+.page.bento-dark [style*="solid #BBF7D0"]:not([style*="border-left:4px"]) { border-color: rgba(22,163,74,.35) !important; }
+.page.bento-dark [style*="solid #FECACA"]:not([style*="border-left:4px"]) { border-color: rgba(220,38,38,.35) !important; }
+.page.bento-dark [style*="solid #C7D2FE"]:not([style*="border-left:4px"]) { border-color: rgba(79,70,229,.40) !important; }
+.page.bento-dark [style*="solid #DDD6FE"]:not([style*="border-left:4px"]) { border-color: rgba(124,58,237,.40) !important; }
+.page.bento-dark [style*="solid #FEF3C7"]:not([style*="border-left:4px"]) { border-color: rgba(217,119,6,.30) !important; }

@@ -4450,6 +4450,69 @@ function navIsDrawer() {
   try { return (window.innerWidth || 1200) <= 1024; } catch (e) { return false; }
 }
 
+
+/* ══ BENTO ХАРАГДАЦ — ЗӨВХӨН «Даалгавар» ба «Аюул · Ажлын захиалга» ══
+   ⚠ Энэ хэсэг нь ЗӨВХӨН гадаад хэлбэр. Дата, эрх, урсгалд огт хүрэхгүй.
+   Загварыг style.css-ийн «BENTO ХАРАГДАЦ» блок хийнэ; энд зөвхөн
+   ангиллыг тавьж, солих товчийг байрлуулна.
+   ⚠ Хуудас дахин зурагдах бүрд товч устдаг тул MutationObserver-оор
+   өөрөө сэргээнэ — ингэснээр renderTasks/renderReportflow-д хүрэх
+   шаардлагагүй болно. */
+var BENTO_PAGES = ['tasks', 'reportflow'];
+
+function bentoMode() {
+  try { return localStorage.getItem('kpi_bento') === 'light' ? 'light' : 'dark'; }
+  catch (e) { return 'dark'; }
+}
+
+function bentoBtnPut(el) {
+  if (!el || el.querySelector('.bento-toggle')) return;
+  var b = document.createElement('button');
+  b.className = 'bento-toggle';
+  b.type = 'button';
+  b.title = 'Энэ цэсний харагдацыг солино (зөвхөн танд хадгалагдана)';
+  b.textContent = bentoMode() === 'dark' ? '\u2600 Цайвар' : '\u263D Хар';
+  b.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var next = bentoMode() === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('kpi_bento', next); } catch (e2) {}
+    bentoApply();
+  });
+  el.appendChild(b);
+}
+
+function bentoApply() {
+  var dark = bentoMode() === 'dark';
+  BENTO_PAGES.forEach(function (p) {
+    var el = document.querySelector('.page[data-page="' + p + '"]');
+    if (!el) return;
+    el.classList.add('bento');
+    el.classList.toggle('bento-dark', dark);
+    bentoBtnPut(el);
+  });
+  try {
+    document.querySelectorAll('.bento-toggle').forEach(function (x) {
+      x.textContent = dark ? '\u2600 Цайвар' : '\u263D Хар';
+    });
+  } catch (e) {}
+}
+
+function bentoWatch() {
+  bentoApply();
+  BENTO_PAGES.forEach(function (p) {
+    var el = document.querySelector('.page[data-page="' + p + '"]');
+    if (!el || el._bentoObs) return;
+    try {
+      el._bentoObs = new MutationObserver(function () { bentoApply(); });
+      el._bentoObs.observe(el, { childList: true });
+    } catch (e) {}
+  });
+}
+try {
+  setTimeout(bentoWatch, 1200);
+  setTimeout(bentoWatch, 6000);
+} catch (e) {}
+
 function switchPage(pageId) {
   // Эрхийн түвшнээс хамаарч хязгаарлагдсан хуудас руу орохыг хориглоно
   if (blockedPages().indexOf(pageId) >= 0) { pageId = 'dashboard'; }
