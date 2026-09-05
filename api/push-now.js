@@ -97,11 +97,16 @@ module.exports = async function handler(req, res) {
   const to = Array.isArray(body.to) ? body.to.filter(x => typeof x === 'string').slice(0, 40) : [];
   if (!to.length) return res.status(400).json({ ok: false, error: 'Хүлээн авагч дутуу' });
 
+  /* ⭐ urgent: хугацаа хэтэрсэн, яаралтай шаардсан зэрэг зүйл. Утсан дээр
+     дартал арилахгүй, урт чичиргээтэй банер болж гарна. Таг нь тус тусдаа
+     тул хэд хэдэн яаралтай зүйл бие биенээ дарахгүй. */
+  const urgent = !!body.urgent;
   const msg = {
     title: String(body.title || 'Монос Хүнс — ХАБЭА').slice(0, 90),
     body: String(body.body || '').slice(0, 180),
     url: String(body.url || '/kpi/?page=hazards').slice(0, 120),
-    tag: 'monos-ntf'
+    urgent: urgent,
+    tag: urgent ? ('mh-urgent-' + String(body.id || Date.now()).slice(0, 40)) : 'monos-ntf'
   };
 
   let vk;

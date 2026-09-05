@@ -19156,7 +19156,7 @@ function wkDemand(id) {
   if (!confirm('«' + String(r.desc || '').slice(0, 60) + '»\n\n' +
     to.length + ' хүнд ЯАРАЛТАЙ ШААРДЛАГА илгээх үү?\n\nМэдэгдэл болон и-мэйл очно.')) return;
   try {
-    ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow',
+    ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow', urgent: true,
       title: '⚠ Захирлаас яаралтай шаардлага',
       body: (who ? who + ': ' : '') + String(r.desc || '').slice(0, 90) + ' — нэн даруй хүлээж авна уу' });
     wkPatch(id, function (x) {
@@ -28253,7 +28253,10 @@ async function ntfSend(toList, info) {
       var idToken = await fauth.currentUser.getIdToken();
       fetch('/api/push-now/', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken: idToken, to: to, title: rec.title, body: rec.body, url: rec.url })
+        /* ⭐ urgent: хугацаа хэтэрсэн, яаралтай шаардсан зэрэг зүйл дээр
+           утсан дээр дартал арилахгүй, урт чичиргээтэй банер гарна */
+        body: JSON.stringify({ idToken: idToken, to: to, title: rec.title, body: rec.body,
+          url: rec.url, urgent: !!info.urgent, id: rec.id || '' })
       }).catch(function () {});
     }
   } catch (e) {}

@@ -3,7 +3,7 @@
    HTML/JS-ийг КЭШЛЭХГҮЙ — үргэлж сүлжээнээс шинийг авна (хуучин хувилбар үлдэхээс сэргийлнэ).
    Зөвхөн icon/manifest зэрэг статик жижиг файлыг кэшэлнэ. */
 
-const CACHE = 'monos-hab-static-v3';
+const CACHE = 'monos-hab-static-v4';
 const STATIC_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -64,23 +64,37 @@ self.addEventListener('push', (e) => {
   }
   const title = d.title || 'Монос Хүнс — ХАБЭА';
   const body = d.body || 'Танд хугацаатай арга хэмжээ хүлээгдэж байна.';
-  e.waitUntil(
-    self.registration.showNotification(title, {
-      body: body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-96.png',
-      tag: d.tag || 'monos-hab-mea',
-      renotify: true,
-      requireInteraction: false,
-      vibrate: [90, 45, 90],
-      data: { url: d.url || '/kpi/?page=tasks' },
-      actions: [{ action: 'open', title: 'Нээх' }]
-    })
-  );
+  /* ⭐ ЯАРАЛТАЙ (хугацаа хэтэрсэн) мэдэгдлийг энгийнээс ЯЛГАНА.
+     · requireInteraction: хэрэглэгч дартал дэлгэцээс арилахгүй
+     · урт чичиргээ: гар халаасанд байсан ч мэдэгдэнэ
+     · тус тусдаа таг: олон зүйл бие биенээ дарахгүй, бүгд харагдана */
+  const urgent = !!d.urgent;
+  const opts = {
+    body: body,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-96.png',
+    tag: d.tag || (urgent ? ('mh-urgent-' + (d.id || Date.now())) : 'monos-hab-mea'),
+    renotify: true,
+    requireInteraction: urgent,
+    vibrate: urgent ? [300, 120, 300, 120, 300, 120, 500] : [90, 45, 90],
+    data: { url: d.url || '/kpi/?page=tasks', urgent: urgent },
+    actions: [{ action: 'open', title: urgent ? 'Одоо хийх' : 'Нээх' }]
+  };
+  e.waitUntil((async () => {
+    await self.registration.showNotification(title, opts);
+    /* Аппын дүрс дээрх тоо — хэдэн зүйл хүлээгдэж байгааг харуулна */
+    try {
+      if (typeof d.badgeCount === 'number' && navigator.setAppBadge) {
+        if (d.badgeCount > 0) await navigator.setAppBadge(d.badgeCount);
+        else if (navigator.clearAppBadge) await navigator.clearAppBadge();
+      }
+    } catch (_) {}
+  })());
 });
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
+  try { if (navigator.clearAppBadge) navigator.clearAppBadge(); } catch (_) {}
   const target = (e.notification.data && e.notification.data.url) || '/kpi/';
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

@@ -272,7 +272,10 @@ module.exports = async function handler(req, res) {
     }
     const uids = [];
     (to || []).forEach(function (x) { if (x && x.uid && uids.indexOf(x.uid) < 0) uids.push(x.uid); });
-    if (uids.length) out.push({ uids: uids, title: title, body: body, id: r.id, k: j.k });
+    /* ⭐ Хугацаа дууссан ба 2 дахин хэтэрсэн шат = ЯАРАЛТАЙ.
+       Утсан дээр дартал арилахгүй, урт чичиргээтэй банер болж гарна. */
+    var _urgent = (j.k === 'due' || j.k === 'late2');
+    if (uids.length) out.push({ uids: uids, title: title, body: body, id: r.id, k: j.k, urgent: _urgent });
   }
 
   let pushed = 0, mailed = 0, note = '';
@@ -340,7 +343,12 @@ module.exports = async function handler(req, res) {
   for (const o of out) {
     let okUids = [];
     if (vk) {
-      const r = await pushTo(o.uids, { title: o.title, body: o.body, url: KPI_URL, tag: 'monos-wk' }, vk, subs);
+      const r = await pushTo(o.uids, {
+        title: o.title, body: o.body, url: KPI_URL,
+        urgent: !!o.urgent, id: o.id,
+        /* Яаралтай бүрд тусдаа таг — өмнөхөө дарахгүй, бүгд харагдана */
+        tag: o.urgent ? ('mh-urgent-' + o.id) : 'monos-wk'
+      }, vk, subs);
       pushed += r.sent; okUids = r.okUids;
     }
     for (const uid of o.uids) {
