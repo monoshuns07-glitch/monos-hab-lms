@@ -18127,8 +18127,17 @@ function wkChainHTML(r) {
   var doer = wkPersonName(cl.uid, cl.name);
   var b;
   if (doer) {
-    b = cell(closed ? '🔧' : '🛠', closed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
-      day(wkDoneTime(r) || cl.at), '#B45309', false);
+    /* ⚠ Хугацаа хэтэрч, хэн ч аваагүй тул СИСТЕМ өөрөө оноосон бол түүнийг
+       ил хэлнэ — эс бөгөөс тэр хүн ажлыг сонгож аваад хийхгүй байгаа мэт
+       ХУДАЛ харагдана (2026-09-05). */
+    if (!closed && cl.auto) {
+      b = cell('🤖', 'СИСТЕМЭЭС ОНООСОН', doer,
+        'хэн ч аваагүй тул хугацаа хэтрэхэд автоматаар оноогдсон', '#B45309', false);
+    } else {
+      b = cell(closed ? '🔧' : '🛠', closed ? 'ГҮЙЦЭТГЭСЭН' : 'ГҮЙЦЭТГЭЖ БАЙГАА', doer,
+        day(wkDoneTime(r) || cl.at) + (cl.assignedBy ? ' · ' + cl.assignedBy + ' томилсон' : ''),
+        '#B45309', false);
+    }
   } else {
     var g = null; try { g = wkGate(r.wkGate); } catch (e) {}
     var hrs = 0; try { hrs = Math.round(wkUnclaimedHours(r)); } catch (e) {}
@@ -19191,7 +19200,8 @@ function wkFlowHTML(r) {
   var at = order.indexOf(st);
   var steps = [
     { l: 'Мэдээлсэн', sub: r.reporterName || '' },
-    { l: 'Хүлээж авсан',
+    { l: (r.wkClaimBy && r.wkClaimBy.auto && wkStatus(r) === 'claimed')
+        ? 'Системээс оноосон' : 'Хүлээж авсан',
       sub: ((r.wkClaimBy && r.wkClaimBy.name) || '') +
         (function () {
           var o = wkOwnerOf(r);
