@@ -16024,6 +16024,11 @@ function rfDashData(all) {
     return r.status === 'reported' || (r.wkClaimBy && r.wkClaimBy.uid && wkStatus(r) !== 'closed');
   });
   d.open = d.openRows.length;           /* шийдвэрлэгдээгүй */
+  /* Хоёр бүлэг ДАВХЦДАГ (баталгаажаагүй атлаа засварт орсон) — уншигчид
+     «10 = 10 + 9» гэж эргэлзэхгүйн тулд давхцлыг ил хэлнэ. */
+  d.openBoth = (d.rows || []).filter(function (r) {
+    return r.status === 'reported' && r.wkClaimBy && r.wkClaimBy.uid && wkStatus(r) !== 'closed';
+  }).length;
   return d;
 }
 
@@ -16072,7 +16077,10 @@ function rfHeroHTML(d) {
     '<span' + rfHit(rfDrill('Засварт байгаа', 'Хүлээж авсан, дуусаагүй',
       d.stage.fix.filter(function (r) { return wkStatus(r) !== 'closed'; })), 'Засварт') +
     'class="rf-hit" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;' +
-    'text-underline-offset:3px">' + d.inRepair + ' засварт</span></div></div>' +
+    'text-underline-offset:3px">' + d.inRepair + ' засварт</span>' +
+    (d.openBoth ? '<div style="font-size:11px;color:' + RF_INK.m + ';margin-top:3px">' +
+      'үүний ' + d.openBoth + ' нь хоёуланд нь — засвар эхэлсэн ч ХАБ баталгаажуулаагүй</div>' : '') +
+    '</div></div>' +
     '<div style="width:1px;align-self:stretch;background:' + RF_INK.grid + '"></div>' +
     '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
     [rfStat('Нийт мэдээлэл', d.n, RF_INK.p,
