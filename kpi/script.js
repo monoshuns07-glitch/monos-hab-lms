@@ -29228,7 +29228,9 @@ function renderTasks() {
         '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:4px">⏳ Таны батлах ёстой ' + myApprove.length + ' даалгавар</div>' +
         '<div style="font-size:12.5px;color:#B45309">Доод шатны ажилтны өгсөн даалгавар. Батлагдтал гүйцэтгэгчид харагдахгүй.</div></div>';
     }
-    if (TASK_VIEW === 'all' || TASK_VIEW === 'pending') {
+    /* ⚠ Самбар горимд энэ жагсаалт ХЭРЭГГҮЙ — «Батлах хүлээж буй» багана
+       нь тэр даалгавруудыг аль хэдийн харуулж байна (давхардана). */
+    if (_mode !== 'board' && (TASK_VIEW === 'all' || TASK_VIEW === 'pending')) {
       html += '<h3 style="margin:0 0 10px;font-size:15px;color:#B45309">Батлах хүлээж буй ' + pending.length + '</h3>' +
         pending.map(pCard).join('');
     }
