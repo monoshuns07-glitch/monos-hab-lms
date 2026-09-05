@@ -1807,6 +1807,8 @@ code {
 .set-nav i { font-size: 16px; }
 
 .settings-body { min-width: 0; }
+/* Deed talyn togtmol mor kartyg darahgui bolgono */
+.settings-body > .card { scroll-margin-top: calc(var(--topbar-h) + 18px); }
 
 /* Weight sliders */
 .weight-list { display: flex; flex-direction: column; gap: 12px; padding-top: 6px; }
