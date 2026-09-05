@@ -20438,7 +20438,17 @@ function openReportDetail(id) {
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
   /* ⭐ Ажлын захиалга бол ЯВЦ + ДАРААГИЙН АЛХМЫГ хамгийн дээр нь */
-  var html = wkFlowHTML(r) + reportFlowHTML(r) + reportRepairHTML(r) + photo + sig + '<div class="detail-grid">' +
+  /* ⚠ 2026-09-05: ХУУЧИН УРСГАЛЫН ҮЛДЭГДЭЛ. Шинэ бичлэг (wkKind) нь өөрөө
+     ажлын захиалга бөгөөд явц нь `wkFlowHTML`-д бүрэн харагдана. Гэтэл доор
+     нь хуучин 4 шатны зураглал (Мэдээлэгдсэн→Баталгаажсан→Засвар→Хаагдсан)
+     ба «ИТА-аар засварлуулах» товч ДАВХАР гарч байв. Ажил бүрэн дуусчихсан
+     байхад «Засвар, Хаагдсан» саарал үлдэж, дуусаагүй мэт харагдана; товч нь
+     аль хэдийн хийгдсэн ажилд ДАХИН захиалга үүсгэхийг санал болгоно.
+     Тиймээс шинэ урсгалын бичлэгт хуучин хоёр блокийг ОГТ харуулахгүй. */
+  var _oldFlow = !r.wkKind;
+  var html = wkFlowHTML(r) +
+    (_oldFlow ? (reportFlowHTML(r) + reportRepairHTML(r)) : '') +
+    photo + sig + '<div class="detail-grid">' +
     '<div class="detail-row"><span>Төрөл</span><b>' + reportTypeLabel(r.type) + '</b></div>' +
     '<div class="detail-row"><span>Эрсдэл</span><b>' + riskTag(r.risk_level) + '</b></div>' +
     '<div class="detail-row"><span>Байршил</span><b>' + esc(r.location) + '</b></div>' +
