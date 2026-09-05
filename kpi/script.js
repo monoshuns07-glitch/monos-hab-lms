@@ -18127,9 +18127,16 @@ var WK_STATUS = {
 /* Эцсийн зэрэг (алба өөрчилсөн бол тэр нь) */
 function wkUrg(r) { return Number((r && (r.wkUrgFinal || r.wkUrg)) || 3); }
 /* Хугацаа дуусах мөч */
+/* Тухайн бичлэгт хамаарах ЦАГ — үүсэх үедээ түгжигдсэн бол түүнийг нь.
+   ⚠ Тохиргоо хожим өөрчлөгдсөн ч хуучин захиалгын хугацаа ХӨДЛӨХГҮЙ. */
+function wkHoursOf(r) {
+  var v = r && r.wkHours;
+  if (v != null && Number(v) > 0) return Number(v);
+  return wkUrgHours(wkUrg(r));
+}
 function wkDueAt(r) {
   if (!r || !r.createdAt) return null;
-  return new Date(new Date(r.createdAt).getTime() + wkUrgHours(wkUrg(r)) * 3600000);
+  return new Date(new Date(r.createdAt).getTime() + wkHoursOf(r) * 3600000);
 }
 /* Үлдсэн/хэтэрсэн — {left: цаг, late: bool, text} */
 function wkTime(r) {
@@ -18141,7 +18148,7 @@ function wkTime(r) {
     var lateH = -h;
     return { late: true, text: 'Хугацаа хэтэрсэн ' + wkHoursText(Math.round(lateH)) };
   }
-  return { late: false, near: h <= wkUrgHours(wkUrg(r)) * 0.5,
+  return { late: false, near: h <= wkHoursOf(r) * 0.5,
     text: wkHoursText(Math.max(1, Math.round(h))) + ' үлдсэн' };
 }
 
@@ -18153,6 +18160,9 @@ async function wkCreate(sel) {
     id: newId('RP'), status: 'reported',
     /* Work order талбарууд */
     wkKind: sel.kind, wkUrg: sel.urg, wkUrgFinal: sel.urg,
+    /* ⭐ Тухайн агшны тохиргоог ТҮГЖИНЭ — дараа нь тохиргоо өөрчлөгдөхөд
+       энэ захиалгын дуусах хугацаа хөдлөхгүй */
+    wkHours: wkUrgHours(sel.urg),
     /* Энэ ажлыг хийгээгүйгээс учирч болох аюул (зөвхөн «Ажил» дээр) */
     wkHaz: (sel.haz || []).slice(), wkHazText: sel.hazText || '',
     wkGate: sel.gate, wkGateLog: [],
@@ -18509,6 +18519,7 @@ function wkUrgModal(id) {
       closeModal();
       wkPatch(id, function (x) {
         x.wkUrgFinal = cur;
+        x.wkHours = wkUrgHours(cur);            /* шинэ зэрэглэлийн цагийг түгжинэ */
         x.wkUrgBy = { uid: me && me.uid, name: empFullName(emp) || (me && me.name) || '',
           at: new Date().toISOString() };
         x.risk_level = cur >= 5 ? 'high' : cur >= 3 ? 'mid' : 'low';
@@ -19559,6 +19570,8 @@ function wkAdminModal() {
         if (haz.some(function (x) { return !x.mn || x.mn.length < 2; })) {
           toast('Нэргүй ангилал байна', 'warn'); btn.disabled = false;
           btn.innerHTML = 'Хадгалах'; return; }
+        /* ⚠ Хугацааны тохиргоо нь ЗӨВХӨН ШИНЭ захиалгад үйлчилнэ — өмнөх
+           захиалгууд үүсэх үеийн цагаараа хэвээр явна (2026-09-05). */
         wkHazApply(haz);
         Promise.all([wkLocSave(groups), wkUrgSave(urg), wkHazSave()]).then(function () {
           closeModal();
