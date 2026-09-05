@@ -2641,9 +2641,20 @@ img, video, canvas, svg, table { max-width: 100%; }
      !important-гүйгээр дарж болохгүй. */
   #hazardFab { width: 52px; height: 52px; right: 12px; bottom: 12px; }
   #pwaInstallBtn {
-    right: 12px !important; bottom: 72px !important;
     padding: 9px 13px !important; font-size: 12px !important;
     border-radius: 12px !important;
+  }
+}
+
+/* «Апп суулгах» нь «Аюул мэдээлэх»-тэй нэг талд давхарлаж, картын
+   товчнуудыг дардаг байв — хуруугаар ажилладаг дэлгэц дээр ЗҮҮН доод
+   буланд шилжүүлнэ (тэнд юу ч байдаггүй).
+   ⚠ pwa-init.js нь inline загвар бичдэг тул !important заавал. */
+@media (max-width: 1024px) {
+  #pwaInstallBtn {
+    left: 12px !important;
+    right: auto !important;
+    bottom: 14px !important;
   }
 }
 

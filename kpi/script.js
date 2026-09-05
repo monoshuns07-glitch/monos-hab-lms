@@ -29021,7 +29021,10 @@ function taskStatCard(key, label, val, icon, color, sub) {
     ';display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ' + icon + '"></i></div>' +
     '<div style="min-width:0"><div style="font-size:20px;font-weight:700;' +
     'font-family:\'Bricolage Grotesque\',sans-serif;line-height:1.1;color:' + (on ? color : '#0F1117') + '">' + val + '</div>' +
-    '<div style="font-size:12px;color:#8A94A6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div>' +
+    /* ⚠ Өмнө нь нэг мөрөнд шахаж «Батлах хүлээж …» гэж тасалдаг байв.
+       Нарийн дэлгэцэнд хоёр мөр болж БҮТНЭЭР нь харагдана. */
+    '<div style="font-size:12px;color:#8A94A6;line-height:1.3;display:-webkit-box;' +
+    '-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + label + '</div>' +
     (sub ? '<div style="font-size:11px;font-weight:700;color:' + sub[1] + ';margin-top:1px">' + sub[0] + '</div>' : '') +
     '</div></div>';
 }
