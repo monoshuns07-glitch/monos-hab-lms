@@ -15686,6 +15686,12 @@ function reportNotifyHab(r) {
 function verifyReport(id, decision, newRisk) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r || r.status !== 'reported') return;
+  if (!canVerifyReport(r)) {
+    toast(wkIsJob(r)
+      ? 'Ажлын захиалгыг захиалагч нь «Шалгаж батлах»-аар хаана'
+      : 'Зөвхөн ХАБЭА-н албаны ажилтан баталгаажуулна', 'warn');
+    return;
+  }
   r.verifiedAt = new Date().toISOString();
   r.verifiedBy = (SESSION && SESSION.email) || USER.name;
   r.verified_by = r.verifiedBy; // спекийн талбарын нэр
@@ -16029,6 +16035,13 @@ function rfDashData(all) {
   d.openBoth = (d.rows || []).filter(function (r) {
     return r.status === 'reported' && r.wkClaimBy && r.wkClaimBy.uid && wkStatus(r) !== 'closed';
   }).length;
+  /* ⚠ 2026-09-05: «баталгаажаагүй» гэсэн үг ажлын захиалганд ТААРАХГҮЙ.
+     Ажлын захиалгыг ХАБЭА баталгаажуулдаггүй — захиалагч дуусгаж батална.
+     Тиймээс төрлөөр нь салган нэрлэнэ: ажил «дуусаагүй», аюул «баталгаажаагүй». */
+  d.jobOpen = (d.openRows || []).filter(wkIsJob);
+  d.hzPending = (d.openRows || []).filter(function (r) {
+    return !wkIsJob(r) && r.status === 'reported';
+  });
   return d;
 }
 
@@ -16070,16 +16083,18 @@ function rfHeroHTML(d) {
     'font-size:52px;line-height:1.05;font-weight:800;border-radius:11px;padding:0 8px;margin-left:-8px;color:' +
     (d.open ? '#C81E3A' : '#0ca30c') + ';font-family:inherit">' + d.open + '</div>' +
     '<div style="font-size:12.5px;color:' + RF_INK.s + ';margin-top:2px">' +
-    '<span' + rfHit(rfDrill('Баталгаажаагүй', 'ХАБ баталгаажуулах хүлээж байна',
-      d.rows.filter(function (r) { return r.status === 'reported'; })), 'Баталгаажаагүй') +
-    'class="rf-hit" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;' +
-    'text-underline-offset:3px">' + d.pending + ' баталгаажаагүй</span> · ' +
-    '<span' + rfHit(rfDrill('Засварт байгаа', 'Хүлээж авсан, дуусаагүй',
-      d.stage.fix.filter(function (r) { return wkStatus(r) !== 'closed'; })), 'Засварт') +
-    'class="rf-hit" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;' +
-    'text-underline-offset:3px">' + d.inRepair + ' засварт</span>' +
-    (d.openBoth ? '<div style="font-size:11px;color:' + RF_INK.m + ';margin-top:3px">' +
-      'үүний ' + d.openBoth + ' нь хоёуланд нь — засвар эхэлсэн ч ХАБ баталгаажуулаагүй</div>' : '') +
+    [
+      (d.jobOpen.length ? '<span' + rfHit(rfDrill('Дуусаагүй ажлын захиалга',
+        'Хийгдэж байгаа ба батлахыг хүлээж буй', d.jobOpen), 'Дуусаагүй') +
+        'class="rf-hit" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;' +
+        'text-underline-offset:3px">' + d.jobOpen.length + ' ажлын захиалга дуусаагүй</span>' : ''),
+      (d.hzPending.length ? '<span' + rfHit(rfDrill('Баталгаажаагүй аюул',
+        'ХАБЭА эрсдэлийн зэргийг тогтоох хүлээгдэж байна', d.hzPending), 'Баталгаажаагүй') +
+        'class="rf-hit" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted;' +
+        'text-underline-offset:3px">' + d.hzPending.length + ' аюул баталгаажаагүй</span>' : '')
+    ].filter(Boolean).join(' · ') +
+    (d.inRepair ? '<div style="font-size:11px;color:' + RF_INK.m + ';margin-top:3px">' +
+      'үүнээс ' + d.inRepair + ' нь засварт орсон</div>' : '') +
     '</div></div>' +
     '<div style="width:1px;align-self:stretch;background:' + RF_INK.grid + '"></div>' +
     '<div style="display:flex;gap:22px;flex-wrap:wrap">' +
@@ -17327,6 +17342,20 @@ function wkKind(k) {
 }
 /* «Хуучин мэдээлэл» таб хасагдсан тул хуучин бичлэгүүд ЭНЭ жагсаалтад нэгдэнэ.
    `wkKind` талбаргүй бичлэгийн төрлийг хуучин `type`-аас гаргана. */
+/* Ажлын захиалга уу, эсвэл аюул/ОДТ-ийн мэдээлэл үү.
+   ⚠ Ажлын захиалгад ХАБЭА-гийн баталгаажуулалт ХЭРЭГГҮЙ — захиалагч
+   «Дууссан» гэж батлахад л хаагдана. Аюул, ОДТ-д харин ХАБЭА эрсдэлийн
+   зэргийг тогтоож, бонус оноог шийддэг тул баталгаажуулалт ЗААВАЛ. */
+function wkIsJob(r) { return !!(r && r.wkKind === 'job'); }
+/* Аюул, ОДТ-г баталгаажуулах эрх — ХАБЭА-н албаны ажилтан бүр */
+function canVerifyReport(r) {
+  try {
+    if (wkIsJob(r)) return false;          /* ажлын захиалга — захиалагчийнх */
+    if (isAdmin()) return true;
+    return riskIsHseStaff();
+  } catch (e) { return false; }
+}
+
 function wkKindOf(r) {
   if (!r) return WK_KINDS[1];
   if (r.wkKind) return wkKind(r.wkKind);
@@ -20402,6 +20431,10 @@ function openReportDetail(id) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) return;
   var admin = isAdmin();
+  /* ⚠ Баталгаажуулах эрх: ажлын захиалганд ОГТ гарахгүй;
+     аюул, ОДТ-д ХАБЭА-н албаны ажилтан бүр баталгаажуулна.
+     Өмнө зөвхөн админ чаддаг тул мэдээлэл баталгаажилгүй уддаг байв. */
+  var canVer = canVerifyReport(r);
   var photo = r.photo ? '<img src="' + r.photo + '" style="width:100%;border-radius:12px;margin-bottom:12px">' : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
   /* ⭐ Ажлын захиалга бол ЯВЦ + ДАРААГИЙН АЛХМЫГ хамгийн дээр нь */
@@ -20418,7 +20451,7 @@ function openReportDetail(id) {
     '<div class="detail-row"><span>Төлөв</span><b>' + reportStatusTag(r.status) + '</b></div>' +
     (r.verifiedBy ? '<div class="detail-row"><span>Шийдвэрлэсэн</span><b>' + esc(r.verifiedBy) + '</b></div>' : '') + '</div>' +
     '<p style="margin:12px 2px;font-size:14px;line-height:1.5"><strong>Тайлбар:</strong> ' + esc(r.desc) + '</p>';
-  if (admin && r.status === 'reported') {
+  if (canVer && r.status === 'reported') {
     var nm = kpiCfg().bonus.nearMiss;
     html += '<div style="margin:12px 0"><label style="font-size:13px;color:#64748B">Эрсдэлийн зэргийг тогтоо (бонус оноо)</label>' +
       '<div class="rf-chips" id="rdRisk" style="margin-top:6px">' + REPORT_RISK.map(function (x) {
