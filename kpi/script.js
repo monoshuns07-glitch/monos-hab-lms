@@ -17927,7 +17927,13 @@ function wkNewModal() {
        нь innerHTML-ийг бүхэлд нь дахин зурдаг тул бичсэн зүйл алга болно. */
     var hta = node.querySelector('#wkHazText');
     if (hta) hta.addEventListener('input', function () { sel.hazText = this.value; });
-    wkWirePickers(node, function (durl) { sel.photo = durl; draw(); });
+    wkWirePickers(node, function (durl) {
+      sel.photo = durl; draw();
+      /* ⭐ R2 руу зөөж, бичлэгт зөвхөн холбоос үлдээнэ */
+      wkPhotoToR2(durl, function (final) {
+        if (sel.photo === durl) { sel.photo = final; }
+      });
+    });
   };
 
   node.addEventListener('click', function (ev) {
@@ -18682,6 +18688,7 @@ function wkExecModal(id) {
       var dd = node.querySelector('#wkExDone');
       if (dd) doneAt = dd.value;           /* сонгосон цаг ч мөн адил алдагдахгүй */
       photo = d; draw();
+      wkPhotoToR2(d, function (final) { if (photo === d) photo = final; });
     });
   };
   node.addEventListener('click', function (ev) {
@@ -20206,6 +20213,22 @@ function imgFailToast(f) {
   }
   toast('Зургийг уншиж чадсангүй' + (mb ? ' (' + mb + ' МБ)' : '') +
     ' — өөр зураг эсвэл дэлгэцийн зураг оруулж үзнэ үү.', 'error');
+}
+
+/* base64 зургийг R2-д байршуулж ХОЛБООС буцаана.
+   ⚠ Амжилтгүй бол base64-ээ хэвээр буцаана — зураг хэзээ ч алдагдахгүй. */
+function wkPhotoToR2(durl, cb) {
+  if (!durl || String(durl).indexOf('data:') !== 0) { cb(durl); return; }
+  (async function () {
+    try {
+      var blob = await (await fetch(durl)).blob();
+      var key = 'evidence/reports/' + Date.now().toString(36) +
+        Math.random().toString(36).slice(2, 6) + '.jpg';
+      var url = await r2Put(blob, key);
+      var final = (typeof url === 'string' && /^https?:/.test(url)) ? url : (TASK_R2 + '/' + key);
+      cb(final);
+    } catch (e) { cb(durl); }      /* base64 хэвээр */
+  })();
 }
 
 /* Шошгыг оролттой нь холбоно (нэг удаа) */
