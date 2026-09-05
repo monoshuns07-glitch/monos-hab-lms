@@ -22013,13 +22013,18 @@ function setNavBuild() {
   });
   if (!cards.length) { nav.innerHTML = ''; nav._sig = ''; return; }
 
+  /* ⚠ ID-г ҮРГЭЛЖ эхлээд олгоно. Хуудас дахин зурагдахад картууд шинээр
+     үүсэж, урьд өгсөн түр ID нь алга болдог — гарчиг нь өөрчлөгдөөгүй
+     тул доорх шалгуур «дахин зурах шаардлагагүй» гэж үзээд цэс нь
+     байхгүй ID руу заасаар үлддэг байв (2026-09-05). */
+  cards.forEach(function (c, i) { if (!c.id) c.id = 'setSec' + i; });
+
   /* Картууд өөрчлөгдөөгүй бол дахин зурахгүй — гүйлгэлт үсрэхгүй */
-  var sig = cards.map(function (c) { return txt(c.querySelector('h3')); }).join('|');
+  var sig = cards.map(function (c) { return c.id + ':' + txt(c.querySelector('h3')); }).join('|');
   if (nav._sig === sig) return;
   nav._sig = sig;
 
   nav.innerHTML = cards.map(function (c, i) {
-    if (!c.id) c.id = 'setSec' + i;
     var h = c.querySelector('h3');
     var icEl = h.querySelector('i');
     var icm = icEl ? String(icEl.className || '').match(/ti-[a-z0-9-]+/) : null;
