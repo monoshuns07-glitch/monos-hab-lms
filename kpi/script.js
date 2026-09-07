@@ -729,6 +729,8 @@ async function buildEmployeesFromRealData() {
       });
     });
     EMP_LOAD.built = out.length;
+    /* ⚠ Онош — НЭМЭЛТ уншилтгүй, санах ой дахь `docs`-оос (2026-09-07) */
+    try { if (!readErr && !selfOnly) regDiagPublish(docs, out); } catch (e) {}
     /* Зөвхөн БҮТЭН уншсан үед нөөцлөнө — доголдсон үр дүнгээр сайныг дарахгүй */
     if (!readErr && !selfOnly && out.length > 1) empCacheSave(out);
     return out;
@@ -1963,6 +1965,8 @@ async function sysReport() {
     rows[em] = {
       v: ver, at: new Date().toISOString(),
       n: (me && me.name) || '', dp: (me && me.dept) || '',
+      /* ⚠ Бүртгэлээ олоогүй бол ЭНД тэмдэглэнэ — админ тэр өдөрт нь мэдэнэ */
+      noRec: me ? 0 : 1,
       os: d.os, br: d.br, pwa: d.pwa ? 1 : 0,
       /* Firebase-ийн дүрэм зөрчсөн уншилт — админд харагдана */
       fb: FB_VIOLATIONS.length ? FB_VIOLATIONS.map(function (x) { return x.col; }).join(',') : ''
@@ -2050,6 +2054,181 @@ try {
 } catch (e) {}
 
 /* ── 3. Админы самбар ──────────────────────────────────────────────── */
+
+/* ══ БҮРТГЭЛИЙН ОНОШ ═══════════════════════════════════════════════════
+   Админ ажилтны жагсаалтыг барих үед ХАМТ тооцно. Нэмэлт Firestore
+   уншилт ХИЙХГҮЙ — `docs` аль хэдийн санах ойд байна.
+   Үр дүнг R2-т нийтэлнэ; бусад нь тэндээс уншина. */
+var REG_HEALTH_FILE = 'registry/health.json';
+
+function regNameOf(u) {
+  var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
+  return (ln + (u.firstName || '')).trim() || String(u.email || '').split('@')[0] || '(нэргүй)';
+}
+
+function regDiagPublish(docs, rows) {
+  try {
+    if (!isAdmin() || !docs || !docs.length) return;
+    var noEmp = [], empty = [], byMail = {}, byPerson = {};
+    docs.forEach(function (d) {
+      var u = d.data() || {}, uid = u.uid || d.id;
+      var em = String(u.email || '').trim().toLowerCase();
+      var nm = regNameOf(u);
+      /* ① Ажилтны бүртгэлд ОРООГҮЙ данс */
+      if (u.hrRemoved === true) {
+        noEmp.push({ uid: uid, em: em, n: nm, dp: u.dept || '', ps: u.position || u.pos || '',
+          at: u.hrRemovedAt || u.hrSyncedAt || '' });
+        return;
+      }
+      if (!em && !String(u.firstName || '').trim() && !String(u.lastName || '').trim()) {
+        empty.push({ uid: uid }); return;
+      }
+      /* ② Давхардал — И-МЭЙЛЭЭР (нэг нэвтрэлт = нэг хүн).
+         ⚠ Нэрээр давхардал ХАЙХГҮЙ: «Д. Мөнх-Эрдэнэ» гурав нь өөр өөр
+         гурван хүн байсан (2026-09-07). Ижил нэр юу ч батлахгүй. */
+      if (em) (byMail[em] = byMail[em] || []).push({ uid: uid, n: nm, ps: u.position || u.pos || '' });
+      /* ③ Ижил хүн байж болзошгүй — нэр БА албан тушаал хоёулаа таарвал */
+      var pk = (String(u.lastName || '') + '|' + String(u.firstName || '') + '|' +
+        String(u.position || u.pos || '')).toLowerCase().trim();
+      if (pk.replace(/\|/g, '').length > 3)
+        (byPerson[pk] = byPerson[pk] || []).push({ uid: uid, n: nm, em: em });
+    });
+    var dupMail = Object.keys(byMail).filter(function (k) { return byMail[k].length > 1; })
+      .map(function (k) { return { em: k, list: byMail[k] }; });
+    var dupPerson = Object.keys(byPerson).filter(function (k) { return byPerson[k].length > 1; })
+      .map(function (k) { return { key: k, list: byPerson[k] }; });
+    /* ④ Дансгүй / и-мэйлгүй ажилтан */
+    var broken = (rows || []).filter(function (r) { return !r.uid || !r.email; })
+      .map(function (r) { return { id: r.id || '', n: r.name || '', em: r.email || '' }; });
+
+    var pack = { updatedAt: new Date().toISOString(),
+      accounts: docs.length, active: (rows || []).length,
+      noEmp: noEmp, empty: empty, dupMail: dupMail, dupPerson: dupPerson, broken: broken };
+    riskR2PutJson(REG_HEALTH_FILE, pack).catch(function () {});
+  } catch (e) { try { console.error('[reg] онош', e); } catch (x) {} }
+}
+
+/* ══ БҮРТГЭЛИЙН ЭРҮҮЛ МЭНД — Тохиргоо хуудасны карт ══ */
+function regHealthMount(body) {
+  if (!body || !isAdmin() || body.querySelector('#regHealthCard')) return;
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.id = 'regHealthCard';
+  card.innerHTML = '<h3><i class="ti ti-id-badge-2" style="color:#7C3AED;margin-right:6px"></i>Бүртгэлийн эрүүл мэнд</h3>' +
+    '<p class="card-subtitle">Данс ба ажилтны бүртгэл хоорондоо тохирч байгаа эсэх — чимээгүй хазайхаас сэргийлнэ.</p>' +
+    '<div id="regHealthBody" style="font-size:13px;color:#64748B;padding:8px 0">Ачаалж байна…</div>';
+  body.appendChild(card);
+  regHealthDraw();
+}
+
+function regBox(n, label, hint, color, key) {
+  return '<div data-reg-open="' + key + '" style="flex:1;min-width:150px;background:' +
+    (n ? color + '0F' : '#fff') + ';border:1.5px solid ' + (n ? color + '55' : '#EEF1F4') +
+    ';border-radius:12px;padding:12px 14px;cursor:' + (n ? 'pointer' : 'default') + '">' +
+    '<div style="font-size:22px;font-weight:800;font-family:\'Bricolage Grotesque\',sans-serif;' +
+    'line-height:1.1;color:' + (n ? color : '#94A3B8') + '">' + n + '</div>' +
+    '<div style="font-size:12.5px;font-weight:700;color:#334155;margin-top:2px">' + esc(label) + '</div>' +
+    '<div style="font-size:11.5px;color:#94A3B8;margin-top:2px;line-height:1.4">' + esc(hint) + '</div></div>';
+}
+
+var REG_OPEN = '';
+async function regHealthDraw() {
+  var el = document.getElementById('regHealthBody');
+  if (!el) return;
+  var p = null, cli = null;
+  try { p = await riskR2GetJson(REG_HEALTH_FILE, { fresh: true }); } catch (e) {}
+  try { cli = await riskR2GetJson(SYS_CLI_FILE, { fresh: true }); } catch (e) {}
+  if (!p) {
+    el.innerHTML = '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;' +
+      'padding:12px 14px;font-size:12.5px;color:#92400E;line-height:1.6">' +
+      'Онош хараахан бэлдээгүй байна. <b>Ажилтнууд</b> хуудсыг нээж «Шинэчлэх» дарвал ' +
+      'жагсаалт дахин баригдаж, онош энд гарч ирнэ.</div>' +
+      '<div style="margin-top:10px"><button class="btn btn-secondary btn-sm" id="regHRef">Шинэчлэх</button></div>';
+    var r0 = document.getElementById('regHRef');
+    if (r0) r0.addEventListener('click', function () { regHealthDraw(); });
+    return;
+  }
+  /* Нэвтэрсэн ч бүртгэлээ олоогүй хүмүүс — sys/clients дэх noRec тэмдэг */
+  var lost = [];
+  try {
+    var rows = (cli && cli.rows) || {};
+    Object.keys(rows).forEach(function (k) {
+      if (rows[k] && rows[k].noRec) lost.push({ em: k, at: rows[k].at || '', v: rows[k].v || '' });
+    });
+    lost.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  } catch (e) {}
+
+  var nNo = (p.noEmp || []).length, nDup = (p.dupMail || []).length,
+      nPer = (p.dupPerson || []).length, nBrk = (p.broken || []).length + (p.empty || []).length;
+  var h = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">' +
+    regBox(nNo, 'Ажилтангүй данс', 'нэвтэрч чадна, бүртгэлд алга', '#DC2626', 'noEmp') +
+    regBox(nDup, 'Давхар и-мэйл', 'нэг хаяг хоёр бүртгэлтэй', '#B45309', 'dupMail') +
+    regBox(nPer, 'Ижил нэр + тушаал', 'нэг хүн байж магадгүй — шалгах', '#7C3AED', 'dupPerson') +
+    regBox(lost.length, 'Бүртгэлээ олоогүй', 'нэвтэрсэн ч өөрийгөө олоогүй', '#0891B2', 'lost') +
+    '</div>';
+  h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:10px">Нийт данс ' +
+    (p.accounts || 0) + ' · идэвхтэй ажилтан ' + (p.active || 0) +
+    ' · шинэчилсэн ' + esc(String(p.updatedAt || '').slice(0, 16).replace('T', ' ')) + '</div>';
+  if (nBrk) h += '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;' +
+    'padding:9px 12px;font-size:12.5px;color:#991B1B;margin-bottom:10px">⚠ ' + nBrk +
+    ' бүртгэл дутуу (и-мэйл эсвэл холбоосгүй).</div>';
+
+  var list = [];
+  if (REG_OPEN === 'noEmp') list = (p.noEmp || []).map(function (x) {
+    return { a: x.n, b: x.em, c: (x.dp || '—') + (x.ps ? ' · ' + x.ps : '') };
+  });
+  else if (REG_OPEN === 'dupMail') list = (p.dupMail || []).map(function (x) {
+    return { a: x.em, b: x.list.length + ' бүртгэл', c: x.list.map(function (y) { return y.n; }).join(' · ') };
+  });
+  else if (REG_OPEN === 'dupPerson') list = (p.dupPerson || []).map(function (x) {
+    return { a: x.list[0].n, b: x.list.length + ' бүртгэл', c: x.list.map(function (y) { return y.em || '—'; }).join(' · ') };
+  });
+  else if (REG_OPEN === 'lost') list = lost.map(function (x) {
+    return { a: x.em, b: 'v' + x.v, c: String(x.at || '').slice(0, 16).replace('T', ' ') };
+  });
+
+  if (REG_OPEN && list.length) {
+    h += '<div style="max-height:280px;overflow:auto;border:1px solid #EEF1F4;border-radius:11px">' +
+      list.slice(0, 200).map(function (r) {
+        return '<div style="display:flex;gap:10px;justify-content:space-between;padding:8px 12px;' +
+          'border-bottom:1px solid #F1F5F9;font-size:12.5px">' +
+          '<div style="min-width:0"><div style="font-weight:700;color:#1E293B;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap">' + esc(r.a) + '</div>' +
+          '<div style="color:#94A3B8;font-size:11.5px;overflow:hidden;text-overflow:ellipsis">' +
+          esc(r.c) + '</div></div>' +
+          '<div style="flex-shrink:0;color:#64748B;font-size:11.5px">' + esc(r.b) + '</div></div>';
+      }).join('') + '</div>';
+    if (list.length > 200) h += '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">… нийт ' +
+      list.length + '</div>';
+  } else if (REG_OPEN) {
+    h += '<div style="font-size:12.5px;color:#94A3B8;padding:10px 0">Энэ ангилалд юу ч алга ✓</div>';
+  } else {
+    h += '<div style="font-size:12.5px;color:#94A3B8">Дэлгэрэнгүйг харахын тулд дээрх тоон дээр дарна уу.</div>';
+  }
+  h += '<div style="display:flex;gap:8px;margin-top:11px">' +
+    '<button class="btn btn-secondary btn-sm" id="regHRef" style="font-size:13px">Шинэчлэх</button>' +
+    '<button class="btn btn-secondary btn-sm" id="regHRebuild" style="font-size:13px">Жагсаалтыг дахин барих</button></div>';
+  el.innerHTML = h;
+
+  el.querySelectorAll('[data-reg-open]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var k = b.getAttribute('data-reg-open');
+      REG_OPEN = (REG_OPEN === k) ? '' : k;
+      regHealthDraw();
+    });
+  });
+  var rf = document.getElementById('regHRef');
+  if (rf) rf.addEventListener('click', function () { regHealthDraw(); });
+  var rb = document.getElementById('regHRebuild');
+  if (rb) rb.addEventListener('click', function () {
+    /* ⚠ Ажилтны жагсаалт R2-д 6 цаг кэштэй. Албадах туг тавиад дахин
+       ачаалж байж л Firestore-оос шинээр барина. */
+    try { localStorage.setItem('empForce', '1'); } catch (e) {}
+    toast('Жагсаалтыг дахин барихаар тэмдэглэлээ — хуудас шинэчлэгдэнэ', 'info');
+    setTimeout(function () { location.reload(); }, 900);
+  });
+}
+
 function sysHealthMount(body) {
   if (!body || !isAdmin() || body.querySelector('#sysHealthCard')) return;
   var card = document.createElement('div');
@@ -22530,6 +22709,7 @@ function renderSettings() {
     }
     /* Аюулын ангилал, дараа нь системийн эрүүл мэнд — хамгийн доор */
     try { wkHazMount(body); } catch (e) {}
+    try { regHealthMount(body); } catch (e) {}
     try { sysHealthMount(body); } catch (e) {}
     /* ⚠ Дээрх хоёр карт нь сүлжээнээс ХОЖУУ ирдэг тул дэд цэсийг хэд
        хэдэн удаа давтан үүсгэнэ — эс бөгөөс тэд цэсэнд ороогүй үлдэнэ. */
