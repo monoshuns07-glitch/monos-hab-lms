@@ -2940,6 +2940,38 @@ function repVisible(rows) {
     });
   } catch (e) { return rows; }
 }
+/* ══ ТӨЛӨВ БУЦААХГҮЙ ХАМГААЛАЛТ ═══════════════════════════════════════
+   2026-09-07: баталсан ажлууд «батлахыг хүлээж байна» төлөвт БУЦСАН,
+   «Дууссан» тоолуур 6 → 4 болсон.
+
+   ШАЛТГААН: repR2Merge-д `changed` мөр НӨХЦӨЛГҮЙ ялдаг байв. Эскалаци,
+   сануулга бичдэг код нь санах ой дахь мөрөө (батлалтаас ӨМНӨ ачаалагдсан
+   хуучин хуулбар) бүтнээр нь дамжуулдаг тул алсад байсан батлалтыг дарж
+   бичдэг байсан.
+   ⚠ Мөр бүрд `updatedAt` ХЭЗЭЭ Ч бичигддэггүй байсан (14/14 мөр) тул
+     repStamp нь wkExecAt дээр зогсож, аль хувилбар шинэ болохыг ялгаж
+     чаддаггүй байсан нь байдлыг улам дордуулсан.
+
+   Урсгал УРАГШ явна: мэдээлсэн → гүйцэтгэсэн → батлагдсан.
+   ⚠ ТАТГАЛЗАЛ (wkAccept='reject') бол ЗӨВ буцаалт — түүнийг хөндөхгүй. */
+function repIsDone(r) {
+  if (!r) return false;
+  return String(r.wkAccept || '') === 'done' || String(r.status || '') === 'verified';
+}
+function repNoRegress(next, prev) {
+  if (!next || !prev) return next || prev;
+  if (String(next.wkAccept || '') === 'reject') return next;   /* зориудын буцаалт */
+  if (!repIsDone(prev) || repIsDone(next)) return next;        /* ухралт алга */
+  var out = {};
+  Object.keys(next).forEach(function (k) { out[k] = next[k]; });
+  out.status = prev.status;
+  ['wkAccept', 'wkAcceptBy', 'verifiedAt', 'verifiedBy', 'points_awarded']
+    .forEach(function (k) { if (prev[k] != null) out[k] = prev[k]; });
+  if ((prev.wkGateLog || []).length > (next.wkGateLog || []).length) out.wkGateLog = prev.wkGateLog;
+  try { console.warn('[reports] ' + next.id + ' — батлагдсан төлөв буцахыг хаав'); } catch (e) {}
+  return out;
+}
+
 async function repR2Merge(changed, opts) {
   opts = opts || {};
   var remote = [];
@@ -2952,11 +2984,12 @@ async function repR2Merge(changed, opts) {
   (DB.reports || []).forEach(function (r) {
     if (!r || r.id == null) return;
     var k = String(r.id), old = byId[k];
-    if (!old || repStamp(r) > repStamp(old)) byId[k] = r;
+    if (!old || repStamp(r) > repStamp(old)) byId[k] = repNoRegress(r, old);
   });
   (changed || []).forEach(function (x) {
     if (!x || x.id == null) return;
-    byId[String(x.id)] = x;                       /* сая өөрчлөгдсөн нь үргэлж ялна */
+    /* сая өөрчлөгдсөн нь ялна — ГЭХДЭЭ батлагдсан төлөвийг буцаахгүй */
+    byId[String(x.id)] = repNoRegress(x, byId[String(x.id)]);
   });
   (opts.remove || []).forEach(function (id) { delete byId[String(id)]; });
   /* Устгалын tombstone — бүрмөсөн устгасан мөр дахин амилахгүй */
@@ -18750,6 +18783,10 @@ function wkPatch(id, fn, msg) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) { toast('Олдсонгүй', 'error'); return null; }
   fn(r);
+  /* ⚠ Мөрийн updatedAt-г ЗААВАЛ шинэчилнэ — repStamp үүгээр аль хувилбар
+     шинэ болохыг ялгадаг. Өмнө нь ХЭЗЭЭ Ч бичигддэггүй байсан тул тамга нь
+     wkExecAt дээр зогсож, хуучин хуулбар шинийг дарж бичдэг байв. */
+  try { r.updatedAt = new Date().toISOString(); } catch (e) {}
   saveDB();
   reportPushToServer(r);
   try { wkTick(DB.reports || []); } catch (e) {}   /* толио мөн шинэчилнэ */
