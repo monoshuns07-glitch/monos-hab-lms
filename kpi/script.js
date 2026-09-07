@@ -4748,7 +4748,9 @@ function renderMyExams() {
   try { examGrantFetch(); } catch (e) {}
   var me = myEmployeeRecord();
   var email = encodeURIComponent((SESSION && SESSION.email) || '');
-  var name = encodeURIComponent((me && me.name) || '');
+  /* Бүртгэл олдоогүй ч шалгалт ХООСОН нэрээр бүртгэгдэхгүй байх ёстой */
+  var name = encodeURIComponent((me && me.name) ||
+    (SESSION && (SESSION.name || String(SESSION.email || '').split('@')[0])) || '');
   var cards = EXAM_PAGES.filter(function (ep) {
     return isModExamUnlocked(me, ep.key);
   }).map(function (ep) {
@@ -4825,7 +4827,14 @@ function setStat(scopeSel, idx, value) {
 function myEmployeeRecord() {
   if (!SESSION) return null;
   var me = empAll().filter(function (e) { return (SESSION.uid && e.uid === SESSION.uid) || _sameEmail(e.email, SESSION.email) || (SESSION.empId && e.id === SESSION.empId); })[0];
-  return me || (DB.employees || [])[0] || null;
+  /* ⚠⚠ 2026-09-07: ЭНД «|| DB.employees[0]» гэсэн нөөц утга байсан —
+     бүртгэл нь олдоогүй хүн бүр ЖАГСААЛТЫН ЭХНИЙ АЖИЛТАН (С. Цэрэнпил
+     дарга) болж харагддаг байв. Шалгалт өөр хүний нэрээр бүртгэгдэх,
+     сургалтын явц өөр хүн дээр бичигдэх, тэр байтугай даргын эрхийн
+     хүрээ нээгдэх эрсдэлтэй байсан.
+     ⛔ ХЭЗЭЭ Ч нөөц ажилтан бүү буцаа. Олдоогүй бол null — дуудагч бүр
+     үүнийг зөв боловсруулдаг («Таны мэдээлэл олдсонгүй» гэж хэлнэ). */
+  return me || null;
 }
 function kpiLevel(total) {
   if (total >= 90) return { name: 'Алтан', icon: 'ti-trophy', color: '#D97706', next: null, min: 90 };
