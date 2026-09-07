@@ -33,6 +33,37 @@ const KEYS = [
   'push/subs.json'            /* мэдэгдлийн бүртгэл */
 ];
 
+
+const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
+const ADMIN_EMAILS = ['buynt666@gmail.com'];
+
+/* Админ гараар ажиллуулж болно — cron ажиллаж байгаа эсэхийг батлах,
+   мөн шаардлагатай үед даруй нөөцлөхөд хэрэгтэй. */
+async function verifyAdmin(idToken) {
+  if (!idToken || String(idToken).length < 40) return null;
+  try {
+    const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FB_API_KEY, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: idToken }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const u = j && j.users && j.users[0];
+    if (!u || !u.localId || u.disabled === true) return null;
+    const em = String(u.email || '').toLowerCase();
+    return ADMIN_EMAILS.indexOf(em) > -1 ? { uid: u.localId, email: em } : null;
+  } catch (e) { return null; }
+}
+
+function readBody(req) {
+  return new Promise(function (resolve) {
+    if (req.body && typeof req.body === 'object') return resolve(req.body);
+    let d = '';
+    req.on('data', function (c) { d += c; });
+    req.on('end', function () { try { resolve(JSON.parse(d || '{}')); } catch (e) { resolve({}); } });
+    req.on('error', function () { resolve({}); });
+  });
+}
+
 function upHeaders(key) {
   const secret = process.env.SIGN_SECRET || '';
   if (!secret) return null;
@@ -73,8 +104,11 @@ module.exports = async function handler(req, res) {
   const cs = process.env.CRON_SECRET || '';
   const auth = String(req.headers.authorization || '');
   const isCron = !!cs && auth === 'Bearer ' + cs;
-  const dry = String((req.query && req.query.dry) || '') === '1';
-  if (!isCron && !dry) {
+  const body = req.method === 'POST' ? await readBody(req) : {};
+  const dry = String((req.query && req.query.dry) || '') === '1' || body.dry === true;
+  let byAdmin = null;
+  if (!isCron && body.idToken) byAdmin = await verifyAdmin(body.idToken);
+  if (!isCron && !byAdmin && !dry) {
     return res.status(401).json({ ok: false,
       error: cs ? 'Зөвшөөрөлгүй' : 'CRON_SECRET тохируулаагүй байна', notConfigured: !cs });
   }
@@ -113,7 +147,7 @@ module.exports = async function handler(req, res) {
     await putRaw('backup/_index.json', JSON.stringify(idx));
   }
 
-  return res.status(200).json({ ok: failN === 0, dry: dry, day: day,
+  return res.status(200).json({ ok: failN === 0, dry: dry, day: day, by: isCron ? 'cron' : (byAdmin ? 'админ' : 'туршилт'),
     files: okN, failed: failN, bytes: bytes, items: out });
 };
 
