@@ -25529,6 +25529,11 @@ function habExamSyncAll() {
       habExamSyncAll._done = true;
       try { modExamCacheClear(); } catch (e) {}
       try { _habCache = null; } catch (e) {}
+      /* ⚠ Толь шинэчлэгдсэн ч ажилтны жагсаалт нь дүнг ӨӨРТӨӨ хуулж авдаг
+         бөгөөд 6 цагийн кэштэй. Дахин барихгүй бол KPI, тайлан, ажилтны
+         хүснэгт дээр өнөөдрийн дүн ГАРАХГҮЙ (2026-09-07). */
+      try { localStorage.setItem('empForce', '1'); } catch (e) {}
+      try { refreshEmployeesNow(); } catch (e) {}
       try { toast('Шалгалтын дүн шинэчлэгдлээ (' + (j.total || 0) + ')', 'success'); } catch (e) {}
     }
   }).catch(function () { habExamSyncAll._busy = false; });
