@@ -1267,9 +1267,15 @@ var _saveTimer = null;
    байршуулдаг) — мартвал апп «N цуглуулга уншигдсангүй» гэж хэлээд дата
    харагдахгүй болно. hrorders дээр яг ингэж болсон (2026-08-19), дүрмийг
    нэмсний дараа энд буцаан оруулсан. */
+/* ⚠ 2026-09-07: `miskillStats` ЭНД БАЙХГҮЙ — Firestore-оос САЛГАСАН.
+   Тэнд 22,052 баримт хуримтлагдсан байсан (бусад бүгдийн нийлбэр 35).
+   Апп аль хэдийн R2 (miskill/all.json) -г эх сурвалж болгосон тул тэр
+   баримтууд зөвхөн квотын эрсдэл байв. Хуучин баримтуудыг УСТГААГҮЙ —
+   нөөц болж үлдэнэ.
+   ⚠ Энд буцааж нэмэх бол mainDocPayload дахь хасалтыг ч авах ёстой. */
 var COL_KEYS = ['tasks', 'reports', 'violations', 'hrorders', 'hazards', 'suggestions', 'incidents',
   'notifications', 'videoViews', 'examResults', 'firstAidChecks', 'ppeObservations',
-  'extTrainings', 'externalTrainings', 'miskillStats'];
+  'extTrainings', 'externalTrainings'];
 var COL_PREFIX = 'kpi_';
 /* ══════════════════════════════════════════════════════════════════════
    FIREBASE-ИЙН ХЯЗГААР — ЗӨВХӨН АЖИЛТНЫ БҮРТГЭЛ
@@ -4127,6 +4133,11 @@ function mainDocPayload() {
   Object.keys(DB).forEach(function (k) {
     if (k === 'employees') return;            // users-ээс дахин үүснэ
     if (k === 'risks') return;                // ⚠ R2-д байна — үндсэн баримтад БҮҮ бич
+    /* ⚠ miskillStats нь COL_KEYS-ээс гарсан тул `isColKey` худал болно.
+       Хасахгүй бол 298 мөр (дэлгэрэнгүйтэй) үндсэн баримт руу орж,
+       Firestore-ийн 1 MB хязгаарыг давж, ХАДГАЛАЛТ БҮХЭЛДЭЭ УНАНА.
+       Эх сурвалж нь R2 (miskill/all.json). */
+    if (k === 'miskillStats') return;
     if (isColKey(k)) return;                  // цуглуулгад очсон
     out[k] = DB[k];
   });
