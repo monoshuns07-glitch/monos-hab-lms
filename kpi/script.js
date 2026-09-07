@@ -1859,6 +1859,16 @@ async function riskR2GetJson(key, opts) {
 }
 
 /* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
+/* Бичсэн зүйл ҮНЭХЭЭР тэнд байгаа эсэхийг шалгах гарын үсэг.
+   Жагсаалтын урт + updatedAt хангалттай — гүн харьцуулалт үнэтэй. */
+function r2Sig(o) {
+  try {
+    if (!o || typeof o !== 'object') return String(o);
+    var arr = o.list || o.rows || null;
+    return (Array.isArray(arr) ? arr.length : Object.keys(o).length) + '|' + (o.updatedAt || o.at || '');
+  } catch (e) { return '?'; }
+}
+
 async function riskR2PutJson(key, obj) {
   var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
   blob.name = key.split('/').pop();
@@ -1866,7 +1876,34 @@ async function riskR2PutJson(key, obj) {
   riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
   /* ⚠ Цохилтын файл өөрөө цохилт үүсгэвэл мөнхийн давталт болно */
   if (key !== PULSE_FILE) { try { pulseBump(key); } catch (e) {} }
+  /* ⚠⚠ БАТАЛГААЖУУЛАЛТ (2026-09-07): өмнө нь бичээд л ОРХИДОГ байв.
+     Бичилт унасан, эсвэл өөр сесс дарж бичсэн ч хэн ч мэдэхгүй байсан —
+     Гандолгорын батлалт яг ингэж алдагдсан. Одоо буцааж уншиж шалгана. */
+  try { await r2VerifyWrite(key, obj); } catch (e) {}
   return out;
+}
+
+/* Бичилтийг шалгаж, зөрвөл НЭГ удаа дахин бичнэ */
+async function r2VerifyWrite(key, obj) {
+  if (key === PULSE_FILE) return true;              /* цохилтын файл — хэрэггүй */
+  var want = r2Sig(obj);
+  var got = null;
+  try { got = r2Sig(await riskR2GetJson(key, { fresh: true })); } catch (e) { got = null; }
+  if (got === want) return true;
+  try { console.warn('[r2] ' + key + ' — бичилт таарсангүй (' + got + ' ≠ ' + want + '), дахин бичнэ'); } catch (e) {}
+  try {
+    var b2 = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+    b2.name = key.split('/').pop();
+    await r2Put(b2, key);
+    riskR2CacheBust();
+    var got2 = r2Sig(await riskR2GetJson(key, { fresh: true }));
+    if (got2 === want) return true;
+    got = got2;
+  } catch (e) {}
+  /* ⚠ Хоёр удаа бүтсэнгүй — ЧИМЭЭГҮЙ өнгөрөхгүй */
+  try { sysErrLog('r2', 'Бичилт баталгаажсангүй: ' + key + ' (' + got + ' ≠ ' + want + ')', 'riskR2PutJson'); } catch (e) {}
+  try { toast('⚠ «' + key + '» хадгалалт баталгаажсангүй — дахин оролдоно уу', 'error'); } catch (e) {}
+  return false;
 }
 
 
