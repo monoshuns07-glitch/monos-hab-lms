@@ -2488,6 +2488,80 @@ function taskIdsOf(t) {
   return (t && t.empIds && t.empIds.length) ? t.empIds : ((t && t.empId) ? [t.empId] : []);
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ДААЛГАВРЫГ ХҮЛЭЭЖ АВАХ (claims)
+   ⚠ Өмнө нь «Хийгдэж байна» гэдэг нь ЗӨВХӨН «дарга баталсан» гэсэн
+     утгатай байв — гүйцэтгэгч ажлыг үнэхээр авсан эсэх хаана ч
+     бүртгэгдэхгүй. Олон гүйцэтгэгчтэй даалгаварт хэн нь авснаа
+     мэдэх ямар ч арга байгаагүй. Тиймээс
+       claims = [{ id, uid, name, at }]
+     жагсаалт нэмэв. Хүн бүр ӨӨРИЙНХӨӨ өмнөөс л авна.
+   ══════════════════════════════════════════════════════════════ */
+function taskClaims(t) { return (t && Array.isArray(t.claims)) ? t.claims : []; }
+function taskClaimCount(t) { return taskClaims(t).length; }
+function taskClaimedBy(t, empId) {
+  if (!empId) return false;
+  return taskClaims(t).filter(function (c) { return c && String(c.id) === String(empId); }).length > 0;
+}
+function taskClaimNames(t) {
+  return taskClaims(t).map(function (c) {
+    var nm = (c && c.name) || '';
+    try { nm = shortenPersonName(nm) || nm; } catch (e) {}
+    return nm;
+  }).filter(Boolean).join(', ');
+}
+/* Хүлээж авах эрх — өөрт нь оногдсон, батлагдсан, дуусаагүй даалгавар.
+   ⚠ «Гүйцэтгэсэн» товчны эрхтэй ЯГ ижил хүрээтэй байх ёстой — эс бөгөөс
+     илгээж чадах атлаа хүлээж авч чаддаггүй хүн гарна. */
+function taskCanClaim(t) {
+  if (!t || taskIsUnapproved(t) || taskIsClosed(t) || t.status === 'submitted') return false;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) return false;
+  var ids = taskIdsOf(t);
+  if (ids.length && ids.indexOf(me.id) < 0) return false;
+  return !taskClaimedBy(t, me.id);
+}
+/* Хүлээж авснаа цуцлах — ЗӨВХӨН өөрийнхөө бичлэгийг */
+function taskCanUnclaim(t) {
+  if (!t || taskIsClosed(t) || t.status === 'submitted') return false;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  return !!(me && taskClaimedBy(t, me.id));
+}
+/* Бичлэг нэмэх — хадгалахгүй. Илгээх үед ч дуудагдана. */
+function taskClaimAdd(t) {
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me || taskClaimedBy(t, me.id)) return false;
+  t.claims = taskClaims(t).concat([{
+    id: me.id, uid: me.uid || (SESSION && SESSION.uid) || '',
+    name: taskMyName(), at: new Date().toISOString()
+  }]);
+  return true;
+}
+function taskClaim(id) {
+  var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanClaim(t)) { toast('Энэ даалгаврыг хүлээж авах боломжгүй', 'warn'); return; }
+  if (!taskClaimAdd(t)) { toast('Таны бүртгэл олдсонгүй', 'error'); return; }
+  renderTasks();
+  taskPersist(t).then(function (ok) {
+    if (ok) toast('✋ Хүлээж авлаа — даалгавар «Хийгдэж байна» төлөвт орлоо', 'success');
+    renderTasks();
+  });
+}
+function taskUnclaim(id) {
+  var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
+  if (!t) return;
+  if (!taskCanUnclaim(t)) { toast('Цуцлах боломжгүй', 'warn'); return; }
+  if (!confirm('Энэ даалгаврыг хүлээж авснаа цуцлах уу?')) return;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  t.claims = taskClaims(t).filter(function (c) { return !(c && String(c.id) === String(me && me.id)); });
+  renderTasks();
+  taskPersist(t).then(function (ok) {
+    if (ok) toast('Хүлээж авснаа цуцаллаа', 'warn');
+    renderTasks();
+  });
+}
+
 /* R2 дахь файлыг read → merge → write. changed = өөрчилсөн даалгаврууд */
 async function taskR2Merge(changed, opts) {
   opts = opts || {};
@@ -29216,8 +29290,15 @@ function taskDueBox(x, big) {
 }
 /* Явцын дөрвөн цэг */
 function taskStepHTML(x) {
-  var at = taskIsUnapproved(x) ? 0 : (x.status === 'submitted' ? 2 : (taskIsClosed(x) ? 3 : 1));
-  var steps = ['Өгсөн', 'Хийгдэж байна', 'Илгээсэн', 'Баталгаажсан'];
+  /* ⚠ 2-р цэг = ХҮЛЭЭЖ АВСАН. Өмнө нь батлагдсан бүх даалгавар шууд
+     «Хийгдэж байна» болдог байсан нь худал мэдээлэл байв. */
+  var steps = ['Өгсөн', 'Хүлээж авсан', 'Илгээсэн', 'Баталгаажсан'];
+  var at, lab;
+  if (taskIsUnapproved(x))            { at = 0; lab = 'Батлахыг хүлээж буй'; }
+  else if (taskIsClosed(x))           { at = 3; lab = steps[3]; }
+  else if (x.status === 'submitted')  { at = 2; lab = 'Хянуулахаар илгээсэн'; }
+  else if (taskClaimCount(x))         { at = 1; lab = 'Хийгдэж байна'; }
+  else                                { at = 0; lab = 'Хэн ч хүлээж аваагүй'; }
   return '<div style="display:flex;align-items:center;gap:4px;margin-top:8px">' +
     steps.map(function (l, i) {
       var on = i <= at, cur = i === at;
@@ -29226,8 +29307,20 @@ function taskStepHTML(x) {
         '<span title="' + esc(l) + '" style="width:9px;height:9px;border-radius:50%;background:' + c +
         (cur ? ';box-shadow:0 0 0 3px ' + c + '26' : '') + ';flex:0 0 auto"></span>';
     }).join('') +
-    '<span style="margin-left:7px;font-size:10.5px;font-weight:700;color:#64748B;white-space:nowrap">' +
-    esc(steps[at]) + '</span></div>';
+    '<span style="margin-left:7px;font-size:10.5px;font-weight:700;color:' +
+    (at === 0 && !taskIsUnapproved(x) ? '#C81E3A' : '#64748B') + ';white-space:nowrap">' +
+    esc(lab) + '</span></div>';
+}
+/* Хэн авсан / хэн ч аваагүй гэдгийг НЭГ мөрөөр */
+function taskClaimLineHTML(x) {
+  if (taskIsUnapproved(x) || taskIsClosed(x) || x.status === 'submitted') return '';
+  var nm = taskClaimNames(x);
+  if (nm) {
+    return '<div style="font-size:11.5px;color:#15803D;margin-top:6px;font-weight:700">' +
+      '✋ Хүлээж авсан: ' + esc(nm) + '</div>';
+  }
+  return '<div style="font-size:11.5px;color:#C81E3A;margin-top:6px;font-weight:700">' +
+    '✋ Хэн ч хүлээж аваагүй</div>';
 }
 /* Гүйцэтгэгчдийн нэр */
 function taskWhoText(x) {
@@ -29313,6 +29406,8 @@ function taskMiniCard(x, ctx) {
   } else if (closedT) {
     if (canReviewTask(x)) acts.push('<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '">Дүн засах</button>');
   } else if (!closedT && (mine || (ctx.emp && !ids.length))) {
+    if (taskCanClaim(x))
+      acts.push('<button class="btn btn-sm" style="background:#DCFCE7;color:#15803D;border-color:#BBF7D0" data-task-claim="' + esc(x.id) + '">✋ Би авлаа</button>');
     acts.push('<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '">Илгээх</button>');
   }
   return '<div data-task-open="' + esc(x.id) + '" style="background:#fff;border:1px solid #E9EDF2;' +
@@ -29329,6 +29424,7 @@ function taskMiniCard(x, ctx) {
       esc(taskClamp(x.desc, 92)) + '</div>' : '') +
     '<div style="font-size:11.5px;color:#64748B;margin-top:7px;display:flex;align-items:center;gap:5px">' +
     '<i class="ti ti-user"></i> ' + esc(taskClamp(taskWhoText(x), 34)) + '</div>' +
+    taskClaimLineHTML(x) +
     '<div style="margin-top:8px">' + taskDueBox(x, false) + '</div>' +
     (acts.length ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">' + acts.join('') + '</div>' : '') +
     '</div>';
@@ -29383,6 +29479,7 @@ function taskDetailModal(id) {
     row('Эхлэх', esc(x.startDate || '—')) +
     row('Дуусах', esc(x.dueDate || '—')) +
     row('Даалгавар өгсөн', esc(x.createdBy || '—')) +
+    (taskClaimCount(x) ? row('Хүлээж авсан', esc(taskClaimNames(x)), '#15803D') : '') +
     (x.approverName ? row('Батлах хүн', esc(x.approverName)) : '') +
     (x.submittedAt ? row('Илгээсэн', esc(String(x.submittedAt).slice(0, 10)), '#7C3AED') : '') +
     (x.status === 'approved' ? row('Үнэлгээ', taskScoreOf(x) + '%', '#16A34A') : '') +
@@ -29396,7 +29493,22 @@ function taskDetailModal(id) {
       'style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#0891B2;font-weight:700">' +
       '<i class="ti ti-photo"></i> Гүйцэтгэлийн нотолгоо: ' + esc(taskFileName(x.proofUrl)) + '</a></div>' : '') +
     (x.reviewComment ? '<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;' +
-      'padding:9px 12px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар:</b> ' + esc(x.reviewComment) + '</div>' : '');
+      'padding:9px 12px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар:</b> ' + esc(x.reviewComment) + '</div>' : '') +
+    /* ✋ Хүлээж авах — цонхноос шууд */
+    (taskCanClaim(x)
+      ? '<button class="btn" style="width:100%;margin-top:14px;background:#DCFCE7;color:#15803D;border-color:#BBF7D0;' +
+        'font-weight:800" data-task-claim="' + esc(x.id) + '">✋ Би энэ ажлыг хүлээж авлаа</button>'
+      : (taskCanUnclaim(x)
+        ? '<button class="btn" style="width:100%;margin-top:14px;background:#F8FAFC;color:#64748B;border-color:#E2E8F0" ' +
+          'data-task-unclaim="' + esc(x.id) + '">Хүлээж авснаа цуцлах</button>'
+        : ''));
+  /* ⚠ Цонхны товчлуур нь хуудасны сонсогчид БАРИГДАХГҮЙ — өөрөө холбоно */
+  node.addEventListener('click', function (ev) {
+    var cl = ev.target.closest('[data-task-claim]');
+    if (cl) { try { closeModal(); } catch (e) {} taskClaim(cl.getAttribute('data-task-claim')); return; }
+    var uc = ev.target.closest('[data-task-unclaim]');
+    if (uc) { try { closeModal(); } catch (e) {} taskUnclaim(uc.getAttribute('data-task-unclaim')); return; }
+  });
   buildModal('Даалгаврын дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
 
@@ -29467,10 +29579,12 @@ function renderTasks() {
      нийлдэггүй байв. Одоо тэр нь «Хийгдэх»-ийн доорх улаан тэмдэглэгээ.
      Хайрцаг бүр дээр дарахад тухайн бүлэг нь ШҮҮГДЭНЭ. */
   var lateOpen = open.filter(function (x) { return taskOverdueDays(x) > 0; }).length;
+  var noClaim  = open.filter(function (x) { return taskClaimCount(x) === 0; }).length;
   html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">' +
     taskStatCard('all', 'Бүх даалгавар', tasks.length, 'ti-checkbox', '#3730A3') +
     taskStatCard('open', 'Хийгдэх', open.length, 'ti-clock', '#D97706',
-      lateOpen ? ['⏰ ' + lateOpen + ' хугацаа хэтэрсэн', '#C81E3A'] : null) +
+      lateOpen ? ['⏰ ' + lateOpen + ' хугацаа хэтэрсэн', '#C81E3A']
+        : (noClaim ? ['✋ ' + noClaim + ' хүлээж аваагүй', '#C81E3A'] : null)) +
     taskStatCard('review', 'Хянагдаж буй', review.length, 'ti-eye-search', '#7C3AED') +
     (pending.length ? taskStatCard('pending', 'Батлах хүлээж буй', pending.length, 'ti-clock-pause', '#B45309') : '') +
     taskStatCard('closed', 'Баталгаажсан', closed.length, 'ti-circle-check', '#16A34A') +
@@ -29502,7 +29616,9 @@ function renderTasks() {
     if (x.status === 'done')      return '<span style="background:#16A34A18;color:#16A34A;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">✓ Биелсэн</span>';
     if (x.status === 'submitted') return '<span style="background:#7C3AED18;color:#7C3AED;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">⏳ Хянагдаж байна</span>';
     if (x.status === 'returned')  return '<span style="background:#DC262618;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">↩ Буцаагдсан</span>';
-    return '<span style="background:#64748B18;color:#64748B;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хийгдэх</span>';
+    if (taskClaimCount(x))
+      return '<span style="background:#16A34A18;color:#15803D;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">✋ Хийгдэж байна</span>';
+    return '<span style="background:#64748B18;color:#64748B;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">Хүлээж аваагүй</span>';
   }
 
   function taskCard(x) {
@@ -29544,12 +29660,15 @@ function renderTasks() {
         '<span><i class="ti ti-user"></i> ' + esc(x.createdBy || 'Админ') + '</span>' +
         (x.submittedAt ? '<span style="color:#7C3AED"><i class="ti ti-send"></i> ' + esc((x.submittedAt || '').slice(0, 10)) + (late ? ' (' + late + ' хоног хоцорсон)' : '') + '</span>' : '') +
         '</div>' +
+        taskClaimLineHTML(x) +
         (x.refUrl ? '<div style="margin-top:8px"><a href="' + esc(x.refUrl) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#4F46E5;text-decoration:none;background:#EEF2FF;border-radius:8px;padding:6px 11px"><i class="ti ti-paperclip"></i> Заавар файл' + (x.refUrlName ? ': ' + esc(x.refUrlName) : '') + '</a></div>' : '') +
         (x.submitNote ? '<div style="margin-top:8px;background:#F8FAFC;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#475569"><b>Ажилтны тайлбар:</b> ' + esc(x.submitNote) + '</div>' : '') +
         (x.proofUrl ? '<div style="margin-top:6px"><a href="' + esc(x.proofUrl) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#047857;text-decoration:none;background:#ECFDF5;border-radius:8px;padding:6px 11px"><i class="ti ti-photo-check"></i> Гүйцэтгэлийн нотолгоо' + (x.proofName ? ': ' + esc(x.proofName) : '') + '</a></div>' : '') +
         (x.reviewComment ? '<div style="margin-top:6px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 11px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар' + (x.reviewedBy ? ' (' + esc(x.reviewedBy) + ')' : '') + ':</b> ' + esc(x.reviewComment) + '</div>' : '') +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
+      (canSubmit && taskCanClaim(x) ? '<button class="btn btn-sm" style="background:#DCFCE7;color:#15803D;border-color:#BBF7D0" data-task-claim="' + esc(x.id) + '"><i class="ti ti-hand-click"></i> Би авлаа</button>' : '') +
+      (taskCanUnclaim(x) ? '<button class="btn btn-sm" style="background:#F8FAFC;color:#64748B;border-color:#E2E8F0" data-task-unclaim="' + esc(x.id) + '" title="Хүлээж авснаа цуцлах"><i class="ti ti-hand-off"></i></button>' : '') +
       (canSubmit ? '<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '"><i class="ti ti-send"></i> Гүйцэтгэсэн</button>' : '') +
       (canReview ? '<button class="btn btn-sm btn-primary" data-task-review="' + esc(x.id) + '"><i class="ti ti-eye-check"></i> Хянах</button>' : '') +
       (canRegrade ? '<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '"><i class="ti ti-pencil"></i> Дүн засах</button>' : '') +
@@ -29608,16 +29727,34 @@ function renderTasks() {
     var _V0 = TASK_VIEW;
     var _pick = function (k, arr) { return (_V0 === 'all' || _V0 === k) ? arr : []; };
     var _lateOnly = open.filter(function (t) { return taskOverdueDays(t) > 0; });
-    var cols = [
-      { key: 'pending', label: 'Батлах хүлээж буй', color: '#B45309',
-        rows: _pick('pending', pending), empty: 'Батлах хүлээж буй зүйл алга' },
-      { key: 'open', label: (_V0 === 'late' ? 'Хугацаа хэтэрсэн' : 'Хийгдэж байна'), color: '#D97706',
-        rows: (_V0 === 'late' ? _lateOnly : _pick('open', open)), empty: 'Хийгдэх даалгавар алга' },
-      { key: 'review', label: 'Хянагдаж буй', color: '#7C3AED',
-        rows: _pick('review', review), empty: 'Хянах зүйл алга' },
-      { key: 'closed', label: 'Баталгаажсан', color: '#16A34A',
-        rows: _pick('closed', closed), empty: 'Дууссан даалгавар алга' }
-    ];
+    /* ⚠ «Хийгдэж байна» гэдгийг ГҮЙЦЭТГЭГЧ ажлыг авсан эсэхээр ялгана.
+       Өмнө нь батлагдсан бүх даалгавар нэг баганад орж, хэн ч гар хүрээгүй
+       ажил «хийгдэж байгаа» мэт харагддаг байв. */
+    var _taken   = open.filter(function (t) { return taskClaimCount(t) > 0; });
+    var _untaken = open.filter(function (t) { return taskClaimCount(t) === 0; });
+    var cols = (_V0 === 'late')
+      ? [
+        { key: 'pending', label: 'Батлах хүлээж буй', color: '#B45309',
+          rows: _pick('pending', pending), empty: 'Батлах хүлээж буй зүйл алга' },
+        { key: 'open', label: 'Хугацаа хэтэрсэн', color: '#C81E3A',
+          rows: _lateOnly, empty: 'Хугацаа хэтэрсэн даалгавар алга' },
+        { key: 'review', label: 'Хянагдаж буй', color: '#7C3AED',
+          rows: _pick('review', review), empty: 'Хянах зүйл алга' },
+        { key: 'closed', label: 'Баталгаажсан', color: '#16A34A',
+          rows: _pick('closed', closed), empty: 'Дууссан даалгавар алга' }
+      ]
+      : [
+        { key: 'pending', label: 'Батлах хүлээж буй', color: '#B45309',
+          rows: _pick('pending', pending), empty: 'Батлах хүлээж буй зүйл алга' },
+        { key: 'open', label: 'Хүлээж аваагүй', color: '#C81E3A',
+          rows: _pick('open', _untaken), empty: 'Бүгд хүлээж авсан' },
+        { key: 'open', label: 'Хийгдэж байна', color: '#D97706',
+          rows: _pick('open', _taken), empty: 'Хийгдэж буй даалгавар алга' },
+        { key: 'review', label: 'Хянагдаж буй', color: '#7C3AED',
+          rows: _pick('review', review), empty: 'Хянах зүйл алга' },
+        { key: 'closed', label: 'Баталгаажсан', color: '#16A34A',
+          rows: _pick('closed', closed), empty: 'Дууссан даалгавар алга' }
+      ];
     html += taskBoardHTML(cols, _ctx);
     sec.innerHTML = html;
     taskWire(sec);
@@ -29675,6 +29812,12 @@ function taskWire(sec) {
       var apNo = ev.target.closest('[data-task-no]');
       if (apNo) { taskApprove(apNo.getAttribute('data-task-no'), false); return; }
 
+      /* ✋ Хүлээж авах / цуцлах */
+      var cl = ev.target.closest('[data-task-claim]');
+      if (cl) { taskClaim(cl.getAttribute('data-task-claim')); return; }
+      var uc = ev.target.closest('[data-task-unclaim]');
+      if (uc) { taskUnclaim(uc.getAttribute('data-task-unclaim')); return; }
+
       var sb = ev.target.closest('[data-task-submit]');
       if (sb) { actionSubmitTask(sb.getAttribute('data-task-submit')); return; }
 
@@ -29714,6 +29857,9 @@ function actionSubmitTask(tid) {
     ],
     submitLabel: 'Хянуулахаар илгээх',
     onSubmit: function (v) {
+      /* ⚠ Хүлээж авалгүй шууд илгээсэн бол хийсэн нь тодорхой тул
+         автоматаар бүртгэнэ — эс бөгөөс түүх дутуу үлдэнэ. */
+      try { taskClaimAdd(x); } catch (e) {}
       x.status = 'submitted';
       x.submitNote = (v.note || '').trim();
       x.proofUrl = v.proof || '';
