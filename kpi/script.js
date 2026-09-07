@@ -2061,6 +2061,18 @@ try {
    Үр дүнг R2-т нийтэлнэ; бусад нь тэндээс уншина. */
 var REG_HEALTH_FILE = 'registry/health.json';
 
+/* Монгол бичлэгийн хувилбарыг нэгтгэнэ. ⚠ Үүнгүйгээр «Адъяадорж» ба
+   «Адьяадорж» хоёр ӨӨР хүн болж, нэг хүн «бүртгэлгүй» мэт харагдана. */
+function regFold(t) {
+  return String(t || '').toLowerCase()
+    .replace(/ё/g, 'е').replace(/ъ/g, 'ь').replace(/ө/g, 'о').replace(/ү/g, 'у')
+    .replace(/[^a-zа-яь0-9\- ]/gi, ' ').replace(/\s+/g, ' ').trim();
+}
+function regKey(u) {
+  return [regFold(u.lastName), regFold(u.firstName)].filter(function (x) { return x.length > 1; })
+    .sort().join(' ');
+}
+
 function regNameOf(u) {
   var ln = u.lastName ? (String(u.lastName).charAt(0) + '. ') : '';
   return (ln + (u.firstName || '')).trim() || String(u.email || '').split('@')[0] || '(нэргүй)';
@@ -2070,16 +2082,23 @@ function regDiagPublish(docs, rows) {
   try {
     if (!isAdmin() || !docs || !docs.length) return;
     var noEmp = [], empty = [], byMail = {}, byPerson = {};
+    /* ⚠ Хасагдсан данс идэвхтэйтэй давхцаж байвал ЭНД баригдана —
+       өмнө нь зөвхөн идэвхтэйг хооронд нь шалгадаг байв (2026-09-07). */
+    var actKey = {}, actMail = {}, remList = [];
     docs.forEach(function (d) {
       var u = d.data() || {}, uid = u.uid || d.id;
       var em = String(u.email || '').trim().toLowerCase();
       var nm = regNameOf(u);
       /* ① Ажилтны бүртгэлд ОРООГҮЙ данс */
       if (u.hrRemoved === true) {
-        noEmp.push({ uid: uid, em: em, n: nm, dp: u.dept || '', ps: u.position || u.pos || '',
+        noEmp.push({ uid: uid, em: em, n: nm, dp: u.dept || u.department || '', ps: u.position || u.pos || '',
           at: u.hrRemovedAt || u.hrSyncedAt || '' });
+        remList.push({ uid: uid, em: em, n: nm, k: regKey(u), ps: u.position || u.pos || '' });
         return;
       }
+      if (em) actMail[em] = { uid: uid, n: nm };
+      var _ak = regKey(u);
+      if (_ak) (actKey[_ak] = actKey[_ak] || []).push({ uid: uid, n: nm, em: em, ps: u.position || u.pos || '' });
       if (!em && !String(u.firstName || '').trim() && !String(u.lastName || '').trim()) {
         empty.push({ uid: uid }); return;
       }
@@ -2088,8 +2107,8 @@ function regDiagPublish(docs, rows) {
          гурван хүн байсан (2026-09-07). Ижил нэр юу ч батлахгүй. */
       if (em) (byMail[em] = byMail[em] || []).push({ uid: uid, n: nm, ps: u.position || u.pos || '' });
       /* ③ Ижил хүн байж болзошгүй — нэр БА албан тушаал хоёулаа таарвал */
-      var pk = (String(u.lastName || '') + '|' + String(u.firstName || '') + '|' +
-        String(u.position || u.pos || '')).toLowerCase().trim();
+      var pk = regFold(String(u.lastName || '') + ' ' + String(u.firstName || '')) + '|' +
+        regFold(u.position || u.pos || '');
       if (pk.replace(/\|/g, '').length > 3)
         (byPerson[pk] = byPerson[pk] || []).push({ uid: uid, n: nm, em: em });
     });
@@ -2101,7 +2120,16 @@ function regDiagPublish(docs, rows) {
     var broken = (rows || []).filter(function (r) { return !r.uid || !r.email; })
       .map(function (r) { return { id: r.id || '', n: r.name || '', em: r.email || '' }; });
 
-    var pack = { updatedAt: new Date().toISOString(),
+    /* Хасагдсан ↔ идэвхтэй давхцал */
+    var crossDup = [];
+    remList.forEach(function (r) {
+      var hit = null, how = '';
+      if (r.em && actMail[r.em]) { hit = [actMail[r.em]]; how = 'и-мэйл'; }
+      else if (r.k && actKey[r.k]) { hit = actKey[r.k]; how = 'нэр'; }
+      if (hit) crossDup.push({ rem: { n: r.n, em: r.em, ps: r.ps }, act: hit, how: how });
+    });
+
+    var pack = { updatedAt: new Date().toISOString(), crossDup: crossDup,
       accounts: docs.length, active: (rows || []).length,
       noEmp: noEmp, empty: empty, dupMail: dupMail, dupPerson: dupPerson, broken: broken };
     riskR2PutJson(REG_HEALTH_FILE, pack).catch(function () {});
@@ -2159,11 +2187,13 @@ async function regHealthDraw() {
   } catch (e) {}
 
   var nNo = (p.noEmp || []).length, nDup = (p.dupMail || []).length,
-      nPer = (p.dupPerson || []).length, nBrk = (p.broken || []).length + (p.empty || []).length;
+      nPer = (p.dupPerson || []).length, nBrk = (p.broken || []).length + (p.empty || []).length,
+      nCross = (p.crossDup || []).length;
   var h = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">' +
     regBox(nNo, 'Ажилтангүй данс', 'нэвтэрч чадна, бүртгэлд алга', '#DC2626', 'noEmp') +
     regBox(nDup, 'Давхар и-мэйл', 'нэг хаяг хоёр бүртгэлтэй', '#B45309', 'dupMail') +
     regBox(nPer, 'Ижил нэр + тушаал', 'нэг хүн байж магадгүй — шалгах', '#7C3AED', 'dupPerson') +
+    regBox(nCross, 'Хасагдсантай давхцсан', 'нэг хүн хоёр дансаар', '#C2410C', 'cross') +
     regBox(lost.length, 'Бүртгэлээ олоогүй', 'нэвтэрсэн ч өөрийгөө олоогүй', '#0891B2', 'lost') +
     '</div>';
   h += '<div style="font-size:12px;color:#94A3B8;margin-bottom:10px">Нийт данс ' +
@@ -2182,6 +2212,10 @@ async function regHealthDraw() {
   });
   else if (REG_OPEN === 'dupPerson') list = (p.dupPerson || []).map(function (x) {
     return { a: x.list[0].n, b: x.list.length + ' бүртгэл', c: x.list.map(function (y) { return y.em || '—'; }).join(' · ') };
+  });
+  else if (REG_OPEN === 'cross') list = (p.crossDup || []).map(function (x) {
+    return { a: x.rem.n + '  (хасагдсан)', b: x.how + 'ээр таарсан',
+      c: 'идэвхтэй: ' + x.act.map(function (y) { return y.n; }).join(' · ') };
   });
   else if (REG_OPEN === 'lost') list = lost.map(function (x) {
     return { a: x.em, b: 'v' + x.v, c: String(x.at || '').slice(0, 16).replace('T', ' ') };
