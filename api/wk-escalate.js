@@ -226,6 +226,13 @@ module.exports = async function handler(req, res) {
        (бодит датанд 8 хоног хэвтсэн ажил байсан). */
     if (pct >= 1 && !claimed && !r.autoAssign && (r.leads || []).length)
       jobs.push({ r: r, k: 'assign' });
+    /* ⚠ ГҮЙЦЭТГЭСЭН ч БАТЛАГДААГҮЙ — 24 цаг өнгөрвөл мэдээлсэн хүнд
+       сануулна. Өмнө нь энэ шат БАЙХГҮЙ тул ажил гурав хоног дүүжлэгдэж
+       байсан (2026-09-07). Нэг ажилд нэг л удаа. */
+    if (r.accept === 'pending' && r.execAt && !e.accept && r.reporter && r.reporter.uid) {
+      const waited = (now - new Date(r.execAt).getTime()) / 3600000;
+      if (waited >= 24) jobs.push({ r: r, k: 'accept', waited: waited });
+    }
   }
   if (!jobs.length) {
     return res.status(200).json({ ok: true, rows: rows.length, sent: 0, note: 'босго давсан зүйл алга' });
@@ -247,6 +254,12 @@ module.exports = async function handler(req, res) {
       const left = Math.max(0, (new Date(r.createdAt).getTime() + Number(r.hours) * 3600000 - now) / 3600000);
       title = '⏳ Хугацааны тал өнгөрлөө — ' + hoursText(left) + ' үлдсэн';
       r.esc.half = stamp;
+    } else if (j.k === 'accept') {
+      /* Батлах хүн = мэдээлсэн хүн */
+      to = [r.reporter];
+      title = '\u2705 Ажил гүйцэтгэгдсэн — та баталж өгнө үү (' +
+        hoursText(j.waited) + ' хүлээж байна)';
+      r.esc.accept = stamp;
     } else if (j.k === 'assign') {
       const lead1 = (r.leads || [])[0];
       r.autoAssign = { uid: lead1.uid, name: lead1.name || '', at: stamp };

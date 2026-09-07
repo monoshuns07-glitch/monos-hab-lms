@@ -20145,7 +20145,12 @@ function wkListHTML(all) {
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
   if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
   tabs.push({ k: 'rep', l: 'Миний мэдээлсэн', n: toAccept.length, tone: toAccept.length ? '#4F46E5' : '' });
-  tabs.push({ k: 'done', l: 'Дууссан', n: done.length });
+  /* ⚠ Гүйцэтгэсэн ч БАТЛАГДААГҮЙ ажил хаана ч харагддаггүй байсан тул
+     «дууссан тоо буурчихлаа» гэсэн ойлгомжгүй байдал үүсдэг байв.
+     Одоо тэр тоог «Дууссан» табын хажууд хамт харуулна (2026-09-07). */
+  var waitOk = rows.filter(function (r) { return wkStatus(r) === 'executed'; }).length;
+  tabs.push({ k: 'done', l: 'Дууссан', n: done.length,
+    wait: waitOk, waitTone: '#B45309' });
   /* Байхгүй таб дээр гацахгүй — эхний боломжит руу шилжинэ */
   var okTabs = tabs.map(function (t) { return t.k; });
   if (okTabs.indexOf(WK_TAB) < 0) WK_TAB = okTabs[0] || 'rep';
@@ -20182,7 +20187,12 @@ function wkListHTML(all) {
         'font-family:inherit;font-size:12.5px;font-weight:' + (on ? '800' : '600') + '">' + t.l +
         (t.n ? '<span style="margin-left:6px;background:' + (on ? 'rgba(255,255,255,.25)' : (t.tone || '#EEF2FF')) +
           ';color:' + (on ? '#fff' : (t.tone ? '#fff' : '#4F46E5')) + ';border-radius:6px;padding:1px 6px;' +
-          'font-size:11px;font-weight:800">' + t.n + '</span>' : '') + '</button>';
+          'font-size:11px;font-weight:800">' + t.n + '</span>' : '') +
+        /* ⏳ Батлагдахыг хүлээж буй — дарвал шууд шүүгдэнэ */
+        (t.wait ? '<span data-wk-wait="1" title="Гүйцэтгэсэн ч батлагдаагүй — дарж харна уу" ' +
+          'style="margin-left:5px;background:' + t.waitTone + ';color:#fff;border-radius:6px;' +
+          'padding:1px 6px;font-size:11px;font-weight:800">\u23F3 ' + t.wait + '</span>' : '') +
+        '</button>';
     }).join('') + '</div>' +
     wkFilterBarHTML(wkBase, list.length) +
     wkMyImpactHTML(mineRep) + '</div>';
@@ -20560,7 +20570,9 @@ function repSrcOk() {
     return true;
   } catch (e) { return false; }
 }
-var WK_ESC_KEYS = { noclaim: 'wkEscNoClaim', half: 'wkEsc50', due: 'wkEsc100', late2: 'wkEsc200' };
+var WK_ESC_KEYS = { noclaim: 'wkEscNoClaim', half: 'wkEsc50', due: 'wkEsc100', late2: 'wkEsc200',
+  /* ⚠ Батлахыг хүлээсэн сануулга — үүнгүй бол өдөр бүр ДАВТАГДАНА */
+  accept: 'wkEscAccept' };
 
 /* Сервер илгээсэн тэмдгийг бичлэг рүү буулгана */
 async function wkMirrorPull(all) {
@@ -20640,9 +20652,18 @@ async function wkMirrorPush(all, full) {
       ownerUid: (function () { var o = wkOwnerOf(r); return (o && o.uid) || ''; })(),
       ownerName: (function () { var o = wkOwnerOf(r); return (o && o.name) || ''; })(),
       closed: false,
+      /* ⚠ Гүйцэтгэсэн ч БАТЛАГДААГҮЙ ажлыг сервер таних ёстой —
+         эс бөгөөс гурав хоног хүлээсэн ажлыг хэн ч мэдэхгүй өнгөрдөг
+         (2026-09-07). Батлах хүн нь МЭДЭЭЛСЭН хүн. */
+      execAt: r.wkExecAt || '',
+      accept: r.wkAccept || '',
+      reporter: (r.reporterUid ? { uid: r.reporterUid,
+        name: r.reporterName || r.reporterFull || '',
+        email: String(r.reporterEmail || '').trim() } : null),
       esc: {
         noclaim: r.wkEscNoClaim || '', half: r.wkEsc50 || '',
-        due: r.wkEsc100 || '', late2: r.wkEsc200 || ''
+        due: r.wkEsc100 || '', late2: r.wkEsc200 || '',
+        accept: r.wkEscAccept || ''
       },
       leads: leadCache[g],
       claimer: cl || ((r.wkClaimBy && r.wkClaimBy.uid)
@@ -22519,6 +22540,13 @@ function rfAfter(sec, admin, pending) {
     /* ── Work order ── */
     if (ev.target.closest('[data-wk-new]')) { wkNewModal(); return; }
     if (ev.target.closest('[data-wk-admin]')) { wkAdminModal(); return; }
+    /* ⏳ «батлахыг хүлээж буй» тоон дээр дарвал ТЭР ажлууд шүүгдэнэ */
+    if (ev.target.closest('[data-wk-wait]')) {
+      ev.stopPropagation();
+      WK_TAB = 'all'; WK_F_ST = 'executed'; WK_F_Q = ''; WK_F_KIND = 'all';
+      WK_F_LOC = ''; WK_F_LATE = false;
+      renderReportflow(); return;
+    }
     var wt = ev.target.closest('[data-wk-tab]');
     if (wt) { WK_TAB = wt.getAttribute('data-wk-tab'); renderReportflow(); return; }
     /* ── Шүүлт: төрөл, цэвэрлэх, хугацаа хэтэрсэн ── */
