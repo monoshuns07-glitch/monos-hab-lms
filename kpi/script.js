@@ -25511,9 +25511,37 @@ function renderExamAdmin() {
   setTimeout(function () { loadHabeaResultsPanel(); }, 0);
 }
 
+
+/* Бүтэн тольдолт — ард нь, хэрэглэгчийг хүлээлгэхгүй.
+   ⚠ Нэг сесст нэг удаа: тольдолт ~80 секунд үргэлжилдэг тул давхарлахгүй. */
+function habExamSyncAll() {
+  if (habExamSyncAll._busy || habExamSyncAll._done) return;
+  if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) return;
+  if (!isAdmin()) return;
+  habExamSyncAll._busy = true;
+  fauth.currentUser.getIdToken().then(function (t) {
+    return fetch('/api/exam-sync/', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: t, all: true }) });
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    habExamSyncAll._busy = false;
+    if (j && j.ok) {
+      habExamSyncAll._done = true;
+      try { modExamCacheClear(); } catch (e) {}
+      try { _habCache = null; } catch (e) {}
+      try { toast('Шалгалтын дүн шинэчлэгдлээ (' + (j.total || 0) + ')', 'success'); } catch (e) {}
+    }
+  }).catch(function () { habExamSyncAll._busy = false; });
+}
+
 async function loadHabeaResultsPanel() {
   var panel = document.getElementById('habeaResultsPanel');
   if (!panel) return;
+  /* ⚠ 2026-09-07: Энэ хуудас эх сурвалжаас ШУУД уншдаг тул энд дүн
+     харагддаг ч, R2 толь хоцордог байв — KPI, «Миний дүн», тайлан бүгд
+     тольноос уншдаг тул тэнд өнөөдрийн дүн ГАРДАГГҮЙ байсан.
+     Одоо менежер энэ хуудсыг нээхэд толь ард нь гүйцнэ. */
+  try { habExamSyncAll(); } catch (e) {}
   panel.innerHTML = '<div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div>';
   try {
     /* ⚠ SDK-ээр БИШ, REST-ээр уншина — өөр төслийн SDK нь сүлжээ бэлэн
