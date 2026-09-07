@@ -2296,6 +2296,23 @@ async function riskR2Publish(rows, onStep, opts) {
       throw new Error('Олон албын эрсдлийг хадгалж чадсангүй: ' + ((e && e.message) || e));
     }
   }
+  /* ⚠ ХООСОРСОН АЛБА. Доорх гогцоо нь мөр БАЙГАА албыг л бичдэг тул
+     0 болсон албаны файл ХУУЧНААРАА үлддэг. 2026-09-04-нд давхардал
+     нэгтгэхэд ТУЗ, Экспорт, Борлуулалт гурав тус бүр ганц эрсдэлтэй
+     байсан бөгөөд тэр нь яг хуулбар нь байв — нэгтгэсний дараа 0 болж,
+     файл нь хөндөгдөөгүй тул 3 хуулбар production-д үлдсэн.
+     ⚠ Санамсаргүй хоослохоос сэргийлж ЗӨВХӨН дуудагч ил зөвшөөрсөн
+       (allowEmpty) ба хамрах хүрээ заасан үед л хоослоно. */
+  var emptied = [];
+  if (opts.allowEmpty && scope) {
+    scope.forEach(function (sd) {
+      var c = riskCanonDept(sd) || sd;
+      if (!c) return;
+      if (names.some(function (n) { return riskSameDept(n, c); })) return;
+      if (emptied.some(function (x) { return riskSameDept(x, c); })) return;
+      emptied.push(c);
+    });
+  }
   var mine = names.map(function (n) {
     return { name: n, slug: riskSlug(n), n: byDept[n].length, hash: ackHashOf(byDept[n]) };
   });
@@ -2308,7 +2325,9 @@ async function riskR2Publish(rows, onStep, opts) {
     (old && old.depts || []).forEach(function (d) {
       if (!d || !d.name) return;
       var replaced = mine.some(function (m) { return m.slug === d.slug || riskSameDept(m.name, d.name); });
-      if (!replaced) keep.push(d);
+      /* Хоосорсон алба индекст үлдвэл татах гэж оролдоод 404 авна */
+      var gone = emptied.some(function (c) { return riskSameDept(c, d.name); });
+      if (!replaced && !gone) keep.push(d);
     });
   } catch (e) { console.warn('[riskR2] хуучин индекс уншигдсангүй', e); }
 
@@ -2324,6 +2343,10 @@ async function riskR2Publish(rows, onStep, opts) {
     var n = names[i];
     if (onStep) onStep('Байршуулж байна: ' + n + ' (' + byDept[n].length + ')', i, names.length);
     await riskR2PutJson(RISK_R2_PREFIX + 'd/' + riskSlug(n) + '.json', byDept[n]);
+  }
+  for (var _e = 0; _e < emptied.length; _e++) {
+    if (onStep) onStep('Хоослож байна: ' + emptied[_e]);
+    await riskR2PutJson(RISK_R2_PREFIX + 'd/' + riskSlug(emptied[_e]) + '.json', []);
   }
   await riskR2PutJson(RISK_R2_INDEX, index);      // индексийг ХАМГИЙН СҮҮЛД
   try { localStorage.removeItem(RISK_CACHE_KEY); } catch (e) {}
@@ -3612,7 +3635,10 @@ async function actionRiskMergeDupes(btn) {
     DB.risks = (DB.risks || []).filter(function (r) { return !dropIds[r.id]; });
     riskCacheBust();
 
-    var idx = await riskPersist('Давхардлыг нэгтгэж байна', { scopeDepts: names });
+    /* ⚠ allowEmpty — нэгтгэсний дараа 0 эрсдэлтэй болсон албаны файлыг
+       хоослоно. Үгүй бол хуулбар нь тэнд үлдэнэ. */
+    var idx = await riskPersist('Давхардлыг нэгтгэж байна',
+      { scopeDepts: names, allowEmpty: true });
     if (btn) { btn.disabled = false; btn.innerHTML = old; }
     if (idx) {
       toast('✓ ' + groups.length + ' эрсдэл нэгтгэгдэж, ' + nDrop + ' хуулбар устлаа', 'success');
@@ -3719,7 +3745,7 @@ async function riskPersist(msg, opts) {
     }
     var idx = await riskR2Publish(_rows, function (s) {
       try { console.log('[riskR2] ' + s); } catch (e) {}
-    }, { scopeDepts: scopeD });
+    }, { scopeDepts: scopeD, allowEmpty: !!opts.allowEmpty });
     toast('✓ ' + n + ' эрсдэл ' + idx.depts.length + ' албанд байршлаа', 'success');
     return idx;
   } catch (e) {
