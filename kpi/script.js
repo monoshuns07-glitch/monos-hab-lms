@@ -4262,6 +4262,37 @@ function empViolations(e, key) {
   });
 }
 
+
+/* ══ МОДУЛИЙН ШАЛГАЛТЫН ДҮН — ХОЁР ЭХ СУРВАЛЖИЙГ НЭГТГЭНЭ ══════════════
+   ① аппын дотоод модуль (`DB.empProgress`)
+   ② ГАДААД ХАБЭА шалгалтын систем (`e.habeaExams`)
+   ⚠ Өмнө нь зөвхөн ①-ийг уншдаг байсан тул ажилтнууд гадаад системд
+   шалгалт өгсөн ч «Ажилтнууд» хүснэгт, KPI дээр ОГТ ГАРДАГГҮЙ байв
+   (2026-09-07). Тайлан нь ②-оос уншдаг тул тэнд харагдаад, энд
+   харагдахгүй байсан нь ойлгомжгүй байдал үүсгэж байсан. */
+function empModExam(e, key) {
+  var p = null;
+  try { p = getEmpProg(e.id, key) || {}; } catch (er) { p = {}; }
+  if (p.examTaken && p.examScore != null) {
+    return { score: _f(p.examScore), passed: !!p.examPassed,
+      at: p.examTakenAt || '', src: 'in' };
+  }
+  var best = null;
+  try {
+    (e.habeaExams || []).forEach(function (x) {
+      if (String(x.key || '') !== key) return;
+      var ts = Number(x.ts || 0);
+      if (!best || ts > best._ts) {
+        var ms = ts > 0 && ts < 1e11 ? ts * 1000 : ts;
+        var iso = '';
+        try { iso = ms ? new Date(ms).toISOString() : ''; } catch (er2) {}
+        best = { score: _f(x.percent), passed: !!x.passed, at: iso, src: 'habea', _ts: ts };
+      }
+    });
+  } catch (er3) {}
+  return best;
+}
+
 /* 2) ДАВТАН+ШАЛГАЛТ (нэг үзүүлэлт дотроо: суусан 1/3 + шалгалтын дүн 2/3).
    Алба энэ сард давтангүй бол null → жин нь видео руу шилжинэ */
 function kpiDavtan(e) {
@@ -4271,9 +4302,11 @@ function kpiDavtan(e) {
   KPI_DAVTAN_KEYS.forEach(function (k) {
     var p = getEmpProg(e.id, k) || {};
     if (p.trainingCompletedAt && salaryMonthKey(p.trainingCompletedAt) === key) attended = true;
-    if (p.examTakenAt && salaryMonthKey(p.examTakenAt) === key) {
+    /* ⚠ Дотоод БА гадаад шалгалт хоёуланг тооцно (2026-09-07) */
+    var x = empModExam(e, k);
+    if (x && x.at && salaryMonthKey(x.at) === key) {
       attended = true;
-      if (p.examScore != null) scores.push(_f(p.examScore));
+      if (x.score != null) scores.push(_f(x.score));
     }
   });
   var att = attended ? 100 : 0;
@@ -4284,8 +4317,8 @@ function kpiDavtan(e) {
 function kpiExam(e) {
   var scores = [];
   KPI_DAVTAN_KEYS.forEach(function (k) {
-    var p = getEmpProg(e.id, k);
-    if (p && p.examTaken && p.examScore != null) scores.push(_f(p.examScore));
+    var x = empModExam(e, k);
+    if (x && x.score != null) scores.push(_f(x.score));
   });
   if (!scores.length) return null;
   return clamp(Math.round(avg(scores)), 0, 100);
@@ -7943,12 +7976,18 @@ function renderEmployees() {
   function empIntCells(e) {
     return intKeys.map(function (k) {
       var prog = getEmpProg(e.id, k);
-      // Шалгалт өгсөн бол — оноог шууд харуулна (тэнцсэн=ногоон, тэнцээгүй=улаан)
-      if (prog.examTaken) {
-        var sc = Math.round(prog.examScore || 0);
-        var col = prog.examPassed ? '#16A34A' : '#DC2626';
-        var mk = prog.examPassed ? '✓' : '✗';
-        return '<td style="text-align:center" title="Шалгалт: ' + sc + '% · ' + (prog.examPassed ? 'тэнцсэн' : 'тэнцээгүй') + '"><span style="color:' + col + ';font-size:12px;font-weight:800">' + mk + sc + '</span></td>';
+      /* Шалгалт өгсөн бол — оноог шууд харуулна (тэнцсэн=ногоон, тэнцээгүй=улаан).
+         ⚠ ГАДААД ХАБЭА системд өгсөн шалгалтыг ч тооцно — өмнө нь зөвхөн
+         аппын дотоод шалгалтыг уншдаг тул энд хоосон харагддаг байв. */
+      var xm = empModExam(e, k);
+      if (xm) {
+        var sc = Math.round(xm.score || 0);
+        var col = xm.passed ? '#16A34A' : '#DC2626';
+        var mk = xm.passed ? '✓' : '✗';
+        var srcT = xm.src === 'habea' ? ' · ХАБЭА шалгалтын систем' : '';
+        return '<td style="text-align:center" title="Шалгалт: ' + sc + '% · ' +
+          (xm.passed ? 'тэнцсэн' : 'тэнцээгүй') + srcT + '"><span style="color:' + col +
+          ';font-size:12px;font-weight:800">' + mk + sc + '</span></td>';
       }
       var vis = isModTrainingVisible(e, k);
       var examOpen = !!(e.dept && getModRel(k, e.dept).examForceUnlocked);
