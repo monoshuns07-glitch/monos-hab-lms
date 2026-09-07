@@ -92,7 +92,7 @@ var pageLabels = {
   chatbot: 'Чат бот', reports: 'Тайлан', dataflow: 'Дата урсгал', settings: 'Тохиргоо',
   'video-track': 'Видео сургалт (MiSkill)', tasks: 'Даалгавар', 'trn-mod': 'Дотоод сургалт', myexams: 'ХАБЭА Шалгалт',
   hrorder: 'Хүний нөөцийн захиалгын хуудас', structure: 'Байгууллагын бүтэц',
-  wmeet: '7 хоногийн ХАБЭА уулзалт',
+  wmeet: '7 хоногийн ХАБЭА уулзалт', taskreturns: 'Буцаасан захиалга',
   myresults: 'Миний сургалтын явц'
 };
 
@@ -2684,6 +2684,83 @@ function taskIsPending(t) { return !!t && t.status === 'pending'; }
 /* Батлагдаагүй = хүлээгдэж буй ЭСВЭЛ буцаагдсан. Аль нь ч гүйцэтгэгчид
    харагдах, «Хийгдэх» тоололд орох ёсгүй. */
 function taskIsUnapproved(t) { return !!t && (t.status === 'pending' || t.status === 'rejected'); }
+/* ══ ЗАХИРАЛ ДААЛГАВАР БУЦААХ ═══════════════════════════════════════
+   Даалгаврыг менежер, ажилтан ч ШУУД өгч болдог тул дэд бүтэц, сангийн
+   шугам хоолой, цахилгааны томоохон өөрчлөлт шаардсан — эсвэл хийх
+   шаардлагагүй — ажил хяналтгүй орж ирэх магадлалтай. Гүйцэтгэх ба
+   үйлдвэрлэл хариуцсан захирал түүнийг зогсоох боломжтой байх ёстой.
+
+   ⚠ Энэ нь батлах шатнаас ӨӨР. Батлах нь ЗӨВХӨН `pending` даалгаварт
+     ажилладаг бөгөөд ихэнх даалгавар батлагч заагаагүй тул шууд `open`
+     болдог — өөрөөр хэлбэл батлах шат огт үүсдэггүй. Буцаалт нь
+     АЖИЛЛАЖ БАЙГАА даалгаврыг зогсооно.
+   ⚠ Дууссан ажлыг буцаахгүй — хийгдчихсэн зүйлийг цуцлах нь утгагүй. */
+function taskIsDirScope(t) {
+  try {
+    var sc = riskDirScope();
+    if (sc === 'all') return true;                 /* гүйцэтгэх захирал */
+    if (sc === 'prod') {                           /* үйлдвэрлэл — харьяа албад */
+      var re = dirScopeRe('prod');
+      var d = String((t && t.dept) || '');
+      return !!re && (d === 'all' || re.test(d));
+    }
+  } catch (e) {}
+  return false;
+}
+function taskCanReturn(t) {
+  if (!t) return false;
+  if (taskIsUnapproved(t)) return false;           /* аль хэдийн буцаагдсан */
+  try { if (taskIsClosed(t)) return false; } catch (e) {}
+  return taskIsDirScope(t);
+}
+/* Буцаахдаа ЗААВАЛ шалтгаанаа бичнэ — үүсгэсэн хүн юуг засахаа мэдэх ёстой */
+function taskReturnModal(id) {
+  var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanReturn(t)) { toast('Танд буцаах эрх алга', 'error'); return; }
+  var node = elc('div', 'modal-info',
+    '<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:11px;padding:11px 13px;' +
+    'margin-bottom:13px;font-size:12.5px;color:#92400E;line-height:1.6">' +
+    '<b>' + esc(String(t.title || '').slice(0, 70)) + '</b><br>' +
+    esc(t.dept || '') + ' · ' + esc(t.createdBy || t.createdByEmail || '') + ' үүсгэсэн</div>' +
+    '<label style="display:block;font-size:12.5px;font-weight:700;color:#334155;margin-bottom:5px">' +
+    'Яагаад буцааж байна вэ? <span style="color:#DC2626">*</span></label>' +
+    '<textarea id="trWhy" class="rf-input" rows="3" ' +
+    'placeholder="Жишээ: Энэ ажил дэд бүтцийн шугам хоолойд өөрчлөлт оруулна — эхлээд төсөв, зураг төсөл шаардлагатай."></textarea>' +
+    '<div id="trSt" style="margin-top:7px;font-size:12.5px"></div>');
+  var go = elc('button', 'btn btn-primary', '<i class="ti ti-rotate"></i> Буцаах');
+  go.style.width = '100%';
+  go.addEventListener('click', function () {
+    var why = String((node.querySelector('#trWhy') || {}).value || '').trim();
+    if (why.length < 5) {
+      node.querySelector('#trSt').innerHTML =
+        '<span style="color:#DC2626">Шалтгаанаа бичнэ үү — үүсгэсэн хүн юуг засахаа мэдэх ёстой.</span>';
+      return;
+    }
+    closeModal();
+    taskReturn(id, why);
+  });
+  buildModal('Ажлын даалгавар буцаах', node, { width: '520px', footer: go });
+}
+function taskReturn(id, why) {
+  var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanReturn(t)) { toast('Танд буцаах эрх алга', 'error'); return; }
+  var me = null; try { me = myEmp(); } catch (e) {}
+  t.returnedFrom = t.status;                       /* ямар төлөвөөс буцсаныг үлдээнэ */
+  t.status = 'rejected';                           /* гүйцэтгэгчид харагдахаа болино */
+  t.returnWhy = why;
+  t.returnedAt = new Date().toISOString();
+  t.returnedBy = taskMyName();
+  t.returnedByPos = (me && (me.pos || me.role)) || (SESSION && SESSION.pos) || '';
+  t.returnedByEmail = (SESSION && SESSION.email) || '';
+  renderTasks();
+  taskPersist(t).then(function (done) {
+    if (done) toast('Буцаагдлаа — «Буцаасан захиалга» цэснээс харна', 'warn');
+    try { renderTasks(); renderTaskReturns(); } catch (e) {}
+  });
+}
+
 /* Дээд шат батлах (ok=true) эсвэл буцаах (ok=false) */
 function taskApprove(id, ok) {
   var t = (DB.tasks || []).filter(function (x) { return x.id === id; })[0];
@@ -29775,6 +29852,12 @@ function taskStatCard(key, label, val, icon, color, sub) {
 }
 
 
+/* Захирлын «Буцаах» товч — гүйцэтгэгчийн товчнуудаас өнгөөр ялгана */
+function taskRetBtn(x) {
+  return '<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border-color:#FDE68A" ' +
+    'data-task-ret="' + esc(x.id) + '" title="Захирлын эрхээр буцаана">' +
+    '<i class="ti ti-rotate"></i> Буцаах</button>';
+}
 /* ── БАГАНЫН БОГИНО КАРТ ── дарж дэлгэрэнгүйг нээнэ ── */
 function taskMiniCard(x, ctx) {
   var pr = taskPrio(x), i = taskDueInfo(x);
@@ -29789,8 +29872,12 @@ function taskMiniCard(x, ctx) {
     }
   } else if (x.status === 'submitted') {
     if (canReviewTask(x)) acts.push('<button class="btn btn-sm btn-primary" data-task-review="' + esc(x.id) + '">Хянах</button>');
+    if (taskCanReturn(x)) acts.push(taskRetBtn(x));
   } else if (closedT) {
     if (canReviewTask(x)) acts.push('<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '">Дүн засах</button>');
+  } else if (!closedT && taskCanReturn(x) && !(mine || (ctx.emp && !ids.length))) {
+    /* Захиралд — гүйцэтгэгч биш ч буцаах товч гарна */
+    acts.push(taskRetBtn(x));
   } else if (!closedT && (mine || (ctx.emp && !ids.length))) {
     if (taskCanClaim(x))
       acts.push('<button class="btn btn-sm" style="background:#DCFCE7;color:#15803D;border-color:#BBF7D0" data-task-claim="' + esc(x.id) + '">✋ Би авлаа</button>');
@@ -29898,6 +29985,66 @@ function taskDetailModal(id) {
   buildModal('Даалгаврын дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
 
+/* ══ «БУЦААСАН ЗАХИАЛГА» ЦЭС ═════════════════════════════════════════
+   Захирлын буцаасан даалгаврын түүх. Үүсгэсэн хүн юуг яагаад буцаасныг
+   уншиж, засаад дахин илгээнэ. */
+function trCanUse() {
+  try {
+    var sc = riskDirScope();
+    if (sc === 'all' || sc === 'prod') return true;
+    return isAdmin() || riskIsHseStaff();
+  } catch (e) { return false; }
+}
+function trApplyNav() {
+  var nav = document.querySelector('.nav-item[data-page="taskreturns"]');
+  if (!nav) return;
+  var on = false; try { on = trCanUse(); } catch (e) {}
+  nav.style.display = on ? '' : 'none';
+  try {
+    var n = (DB.tasks || []).filter(function (t) { return t && t.returnedAt; }).length;
+    var b = nav.querySelector('.nav-badge');
+    if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
+  } catch (e) {}
+}
+function renderTaskReturns() {
+  var sec = pageEl('taskreturns'); if (!sec) return;
+  var rows = (DB.tasks || []).filter(function (t) { return t && t.returnedAt; })
+    .sort(function (a, b) { return String(b.returnedAt).localeCompare(String(a.returnedAt)); });
+  var H = '<div class="page-header"><div><h1>Буцаасан захиалга</h1>' +
+    '<p class="page-subtitle">Захирлын буцаасан ажлын даалгаврын түүх · ' + rows.length + '</p></div></div>';
+  if (!rows.length) {
+    H += '<div class="card" style="padding:40px"><div class="empty-state">' +
+      '<i class="ti ti-rotate"></i><div>Буцаасан даалгавар алга</div>' +
+      '<div style="font-size:12.5px;color:#94A3B8;margin-top:6px;line-height:1.6">' +
+      'Даалгавар цэснээс «Буцаах» дарвал энд бүртгэгдэнэ.</div></div></div>';
+    sec.innerHTML = H; return;
+  }
+  H += rows.map(function (t) {
+    var pr = taskPrio(t);
+    return '<div class="card" style="padding:15px 17px;margin-bottom:11px;border-left:4px solid #F59E0B">' +
+      '<div style="display:flex;align-items:flex-start;gap:11px;flex-wrap:wrap">' +
+      '<div style="flex:1;min-width:220px">' +
+      '<div style="font-size:14.5px;font-weight:800;color:#1E293B;line-height:1.4">' +
+      esc(t.title || '—') + '</div>' +
+      (t.desc ? '<div style="font-size:12.5px;color:#64748B;margin-top:4px;line-height:1.55">' +
+        esc(String(t.desc).slice(0, 180)) + '</div>' : '') +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">' +
+      esc(t.dept || '') + ' · ' + esc(t.createdBy || t.createdByEmail || '') + ' үүсгэсэн' +
+      (t.createdAt ? ' · ' + String(t.createdAt).slice(0, 10) : '') + '</div></div>' +
+      /* ⚠ TASK_PRIO-д bg талбар БАЙХГҮЙ — зөвхөн label, color, rank. Өнгийг
+         нь тунгалагжуулж дэвсгэр болгоно. */
+      '<span style="background:' + pr.color + '18;color:' + pr.color + ';border-radius:8px;padding:3px 10px;' +
+      'font-size:11.5px;font-weight:800;flex-shrink:0">' + esc(pr.label || '') + '</span></div>' +
+      '<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:11px;padding:11px 13px;margin-top:11px">' +
+      '<div style="font-size:10.5px;font-weight:800;color:#B45309;letter-spacing:.4px">БУЦААСАН ШАЛТГААН</div>' +
+      '<div style="font-size:13px;color:#92400E;margin-top:4px;line-height:1.6">' + esc(t.returnWhy || '—') + '</div>' +
+      '<div style="font-size:11.5px;color:#B45309;margin-top:7px;padding-top:7px;border-top:1px solid #FDE68A">' +
+      esc(t.returnedBy || '—') + (t.returnedByPos ? ' · ' + esc(t.returnedByPos) : '') +
+      ' · ' + String(t.returnedAt || '').slice(0, 16).replace('T', ' ') + '</div></div></div>';
+  }).join('');
+  sec.innerHTML = H;
+}
+
 function renderTasks() {
   var sec = pageEl('tasks'); if (!sec) return;
   sec.style.padding = '';
@@ -29918,6 +30065,8 @@ function renderTasks() {
     if (taskIsUnapproved(t)) {
       if (admin) return true;
       if (t.createdByEmail && SESSION && t.createdByEmail === SESSION.email) return true;
+      /* Буцаасан захирал өөрийн шийдвэрээ харах ёстой */
+      if (t.returnedAt && taskIsDirScope(t)) return true;
       return taskCanApprove(t);
     }
     if (admin) return true;
@@ -30197,6 +30346,9 @@ function taskWire(sec) {
       if (apOk) { taskApprove(apOk.getAttribute('data-task-ok'), true); return; }
       var apNo = ev.target.closest('[data-task-no]');
       if (apNo) { taskApprove(apNo.getAttribute('data-task-no'), false); return; }
+      /* Захирлын буцаалт — комментоор */
+      var rt = ev.target.closest('[data-task-ret]');
+      if (rt) { taskReturnModal(rt.getAttribute('data-task-ret')); return; }
 
       /* ✋ Хүлээж авах / цуцлах */
       var cl = ev.target.closest('[data-task-claim]');
@@ -31842,7 +31994,8 @@ function renderAll() {
    renderHazards, renderIncidents, renderReportflow, renderSuggestions,
    renderSettings, renderNotifBadge, renderPpe, renderInspections,
    renderDataflow, renderVideoTracking, renderTasks, renderViolationsPage,
-   hrApplyNav, renderHrOrders, renderStructure, wmSync].forEach(function (fn) {
+   hrApplyNav, renderHrOrders, renderStructure, wmSync,
+   trApplyNav, renderTaskReturns].forEach(function (fn) {
     /* ⚠ Массивт БАЙХГҮЙ функцийн нэр бичвэл энэ мөр хүртэл ч хүрэхгүй —
        массив үүсэх үедээ ReferenceError өгч, renderAll БҮХЭЛДЭЭ унана.
        (2026-08-19: устгасан renderStructure үлдсэнээс болж яг ингэж
