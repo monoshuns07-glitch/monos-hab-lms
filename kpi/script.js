@@ -24718,12 +24718,33 @@ async function trndocLoad(force) {
 /* Огноо × алба × сургалтын төрлөөр бүлэглэнэ.
    ⚠ Сургалтын төрлийг оруулахгүй бол нэг өдөр нэг албанд орсон
    давтан ба урьдчилсан хоёр НИЙЛЖ, буруу баримт үүснэ. */
+/* Шалгалтын мөр дэх нэр, албыг БҮРТГЭЛЭЭС и-мэйлээр дахин тодорхойлно.
+   ⚠ Бичлэг дэх нэр буруу байж БОЛНО: 2026-09-07-нд «бүртгэл олдоогүй бол
+   эхний ажилтныг үзүүлэх» алдаанаас болж 4 хүний 6 шалгалт даргын нэрээр
+   бүртгэгдсэн. Бүртгэл нь и-мэйлээр найдвартай холбогддог тул харуулах
+   бүрд түүнээс авбал ийм алдаа ул мөр үлдээхгүй. */
+function trnWho(x) {
+  var out = { name: x.name || '', dept: x.dept || '', pos: x.pos || '' };
+  try {
+    var em = String(x.email || '').toLowerCase().trim();
+    if (!em) return out;
+    var e = (DB.employees || []).filter(function (y) {
+      return String(y.email || '').toLowerCase().trim() === em; })[0];
+    if (!e) return out;
+    if (e.name) out.name = e.name;
+    if (e.dept) out.dept = e.dept;
+    if (e.pos || e.position) out.pos = e.pos || e.position;
+  } catch (er) {}
+  return out;
+}
+
 function trndocGroup() {
   var g = {};
   (TRNDOC_ALL || []).forEach(function (x) {
     var day = x.ts ? new Date(x.ts * 1000).toISOString().slice(0, 10) : '';
     if (!day) return;
-    var dept = x.dept || '(алба тодорхойгүй)';
+    var _w = trnWho(x);
+    var dept = _w.dept || '(алба тодорхойгүй)';
     var key = x.key || '';
     var id = day + '|' + dept + '|' + key;
     var s = g[id] || (g[id] = {
@@ -24732,7 +24753,7 @@ function trndocGroup() {
     });
     var who = x.eid || x.email || x.name;
     var p = s.ppl[who] || (s.ppl[who] = {
-      name: x.name || '', pos: x.pos || '', dept: dept, pre: null, post: null, sig: null
+      name: _w.name || '', pos: _w.pos || '', dept: dept, pre: null, post: null, sig: null
     });
     if (x.type === 'pre') p.pre = x; else if (x.type === 'post') p.post = x;
     if ((x.otpAt || x.signedAt) && !p.sig) p.sig = x;
