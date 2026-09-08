@@ -1870,9 +1870,25 @@ async function riskR2GetJson(key, opts) {
      яг тэр агшны хариу л буцна) */
   if (_r2Fly[k]) return await _r2Fly[k];
   var p = (async function () {
-    var r = await fetch(riskR2Url(k) + '?t=' + Date.now(), { cache: 'no-store' });
-    if (!r.ok) { if (r.status === 404) return null; throw new Error('R2 ' + r.status); }
-    return await r.json();
+    /* ⚠ 2026-09-08: завсрын саатал (429, 5xx, сүлжээ) дээр ШУУД унадаг
+       байсан тул нэг файл таслагдахад бүхэл хуудас «ачаалж чадсангүй»
+       гэж зогсдог байв. Одоо 3 хүртэл оролдоно (700мс, 1500мс хүлээлт).
+       404 → null, бусад 4xx → шууд алдаа — өмнөх шигээ. */
+    var waits = [700, 1500], last = null;
+    for (var a = 0; a <= waits.length; a++) {
+      try {
+        var r = await fetch(riskR2Url(k) + '?t=' + Date.now(), { cache: 'no-store' });
+        if (r.ok) return await r.json();
+        if (r.status === 404) return null;
+        last = new Error('R2 ' + r.status);
+        if (r.status !== 429 && r.status < 500) throw last;   /* 401/403 г.м. — давтахгүй */
+      } catch (e) {
+        last = e;
+        if (/^R2 4\d\d$/.test(String(e && e.message)) && !/^R2 429$/.test(String(e && e.message))) throw e;
+      }
+      if (a < waits.length) await new Promise(function (res) { setTimeout(res, waits[a]); });
+    }
+    throw last || new Error('R2 алдаа');
   })();
   _r2Fly[k] = p;
   try {
