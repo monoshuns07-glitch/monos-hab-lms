@@ -1123,6 +1123,10 @@ async function loadDB() {
     try { applyEmpOverrides(); } catch (e) {}
     // Ажилтан бол DB-г зөвхөн өөрийнхөөр шүүнэ (admin бүгдийг хардаг)
     try { scopeDataForEmployee(); } catch (e) {}
+    /* ⚠ ЯГ ЭНД дуудна: ХН-ийн захиалгын эрх нь АЛБАН ТУШААЛААС хамаардаг
+       тул ажилтны жагсаалт баригдсаны дараа л `hrCanUse()` зөв ажиллана.
+       Дээр `loadCols`-д татагдахаа больсон (нууцлал). */
+    try { await hrLoadIfAllowed(); } catch (e) {}
     /* Админ устгасныг ЯМАР Ч кэшээс хасна */
     try { await delTombApply(); } catch (e) {}
   } else {
@@ -1522,6 +1526,12 @@ async function loadCols(opt) {
   if (!fbReady || !fdb) return;
   COL_LOAD_FAILED = [];
   var skip = (opt && opt.skip) || [];          // R2-оос аль хэдийн авсныг давтахгүй
+  /* ⚠ 2026-09-08: `hrorders` ЭНД ХЭЗЭЭ Ч ТАТАГДАХГҮЙ. Энэ цуглуулга нь
+     нууцлалтай (ажлын байрны шалтгаан, орон тоо, цалингийн төрөл) атлаа
+     ажилтан бүрийн хөтөч рүү бүтнээрээ ирдэг байв. Одоо эрхтэй эсэхийг
+     шалгаад `hrLoadIfAllowed()` тусад нь татна — ажилтны бүртгэл
+     баригдсаны дараа, учир нь эрх нь АЛБАН ТУШААЛААС хамаардаг. */
+  if (skip.indexOf('hrorders') < 0) skip = skip.concat(['hrorders']);
   /* ⭐ Хоосон цуглуулгыг ОГТ асуухгүй */
   var live = await colsManifestLoad();
   var want = COL_KEYS.filter(function (k) {
@@ -30904,6 +30914,37 @@ var HR_ST = {
 };
 
 function hrAll() { DB.hrorders = DB.hrorders || []; return DB.hrorders; }
+
+/* ══ ХН-ИЙН ЗАХИАЛГЫГ ЭРХТЭЙ ХҮНД Л ТАТНА (2026-09-08) ══
+   Өмнө нь `loadCols` үүнийг БҮХ ажилтанд татдаг байсан. Захиалга нь
+   нууцлалтай мэдээлэл агуулдаг тул зөвхөн `hrCanUse()` үнэн хүнд татна:
+   админ, албаны дарга, ХН, санхүү, хариуцсан захирал.
+   ⚠ Ердийн ажилтан хэзээ ч татахгүй тул `hrVisible()` нь хоосон буцаана —
+     тэдэнд энэ цэс `switchPage`-д аль хэдийн хаалттай (мөр 5024).
+   ⚠ Алдаа гарвал ЧИМЭЭГҮЙ өнгөрөхгүй — эрхтэй хүн хоосон жагсаалт хараад
+     «захиалга алга болсон» гэж эндүүрэх эрсдэлтэй. */
+var HR_LOAD_ERR = '';
+async function hrLoadIfAllowed() {
+  HR_LOAD_ERR = '';
+  try {
+    if (DEMO || !fbReady || typeof fdb === 'undefined' || !fdb) return;
+    var ok = false;
+    try { ok = hrCanUse(); } catch (e) { ok = false; }
+    if (!ok) { DB.hrorders = []; return; }
+    var snap = await colRef('hrorders').get();
+    var arr = [];
+    snap.forEach(function (d) {
+      var x = d.data() || {};
+      if (x.id == null) x.id = d.id;
+      arr.push(x);
+    });
+    DB.hrorders = arr;
+    try { console.log('[hr] ' + arr.length + ' захиалга (эрхтэй)'); } catch (e) {}
+  } catch (e) {
+    HR_LOAD_ERR = (e && (e.code || e.message)) || 'алдаа';
+    console.error('[hr] ачаалагдсангүй', e);
+  }
+}
 /* ══ ЗАХИАЛГЫГ СЕРВЕР РҮҮ ХҮРГЭХ ══
    ⚠⚠ saveDB() нь админ биш хүний hrorders-ыг ОГТ бичдэггүй (зөвхөн аюул/санал/
    мэдээлэл). Гэтэл захиалгыг үүсгэдэг албаны дарга, зурдаг захирал, ХН,
@@ -31187,6 +31228,15 @@ function renderHrOrders() {
     '<p class="page-subtitle">Албаны дарга захиалга үүсгэнэ → алба хариуцсан захирал → Хүний нөөц → Санхүү</p></div>' +
     (hrCanAdd() ? '<div class="page-actions"><button class="btn btn-primary" id="hrAdd"><i class="ti ti-plus"></i> Шинэ захиалга</button></div>' : '') +
     '</div>';
+
+  /* ⚠ Ачаалалт бүтэлгүйтвэл ХООСОН жагсаалт харуулж БОЛОХГҮЙ — «захиалга
+     алга болсон» гэж эндүүрүүлнэ. Шалтгааныг ил хэлнэ. */
+  if (HR_LOAD_ERR) {
+    html += '<div class="card" style="padding:12px 15px;margin-bottom:12px;border-left:3px solid #DC2626;background:#FEF2F2">' +
+      '<b style="color:#B91C1C">⚠ Захиалгын жагсаалт серверээс ачаалагдсангүй (' + HR_LOAD_ERR + ').</b>' +
+      '<div style="font-size:12.5px;color:#7F1D1D;margin-top:3px">Хуудсыг дахин ачаална уу. ' +
+      'Давтагдвал жагсаалт бүрэн БИШ байж болно.</div></div>';
+  }
 
   if (nMine) {
     html += '<div class="card" style="padding:12px 15px;margin-bottom:12px;border-left:3px solid #2563EB;background:#EFF6FF">' +
