@@ -99,8 +99,19 @@ const sameDept = (a, b) => {
   return !!x && !!y && (x === y || x.slice(0, 18) === y.slice(0, 18));
 };
 
+/* Давтан зааварчилгаанд СУУХ ЁСГҮЙ хүн үү.
+   ⚠ `kpi/script.js`-ийн `trnExempt()`-ТЭЙ ЯГ ИЖИЛ БАЙХ ЁСТОЙ. Зөрвөл
+   и-мэйл ба сайт өөр «суух ёстой» тоо харуулна (2026-09-08-нд 142 vs
+   135 гэж зөрсөн).
+   ⚠ «Нарийн бичгийн дарга» нь удирдах албан тушаал БИШ — хасахгүй. */
+function isExempt(e) {
+  const p = String((e && (e.pos || e.position || e.role)) || '');
+  if (/нарийн\s*бичг/i.test(p)) return false;
+  return /дарга|захирал/i.test(p);
+}
+
 function funnelFor(dept, key, staff, exams) {
-  const mine = staff.filter(e => sameDept(e.dept, dept) && !e.onLeave);
+  const mine = staff.filter(e => sameDept(e.dept, dept) && !e.onLeave && !isExempt(e));
   const byMail = {};
   exams.forEach(x => {
     if (!x.email || DAVTAN.indexOf(x.key) < 0) return;
@@ -184,6 +195,7 @@ function bodyFor(name, funnels, key, isAll) {
   const tS = funnels.reduce((a, f) => a + f.should, 0);
   const tT = funnels.reduce((a, f) => a + f.took, 0);
   const tP = funnels.reduce((a, f) => a + f.passed, 0);
+  const tPre = funnels.reduce((a, f) => a + (f.preOnly || 0), 0);
   const pct = tS ? Math.round(tT * 100 / tS) : 0;
   const rows = funnels.map(f => {
     const p = f.should ? Math.round(f.took * 100 / f.should) : 0;
@@ -214,7 +226,11 @@ function bodyFor(name, funnels, key, isAll) {
     rows +
     '<tr style="background:#EEF2FF"><td style="padding:11px 10px;font-size:13.5px;font-weight:800">НИЙТ</td>' +
     '<td style="padding:11px 10px;font-size:13.5px;font-weight:800;text-align:right">' + tT + ' / ' + tS + ' · ' + pct + '%</td>' +
-    '<td style="padding:11px 10px;font-size:13.5px;font-weight:800;text-align:right;color:#15803D">' + tP + '</td></tr>' +
+    '<td style="padding:11px 10px;font-size:13.5px;font-weight:800;text-align:right;color:#15803D">' + tP + '</td>' +
+    /* ⚠ Толгой ба өгөгдлийн мөр 4 нүдтэй тул ЭНД Ч 4 байх ЁСТОЙ —
+       эс бөгөөс и-мэйлийн хүснэгт хазайж, сүүлийн багана нүдгүй үлдэнэ. */
+    '<td style="padding:11px 10px;font-size:13.5px;font-weight:800;text-align:right;color:' +
+    (tPre ? '#7C3AED' : '#CBD5E1') + '">' + tPre + '</td></tr>' +
     '</table>' +
     '<div style="margin:20px 0 8px"><a href="https://monos-hab.vercel.app/kpi/" ' +
     'style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;border-radius:10px;' +
@@ -225,6 +241,7 @@ function bodyFor(name, funnels, key, isAll) {
     funnels.map(f => '  ' + f.dept + ': суусан ' + f.took + '/' + f.should + ', тэнцсэн ' + f.passed +
       (f.preOnly ? ', дараах шалгалтаа өгөөгүй ' + f.preOnly + ' (' + (f.preNames || []).join(', ') + ')' : '')).join('\n') +
     '\n\n  НИЙТ: ' + tT + '/' + tS + ' (' + pct + '%), тэнцсэн ' + tP +
+    (tPre ? ', дараах шалгалтаа өгөөгүй ' + tPre : '') +
     '\n\nДэлгэрэнгүй: https://monos-hab.vercel.app/kpi/';
   return { html, text, tS, tT, tP };
 }
@@ -337,3 +354,9 @@ module.exports = async function handler(req, res) {
   }
   return res.status(200).json({ ok: true, month: key, sent, total: plan.length, failed });
 };
+
+/* ⚠ ЗӨВХӨН ШАЛГАХАД — и-мэйл ИЛГЭЭХГҮЙГЭЭР агуулгыг нь бодит датаар
+   урьдчилан харах боломж. «Юу явсан бэ» гэдгийг таамаглахгүй, нүдээр харна.
+   ⚠ ЗААВАЛ файлын ТӨГСГӨЛД байрлана — `module.exports = handler` мөрөөс
+   өмнө тавивал тэр даруй дарагдаж устана. */
+module.exports._internal = { bodyFor, funnelFor, recipients, salaryKey, normKey, habExams, r2Json };
