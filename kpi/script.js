@@ -24699,10 +24699,22 @@ async function trnDigest(dry) {
     msg = document.getElementById('trnSendMsg'); if (!msg) return;
     if (!r.ok || !j.ok) { msg.innerHTML = '<span style="color:#B91C1C">' + esc(j.error || ('Алдаа ' + r.status)) + '</span>'; return; }
     if (dry) {
-      msg.innerHTML = '<b>' + j.wouldSend + ' хүнд очно:</b><br>' +
-        (j.plan || []).map(function (p) {
-          return '· ' + esc(p.name) + ' — ' + esc((p.depts || []).join(', '));
-        }).join('<br>');
+      /* ⚠ Серверийн талбар БАЙГАА гэж бүү найд. Тухайн сард хамрагдсан
+         алба байхгүй бол `wouldSend` ирдэггүй байсан тул «undefined хүнд
+         очно» гэж гардаг байв (2026-09-08). Тоог төлөвлөгөөнөөс өөрөө
+         бод, шалтгааныг нь хэрэглэгчид ил хэл. */
+      var plan = Array.isArray(j.plan) ? j.plan : [];
+      var n = (typeof j.wouldSend === 'number') ? j.wouldSend : plan.length;
+      if (!n) {
+        msg.innerHTML = '<span style="color:#B45309;font-weight:700">Хэнд ч очихгүй.</span>' +
+          '<div style="font-size:12.5px;color:#64748B;margin-top:3px">' +
+          esc(j.note || 'Энэ сард илгээх мэдээлэл алга.') + '</div>';
+      } else {
+        msg.innerHTML = '<b>' + n + ' хүнд очно:</b><br>' +
+          plan.map(function (p) {
+            return '· ' + esc(p.name || '(нэргүй)') + ' — ' + esc((p.depts || []).join(', '));
+          }).join('<br>');
+      }
     } else {
       msg.innerHTML = '<span style="color:#15803D;font-weight:700">✅ ' + j.sent + ' / ' + j.total + ' хүнд илгээлээ.</span>' +
         ((j.failed && j.failed.length) ? '<br><span style="color:#B91C1C">Амжилтгүй: ' + esc(j.failed.join(' · ')) + '</span>' : '');

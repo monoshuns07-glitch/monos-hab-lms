@@ -261,7 +261,14 @@ module.exports = async function handler(req, res) {
   /* Энэ сард хамрагдсан алба л тайланд орно */
   const active = allDepts.filter(d => fOf(d).took > 0);
   if (!active.length) {
-    return res.status(200).json({ ok: true, month: key, sent: 0, note: 'Энэ сард хамрагдсан алба алга' });
+    /* ⚠ `wouldSend`, `plan`-ыг ЭНД Ч буцаана. Өмнө нь дутуу байсан тул
+       «Хэнд очихыг харах» дарахад «undefined хүнд очно» гэж гардаг байв
+       (2026-09-08). ok:true байхад клиент амжилттай гэж үздэг тул
+       БҮХ амжилттай зам ижил талбартай байх ёстой. */
+    return res.status(200).json({
+      ok: true, dry: dry, month: key, sent: 0, total: 0,
+      wouldSend: 0, plan: [], note: 'Энэ сард хамрагдсан алба алга'
+    });
   }
 
   const recs = recipients(staff, owners);
