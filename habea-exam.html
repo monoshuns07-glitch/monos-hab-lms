@@ -452,7 +452,7 @@ function sessSave(){
     if(scr!=="Exam"&&scr!=="Signature") return;
     localStorage.setItem(sessKey(),JSON.stringify({
       at:Date.now(), examType:examType, emp:emp,
-      answers:answers, curQ:curQ, screen:scr }));
+      answers:answers, curQ:curQ, screen:scr, t0:EXAM_START, to:EXAM_TIMED_OUT }));
   }catch(e){}
 }
 function sessClear(){ try{ localStorage.removeItem(sessKey()); }catch(e){} }
@@ -463,11 +463,13 @@ function sessRestore(){
     if(!o||!o.at||Date.now()-o.at>SESS_TTL_H*3600000){ sessClear(); return false; }
     if(!o.emp||!o.examType||!QS.length) return false;
     examType=o.examType; emp=o.emp;
+    EXAM_START=Number(o.t0)||0; EXAM_TIMED_OUT=!!o.to;
     answers=(o.answers&&typeof o.answers==="object")?o.answers:{};
     curQ=Math.max(0,Math.min(Number(o.curQ)||0,QS.length-1));
     document.getElementById("qTot").textContent=QS.length;
     document.getElementById("eMeta").textContent=(emp.name||"")+(emp.dept?" · "+emp.dept:"");
     renderQ(); renderDots(); show("Exam");
+    examBegin(true);
     setTimeout(function(){ try{ toast("↩️ Өмнө бөглөсөн хариултууд сэргээгдлээ"); }catch(e){} },700);
     return true;
   }catch(e){ return false; }
@@ -514,6 +516,7 @@ function chooseExam(t){
     document.getElementById("qTot").textContent=QS.length;
     document.getElementById("eMeta").textContent=n+(d?" · "+d:"");
     renderQ();renderDots();show("Exam");
+    examBegin(false);
     return;
   }
   // Мэдээлэл байхгүй (шууд линкээр орсон) → мэдээлэл оруулна
@@ -529,6 +532,7 @@ function startExam(){
   document.getElementById("qTot").textContent=QS.length;
   document.getElementById("eMeta").textContent=n+" · "+d;
   renderQ();renderDots();show("Exam");
+  examBegin(false);
 }
 
 function pts(q){return q.pts||q.points||0}
@@ -733,7 +737,7 @@ function submitExam(){
   openSignature();
 }
 
-function backToExam(){sigRelease();show("Exam")}
+function backToExam(){ if(EXAM_TIMED_OUT){ try{ toast("⏱ Хугацаа дууссан — хариулт өөрчлөх боломжгүй"); }catch(e){} return; } sigRelease();show("Exam")}
 
 function openSignature(){
   document.getElementById("sigName").textContent=emp.name||"—";
@@ -1220,6 +1224,111 @@ var OTP_CHECKED_BY="", OTP_ID_MATCH=null;
    Хуудас нээгдсэнээс хойшх хугацаа ба таб солилтын тоо. ХААХГҮЙ,
    зөвхөн БҮРТГЭНЭ — тоо нь ослын мөрдөн шалгалтад хэрэгтэй. */
 var EXAM_T0 = Date.now(), EXAM_TABAWAY = 0, EXAM_AWAY_MS = 0, _awayAt = 0;
+
+/* ══ v530 (2026-09-09) — хуулийн зөвлөхийн захидалд «сул тал» гэж бичсэн зүйлсийг засав ══
+   ① Кодгүй нөөц зам: и-мэйл унасан ч ЗӨВХӨН админ Тохиргоо → «Кодгүй шалгалтын
+      нөөц зам»-ыг түр нээсэн үед л кодгүй өнгөрнө (sys/otp_bypass.json, зөвхөн админ бичнэ).
+      Нээгээгүй бол «дахин оролдох» л боломжтой, илгээх хаалттай.
+   ② Хугацааны хязгаар: шалгалтын тохиргоонд timeLimitMin > 0 бол тоолуур гарч,
+      дуусахад хариултууд түгжигдэж баталгаажуулах алхам руу шилжинэ. Ажилтныг ХААХГҮЙ —
+      бөглөсөн хэсгээ баталгаажуулж илгээнэ, timedOut=true бүртгэгдэнэ.
+   ③ Байршил: хөтөч зөвшөөрвөл бүртгэнэ; татгалзвал «denied» гэж бүртгэнэ; хэзээ ч хаахгүй.
+   ④ Төхөөрөмжийн таних тэмдэг (localStorage): нэг төхөөрөмжөөс өөр хүний нэрээр
+      өгсөн шалгалтыг сервер илрүүлж тэмдэглэнэ (exam-save → devShared).
+   ⑤ Хариултуудыг серверт илгээж, сервер оноог өөрөө дахин тооцно (exam-save → pctS/chk). */
+var EXAM_START=0, EXAM_DEADLINE=0, EXAM_TIMED_OUT=false, EXAM_TIMER=null, EXAM_GEO=null;
+var OTP_BYPASS_BY="", OTP_BYPASS_UNTIL="";
+var OTP_R2="https://monos-upload.buynt666.workers.dev";
+
+/* Шалгалт эхлэхэд (шинэ болон сэргээсэн) — хугацаа, байршил */
+function examBegin(restored){
+  if(!EXAM_START) EXAM_START=Date.now();
+  var lim=Number(CFG&&CFG.timeLimitMin)||0;
+  if(lim>0){ EXAM_DEADLINE=EXAM_START+lim*60000; examTimerStart(); }
+  geoCapture();
+}
+function examTimerStart(){
+  var el=document.getElementById("examTimer");
+  if(!el){
+    el=document.createElement("div"); el.id="examTimer";
+    el.style.cssText="position:fixed;top:10px;right:12px;z-index:60;background:#111827;color:#fff;font:700 13px/1 Segoe UI,Arial,sans-serif;padding:8px 12px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.25)";
+    document.body.appendChild(el);
+  }
+  if(EXAM_TIMER) clearInterval(EXAM_TIMER);
+  examTimerTick(); EXAM_TIMER=setInterval(examTimerTick,1000);
+}
+function examTimerTick(){
+  var el=document.getElementById("examTimer"); if(!el) return;
+  var a=document.querySelector(".screen.active");
+  el.style.display=(a&&a.id==="screenExam")?"":"none";
+  var left=EXAM_DEADLINE-Date.now();
+  if(left<=0){ el.textContent="⏱ 00:00"; if(!EXAM_TIMED_OUT) examTimeUp(); return; }
+  var m=Math.floor(left/60000), sec=Math.floor((left%60000)/1000);
+  el.textContent="⏱ "+(m<10?"0":"")+m+":"+(sec<10?"0":"")+sec;
+  el.style.background=left<60000?"#B91C1C":"#111827";
+}
+function examTimeUp(){
+  EXAM_TIMED_OUT=true;
+  if(EXAM_TIMER){ clearInterval(EXAM_TIMER); EXAM_TIMER=null; }
+  var el=document.getElementById("examTimer"); if(el) el.style.display="none";
+  try{ sessSave(); }catch(e){}
+  try{ toast("⏱ Хугацаа дууслаа — хариултууд түгжигдэж, баталгаажуулах алхам руу шилжлээ"); }catch(e){}
+  var a=document.querySelector(".screen.active");
+  if(a&&a.id==="screenExam"){ try{ openSignature(); }catch(e){ console.error("[timer]",e); } }
+}
+/* Байршил — зөвшөөрөл асууна; татгалзвал/хугацаа хэтэрвэл шалтгааныг л бүртгэнэ */
+function geoCapture(){
+  try{
+    if(!navigator.geolocation){ EXAM_GEO={status:"unsupported"}; return; }
+    navigator.geolocation.getCurrentPosition(function(p){
+      try{ EXAM_GEO={status:"ok",lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5),acc:Math.round(p.coords.accuracy||0),at:new Date().toISOString()}; }catch(e){ EXAM_GEO={status:"error"}; }
+    },function(e){ EXAM_GEO={status:(e&&e.code===1)?"denied":((e&&e.code===3)?"timeout":"error")}; },
+    {enableHighAccuracy:false,timeout:10000,maximumAge:600000});
+  }catch(e){ EXAM_GEO={status:"error"}; }
+}
+/* Төхөөрөмжийн таних тэмдэг — санамсаргүй 16 тэмдэгт, localStorage-д нэг удаа */
+function deviceId(){
+  try{
+    var k="monos_dev", v=localStorage.getItem(k);
+    if(!v||v.length<8){
+      var b=new Uint8Array(8); (window.crypto||window.msCrypto).getRandomValues(b);
+      v=""; for(var i=0;i<b.length;i++) v+=("0"+b[i].toString(16)).slice(-2);
+      localStorage.setItem(k,v);
+    }
+    return v;
+  }catch(e){ return ""; }
+}
+/* Админ кодгүй шалгалтыг түр нээсэн эсэх (R2-оос нийтээр уншина) */
+async function otpBypassAllowed(){
+  try{
+    var r=await fetch(OTP_R2+"/sys/otp_bypass.json?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok) return null;
+    var j=await r.json();
+    if(!j||!j.until) return null;
+    if(new Date(j.until).getTime()<Date.now()) return null;
+    return j;
+  }catch(e){ return null; }
+}
+async function otpFallback(reason){
+  var b=await otpBypassAllowed();
+  if(b){ OTP_BYPASS_BY=String(b.by||"").slice(0,80); OTP_BYPASS_UNTIL=String(b.until||""); otpAllowWithout(reason); return; }
+  otpDenyWithout(reason);
+}
+/* Код ирээгүй, админ ч нээгээгүй — илгээх хаалттай, дахин оролдох л боломжтой */
+function otpDenyWithout(reason){
+  OTP_BYPASS=false; OTP_SKIP_REASON=String(reason||"").slice(0,200);
+  var box=otpEl("otpBox"); if(box){ box.classList.remove("on"); box.classList.add("warn"); }
+  var s=otpEl("otpSend"); if(s){ s.disabled=false; s.textContent="🔄 Дахин оролдох"; s.style.display=""; }
+  var inw=otpEl("otpIn"); if(inw) inw.style.display="none";
+  var pb=otpEl("otpPaste"); if(pb) pb.style.display="none";
+  var hn=otpEl("otpHint"); if(hn) hn.style.display="none";
+  var sub=otpEl("otpSub");
+  if(sub) sub.innerHTML="Код илгээгдсэнгүй ("+esc(String(reason||"").slice(0,80))+"). <b>Дахин оролдоно уу.</b> "
+    + "Давтагдвал ХАБЭА-н ажилтанд хандана уу — тэр кодгүй шалгалтыг түр зөвшөөрч нээнэ.";
+  otpMsg("Код ирээгүй тул илгээх боломжгүй. Дахин оролдоно уу.","err");
+  console.warn("[OTP] deny:", OTP_SKIP_REASON);
+  sigUpdateSubmit();
+}
 try {
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) { EXAM_TABAWAY++; _awayAt = Date.now(); }
@@ -1476,10 +1585,12 @@ async function otpSendCode(){
     });
     var j=await r.json().catch(function(){return {}});
     if(!r.ok||!j.ok){
-      /* ⚠ И-МЭЙЛИЙН ҮЙЛЧИЛГЭЭ УНАСАН БОЛ АЖИЛТНЫГ ХААХГҮЙ.
-         Шалгалт бол хуулиар шаардагдах үүрэг — гадны үйлчилгээнээс болж
-         зогсох ёсгүй. Оронд нь бүртгэлд "баталгаажаагүй" гэж тэмдэглэнэ. */
-      otpAllowWithout(String((j&&j.error)||("HTTP "+r.status)));
+      /* ⚠ v530: и-мэйл унасан бол ЗӨВХӨН админ түр нээсэн үед кодгүй өнгөрнө
+         (otpFallback → sys/otp_bypass.json). Эс бөгөөс «дахин оролдох» л
+         боломжтой — хэн ч дур мэдэн кодгүй өнгөрөхгүй. Аппын доторх код
+         (otpTryGrant) и-мэйлээс хамаардаггүй тул нэвтэрсэн ажилтанд энэ
+         нөхцөл ховор тохионо. */
+      await otpFallback(String((j&&j.error)||("HTTP "+r.status)));
       return;
     }
     OTP_ID=j.id;
@@ -1494,7 +1605,7 @@ async function otpSendCode(){
     otpStartPoll();
     try{ document.querySelector("[data-otp='0']").focus(); }catch(e){}
   }catch(e){
-    otpAllowWithout("Сүлжээ: "+String((e&&e.message)||e));
+    await otpFallback("Сүлжээ: "+String((e&&e.message)||e));
   }
 }
 
@@ -1788,7 +1899,8 @@ function getSignatureDataUrl(){
 }
 
 async function finalSubmit(){ sigRelease();
-  /* Гарын үсэг зурах шаардлагагүй — нэг удаагийн код нь тоон гарын үсэг болно */
+  /* Гарын үсэг зурах шаардлагагүй — нэг удаагийн код + бүртгүүлсэн дүрс нь ЦАХИМ баталгаажуулалт
+     (ЦГҮХ 4.1.10-ын «цахим гарын үсэг»; гэрчилгээт «тоон гарын үсэг» БИШ) */
   var _cons=document.getElementById("sigConsent");
   if(_cons&&!_cons.checked){ toast("☑️ Баталгаажуулах нүдийг тэмдэглэнэ үү"); return; }
   if(!OTP_OK && !OTP_BYPASS){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
@@ -1833,12 +1945,18 @@ async function finalSubmit(){ sigRelease();
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
   doc.hashAlg="SHA-256";
-  /* ── ТООН ГАРЫН ҮСЭГ: нэг удаагийн код нь зурсан гарын үсгийг орлоно ── */
+  /* ── ЦАХИМ БАТАЛГААЖУУЛАЛТ: нэг удаагийн код нь зурсан гарын үсгийг орлоно (тоон гарын үсэг биш) ── */
   doc.signCode=OTP_CODE||"";
   doc.signMethod=OTP_CODE?"otp":(SIG_PHOTO?"photo":"draw");
   doc.emailVerified=!!OTP_OK;
   doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
   if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
+  if(doc.otpSkipped){ doc.otpBypassBy=OTP_BYPASS_BY||""; doc.otpBypassUntil=OTP_BYPASS_UNTIL||""; }
+  /* v530: хугацааны хязгаар, байршил, төхөөрөмж */
+  doc.timeLimitMin=Number(CFG&&CFG.timeLimitMin)||0;
+  doc.timedOut=!!EXAM_TIMED_OUT;
+  doc.geo=EXAM_GEO||{status:"none"};
+  doc.deviceId=deviceId();
   doc.otpId=OTP_ID||"";
   /* ⚠ Баталгаажуулалтыг ХЭН шалгав: "server" (найдвартай), "client"
      (хуучин нөөц зам), "poll" (өөр төхөөрөмж). Хоосон бол кодгүй өнгөрсөн. */
@@ -1873,7 +1991,10 @@ async function finalSubmit(){ sigRelease();
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({idToken:_t,result:{
           examKey:doc.examKey, examTitle:doc.examTitle, examType:doc.examType,
-          percent:doc.percent, passed:doc.passed, breakdown:bd }})});
+          percent:doc.percent, passed:doc.passed, breakdown:bd,
+          /* v530: сервер оноог дахин тооцож, төхөөрөмж/байршил/нөхцөлийг бүртгэнэ */
+          answers:answers, dev:doc.deviceId, geo:doc.geo, dur:doc.durationSec, tab:doc.tabAway,
+          otpBy:doc.otpCheckedBy, skip:doc.otpSkipped, tl:doc.timeLimitMin, to:doc.timedOut }})});
       const _j=await _r.json();
       r2ok=!!(_j&&_j.ok);
     }

@@ -22993,6 +22993,58 @@ function setNavBuild() {
   } catch (e) {}
 }
 
+/* ══ v530 (2026-09-09): Кодгүй шалгалтын нөөц зам — админы түр зөвшөөрөл ══
+   Шалгалтын хуудас (habea-exam.html → otpFallback) и-мэйл унасан үед
+   sys/otp_bypass.json-ыг уншиж, `until` ирээдүйд байвал л кодгүй өнгөрөхийг
+   зөвшөөрнө. Файлыг ЗӨВХӨН админ бичнэ (api/file-token.js ADMIN_ONLY_PREFIXES),
+   бичилт бүр аудитын гинжид (AUDIT_KEYS) орно. Өмнө нь и-мэйл унавал ХЭН Ч
+   кодгүй өнгөрдөг байсан — хуулийн зөвлөхийн захидалд «сул тал» гэж бичсэн. */
+var OTP_BYPASS_FILE = 'sys/otp_bypass.json';
+function otpBypassMount(body) {
+  if (!body || !isAdmin() || document.getElementById('otpBypassCard')) return;
+  var card = document.createElement('div');
+  card.className = 'card'; card.id = 'otpBypassCard';
+  card.innerHTML = '<h3><i class="ti ti-shield-lock" style="color:#B45309;margin-right:6px"></i>Кодгүй шалгалтын нөөц зам</h3>' +
+    '<p class="card-subtitle">И-мэйлийн үйлчилгээ унасан үед ажилтан баталгаажуулах кодгүйгээр шалгалт өгөхийг зөвхөн энд түр нээж зөвшөөрнө. ' +
+    'Нээгээгүй үед код ирэхгүй бол шалгалт илгээгдэхгүй — «дахин оролдох» л боломжтой. Нээсэн, хаасан бүр аудитын гинжид бичигдэнэ.</p>' +
+    '<div id="otpBypassStatus" style="margin:8px 0 12px;font-weight:600;font-size:13.5px">⏳ …</div>' +
+    '<div class="form-actions" style="justify-content:flex-start;gap:8px">' +
+    '<button class="btn btn-primary" data-otpbypass="2">2 цаг нээх</button>' +
+    '<button class="btn btn-secondary" data-otpbypass="8">8 цаг нээх</button>' +
+    '<button class="btn btn-secondary" data-otpbypass="0">🔒 Хаах</button></div>';
+  body.appendChild(card);
+  card.querySelectorAll('[data-otpbypass]').forEach(function (b) {
+    b.addEventListener('click', function () { otpBypassSet(Number(b.getAttribute('data-otpbypass')) || 0); });
+  });
+  otpBypassRefresh();
+}
+async function otpBypassRefresh() {
+  var el = document.getElementById('otpBypassStatus'); if (!el) return;
+  var j = null;
+  try { j = await riskR2GetJson(OTP_BYPASS_FILE, { fresh: true }); } catch (e) { j = null; }
+  var until = (j && j.until) ? new Date(j.until).getTime() : 0;
+  if (until > Date.now()) {
+    el.innerHTML = '🟢 <span style="color:#B45309">НЭЭЛТТЭЙ</span> — ' + esc(new Date(until).toLocaleString('mn-MN')) +
+      ' хүртэл · нээсэн: ' + esc(j.by || '—');
+  } else {
+    el.innerHTML = '🔒 Хаалттай — код ирэхгүй бол шалгалт илгээгдэхгүй' +
+      (j && j.closedAt ? ' <span style="color:#64748B;font-weight:400">(сүүлд хаасан: ' + esc(new Date(j.closedAt).toLocaleString('mn-MN')) + ')</span>' : '');
+  }
+}
+async function otpBypassSet(hours) {
+  if (!isAdmin()) { toast('Зөвхөн админ', 'error'); return; }
+  var me = String((SESSION && SESSION.email) || '').toLowerCase();
+  var obj = hours > 0
+    ? { until: new Date(Date.now() + hours * 3600000).toISOString(), by: me, at: new Date().toISOString(),
+        reason: 'И-мэйлийн үйлчилгээ ажиллахгүй үеийн түр зөвшөөрөл (' + hours + ' цаг)' }
+    : { until: '', by: me, closedAt: new Date().toISOString() };
+  try {
+    await riskR2PutJson(OTP_BYPASS_FILE, obj);
+    toast(hours > 0 ? '🟢 Кодгүй шалгалт ' + hours + ' цагийн турш нээгдлээ' : '🔒 Кодгүй шалгалт хаагдлаа', hours > 0 ? 'warn' : 'success');
+  } catch (e) { toast('Хадгалж чадсангүй: ' + String((e && e.message) || e), 'error'); }
+  otpBypassRefresh();
+}
+
 function renderSettings() {
   var body = $('.page[data-page="settings"] .settings-body');
   if (!body) return;
@@ -23104,6 +23156,8 @@ function renderSettings() {
         if (charts.radar) renderCharts();
       });
     }
+    /* v530: кодгүй шалгалтын нөөц замын хяналт (зөвхөн админ) */
+    try { otpBypassMount(body); } catch (e) {}
     /* Аюулын ангилал, дараа нь системийн эрүүл мэнд — хамгийн доор */
     try { wkHazMount(body); } catch (e) {}
     try { regHealthMount(body); } catch (e) {}

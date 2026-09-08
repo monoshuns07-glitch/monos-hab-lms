@@ -391,6 +391,7 @@ body{
             <div class="field"><label>Байгууллагын нэр</label><input class="inp" id="cfgOrg" placeholder="МОНОС ХҮНС ХК"></div>
             <div class="field"><label>Шалгалтын гарчиг</label><input class="inp" id="cfgTitle" placeholder="ХАБЭА Давтан зааварчилгааны сургалт"></div>
             <div class="field"><label>Тэнцэх босго (%)</label><input class="inp" id="cfgPass" type="number" min="1" max="100" placeholder="60" style="width:120px"></div>
+            <div class="field"><label>⏱ Хугацааны хязгаар (минут, 0 = хязгааргүй)</label><input class="inp" id="cfgTime" type="number" min="0" max="180" placeholder="0" style="width:120px"><div style="font-size:12px;color:#6B7280;margin-top:4px">Тохируулбал шалгалтын хуудсанд тоолуур гарч, хугацаа дуусахад хариултууд түгжигдэн баталгаажуулах алхам руу шилжинэ (ажилтныг хаахгүй).</div></div>
             <div class="field"><label>Админ PIN код</label><input class="inp" id="cfgPin" type="text" maxlength="6" placeholder="1234" style="width:120px"></div>
           </div>
           <div class="card" style="padding:24px;margin-bottom:16px">
@@ -1378,12 +1379,13 @@ function loadSettingsForm(){
   document.getElementById("cfgOrg").value=CFG.orgName||"";
   document.getElementById("cfgTitle").value=CFG.examTitle||"";
   document.getElementById("cfgPass").value=CFG.passPercent||60;
+  var _ct=document.getElementById("cfgTime"); if(_ct) _ct.value=Number(CFG.timeLimitMin)||0;
   document.getElementById("cfgPin").value=CFG.adminPin||"1234";
   document.getElementById("cfgReg").value=CFG.regUrl||"";
   document.getElementById("cfgEval").value=CFG.evalUrl||"";
 }
 async function saveSettings(){
-  const s={orgName:document.getElementById("cfgOrg").value.trim(),examTitle:document.getElementById("cfgTitle").value.trim(),passPercent:parseInt(document.getElementById("cfgPass").value)||60,adminPin:document.getElementById("cfgPin").value.trim()||"1234",regUrl:document.getElementById("cfgReg").value.trim(),evalUrl:document.getElementById("cfgEval").value.trim()};
+  const s={orgName:document.getElementById("cfgOrg").value.trim(),examTitle:document.getElementById("cfgTitle").value.trim(),passPercent:parseInt(document.getElementById("cfgPass").value)||60,timeLimitMin:Math.max(0,Math.min(180,parseInt((document.getElementById("cfgTime")||{}).value)||0)),adminPin:document.getElementById("cfgPin").value.trim()||"1234",regUrl:document.getElementById("cfgReg").value.trim(),evalUrl:document.getElementById("cfgEval").value.trim()};
   try{await db.collection("habea_config").doc("settings").set(s);CFG={...s};document.getElementById("sbOrg").textContent=s.orgName||"МОНОС ХҮНС ХК";toast("Хадгалагдлаа ✅")}catch(e){toast("Алдаа гарлаа","err")}
 }
 

@@ -46,7 +46,9 @@ const USER_PREFIXES = [
    2026-09-08: өмнө нь ямар ч ажилтан ирцийн бүртгэлийг дарж бичих эрх
    авч чаддаг байсныг бодит туршилтаар илрүүлсэн.
    `audit/` — аудитын гинж; ажилтан дарж бичвэл нотлох чанар алдагдана. */
-const ADMIN_ONLY_PREFIXES = ['training/attend/', 'audit/'];
+/* v530: `sys/otp_bypass.json` — кодгүй шалгалтын түр зөвшөөрөл; ажилтан бичиж чадвал
+   хаалт утгагүй болно. `sys/` угтвар ажилтанд нээлттэй тул энд тусгайлан хаана. */
+const ADMIN_ONLY_PREFIXES = ['training/attend/', 'audit/', 'sys/otp_bypass.json'];
 
 function isAdminOnlyKey(key) {
   return ADMIN_ONLY_PREFIXES.some(function (p) { return String(key).indexOf(p) === 0; });
@@ -71,7 +73,8 @@ function keyAllowed(key, isAdmin) {
 const AUDIT_KEYS = [
   'training/attend/', 'training/owners.json', 'exams/', 'reports/_all.json',
   'kpi/state.json', 'workflow/_open.json', 'workflow/_locations.json',
-  'employees/all.json', 'lms/', 'miskill/', 'risks/', 'sys/cols.json', 'audit/'
+  'employees/all.json', 'lms/', 'miskill/', 'risks/', 'sys/cols.json', 'audit/',
+  'sys/otp_bypass.json'
 ];
 function auditWorthy(key) {
   return AUDIT_KEYS.some(function (p) { return String(key).indexOf(p) === 0; });
