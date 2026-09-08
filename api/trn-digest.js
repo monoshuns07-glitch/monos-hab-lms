@@ -380,6 +380,7 @@ module.exports = async function handler(req, res) {
     /* ⚠ ХЭН хэн рүү илгээснийг ил бичнэ — мөрдөх боломжтой байх ёстой. */
     return res.status(200).json({
       ok: true, selfTest: true, month: key, to: dest,
+      from: process.env.GMAIL_USER || '(тохируулаагүй)',
       by: (caller && caller.email) || 'cron', depts: active.length,
       note: 'Ганц хаяг руу жишээгээр илгээв — хариуцагчид яваагүй'
     });
@@ -396,6 +397,8 @@ module.exports = async function handler(req, res) {
   if (dry) {
     return res.status(200).json({
       ok: true, dry: true, month: key, wouldSend: plan.length,
+      /* ⚠ ЗӨВХӨН хаяг — нууц үгийг ХЭЗЭЭ Ч бүү нэм. */
+      from: process.env.GMAIL_USER || '(тохируулаагүй)',
       plan: plan.map(p => ({ name: p.name, depts: p.all ? ['(бүх алба ' + active.length + ')'] : p.depts }))
     });
   }
@@ -445,7 +448,8 @@ module.exports = async function handler(req, res) {
     await r2Put('training/digest_log.json', log);
   } catch (e) { /* бүртгэл алдвал илгээлт хүчинтэй хэвээр */ }
 
-  return res.status(200).json({ ok: true, month: key, sent, total: plan.length, failed });
+  return res.status(200).json({ ok: true, month: key, sent, total: plan.length, failed,
+    from: process.env.GMAIL_USER || '(тохируулаагүй)' });
 };
 
 /* ⚠ ЗӨВХӨН ШАЛГАХАД — и-мэйл ИЛГЭЭХГҮЙГЭЭР агуулгыг нь бодит датаар
