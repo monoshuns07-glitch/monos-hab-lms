@@ -30002,10 +30002,12 @@ function taskStatCard(key, label, val, icon, color, sub) {
 }
 
 
-/* Захирлын «Буцаах» товч — гүйцэтгэгчийн товчнуудаас өнгөөр ялгана */
+/* «Буцаах» товч — гүйцэтгэгчийн товчнуудаас өнгөөр ялгана.
+   ⚠ Энэ нь ЗӨВХӨН захирлынх БИШ — trCanUse() нь захирал, админ, ХАБЭА-г
+     бүгдийг оруулдаг тул харагдах бичвэрт «захирлын» гэж бичихгүй. */
 function taskRetBtn(x) {
   return '<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border-color:#FDE68A" ' +
-    'data-task-ret="' + esc(x.id) + '" title="Захирлын эрхээр буцаана">' +
+    'data-task-ret="' + esc(x.id) + '" title="Даалгаврыг буцаана">' +
     '<i class="ti ti-rotate"></i> Буцаах</button>';
 }
 /* ── БАГАНЫН БОГИНО КАРТ ── дарж дэлгэрэнгүйг нээнэ ── */
@@ -30161,7 +30163,7 @@ function renderTaskReturns() {
   var rows = (DB.tasks || []).filter(function (t) { return t && t.returnedAt; })
     .sort(function (a, b) { return String(b.returnedAt).localeCompare(String(a.returnedAt)); });
   var H = '<div class="page-header"><div><h1>Буцаасан захиалга</h1>' +
-    '<p class="page-subtitle">Захирлын буцаасан ажлын даалгаврын түүх · ' + rows.length + '</p></div></div>';
+    '<p class="page-subtitle">Буцаасан ажлын даалгаврын түүх · ' + rows.length + '</p></div></div>';
   if (!rows.length) {
     H += '<div class="card" style="padding:40px"><div class="empty-state">' +
       '<i class="ti ti-rotate"></i><div>Буцаасан даалгавар алга</div>' +
