@@ -24786,6 +24786,25 @@ function trnWho(x) {
   return out;
 }
 
+/* Тухайн албанд ХЭДЭН ХҮН суух ёстой байсан бэ.
+   ⚠ «Сургалтын биелэлт» тайлантай ЯГ ИЖИЛ дүрэм — эс бөгөөс хоёр
+   дэлгэц өөр тоо харуулж, аль нь үнэн нь ойлгомжгүй болно. */
+function trndocShould(dept) {
+  try {
+    return (DB.employees || []).filter(function (e) {
+      return trnSameDept(e.dept, dept) && !e.onLeave;
+    }).length;
+  } catch (e) { return 0; }
+}
+
+/* Өдрүүдийг богиноор: «08.25, 08.26, 08.27» */
+function trndocDays(days) {
+  var d = (days || []).slice().sort();
+  if (!d.length) return '';
+  var mm = d.map(function (x) { return x.slice(5).replace('-', '.'); });
+  return mm.length > 4 ? (mm.slice(0, 3).join(', ') + ' … +' + (mm.length - 3)) : mm.join(', ');
+}
+
 function trndocGroup() {
   var g = {};
   (TRNDOC_ALL || []).forEach(function (x) {
@@ -24794,11 +24813,16 @@ function trndocGroup() {
     var _w = trnWho(x);
     var dept = _w.dept || '(алба тодорхойгүй)';
     var key = x.key || '';
-    var id = day + '|' + dept + '|' + key;
+    /* ⚠ 2026-09-08: ӨДРӨӨР биш, САРААР бүлэглэнэ. Нэг сургалт хэдэн
+       өдөр үргэлжилж болно (25, 26, 27) — тэдгээр нь НЭГ сургалт. */
+    var mon = day.slice(0, 7);
+    var id = mon + '|' + dept + '|' + key;
     var s = g[id] || (g[id] = {
-      id: id, day: day, dstr: day.replace(/-/g, '.'), dept: dept, key: key,
+      id: id, mon: mon, day: day, days: [], dept: dept, key: key,
       title: TRNDOC_TITLES[key] || x.title || 'ХАБЭА сургалт', ppl: {}
     });
+    if (s.days.indexOf(day) < 0) s.days.push(day);
+    if (day > s.day) s.day = day;               /* сүүлийн өдөр — эрэмбэлэхэд */
     var who = x.eid || x.email || x.name;
     var p = s.ppl[who] || (s.ppl[who] = {
       name: _w.name || '', pos: _w.pos || '', dept: dept, pre: null, post: null, sig: null
@@ -24810,8 +24834,11 @@ function trndocGroup() {
     var s = g[k];
     s.people = Object.keys(s.ppl).map(function (u) { return s.ppl[u]; })
       .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
-    s.n = s.people.length;
+    s.n = s.people.length;                       /* СУУСАН */
     s.ok = s.people.filter(function (p) { return (p.post || p.pre || {}).passed; }).length;
+    s.should = trndocShould(s.dept);             /* СУУХ ЁСТОЙ */
+    s.days.sort();
+    s.dstr = trndocDays(s.days);
     return s;
   });
   out.sort(function (a, b) { return b.day.localeCompare(a.day) || String(a.dept).localeCompare(String(b.dept), 'mn'); });
@@ -25118,6 +25145,22 @@ async function trndocAttLoad(s) {
   var rec = { miss: {} };
   try {
     var j = await riskR2GetJson(trndocAttKey(s), { fresh: true });
+    /* ⚠ 2026-09-08: бүлэглэлт ӨДРӨӨС САР болж өөрчлөгдсөн тул хуучин
+       засвар, хавсаргасан хөтөлбөр өөр түлхүүрт үлдсэн. Шинэ түлхүүр
+       хоосон бол тэдгээрийг уншиж НЭГТГЭНЭ — юу ч алдагдахгүй. */
+    if (!j && s.days && s.days.length) {
+      var merged = null;
+      for (var i = 0; i < s.days.length; i++) {
+        var oldId = s.days[i] + '|' + s.dept + '|' + s.key;
+        var o = null;
+        try { o = await riskR2GetJson('training/attend/' + trndocSlug(oldId) + '.json', { fresh: true }); } catch (e2) {}
+        if (!o) continue;
+        merged = merged || { miss: {}, at: o.at, by: o.by, prog: o.prog };
+        Object.keys(o.miss || {}).forEach(function (k) { merged.miss[k] = o.miss[k]; });
+        if (!merged.prog && o.prog) merged.prog = o.prog;
+      }
+      if (merged) j = merged;
+    }
     /* ⚠⚠ БҮХ талбарыг АВЧ ҮЛДЭНЭ (2026-09-02 засвар).
        Өмнө зөвхөн miss/at/by-г хуулдаг байсан тул ХӨТӨЛБӨРИЙН
        ЗААГЧ (prog) алга болж:
@@ -25504,6 +25547,10 @@ async function renderTrnDocs() {
       'margin:18px 0 8px">' + m.slice(0, 4) + ' оны ' + mn + '-р сар</div>';
     byMonth[m].forEach(function (s) {
       var pct = s.n ? Math.round(s.ok / s.n * 100) : 0;
+      /* ⚠ Өмнө нь «суусан»-ыг нийт гэж харуулдаг байсан тул биелэлт
+         үргэлж 100% мэт харагддаг байв (2026-09-08). */
+      var need = s.should || 0;
+      var attPct = need ? Math.round(s.n / need * 100) : 0;
       h += '<div class="card" style="padding:14px 16px;margin-bottom:9px;display:flex;' +
         'flex-wrap:wrap;gap:14px;align-items:center">' +
         '<div style="flex:1;min-width:230px">' +
@@ -25513,9 +25560,15 @@ async function renderTrnDocs() {
         (s.hasProg ? ' · <span style="color:#15803D">✓ хөтөлбөртэй</span>'
                    : ' · <span style="color:#B45309">хөтөлбөргүй</span>') +
         '</div></div>' +
+        (need ? ('<div style="text-align:center;min-width:74px">' +
+          '<div style="font-size:17px;font-weight:800;color:#64748B">' + need + '</div>' +
+          '<div style="font-size:11px;color:#8A94A6">суух ёстой</div></div>') : '') +
         '<div style="text-align:center;min-width:74px">' +
-        '<div style="font-size:17px;font-weight:800">' + s.n + '</div>' +
-        '<div style="font-size:11px;color:#8A94A6">ажилтан</div></div>' +
+        '<div style="font-size:17px;font-weight:800;color:' +
+        (!need ? '#0F1117' : attPct >= 80 ? '#15803D' : attPct >= 50 ? '#D97706' : '#C81E3A') +
+        '">' + s.n + '</div>' +
+        '<div style="font-size:11px;color:#8A94A6">суусан' + (need ? ' · ' + attPct + '%' : '') +
+        '</div></div>' +
         '<div style="text-align:center;min-width:84px">' +
         '<div style="font-size:17px;font-weight:800;color:' + (pct >= 80 ? '#15803D' : '#D97706') + '">' +
         s.ok + '</div><div style="font-size:11px;color:#8A94A6">тэнцсэн · ' + pct + '%</div></div>' +
