@@ -1923,26 +1923,52 @@ async function riskR2PutJson(key, obj) {
   return out;
 }
 
-/* Бичилтийг шалгаж, зөрвөл НЭГ удаа дахин бичнэ */
+/* Гарын үсгийг задалж авна: {n: мөрийн тоо, t: updatedAt} */
+function r2SigParts(o) {
+  try {
+    if (!o || typeof o !== 'object') return { n: -1, t: '' };
+    var arr = o.list || o.rows || null;
+    return { n: Array.isArray(arr) ? arr.length : Object.keys(o).length, t: String(o.updatedAt || o.at || '') };
+  } catch (e) { return { n: -1, t: '' }; }
+}
+
+/* Бичилтийг шалгаж, ЖИНХЭНЭЭР унасан бол л НЭГ удаа дахин бичнэ.
+   ⚠⚠ 2026-09-08: өмнөх хувилбар `count|updatedAt` ЯГ таарахгүй бол
+   миний хуучин объектыг ДАХИН БИЧДЭГ байв. Хуваалцсан файлд (notify,
+   reports, workflow) миний бичилтийн дараа ӨӨР ажилтан бичсэн бол
+   updatedAt зөрөх нь хэвийн — гэтэл тэр үед нөгөө хүний бичилтийг ДАРЖ
+   бичээд, дараа нь ажилтанд улаан алдаа харуулж байв (өнөөдөр 10 удаа).
+   Гандолгорын батлалт алдагдахаас сэргийлэх гэсэн код яг тэр төрлийн
+   алдагдлыг өөрөө үүсгэж байсан.
+   ДҮРЭМ: алсынх МИНИЙХЭЭС ШИНЭ бол — зөв, юу ч хийхгүй.
+          алсынх ХУУЧИН эсвэл АЛГА бол — жинхэнэ уналт, нэг удаа дахин бичнэ. */
 async function r2VerifyWrite(key, obj) {
   if (key === PULSE_FILE) return true;              /* цохилтын файл — хэрэггүй */
-  var want = r2Sig(obj);
+  var want = r2SigParts(obj);
+  var ok = function (got) {
+    if (!got || got.n < 0) return false;
+    if (got.n === want.n && got.t === want.t) return true;          /* яг миний бичилт */
+    if (want.t && got.t && got.t > want.t) return true;             /* өөр хүн дараа нь бичсэн — зөв */
+    if (!want.t && !got.t && got.n >= want.n) return true;          /* цаггүй файл — тоо хүрэлцэж байна */
+    return false;
+  };
   var got = null;
-  try { got = r2Sig(await riskR2GetJson(key, { fresh: true })); } catch (e) { got = null; }
-  if (got === want) return true;
-  try { console.warn('[r2] ' + key + ' — бичилт таарсангүй (' + got + ' ≠ ' + want + '), дахин бичнэ'); } catch (e) {}
+  try { got = r2SigParts(await riskR2GetJson(key, { fresh: true })); } catch (e) { got = null; }
+  if (ok(got)) return true;
+  var sig = function (p) { return p ? (p.n + '|' + p.t) : 'алга'; };
+  try { console.warn('[r2] ' + key + ' — бичилт хүрсэнгүй (' + sig(got) + ' ≠ ' + sig(want) + '), дахин бичнэ'); } catch (e) {}
   try {
     var b2 = new Blob([JSON.stringify(obj)], { type: 'application/json' });
     b2.name = key.split('/').pop();
     await r2Put(b2, key);
     riskR2CacheBust();
-    var got2 = r2Sig(await riskR2GetJson(key, { fresh: true }));
-    if (got2 === want) return true;
-    got = got2;
+    got = r2SigParts(await riskR2GetJson(key, { fresh: true }));
+    if (ok(got)) return true;
   } catch (e) {}
-  /* ⚠ Хоёр удаа бүтсэнгүй — ЧИМЭЭГҮЙ өнгөрөхгүй */
-  try { sysErrLog('r2', 'Бичилт баталгаажсангүй: ' + key + ' (' + got + ' ≠ ' + want + ')', 'riskR2PutJson'); } catch (e) {}
-  try { toast('⚠ «' + key + '» хадгалалт баталгаажсангүй — дахин оролдоно уу', 'error'); } catch (e) {}
+  /* ⚠ Хоёр удаа бүтсэнгүй — ЧИМЭЭГҮЙ өнгөрөхгүй, гэхдээ ажилтныг ЗОГСООХГҮЙ:
+     бүртгэлд үлдээж, мэдэгдлийг зөвхөн админд харуулна. */
+  try { sysErrLog('r2', 'Бичилт баталгаажсангүй: ' + key + ' (' + sig(got) + ' ≠ ' + sig(want) + ')', 'riskR2PutJson'); } catch (e) {}
+  try { if (isAdmin()) toast('⚠ «' + key + '» хадгалалт баталгаажсангүй — эрүүл мэндийн самбарыг шалгана уу', 'error'); } catch (e) {}
   return false;
 }
 
