@@ -1212,6 +1212,10 @@ async function sigMakeHash(obj){
 var OTP_ID="", OTP_OK=false, OTP_TIMER=null, OTP_POLL=null, OTP_LEFT=0;
 var OTP_VERIFIED_AT=0, OTP_FROM_CACHE=false, OTP_LAST_TRIED="";
 var OTP_BYPASS=false, OTP_SKIP_REASON="";
+/* ⚠ 2026-09-08: кодыг СЕРВЕР шалгасан уу, ХӨТӨЧ шалгасан уу.
+   Ослын мөрдөн шалгалтад «баталгаажуулалт найдвартай юу» гэдэгт
+   хариулах ёстой тул дүнгийн бичлэгт заавал үлдээнэ. */
+var OTP_CHECKED_BY="", OTP_ID_MATCH=null;
 var OTP_CODE="";                     /* баталгаажсан код — ГАРЫН ҮСГИЙН ҮҮРЭГ гүйцэтгэнэ */
 var OTP_TTL_H=12;                    // баталгаажилт хэдэн цаг хүчинтэй вэ
 
@@ -1503,6 +1507,34 @@ async function otpCheckTyped(){
   for(var i=0;i<ins.length;i++) code+=(ins[i].value||"").replace(/\D/g,"");
   if(code.length<6||!OTP_ID) return;
   otpMsg("⏳ Шалгаж байна…");
+
+  /* ══ ① ҮНДСЭН ЗАМ — СЕРВЕР ШАЛГАНА ══
+     ⚠ Сервер ШИЙДВЭР гаргавал (HTTP 200-499) түүнийг ДАГАНА — зөв ч
+     бай, буруу ч бай. Нөөц зам руу ЗӨВХӨН сервер хүрэхгүй үед (5xx,
+     сүлжээ) шилжинэ. Эс бөгөөс буруу кодтой хүн серверийг тойрч,
+     хуучин сул замаар өнгөрөх боломжтой болно. */
+  try{
+    var _tok="";
+    try{ var _u=firebase.auth().currentUser; if(_u) _tok=await _u.getIdToken(); }catch(e0){}
+    var _r=await fetch("/api/otp-verify/",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({idToken:_tok,id:OTP_ID,code:code})});
+    if(_r.status>=200 && _r.status<500){
+      var _j=await _r.json();
+      if(_j && _j.ok){
+        OTP_CODE=code; OTP_CHECKED_BY="server"; OTP_ID_MATCH=(_j.identityMatch===true);
+        otpSetVerified(false);
+        return;
+      }
+      otpMsg("❌ "+String((_j&&_j.error)||"Код таарахгүй байна"),"err");
+      return;
+    }
+    console.warn("[OTP] сервер хүрэхгүй, нөөц зам:",_r.status);
+  }catch(e1){ console.warn("[OTP] сервер алдаа, нөөц зам:",(e1&&e1.message)||e1); }
+
+  /* ══ ② НӨӨЦ ЗАМ — хуучин хөтөч талын шалгалт ══
+     ⚠ ТҮР ЗУУРЫН. Сервер тогтвортой ажилласны дараа УСТГАНА. Одоо
+     устгавал сүлжээний саатал шалгалтыг бүхэлд нь зогсоох эрсдэлтэй. */
   try{
     var s=await db.collection("habea_otp").doc(OTP_ID).get();
     var d=(s&&s.exists)?s.data():null;
@@ -1510,7 +1542,7 @@ async function otpCheckTyped(){
     if(d.expiresAt && new Date(d.expiresAt).getTime()<Date.now()){ otpMsg("Кодын хугацаа дууссан.","err"); return; }
     var h=await otpSha(code+"|"+OTP_ID+"|"+String(d.email||""));
     if(h!==d.hash){ otpMsg("❌ Код таарахгүй байна. Дахин шалгана уу.","err"); return; }
-    OTP_CODE=code;
+    OTP_CODE=code; OTP_CHECKED_BY="client";
     try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,code:code,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
     otpSetVerified(false);
   }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
@@ -1792,6 +1824,10 @@ async function finalSubmit(){ sigRelease();
   doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
   if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
   doc.otpId=OTP_ID||"";
+  /* ⚠ Баталгаажуулалтыг ХЭН шалгав: "server" (найдвартай) эсвэл
+     "client" (хуучин нөөц зам). Хоосон бол кодгүй өнгөрсөн. */
+  doc.otpCheckedBy=OTP_CHECKED_BY||"";
+  if(OTP_ID_MATCH!==null) doc.otpIdentityMatch=OTP_ID_MATCH;
   doc.otpVerifiedAt=OTP_VERIFIED_AT?new Date(OTP_VERIFIED_AT).toISOString():"";
   doc.otpAgeMin=OTP_VERIFIED_AT?Math.round((Date.now()-OTP_VERIFIED_AT)/60000):0;
   doc.otpReused=!!OTP_FROM_CACHE;

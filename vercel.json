@@ -162,6 +162,9 @@
     },
     "api/exam-sync.js": {
       "maxDuration": 60
+    },
+    "api/otp-verify.js": {
+      "maxDuration": 30
     }
   }
 }
