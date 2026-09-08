@@ -25370,8 +25370,22 @@ async function trndocProgReuse(s) {
 
 async function trndocAttSave(s) {
   var rec = TRNDOC_ATT[s.id] || { miss: {} };
-  rec.at = new Date().toISOString();
-  try { rec.by = (SESSION && SESSION.email) || ''; } catch (e) {}
+  var who = '';
+  try { who = (SESSION && SESSION.email) || ''; } catch (e) {}
+  var now = new Date().toISOString();
+  /* ⚠ 2026-09-08: өмнө нь `at`/`by`-г ДАРЖ бичдэг тул зөвхөн сүүлчийн
+     засварлагч үлддэг байв. MNS 4969-1 7.1.1 «бүрэн бүтэн байдал» нь
+     засвар бүрийг мөрдөх боломжтой байхыг шаарддаг. Одоо НЭМЖ бичнэ.
+     ⚠ Хуучин бичлэгт `log` байхгүй тул анхны засварыг нөхөж бүртгэнэ —
+       эс бөгөөс өмнөх засварлагч түүхээс алга болно. */
+  if (!Array.isArray(rec.log)) {
+    rec.log = [];
+    if (rec.at && rec.by) rec.log.push({ at: rec.at, by: rec.by, n: null, note: 'өмнөх засвар' });
+  }
+  rec.log.push({ at: now, by: who, n: Object.keys(rec.miss || {}).length });
+  if (rec.log.length > 200) rec.log = rec.log.slice(-200);
+  rec.at = now;
+  rec.by = who;
   await riskR2PutJson(trndocAttKey(s), rec);
   return true;
 }
@@ -25735,10 +25749,16 @@ async function renderTrnDocs() {
         '<div style="text-align:center;min-width:84px">' +
         '<div style="font-size:17px;font-weight:800;color:' + (pct >= 80 ? '#15803D' : '#D97706') + '">' +
         s.ok + '</div><div style="font-size:11px;color:#8A94A6">тэнцсэн · ' + pct + '%</div></div>' +
-        '<button type="button" data-td-att="' + esc(s.id) + '" ' +
-        'style="border:1.5px solid #E2E8F0;background:#fff;color:#334155;border-radius:10px;' +
-        'padding:10px 14px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">' +
-        '✎ Ирц засах</button>' +
+        /* ⚠ 2026-09-08: ирцийн засвар нь хуулийн нотлох баримт тул
+           ЗӨВХӨН АДМИН. Сервер тал ч хаагдсан (file-token дахь
+           ADMIN_ONLY_PREFIXES) — товчийг бусдад харуулбал дараад
+           «эрх байхгүй» гэсэн алдаа авах тул энд ч нуулаа. */
+        (isAdmin()
+          ? ('<button type="button" data-td-att="' + esc(s.id) + '" ' +
+             'style="border:1.5px solid #E2E8F0;background:#fff;color:#334155;border-radius:10px;' +
+             'padding:10px 14px;cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">' +
+             '✎ Ирц засах</button>')
+          : '') +
         '<button type="button" data-td-zip="' + esc(s.id) + '" ' +
         'style="border:none;background:#0F1117;color:#fff;border-radius:10px;padding:10px 16px;' +
         'cursor:pointer;font-family:inherit;font-weight:700;font-size:13px">⬇ Архив татах</button>' +
@@ -25751,7 +25771,11 @@ async function renderTrnDocs() {
     sec._tdWired = true;
     sec.addEventListener('click', function (ev) {
       var a2 = ev.target.closest('[data-td-att]');
-      if (a2) { trndocAttModal(a2.getAttribute('data-td-att')); return; }
+      /* ⚠ Товч нуугдсан ч DOM-оор дуудагдахаас сэргийлж ЭНД ч шалгана. */
+      if (a2) {
+        if (!isAdmin()) { toast('Ирцийн бүртгэлийг зөвхөн ХАБЭА-н алба засна.', 'error'); return; }
+        trndocAttModal(a2.getAttribute('data-td-att')); return;
+      }
       var b = ev.target.closest('[data-td-zip]');
       if (b) trndocDownload(b.getAttribute('data-td-zip'));
     });
