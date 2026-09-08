@@ -257,22 +257,26 @@ function readBody(req) {
 }
 
 async function isAdminCaller(idToken) {
-  if (!idToken || String(idToken).length < 40) return false;
+  if (!idToken || String(idToken).length < 40) return null;
   try {
     const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + FB_WEB_KEY,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken }) });
-    if (!r.ok) return false;
+    if (!r.ok) return null;
     const j = await r.json();
     const u = j && j.users && j.users[0];
-    if (!u || !u.localId) return false;
+    if (!u || !u.localId) return null;
     /* ⚠ Зөвхөн API түлхүүрээр уншвал дүрэм зөвшөөрөхгүй — дуудагчийн
        өөрийнх нь токеноор уншина (users/{uid} өөрийн баримт). */
     const d = await fetch(FS + '/users/' + encodeURIComponent(u.localId),
       { headers: { Authorization: 'Bearer ' + idToken } });
-    if (!d.ok) return false;
+    if (!d.ok) return null;
     const dj = await d.json();
-    return ((dj.fields || {}).role || {}).stringValue === 'admin';
-  } catch (e) { return false; }
+    if (((dj.fields || {}).role || {}).stringValue !== 'admin') return null;
+    /* ⚠ И-мэйлийг ТОКЕНООС авна, биеийн хэсгээс АВАХГҮЙ — `selfTest` нь
+       үүнийг хүлээн авагч болгодог тул биеэс авбал дурын хаяг руу
+       захидал явуулах суваг болно. */
+    return { uid: u.localId, email: String(u.email || '').toLowerCase() };
+  } catch (e) { return null; }
 }
 
 module.exports = async function handler(req, res) {
@@ -288,7 +292,8 @@ module.exports = async function handler(req, res) {
     const h = String(req.headers.authorization || '');
     return !!cs && h === 'Bearer ' + cs;
   })();
-  const adminOk = cronOk ? true : await isAdminCaller(body.idToken);
+  const caller = cronOk ? null : await isAdminCaller(body.idToken);
+  const adminOk = cronOk || !!caller;
   if (!adminOk) return res.status(403).json({ ok: false, error: 'Зөвхөн админ эсвэл cron' });
 
   const dry = !!body.dry;          /* cron нь dry дамжуулдаггүй */
@@ -319,6 +324,35 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       ok: true, dry: dry, month: key, sent: 0, total: 0,
       wouldSend: 0, plan: [], note: 'Энэ сард хамрагдсан алба алга'
+    });
+  }
+
+  /* ⚠⚠ ЗӨВХӨН ӨӨР РҮҮГЭЭ. Энэ салаа нь жинхэнэ хүлээн авагчийн
+     жагсаалтыг ОГТ БАЙГУУЛАХГҮЙ — өөр хүнд санамсаргүй очих БОЛОМЖГҮЙ.
+     Хүлээн авагч нь Firebase токеноор баталгаажсан дуудагчийн и-мэйл. */
+  if (body.selfTest) {
+    if (!caller || !caller.email) {
+      return res.status(400).json({ ok: false, error: 'Өөрийн и-мэйл тодорхойгүй байна' });
+    }
+    const b = bodyFor(caller.email, active.map(fOf), key, true);
+    try {
+      await sendViaGmail({
+        user: process.env.GMAIL_USER,
+        pass: String(process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, ''),
+        fromName: 'МОНОС ХАБЭА',
+        to: caller.email,
+        subject: '[ЖИШЭЭ] Сургалтын биелэлт · ' + monthLabel(key),
+        text: '⚠ Энэ бол ЗӨВХӨН ТАНД илгээсэн жишээ. Хариуцагчид ЯВААГҮЙ.\n\n' + b.text,
+        html: '<div style="max-width:620px;margin:0 auto 14px;padding:11px 14px;background:#FFFBEB;' +
+          'border:1px solid #FDE68A;border-radius:10px;font-family:Segoe UI,Arial;font-size:13px;color:#92400E">' +
+          '<b>⚠ Энэ бол зөвхөн танд илгээсэн жишээ.</b> Албаны дарга, захирлууд руу ЯВААГҮЙ.</div>' + b.html
+      });
+    } catch (e) {
+      return res.status(502).json({ ok: false, error: 'Илгээж чадсангүй: ' + String(e.message).slice(0, 140) });
+    }
+    return res.status(200).json({
+      ok: true, selfTest: true, month: key, to: caller.email, depts: active.length,
+      note: 'Зөвхөн танд илгээв — хариуцагчид яваагүй'
     });
   }
 
