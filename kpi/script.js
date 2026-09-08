@@ -24802,11 +24802,24 @@ function trnWho(x) {
 /* Тухайн албанд ХЭДЭН ХҮН суух ёстой байсан бэ.
    ⚠ «Сургалтын биелэлт» тайлантай ЯГ ИЖИЛ дүрэм — эс бөгөөс хоёр
    дэлгэц өөр тоо харуулж, аль нь үнэн нь ойлгомжгүй болно. */
-function trndocShould(dept) {
+function trndocShould(dept, people) {
   try {
-    return (DB.employees || []).filter(function (e) {
-      return trnSameDept(e.dept, dept) && !e.onLeave && !trnExempt(e);
-    }).length;
+    var seen = {}, n = 0;
+    (DB.employees || []).forEach(function (e) {
+      if (!trnSameDept(e.dept, dept) || e.onLeave || trnExempt(e)) return;
+      var k = String(e.email || e.id || '').toLowerCase();
+      if (k && !seen[k]) { seen[k] = 1; n++; }
+    });
+    /* ⚠ ҮНЭХЭЭР СУУСАН хүнийг ч тооцно. «Суух ёстой» нь ӨНӨӨДРИЙН орон
+       тооноос, «суусан» нь ӨНГӨРСӨН сарын бодит оролцооноос гардаг тул
+       хүн шилжсэн/гарсан үед «8-аас 12 суусан = 150%» гэсэн боломжгүй
+       тоо гарч байв (2026-09-08). Суусан хүн тэр үед тэнд ажиллаж
+       байсан нь тодорхой. */
+    (people || []).forEach(function (p) {
+      var k = String((p && (p.email || (p.post || p.pre || {}).email)) || '').toLowerCase();
+      if (k && !seen[k]) { seen[k] = 1; n++; }
+    });
+    return n;
   } catch (e) { return 0; }
 }
 
@@ -24838,7 +24851,9 @@ function trndocGroup() {
     if (day > s.day) s.day = day;               /* сүүлийн өдөр — эрэмбэлэхэд */
     var who = x.eid || x.email || x.name;
     var p = s.ppl[who] || (s.ppl[who] = {
-      name: _w.name || '', pos: _w.pos || '', dept: dept, pre: null, post: null, sig: null
+      name: _w.name || '', pos: _w.pos || '', dept: dept,
+      email: String(x.email || '').toLowerCase(),   /* давхардалгүй тоолоход */
+      pre: null, post: null, sig: null
     });
     if (x.type === 'pre') p.pre = x; else if (x.type === 'post') p.post = x;
     if ((x.otpAt || x.signedAt) && !p.sig) p.sig = x;
@@ -24849,7 +24864,7 @@ function trndocGroup() {
       .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
     s.n = s.people.length;                       /* СУУСАН */
     s.ok = s.people.filter(function (p) { return (p.post || p.pre || {}).passed; }).length;
-    s.should = trndocShould(s.dept);             /* СУУХ ЁСТОЙ */
+    s.should = trndocShould(s.dept, s.people);   /* СУУХ ЁСТОЙ */
     s.days.sort();
     s.dstr = trndocDays(s.days);
     return s;
