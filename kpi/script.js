@@ -24709,8 +24709,13 @@ function trnEmpRow(r) {
     '<span style="flex-shrink:0;display:inline-flex;align-items:center;gap:9px">' +
     (r.qs ? '<span style="color:#94A3B8;font-size:11.5px">' + r.qOk + '/' + r.qs + '</span>' : '') +
     '<span style="color:#475569">' + arrow + '</span>' +
-    '<span style="font-weight:800;color:' + (r.passed ? '#15803D' : '#B45309') + '">' +
-    (r.passed ? '✓' : '✗') + '</span></span></div>';
+    /* ⚠ Гурван ТӨЛӨВ, хоёр биш. Дараах шалгалтаа өгөөгүй хүнийг `✗`
+       гэж харуулбал «шалгалтад унасан» гэж ойлгогдоно — урьдчилсандаа
+       100% авсан хүн ч тэгж харагдаж байв (2026-09-08). */
+    '<span style="font-weight:800;color:' +
+    (r.preOnly ? '#7C3AED' : (r.passed ? '#15803D' : '#B45309')) + '" title="' +
+    (r.preOnly ? 'Дараах шалгалтаа хараахан өгөөгүй' : (r.passed ? 'Тэнцсэн' : 'Тэнцээгүй')) + '">' +
+    (r.preOnly ? '⏳' : (r.passed ? '✓' : '✗')) + '</span></span></div>';
 }
 
 async function trnDigest(dry) {
