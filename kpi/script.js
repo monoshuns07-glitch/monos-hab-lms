@@ -24288,6 +24288,17 @@ async function trnOwnLoad(force) {
 }
 
 /* Албаны нэрийг зөөлөн харьцуулна (бичиглэл бага зэрэг зөрж болно) */
+/* Давтан зааварчилгаанд СУУХ ЁСГҮЙ хүн үү.
+   ⚠ Дарга, захирлууд суудаггүй (2026-09-08, хэрэглэгчийн заавар).
+   ⚠ «Нарийн бичгийн дарга» нь удирдах албан тушаал БИШ — хасахгүй.
+   ⚠ Энэ дүрмийг ЗӨВХӨН ЭНД бич — ирцийн бүртгэл ба биелэлтийн тайлан
+   хоёулаа эндээс уншина. Тусад нь бичвэл хоёр дэлгэц зөрнө. */
+function trnExempt(e) {
+  var p = String((e && (e.pos || e.position || e.role)) || '');
+  if (/нарийн\s*бичг/i.test(p)) return false;
+  return /дарга|захирал/i.test(p);
+}
+
 function trnSameDept(a, b) {
   var x = String(a || '').trim().toLowerCase(), y = String(b || '').trim().toLowerCase();
   if (!x || !y) return false;
@@ -24368,7 +24379,9 @@ async function trnExamAll(force) {
 /* ── Нэг албаны нэг сарын юүлүүр ──────────────────────────────────── */
 function trnFunnel(dept, key, exams) {
   var staff = (DB.employees || []).filter(function (e) {
-    return trnSameDept(e.dept, dept) && !e.onLeave;
+    /* ⚠ Дарга, захирал давтан зааварчилгаанд суудаггүй тул «суух ёстой»
+       тоонд ОРОХГҮЙ (2026-09-08). Ирцийн бүртгэлтэй ижил дүрэм. */
+    return trnSameDept(e.dept, dept) && !e.onLeave && !trnExempt(e);
   });
   var byMail = {};
   (exams || []).forEach(function (x) {
@@ -24792,7 +24805,7 @@ function trnWho(x) {
 function trndocShould(dept) {
   try {
     return (DB.employees || []).filter(function (e) {
-      return trnSameDept(e.dept, dept) && !e.onLeave;
+      return trnSameDept(e.dept, dept) && !e.onLeave && !trnExempt(e);
     }).length;
   } catch (e) { return 0; }
 }
