@@ -331,16 +331,27 @@ module.exports = async function handler(req, res) {
      жагсаалтыг ОГТ БАЙГУУЛАХГҮЙ — өөр хүнд санамсаргүй очих БОЛОМЖГҮЙ.
      Хүлээн авагч нь Firebase токеноор баталгаажсан дуудагчийн и-мэйл. */
   if (body.selfTest) {
-    if (!caller || !caller.email) {
-      return res.status(400).json({ ok: false, error: 'Өөрийн и-мэйл тодорхойгүй байна' });
+    /* Хаяг өгөөгүй бол ӨӨРИЙНХ НЬ — анхны, хамгийн аюулгүй зан төлөв. */
+    const want = String(body.to || '').trim().toLowerCase();
+    let dest = (caller && caller.email) || '';
+    if (want) {
+      /* ⚠ ГАНЦ хаяг. Таслал, цэг таслал, зай бүхий жагсаалтыг ЗӨВШӨӨРӨХГҮЙ —
+         эс бөгөөс олноор илгээх суваг болно. */
+      if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(want)) {
+        return res.status(400).json({ ok: false, error: 'И-мэйл хаяг буруу байна (нэг хаяг өгнө үү)' });
+      }
+      dest = want;
     }
-    const b = bodyFor(caller.email, active.map(fOf), key, true);
+    if (!dest) {
+      return res.status(400).json({ ok: false, error: 'Хүлээн авагч тодорхойгүй байна' });
+    }
+    const b = bodyFor(dest, active.map(fOf), key, true);
     try {
       await sendViaGmail({
         user: process.env.GMAIL_USER,
         pass: String(process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, ''),
         fromName: 'МОНОС ХАБЭА',
-        to: caller.email,
+        to: dest,
         subject: '[ЖИШЭЭ] Сургалтын биелэлт · ' + monthLabel(key),
         text: '⚠ Энэ бол ЗӨВХӨН ТАНД илгээсэн жишээ. Хариуцагчид ЯВААГҮЙ.\n\n' + b.text,
         html: '<div style="max-width:620px;margin:0 auto 14px;padding:11px 14px;background:#FFFBEB;' +
@@ -350,9 +361,11 @@ module.exports = async function handler(req, res) {
     } catch (e) {
       return res.status(502).json({ ok: false, error: 'Илгээж чадсангүй: ' + String(e.message).slice(0, 140) });
     }
+    /* ⚠ ХЭН хэн рүү илгээснийг ил бичнэ — мөрдөх боломжтой байх ёстой. */
     return res.status(200).json({
-      ok: true, selfTest: true, month: key, to: caller.email, depts: active.length,
-      note: 'Зөвхөн танд илгээв — хариуцагчид яваагүй'
+      ok: true, selfTest: true, month: key, to: dest,
+      by: (caller && caller.email) || 'cron', depts: active.length,
+      note: 'Ганц хаяг руу жишээгээр илгээв — хариуцагчид яваагүй'
     });
   }
 
