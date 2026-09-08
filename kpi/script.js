@@ -24849,7 +24849,11 @@ function trndocGroup() {
     });
     if (s.days.indexOf(day) < 0) s.days.push(day);
     if (day > s.day) s.day = day;               /* сүүлийн өдөр — эрэмбэлэхэд */
-    var who = x.eid || x.email || x.name;
+    /* ⚠ Түлхүүр нь И-МЭЙЛ байх ёстой. Өмнө нь и-мэйлгүй үед НЭР
+       түлхүүр болдог тул нэг хүний нэр хоёр янзаар бичигдвэл ХОЁР
+       хүн болж тоологддог байв (2026-09-08). */
+    var _em = String(x.email || '').trim().toLowerCase();
+    var who = _em || ('?' + (x.eid || x.name || ''));
     var p = s.ppl[who] || (s.ppl[who] = {
       name: _w.name || '', pos: _w.pos || '', dept: dept,
       email: String(x.email || '').toLowerCase(),   /* давхардалгүй тоолоход */
@@ -24862,9 +24866,14 @@ function trndocGroup() {
     var s = g[k];
     s.people = Object.keys(s.ppl).map(function (u) { return s.ppl[u]; })
       .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'mn'); });
-    s.n = s.people.length;                       /* СУУСАН */
-    s.ok = s.people.filter(function (p) { return (p.post || p.pre || {}).passed; }).length;
-    s.should = trndocShould(s.dept, s.people);   /* СУУХ ЁСТОЙ */
+    /* ⚠ И-мэйлгүй бичлэгийг «суусан» тоонд ОРУУЛАХГҮЙ — тэр нь аль
+       хэдийн тоологдсон хүний давхардал байж болно. Гэхдээ НУУХГҮЙ,
+       тусад нь «тодорхойгүй» гэж харуулна. */
+    var known = s.people.filter(function (p) { return !!p.email; });
+    s.unknown = s.people.length - known.length;
+    s.n = known.length;                          /* СУУСАН — таньсан хүн */
+    s.ok = known.filter(function (p) { return (p.post || p.pre || {}).passed; }).length;
+    s.should = trndocShould(s.dept, known);      /* СУУХ ЁСТОЙ */
     s.days.sort();
     s.dstr = trndocDays(s.days);
     return s;
@@ -25596,6 +25605,9 @@ async function renderTrnDocs() {
         (!need ? '#0F1117' : attPct >= 80 ? '#15803D' : attPct >= 50 ? '#D97706' : '#C81E3A') +
         '">' + s.n + '</div>' +
         '<div style="font-size:11px;color:#8A94A6">суусан' + (need ? ' · ' + attPct + '%' : '') +
+        (s.unknown ? '<div style="font-size:10.5px;color:#B45309;margin-top:1px" ' +
+          'title="И-мэйлгүй хуучин бичлэг — аль хэдийн тоологдсон хүний давхардал байж болно">' +
+          '+' + s.unknown + ' тодорхойгүй</div>' : '') +
         '</div></div>' +
         '<div style="text-align:center;min-width:84px">' +
         '<div style="font-size:17px;font-weight:800;color:' + (pct >= 80 ? '#15803D' : '#D97706') + '">' +
