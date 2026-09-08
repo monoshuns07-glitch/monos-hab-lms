@@ -1158,6 +1158,9 @@ function migrateDB() {
   if (!Array.isArray(DB.extTrainings)) DB.extTrainings = [];
   if (!DB.extAttendance || typeof DB.extAttendance !== 'object') DB.extAttendance = {};
   if (!DB.davtanMonths || typeof DB.davtanMonths !== 'object') DB.davtanMonths = {};
+  /* ⚠ MNS 4969-1 7.1.3: зааварчилгаа ӨГСӨН хүнийг заавал бүртгэнэ.
+     { 'YYYY-M': { 'Албаны нэр': 'Овог Нэр, албан тушаал' } } */
+  if (!DB.davtanTeachers || typeof DB.davtanTeachers !== 'object') DB.davtanTeachers = {};
   if (!Array.isArray(DB.violations)) DB.violations = [];
   if (!DB.settings) DB.settings = seedDB().settings;
   if (!DB.settings.kpi) DB.settings.kpi = seedDB().settings.kpi;
@@ -4414,6 +4417,21 @@ function salaryKeyLabel(key) {
   return p.length === 2 ? p[0] + ' оны ' + p[1] + '-р сар (' + p[1] + '/24 хүртэл)' : key;
 }
 /* Тухайн алба энэ цалингийн сард давтан зааварчилгаатай эсэх (админ урьдчилан тэмдэглэнэ) */
+/* Тухайн сард тухайн албанд ХЭН зааварчилгаа өгсөн бэ.
+   ⚠ Хоосон буцаавал бүртгэл дутуу — 7.1.3-ыг хангахгүй гэсэн үг. */
+function davtanTeacher(dept, key) {
+  try {
+    var m = (DB.davtanTeachers || {})[key || currentSalaryKey()] || {};
+    if (m[dept]) return String(m[dept]);
+    /* Албаны нэр бага зэрэг зөрж бичигдсэн байж болно */
+    var hit = '';
+    Object.keys(m).forEach(function (k) {
+      if (!hit && trnSameDept(k, dept)) hit = String(m[k] || '');
+    });
+    return hit;
+  } catch (e) { return ''; }
+}
+
 function deptHasDavtan(dept, key) {
   var m = (DB.davtanMonths || {})[key || currentSalaryKey()];
   return !!(m && m.indexOf(dept) > -1);
@@ -9535,6 +9553,28 @@ async function ackVerifyOtp(id, code, email) {
   var em = String(email || '').trim().toLowerCase();
   var cd = String(code || '').trim();
   if (!/^\d{4,8}$/.test(cd)) return { ok: false, error: 'Код буруу форматтай байна' };
+
+  /* ══ СЕРВЕР ШАЛГАНА (2026-09-08, К1) ══
+     ⚠ Энэ код нь ГАРЫН ҮСГИЙН үүрэгтэй. Өмнө нь хөтөч өөрөө хэшийг
+     татаж, өөрөө шийддэг байсан тул хөтчийн кодыг өөрчилсөн хүн
+     тойрч чаддаг байв. Одоо шийдвэрийг сервер гаргана.
+     ⚠ Нөөц зам руу ЗӨВХӨН сервер хүрэхгүй үед (5xx) шилжинэ. */
+  try {
+    var _tk = '';
+    try { var _cu = firebase.auth().currentUser; if (_cu) _tk = await _cu.getIdToken(); } catch (e0) {}
+    var _rs = await fetch('/api/otp-verify/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: _tk, id: id, code: cd })
+    });
+    if (_rs.status >= 200 && _rs.status < 500) {
+      var _js = await _rs.json();
+      if (_js && _js.ok) return { ok: true, at: _js.verifiedAt || new Date().toISOString(), by: 'server' };
+      return { ok: false, error: String((_js && _js.error) || 'Код буруу байна') };
+    }
+    console.warn('[ack] сервер хүрэхгүй, нөөц зам:', _rs.status);
+  } catch (e9) { console.warn('[ack] сервер алдаа, нөөц зам:', (e9 && e9.message) || e9); }
+
+  /* ══ НӨӨЦ ЗАМ — түр зуурын, сервер тогтворжсоны дараа устгана ══ */
   /* ⚠ OTP нь ШАЛГАЛТЫН төсөлд (habea-shalgalt) хадгалагддаг — KPI-ийн
      Firestore биш. REST-ээр уншина, SDK-ээр БИШ: хоёрдогч SDK нь сүлжээ
      бэлэн болоогүй үед «баримт олдсонгүй» гэж КЭШЭЭС хариу буцаадаг тул
@@ -22937,8 +22977,21 @@ function renderSettings() {
     '<div id="davtanDeptList" style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 14px">' +
     deptList().map(function (d) {
       var on = deptHasDavtan(d, currentSalaryKey());
-      return '<label style="display:flex;align-items:center;gap:7px;background:' + (on ? '#E0F2FE' : '#F8FAFC') + ';border:1.5px solid ' + (on ? '#7DD3FC' : '#E2E8F0') + ';border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;color:' + (on ? '#0369A1' : '#475569') + '">' +
-        '<input type="checkbox" class="davtan-dept-cb" value="' + esc(d) + '"' + (on ? ' checked' : '') + ' style="width:15px;height:15px;accent-color:#0891B2;cursor:pointer">' + esc(d) + '</label>';
+      /* ⚠ Зааварлагчийн нэр — MNS 4969-1 7.1.3 заавал шаарддаг.
+         Хоосон үлдээвэл бүртгэл дутуу тул анхааруулга харагдана. */
+      var tch = davtanTeacher(d, currentSalaryKey());
+      return '<div style="display:flex;flex-direction:column;gap:5px;background:' + (on ? '#E0F2FE' : '#F8FAFC') +
+        ';border:1.5px solid ' + (on ? '#7DD3FC' : '#E2E8F0') + ';border-radius:10px;padding:9px 12px;min-width:236px">' +
+        '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:700;color:' +
+        (on ? '#0369A1' : '#475569') + '">' +
+        '<input type="checkbox" class="davtan-dept-cb" value="' + esc(d) + '"' + (on ? ' checked' : '') +
+        ' style="width:15px;height:15px;accent-color:#0891B2;cursor:pointer">' + esc(d) + '</label>' +
+        '<input type="text" class="davtan-teacher" data-dept="' + esc(d) + '" value="' + esc(tch) + '" ' +
+        'placeholder="Зааварчилгаа өгсөн хүн — овог нэр, албан тушаал" ' +
+        'style="border:1px solid ' + (on && !tch ? '#F59E0B' : '#E2E8F0') + ';border-radius:8px;padding:6px 9px;' +
+        'font-family:inherit;font-size:12.5px;color:#334155;background:#fff">' +
+        (on && !tch ? '<span style="font-size:11px;color:#B45309">⚠ Стандарт шаарддаг (MNS 4969-1 7.1.3)</span>' : '') +
+        '</div>';
     }).join('') + '</div>' +
     '<div class="form-actions"><button class="btn btn-primary" id="saveDavtanSched"><i class="ti ti-check"></i> Хуваарь хадгалах</button></div></div>' +
 
@@ -22979,8 +23032,21 @@ function renderSettings() {
         document.querySelectorAll('.davtan-dept-cb').forEach(function (cb) { if (cb.checked) sel.push(cb.value); });
         DB.davtanMonths = DB.davtanMonths || {};
         DB.davtanMonths[currentSalaryKey()] = sel;
+        /* ⚠ Зааварлагчийг мөн хадгална. Зөвхөн тэмдэглэсэн албаныхыг —
+           тэмдэглээгүй албаны нэр хуучирсан утга болж үлдэхээс сэргийлнэ. */
+        var tmap = {}, miss = 0;
+        document.querySelectorAll('.davtan-teacher').forEach(function (ip) {
+          var dp = ip.getAttribute('data-dept') || '';
+          if (sel.indexOf(dp) < 0) return;
+          var v = String(ip.value || '').trim();
+          if (v) tmap[dp] = v; else miss++;
+        });
+        DB.davtanTeachers = DB.davtanTeachers || {};
+        DB.davtanTeachers[currentSalaryKey()] = tmap;
         saveDB();
-        toast('Давтан хуваарь хадгалагдлаа (' + sel.length + ' алба)', 'success');
+        toast('Давтан хуваарь хадгалагдлаа (' + sel.length + ' алба' +
+          (miss ? ' · ⚠ ' + miss + ' албанд зааварлагч бичээгүй' : '') + ')',
+          miss ? 'warn' : 'success');
         renderSettings(); renderKpiPage(); renderEmployees(); renderDashboard();
         if (charts.radar) renderCharts();
       });
@@ -25082,8 +25148,14 @@ function tdIrts(s) {
   var ws = wb.addWorksheet('Ирц');
   var W = [6, 31.5, 30.5, 37.5, 22, 42.5];        /* нийт 170 мм */
   tdPage(ws, false, W);
+  /* ⚠ MNS 4969-1 7.1.3 — зааварчилгаа ӨГСӨН хүнийг бүртгэнэ.
+     Хоосон бол «(бүртгээгүй)» гэж ИЛ бичнэ — дутууг нуувал хяналтын
+     байгууллага өөрөө олж, бүх бүртгэлд эргэлзэнэ. */
+  var _tch = '';
+  try { _tch = davtanTeacher(s.dept, s.mon); } catch (e) {}
   tdTitle(ws, 6, 'СУРГАЛТЫН ҮЙЛ АЖИЛЛАГААНД ОРОЛЦОГЧДЫН ИРЦИЙН БҮРТГЭЛ',
-    'Огноо: ' + s.dstr + '   ·   Алба: ' + s.dept + '   ·   Сургалт: ' + s.title);
+    'Огноо: ' + s.dstr + '   ·   Алба: ' + s.dept + '   ·   Сургалт: ' + s.title +
+    '   ·   Зааварчилгаа өгсөн: ' + (_tch || '(бүртгээгүй)'));
   tdHead(ws, 4, ['№', 'НЭР', 'АЛБА', 'АЛБАН ТУШААЛ', 'ЧӨЛӨӨ\n(шалтгаан)', 'ГАРЫН ҮСЭГ']);
   /* ⚠ Албаны БҮХ ажилтан — шалгалт өгөөгүй ч сууснууд ч орно */
   var ros = trndocRoster(s);
@@ -25725,6 +25797,10 @@ async function renderTrnDocs() {
          үргэлж 100% мэт харагддаг байв (2026-09-08). */
       var need = s.should || 0;
       var attPct = need ? Math.round(s.n / need * 100) : 0;
+      /* ⚠ Зааварчилгаа өгсөн хүн — MNS 4969-1 7.1.3 заавал шаарддаг.
+         Бүртгээгүй бол ИЛ анхааруулна, эс бөгөөс мартагдана. */
+      var _tchr = '';
+      try { _tchr = davtanTeacher(s.dept, s.mon); } catch (e) {}
       h += '<div class="card" style="padding:14px 16px;margin-bottom:9px;display:flex;' +
         'flex-wrap:wrap;gap:14px;align-items:center">' +
         '<div style="flex:1;min-width:230px">' +
@@ -25742,6 +25818,12 @@ async function renderTrnDocs() {
         (!need ? '#0F1117' : attPct >= 80 ? '#15803D' : attPct >= 50 ? '#D97706' : '#C81E3A') +
         '">' + s.n + '</div>' +
         '<div style="font-size:11px;color:#8A94A6">суусан' + (need ? ' · ' + attPct + '%' : '') +
+        (_tchr
+          ? ('<div style="font-size:10.5px;color:#475569;margin-top:1px" title="Зааварчилгаа өгсөн хүн">' +
+             '👤 ' + esc(_tchr) + '</div>')
+          : '<div style="font-size:10.5px;color:#B45309;margin-top:1px" ' +
+            'title="MNS 4969-1 7.1.3: зааварчилгаа өгсөн хүнийг бүртгэх ёстой. Тохиргоо → Давтан зааварчилгааны хуваарь дээр бичнэ.">' +
+            '⚠ зааварлагч бүртгээгүй</div>') +
         (s.unknown ? '<div style="font-size:10.5px;color:#B45309;margin-top:1px" ' +
           'title="И-мэйлгүй хуучин бичлэг — аль хэдийн тоологдсон хүний давхардал байж болно">' +
           '+' + s.unknown + ' тодорхойгүй</div>' : '') +

@@ -636,6 +636,14 @@ const VideoTracker = {
     this.updateUI();
     // If no duration set or already beyond threshold, auto-unlock
     if(this.durationSecs===0 || this.getPct()>=this.THRESHOLD) {
+      /* ⚠ Хугацаа тохируулаагүй видео ШУУД нээгддэг. Энэ зан төлөвийг
+         ӨӨРЧИЛСӨНГҮЙ — өөрчилбөл хугацаагүй видеотой ажилтан шалгалтаа
+         огт өгч чадахгүй болно. Харин ШАЛТГААНЫГ ил тэмдэглэнэ, ингэснээр
+         «үзсэн» гэсэн бичлэг хэр найдвартайг хожим ялгаж чадна. */
+      if(this.durationSecs===0){
+        this.unlockReason = 'хугацаа тохируулаагүй';
+        try{ console.warn('[video] хугацаа тохируулаагүй — шалгалт шууд нээгдэв'); }catch(e){}
+      }
       this.unlock();
     }
   },
@@ -1104,8 +1112,22 @@ function hideProtectionWarning(){
 /* ── Manual timer (for GDrive / unknown embeds) ── */
 function initManualTimer(durationMin){
   if(VideoTracker.getPct()>=VideoTracker.THRESHOLD){ VideoTracker.unlock(); return; }
-  /* Start counting as soon as the section is visible */
+  /* ⚠ 2026-09-08: өмнө нь ханын цагаар тоолдог байсан тул ажилтан өөр
+     таб руу яваад ирэхэд ч цаг гүйсээр байв — «үзсэн» гэдэг нотолгоо
+     сул болно (MNS 4969-1 7.1.4 «оролцоог бүртгэх»).
+     Одоо таб нуугдвал ЗОГСООД, буцаж ирэхэд ҮРГЭЛЖЛҮҮЛНЭ.
+     ⚠ YouTube-ийн зам бодит тоглуулалтын төлвөөр тоолдог — түүнийг
+       хөндөөгүй, энэ нь зөвхөн гараар тоологчид хамаарна. */
   VideoTracker.start();
+  if(!initManualTimer._wired){
+    initManualTimer._wired = true;
+    document.addEventListener('visibilitychange', function(){
+      try{
+        if(document.hidden) VideoTracker.stop();
+        else if(VideoTracker.getPct() < VideoTracker.THRESHOLD) VideoTracker.start();
+      }catch(e){}
+    });
+  }
 }
 
 /* ── YouTube video ID parser ── */
