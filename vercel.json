@@ -146,5 +146,22 @@
       "destination": "/kpi/",
       "permanent": false
     }
-  ]
+  ],
+  "functions": {
+    "api/trn-digest.js": {
+      "maxDuration": 60
+    },
+    "api/push-daily.js": {
+      "maxDuration": 60
+    },
+    "api/wk-escalate.js": {
+      "maxDuration": 60
+    },
+    "api/r2-backup.js": {
+      "maxDuration": 60
+    },
+    "api/exam-sync.js": {
+      "maxDuration": 60
+    }
+  }
 }

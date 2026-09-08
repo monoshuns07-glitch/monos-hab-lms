@@ -72,6 +72,22 @@ async function r2Json(key) {
   return await r.json();
 }
 
+/* ⚠ R2 руу бичихэд HMAC эрх хэрэгтэй — `SIGN_SECRET` орчны хувьсагч.
+   Тохируулаагүй бол чимээгүй алгасна (илгээлтийг унагахгүй). */
+async function r2Put(key, obj) {
+  const secret = process.env.SIGN_SECRET || '';
+  if (!secret) return false;
+  const crypto = require('crypto');
+  const exp = String(Date.now() + 10 * 60 * 1000);
+  const sig = crypto.createHmac('sha256', secret).update('up|' + key + '|' + exp, 'utf8').digest('hex');
+  const r = await fetch(R2 + '/' + encodeURIComponent(key), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Up': sig, 'X-Exp': exp },
+    body: JSON.stringify(obj)
+  });
+  return r.ok;
+}
+
 async function habExams() {
   const base = 'https://firestore.googleapis.com/v1/projects/' + HAB_PROJ +
     '/databases/(default)/documents/habea_exam_results?key=' + HAB_KEY + '&pageSize=300';
@@ -384,8 +400,17 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  let sent = 0; const failed = [];
-  for (const p of plan) {
+  /* ⚠⚠ ЗЭРЭГ ИЛГЭЭНЭ. Өмнө нь `for...await` буюу нэг нэгээр нь явуулдаг
+     байв. И-мэйл бүрд шинэ TLS холболт нээгддэг тул нэг илгээлт ~1–2.5с,
+     11 хүнд 11–27 секунд болно. Vercel-ийн үндсэн хязгаар 10 секунд тул
+     функц ДУНДУУР АЛАГДАЖ, зарим хүнд очоод зарим нь үлддэг байсан
+     (2026-09-08-нд хэрэглэгч «товч дарсан ч явахгүй байна» гэж мэдээлсэн).
+     ⚠ 4-өөс дээш БҮҮ болго — Gmail нэгэн зэрэг олон холболтыг
+       хязгаарладаг, «too many connections» алдаа өгнө.
+     ⚠ vercel.json дээр maxDuration 60 болгосон — тэрийг ч бүү ав. */
+  const CONC = 4;
+  let sent = 0; const failed = [], okList = [];
+  const one = async (p) => {
     try {
       const b = bodyFor(p.name, p.depts.map(fOf), key, p.all);
       await sendViaGmail({
@@ -396,9 +421,30 @@ module.exports = async function handler(req, res) {
         subject: 'Сургалтын биелэлт · ' + monthLabel(key),
         text: b.text, html: b.html
       });
-      sent++;
+      sent++; okList.push(p.name);
     } catch (e) { failed.push(p.name + ': ' + String(e.message).slice(0, 60)); }
+  };
+  for (let i = 0; i < plan.length; i += CONC) {
+    await Promise.all(plan.slice(i, i + CONC).map(one));
   }
+
+  /* ⚠ БҮРТГЭЛ — «явсан уу» гэдгийг санахаас биш ДАТАНААС хариулна.
+     Амжилтгүй болсон ч бичнэ. Алдвал илгээлтийг унагахгүй. */
+  try {
+    let log = null;
+    try { log = await r2Json('training/digest_log.json'); } catch (e) { log = null; }
+    if (!log || !Array.isArray(log.rows)) log = { rows: [] };
+    log.rows.push({
+      at: new Date().toISOString(), month: key,
+      by: cronOk ? 'cron' : ((caller && caller.email) || '?'),
+      sent: sent, total: plan.length,
+      to: okList, failed: failed
+    });
+    log.rows = log.rows.slice(-200);
+    log.updatedAt = new Date().toISOString();
+    await r2Put('training/digest_log.json', log);
+  } catch (e) { /* бүртгэл алдвал илгээлт хүчинтэй хэвээр */ }
+
   return res.status(200).json({ ok: true, month: key, sent, total: plan.length, failed });
 };
 
