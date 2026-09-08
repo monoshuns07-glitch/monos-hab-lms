@@ -1338,7 +1338,13 @@ function otpStartPoll(){
     try{
       db.collection("habea_otp").doc(OTP_ID).get().then(function(s){
         var d=(s&&s.exists)?s.data():null;
-        if(d&&d.verified===true){ if(d.code) OTP_CODE=String(d.code); otpSetVerified(false); }
+        if(d&&d.verified===true){
+          if(d.code) OTP_CODE=String(d.code);
+          /* ⚠ Энэ хуудас биш, ӨӨР зам (өөр төхөөрөмж) баталгаажуулсан.
+             Хоосон үлдээвэл «кодгүй өнгөрсөн» мэт харагдана. */
+          if(!OTP_CHECKED_BY) OTP_CHECKED_BY = d.verifiedServer ? "server" : "poll";
+          otpSetVerified(false);
+        }
       }).catch(function(){});
     }catch(e){}
   },2500);
@@ -1834,14 +1840,14 @@ async function finalSubmit(){ sigRelease();
   doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
   if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
   doc.otpId=OTP_ID||"";
-  /* ⚠ Баталгаажуулалтыг ХЭН шалгав: "server" (найдвартай) эсвэл
-     "client" (хуучин нөөц зам). Хоосон бол кодгүй өнгөрсөн. */
+  /* ⚠ Баталгаажуулалтыг ХЭН шалгав: "server" (найдвартай), "client"
+     (хуучин нөөц зам), "poll" (өөр төхөөрөмж). Хоосон бол кодгүй өнгөрсөн. */
+  doc.otpCheckedBy=OTP_CHECKED_BY||"";
+  if(OTP_ID_MATCH!==null) doc.otpIdentityMatch=OTP_ID_MATCH;
   /* ⚠ Хугацаа, анхаарал сарнилтын тоо — шалгалтын нөхцөлийн нотолгоо */
   doc.durationSec=Math.round((Date.now()-EXAM_T0)/1000);
   doc.tabAway=EXAM_TABAWAY;
   doc.tabAwaySec=Math.round(EXAM_AWAY_MS/1000);
-  doc.otpCheckedBy=OTP_CHECKED_BY||"";
-  if(OTP_ID_MATCH!==null) doc.otpIdentityMatch=OTP_ID_MATCH;
   doc.otpVerifiedAt=OTP_VERIFIED_AT?new Date(OTP_VERIFIED_AT).toISOString():"";
   doc.otpAgeMin=OTP_VERIFIED_AT?Math.round((Date.now()-OTP_VERIFIED_AT)/60000):0;
   doc.otpReused=!!OTP_FROM_CACHE;

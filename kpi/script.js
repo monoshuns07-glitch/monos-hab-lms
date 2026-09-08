@@ -4419,9 +4419,20 @@ function salaryKeyLabel(key) {
 /* Тухайн алба энэ цалингийн сард давтан зааварчилгаатай эсэх (админ урьдчилан тэмдэглэнэ) */
 /* Тухайн сард тухайн албанд ХЭН зааварчилгаа өгсөн бэ.
    ⚠ Хоосон буцаавал бүртгэл дутуу — 7.1.3-ыг хангахгүй гэсэн үг. */
+/* Сарын түлхүүрийг нэг хэлбэрт: '2026-09' → '2026-9'.
+   ⚠ Хуваарь `currentSalaryKey()` ('2026-9')-ээр хадгалагддаг, харин ирцийн
+     бүртгэл `s.mon` ('2026-09')-той. Нормчлохгүй бол хэзээ ч таарахгүй. */
+function davtanKeyNorm(key) {
+  var p = String(key || '').split('-');
+  return p.length === 2 ? (p[0] + '-' + Number(p[1])) : String(key || '');
+}
+
 function davtanTeacher(dept, key) {
   try {
-    var m = (DB.davtanTeachers || {})[key || currentSalaryKey()] || {};
+    var all = DB.davtanTeachers || {};
+    var want = davtanKeyNorm(key || currentSalaryKey());
+    var m = {};
+    Object.keys(all).forEach(function (k) { if (davtanKeyNorm(k) === want) m = all[k] || {}; });
     if (m[dept]) return String(m[dept]);
     /* Албаны нэр бага зэрэг зөрж бичигдсэн байж болно */
     var hit = '';
@@ -25152,7 +25163,9 @@ function tdIrts(s) {
      Хоосон бол «(бүртгээгүй)» гэж ИЛ бичнэ — дутууг нуувал хяналтын
      байгууллага өөрөө олж, бүх бүртгэлд эргэлзэнэ. */
   var _tch = '';
-  try { _tch = davtanTeacher(s.dept, s.mon); } catch (e) {}
+  /* ⚠ `s.mon` нь ХУАНЛИЙН сар — хуваарь ЦАЛИНГИЙН сараар тэмдэглэгддэг.
+     Сургалтын сүүлийн өдрөөс цалингийн сарыг гаргана (2026-09-08 засвар). */
+  try { _tch = davtanTeacher(s.dept, salaryMonthKey(s.day)); } catch (e) {}
   tdTitle(ws, 6, 'СУРГАЛТЫН ҮЙЛ АЖИЛЛАГААНД ОРОЛЦОГЧДЫН ИРЦИЙН БҮРТГЭЛ',
     'Огноо: ' + s.dstr + '   ·   Алба: ' + s.dept + '   ·   Сургалт: ' + s.title +
     '   ·   Зааварчилгаа өгсөн: ' + (_tch || '(бүртгээгүй)'));
@@ -25800,7 +25813,8 @@ async function renderTrnDocs() {
       /* ⚠ Зааварчилгаа өгсөн хүн — MNS 4969-1 7.1.3 заавал шаарддаг.
          Бүртгээгүй бол ИЛ анхааруулна, эс бөгөөс мартагдана. */
       var _tchr = '';
-      try { _tchr = davtanTeacher(s.dept, s.mon); } catch (e) {}
+      /* ⚠ Хуанлийн сар биш, ЦАЛИНГИЙН сараар хайна (хуваарь тэгж тэмдэглэгддэг) */
+      try { _tchr = davtanTeacher(s.dept, salaryMonthKey(s.day)); } catch (e) {}
       h += '<div class="card" style="padding:14px 16px;margin-bottom:9px;display:flex;' +
         'flex-wrap:wrap;gap:14px;align-items:center">' +
         '<div style="flex:1;min-width:230px">' +
