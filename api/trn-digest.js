@@ -34,6 +34,15 @@ function salaryKey(d) {
   const mm = (day >= 25) ? m + 1 : m;
   return (y + Math.floor(mm / 12)) + '-' + String((mm % 12) + 1).padStart(2, '0');
 }
+/* ⚠ 2026-09-08: сервер `2026-09` (тэгтэй), клиент `2026-9` (тэггүй)
+   бүтээдэг тул харьцуулалт ХЭЗЭЭ Ч таардаггүй байв → «Хэнд очихыг
+   харах» товч үргэлж «энэ сард хамрагдсан алба алга» гэж хэлдэг байсан.
+   (Cron нь сар дамжуулдаггүй тул тэнд алдаа мэдэгддэггүй байсан.)
+   Хоёр форматыг НЭГ хэлбэрт оруулж харьцуулна. */
+function normKey(k) {
+  const p = String(k == null ? '' : k).split('-');
+  return p.length === 2 ? (p[0] + '-' + Number(p[1])) : String(k == null ? '' : k);
+}
 function monthLabel(k) {
   const p = String(k).split('-');
   return p.length === 2 ? (p[0] + ' оны ' + Number(p[1]) + '-р сар') : k;
@@ -95,7 +104,7 @@ function funnelFor(dept, key, staff, exams) {
   const byMail = {};
   exams.forEach(x => {
     if (!x.email || DAVTAN.indexOf(x.key) < 0) return;
-    if (salaryKey(x.at) !== key) return;
+    if (normKey(salaryKey(x.at)) !== normKey(key)) return;
     (byMail[x.email] = byMail[x.email] || []).push(x);
   });
   const rows = mine.map(e => {
@@ -111,13 +120,21 @@ function funnelFor(dept, key, staff, exams) {
       pre: pre ? Math.round(pre.percent) : null,
       post: post ? Math.round(post.percent) : null,
       score: last ? Math.round(last.percent) : null,
-      passed: !!(last && last.passed)
+      /* ⚠ Дэлгэц дээрхтэй ЯГ ИЖИЛ дүрэм: дуусгасан эсэхийг ЗӨВХӨН
+         сургалтын ДАРААХ шалгалт тодорхойлно (2026-09-08). Хоёр газар
+         өөр дүрэм бичвэл и-мэйл ба сайт өөр тоо харуулна. */
+      preOnly: !!(pre && !post),
+      passed: !!(post && post.passed)
     };
   });
   const took = rows.filter(r => r.took);
+  const preOnly = took.filter(r => r.preOnly);
   return {
     dept, should: mine.length, took: took.length,
-    passed: took.filter(r => r.passed).length, rows
+    passed: took.filter(r => r.passed).length,
+    preOnly: preOnly.length,
+    preNames: preOnly.map(r => r.name),
+    rows
   };
 }
 
@@ -166,7 +183,12 @@ function bodyFor(name, funnels, key, isAll) {
       '<td style="padding:9px 10px;border-top:1px solid #EEF1F4;font-size:13.5px;text-align:right;white-space:nowrap;color:' + col + ';font-weight:700">' +
       f.took + ' / ' + f.should + ' · ' + p + '%</td>' +
       '<td style="padding:9px 10px;border-top:1px solid #EEF1F4;font-size:13.5px;text-align:right;white-space:nowrap;color:#15803D;font-weight:700">' + f.passed + '</td>' +
-      '</tr>';
+      '<td style="padding:9px 10px;border-top:1px solid #EEF1F4;font-size:13.5px;text-align:right;white-space:nowrap;color:' +
+      (f.preOnly ? '#7C3AED' : '#CBD5E1') + ';font-weight:700">' + (f.preOnly || 0) + '</td>' +
+      '</tr>' +
+      /* Нэрсийг ил хэлнэ — тоо ганцаараа юу хийхийг заадаггүй */
+      (f.preOnly ? '<tr><td colspan="4" style="padding:2px 10px 9px;font-size:12px;color:#7C3AED;line-height:1.55">' +
+        '⚠ Дараах шалгалтаа өгөөгүй: ' + esc((f.preNames || []).join(', ')) + '</td></tr>' : '');
   }).join('');
   const html =
     '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:620px;margin:0 auto;color:#0F1117">' +
@@ -177,7 +199,8 @@ function bodyFor(name, funnels, key, isAll) {
     '<tr style="background:#EEF2FF">' +
     '<td style="padding:11px 10px;font-size:12px;font-weight:800;color:#3730A3">АЛБА</td>' +
     '<td style="padding:11px 10px;font-size:12px;font-weight:800;color:#3730A3;text-align:right">СУУСАН</td>' +
-    '<td style="padding:11px 10px;font-size:12px;font-weight:800;color:#3730A3;text-align:right">ТЭНЦСЭН</td></tr>' +
+    '<td style="padding:11px 10px;font-size:12px;font-weight:800;color:#3730A3;text-align:right">ТЭНЦСЭН</td>' +
+    '<td style="padding:11px 10px;font-size:12px;font-weight:800;color:#6D28D9;text-align:right">ДАРААХ<br>ӨГӨӨГҮЙ</td></tr>' +
     rows +
     '<tr style="background:#EEF2FF"><td style="padding:11px 10px;font-size:13.5px;font-weight:800">НИЙТ</td>' +
     '<td style="padding:11px 10px;font-size:13.5px;font-weight:800;text-align:right">' + tT + ' / ' + tS + ' · ' + pct + '%</td>' +
@@ -189,7 +212,8 @@ function bodyFor(name, funnels, key, isAll) {
     '<div style="font-size:12px;color:#94A3B8;line-height:1.6;margin-top:16px">' +
     'Апп → «Сургалтын биелэлт» цэснээс хэн сууж, хэн суугаагүйг нэрээр нь харна.</div></div>';
   const text = 'Сургалтын биелэлт · ' + monthLabel(key) + '\n\n' +
-    funnels.map(f => '  ' + f.dept + ': суусан ' + f.took + '/' + f.should + ', тэнцсэн ' + f.passed).join('\n') +
+    funnels.map(f => '  ' + f.dept + ': суусан ' + f.took + '/' + f.should + ', тэнцсэн ' + f.passed +
+      (f.preOnly ? ', дараах шалгалтаа өгөөгүй ' + f.preOnly + ' (' + (f.preNames || []).join(', ') + ')' : '')).join('\n') +
     '\n\n  НИЙТ: ' + tT + '/' + tS + ' (' + pct + '%), тэнцсэн ' + tP +
     '\n\nДэлгэрэнгүй: https://monos-hab.vercel.app/kpi/';
   return { html, text, tS, tT, tP };

@@ -24424,16 +24424,25 @@ function trnFunnel(dept, key, exams) {
       pre: pre ? Math.round(pre.percent) : null,
       post: post ? Math.round(post.percent) : null,
       score: last ? Math.round(last.percent) : null,
-      passed: !!(last && last.passed),
+      /* ⚠ 2026-09-08: ӨМНӨ нь `last.passed` байсан — өөрөөр хэлбэл
+         ЗӨВХӨН урьдчилсан шалгалтаа өгсөн хүн түүндээ тэнцсэн бол
+         «давтан зааварчилгааг дуусгасан» гэж тоологддог байв (15 хүнээс
+         12 нь). Дуусгасан эсэхийг ЗӨВХӨН СУРГАЛТЫН ДАРААХ шалгалт
+         тодорхойлно; урьдчилсан нь эхлэлийн түвшин хэмждэг. */
+      preOnly: !!(pre && !post),
+      passed: !!(post && post.passed),
       qs: last ? last.qs : 0, qOk: last ? last.qOk : 0,
       at: last ? last.at : 0
     };
   });
   var took = rows.filter(function (r) { return r.took; });
   var passed = took.filter(function (r) { return r.passed; });
+  var preOnly = took.filter(function (r) { return r.preOnly; });
   var both = took.filter(function (r) { return r.pre != null && r.post != null; });
   return {
     dept: dept, should: staff.length, took: took.length, passed: passed.length,
+    preOnly: preOnly.length,
+    preNames: preOnly.map(function (r) { return r.name; }),
     avgScore: took.length ? Math.round(avg(took.map(function (r) { return r.score || 0; }))) : null,
     avgGain: both.length ? Math.round(avg(both.map(function (r) { return r.post - r.pre; }))) : null,
     rows: rows.sort(function (a, b) {
@@ -24450,9 +24459,14 @@ function trnFunnel(dept, key, exams) {
      өнгө ганцаараа мэдээлэл дамжуулахгүй. */
 function trnBar(f) {
   var n = Math.max(1, f.should);
+  /* ⚠ «тэнцээгүй»-гээс preOnly-г ХАСНА — эс бөгөөс дараах шалгалтаа
+     өгөөгүй хүн «тэнцээгүй» болон «дараах өгөөгүй» ХОЁУЛАНД нь
+     тоологдож, зурвасын нийлбэр «суух ёстой»-гоос давна. */
+  var pre = f.preOnly || 0;
   var seg = [
     { v: f.passed, c: '#15803D', t: 'тэнцсэн' },
-    { v: Math.max(0, f.took - f.passed), c: '#D97706', t: 'тэнцээгүй' },
+    { v: Math.max(0, f.took - f.passed - pre), c: '#D97706', t: 'тэнцээгүй' },
+    { v: pre, c: '#7C3AED', t: 'дараах шалгалтаа өгөөгүй' },
     { v: Math.max(0, f.should - f.took), c: '#94A3B8', t: 'суугаагүй' }
   ].filter(function (s) { return s.v > 0; });
   return '<div style="display:flex;gap:2px;height:22px;border-radius:6px;overflow:hidden;background:#F1F5F9">' +
@@ -24466,7 +24480,8 @@ function trnBar(f) {
 }
 
 function trnLegend() {
-  var it = [['#15803D', 'тэнцсэн'], ['#D97706', 'суусан ч тэнцээгүй'], ['#94A3B8', 'суугаагүй']];
+  var it = [['#15803D', 'тэнцсэн'], ['#D97706', 'суусан ч тэнцээгүй'],
+    ['#7C3AED', 'дараах шалгалтаа өгөөгүй'], ['#94A3B8', 'суугаагүй']];
   return '<div style="display:flex;flex-wrap:wrap;gap:13px;font-size:12px;color:#64748B;margin:2px 0 14px">' +
     it.map(function (x) {
       return '<span style="display:inline-flex;align-items:center;gap:6px">' +
@@ -24546,6 +24561,7 @@ function trnReportHTML(sc, exams) {
   var tShould = funnels.reduce(function (s, f) { return s + f.should; }, 0);
   var tTook = funnels.reduce(function (s, f) { return s + f.took; }, 0);
   var tPass = funnels.reduce(function (s, f) { return s + f.passed; }, 0);
+  var tPre = funnels.reduce(function (s, f) { return s + (f.preOnly || 0); }, 0);
   var pct = tShould ? Math.round(tTook * 100 / tShould) : 0;
   var passPct = tTook ? Math.round(tPass * 100 / tTook) : 0;
 
@@ -24571,6 +24587,9 @@ function trnReportHTML(sc, exams) {
       pct >= 80 ? '#BBF7D0' : '#FDE68A', pct >= 80 ? '#166534' : '#92400E',
       pct >= 80 ? '#15803D' : '#B45309') +
     trnTile('ТЭНЦСЭН', tPass, tTook ? passPct + '% (суусны)' : '', '#F0FDF4', '#BBF7D0', '#166534', '#15803D') +
+    /* ⚠ Зөвхөн байвал харуулна — 0 үед хоосон хайрцаг эрээвэр хийхгүй */
+    (tPre ? trnTile('ДАРААХ ӨГӨӨГҮЙ', tPre, 'урьдчилсныг л өгсөн',
+      '#F5F3FF', '#DDD6FE', '#5B21B6', '#7C3AED') : '') +
     '</div></div>';
 
   if (!funnels.length) {
@@ -24581,7 +24600,8 @@ function trnReportHTML(sc, exams) {
   var cards = funnels.map(function (f, i) {
     var p = f.should ? Math.round(f.took * 100 / f.should) : 0;
     var notTook = f.rows.filter(function (r) { return !r.took; });
-    var tookRows = f.rows.filter(function (r) { return r.took; });
+    var tookRows = f.rows.filter(function (r) { return r.took && !r.preOnly; });
+    var preRows = f.rows.filter(function (r) { return r.preOnly; });
     return '<div class="card" style="padding:16px 18px;margin-bottom:12px">' +
       '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:9px">' +
       '<div style="font-weight:700;font-size:14.5px;color:#0F1117;min-width:0">' + esc(f.dept) + '</div>' +
@@ -24591,7 +24611,9 @@ function trnReportHTML(sc, exams) {
       trnBar(f) +
       '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:#64748B;margin-top:9px">' +
       '<span>✓ Тэнцсэн <b style="color:#15803D">' + f.passed + '</b></span>' +
-      (f.took - f.passed > 0 ? '<span>✗ Тэнцээгүй <b style="color:#B45309">' + (f.took - f.passed) + '</b></span>' : '') +
+      (f.took - f.passed - (f.preOnly || 0) > 0
+        ? '<span>✗ Тэнцээгүй <b style="color:#B45309">' + (f.took - f.passed - (f.preOnly || 0)) + '</b></span>' : '') +
+      (f.preOnly ? '<span>⚠ Дараах шалгалтаа өгөөгүй <b style="color:#7C3AED">' + f.preOnly + '</b></span>' : '') +
       (notTook.length ? '<span>Суугаагүй <b style="color:#475569">' + notTook.length + '</b></span>' : '') +
       (f.avgScore != null ? '<span>Дундаж оноо <b style="color:#0F1117">' + f.avgScore + '%</b></span>' : '') +
       (f.avgGain != null ? '<span>Ахиц <b style="color:' + (f.avgGain >= 0 ? '#15803D' : '#B91C1C') + '">' +
@@ -24604,6 +24626,15 @@ function trnReportHTML(sc, exams) {
         ? '<div style="background:#F8FAFC;padding:6px 11px;font-size:11.5px;font-weight:800;color:#475569;' +
           'letter-spacing:.03em">СУУСАН · ' + tookRows.length + '</div>' +
           tookRows.map(trnEmpRow).join('')
+        : '') +
+      (preRows.length
+        ? '<div style="background:#F5F3FF;padding:6px 11px;font-size:11.5px;font-weight:800;color:#6D28D9;' +
+          'letter-spacing:.03em;border-top:1px solid #E2E8F0">' +
+          '⚠ ДАРААХ ШАЛГАЛТАА ӨГӨӨГҮЙ · ' + preRows.length + '</div>' +
+          '<div style="padding:6px 11px;font-size:11.5px;color:#7C3AED;background:#FAF8FF;line-height:1.5">' +
+          'Урьдчилсан шалгалтаа өгсөн ч сургалтын дараах шалгалтаа өгөөгүй тул ' +
+          'давтан зааварчилгааг ДУУСГААГҮЙ гэж үзнэ.</div>' +
+          preRows.map(trnEmpRow).join('')
         : '') +
       (notTook.length
         ? '<div style="background:#F8FAFC;padding:6px 11px;font-size:11.5px;font-weight:800;color:#475569;' +
