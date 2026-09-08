@@ -24689,7 +24689,8 @@ function trnReportHTML(sc, exams) {
       '<button type="button" id="trnSend" style="border:none;background:#4F46E5;color:#fff;' +
       'border-radius:10px;padding:10px 18px;cursor:pointer;font-family:inherit;font-weight:800;font-size:13px">' +
       'Одоо илгээх</button></div>' +
-      '<div id="trnSendMsg" style="font-size:12.5px;color:#64748B;line-height:1.7;margin-top:11px"></div></div>'
+      '<div id="trnSendMsg" style="font-size:12.5px;color:#64748B;line-height:1.7;margin-top:11px"></div>' +
+      '<div id="trnLog" style="margin-top:13px"></div></div>'
     : '';
 
   return head + warn + trnLegend() + cards + restHTML + send;
@@ -24758,7 +24759,10 @@ async function trnDigest(dry) {
       }
     } else {
       msg.innerHTML = '<span style="color:#15803D;font-weight:700">✅ ' + j.sent + ' / ' + j.total + ' хүнд илгээлээ.</span>' +
+        (j.from ? '<br><span style="color:#94A3B8">илгээгч: ' + esc(j.from) + ' — «Sent» хавтаснаас ч шалгаж болно</span>' : '') +
         ((j.failed && j.failed.length) ? '<br><span style="color:#B91C1C">Амжилтгүй: ' + esc(j.failed.join(' · ')) + '</span>' : '');
+      /* ⚠ Түүхийг ШУУД шинэчилнэ — хуудсыг шинэчилсэн ч мөр үлдэнэ. */
+      try { setTimeout(trnLogShow, 1200); } catch (e) {}
     }
   } catch (e) {
     msg = document.getElementById('trnSendMsg');
@@ -24769,7 +24773,52 @@ async function trnDigest(dry) {
   }
 }
 
+/* ══ ИЛГЭЭЛТИЙН ТҮҮХ ══
+   ⚠ «Явсан уу» гэдгийг САНАХААС биш ДАТАНААС хариулна. Хэрэглэгч
+   хүлээн авагчдын жагсаалтад ордоггүй тул өөрийн inbox-оос шалгаж
+   чаддаггүй — тиймээс энд ил харуулах ёстой. */
+async function trnLogShow() {
+  var box = document.getElementById('trnLog');
+  if (!box) return;
+  var rows = [];
+  try {
+    var p = await riskR2GetJson('training/digest_log.json', { fresh: true });
+    if (p && Array.isArray(p.rows)) rows = p.rows;
+  } catch (e) { rows = []; }
+  box = document.getElementById('trnLog'); if (!box) return;
+
+  if (!rows.length) {
+    /* ⚠ Хоосон нь «хэзээ ч илгээгээгүй» ГЭСЭН ҮГ БИШ — бүртгэл 2026-09-08-нд
+       эхэлсэн. Үүнийг ил хэлэхгүй бол хуучин илгээлтийг «болоогүй» гэж
+       эндүүрч, дахин илгээх эрсдэлтэй. */
+    box.innerHTML = '<div style="font-size:12px;color:#94A3B8;line-height:1.6;' +
+      'border-top:1px dashed #E2E8F0;padding-top:10px">' +
+      'Илгээлтийн бүртгэл хоосон байна. ⚠ Бүртгэл 2026-09-08-наас эхэлсэн тул ' +
+      'түүнээс өмнөх илгээлтүүд энд харагдахгүй — «хэзээ ч илгээгээгүй» гэсэн үг биш.</div>';
+    return;
+  }
+
+  var last = rows.slice(-5).reverse();
+  box.innerHTML = '<div style="border-top:1px dashed #E2E8F0;padding-top:10px">' +
+    '<div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:6px">ИЛГЭЭЛТИЙН ТҮҮХ</div>' +
+    last.map(function (r) {
+      var when = String(r.at || '').slice(0, 16).replace('T', ' ');
+      var okAll = (r.sent || 0) >= (r.total || 0) && !(r.failed || []).length;
+      return '<div style="font-size:12px;color:#64748B;line-height:1.6;padding:4px 0;' +
+        'border-top:1px solid #F1F5F9">' +
+        '<b style="color:' + (okAll ? '#15803D' : '#B45309') + '">' +
+        (okAll ? '✓' : '⚠') + ' ' + (r.sent || 0) + ' / ' + (r.total || 0) + ' хүнд</b> · ' +
+        esc(when) + ' · ' + esc(salaryKeyLabel(r.month || '')) +
+        '<div style="color:#94A3B8">дарсан: ' + esc(r.by || '?') +
+        ((r.to || []).length ? ' · ' + esc((r.to || []).join(', ')) : '') + '</div>' +
+        ((r.failed || []).length
+          ? '<div style="color:#B91C1C">амжилтгүй: ' + esc((r.failed || []).join(' · ')) + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+}
+
 function trnWire(sc, exams) {
+  try { trnLogShow(); } catch (e) {}
   var dry = document.getElementById('trnDry');
   if (dry) dry.addEventListener('click', function () { trnDigest(true); });
   var snd = document.getElementById('trnSend');
