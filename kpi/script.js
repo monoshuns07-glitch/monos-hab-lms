@@ -416,7 +416,7 @@ async function readHabeaExamsByEmail(force) {
   _habFly = (async function () {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
+        var r = await fetch((await r2DlSign(['exams/_all.json']), r2DlUrl('exams/_all.json')), { cache: 'no-store' });
         /* ⚠ Толь үүсээгүйг «хэн ч шалгалт өгөөгүй» гэж ОЙЛГОХГҮЙ —
            тэгвэл KPI оноо худлаа тэг болно. */
         if (r.status === 404) return null;
@@ -24454,7 +24454,7 @@ async function modExamLoad(email) {
   try { key = await modExamR2Key(em); } catch (e) { return null; }
   for (var attempt = 0; attempt < 3; attempt++) {
     try {
-      var r = await fetch(TASK_R2 + '/' + key + '?t=' + Date.now(), { cache: 'no-store' });
+      var r = await fetch((await r2DlSign([key]), r2DlUrl(key)), { cache: 'no-store' });
       if (r.status === 404) {
         /* Толь хараахан үүсээгүй байж БОЛНО (шинэ шалгалт, эсвэл
            тольдолт хоцорсон). Нэг удаа сервэрээс нөхүүлээд дахин уншина —
@@ -24792,7 +24792,7 @@ function trnScope() {
 async function trnExamAll(force) {
   if (!force && TRN_EXAMS) return TRN_EXAMS;
   try {
-    var r = await fetch(TASK_R2 + '/exams/_all.json?t=' + Date.now(), { cache: 'no-store' });
+    var r = await fetch((await r2DlSign(['exams/_all.json']), r2DlUrl('exams/_all.json')), { cache: 'no-store' });
     /* ⚠ Толь хараахан үүсээгүй нь «шалгалт өгөөгүй» гэсэн үг БИШ.
        [] буцаавал тайлан «0 хамрагдсан» гэж ХУДЛАА харуулна — дарга нар
        хэн ч сургалтад суугаагүй гэж ойлгоно. Мэдэхгүй бол мэдэхгүй гэ.
@@ -26048,7 +26048,10 @@ function trndocDownload(id) {
           /* Хавсаргасан хөтөлбөрийг архивт оруулна */
           var prog = (TRNDOC_ATT[s.id] || {}).prog;
           if (!prog || !prog.key) return zip.generateAsync({ type: 'blob' });
-          return fetch(TASK_R2 + '/' + prog.key + '?t=' + Date.now())
+          /* ⚠ Энэ нь async БИШ функц дотор тул `await` хэрэглэж болохгүй —
+             гарын үсгийг амлалтын гинжээр авна. */
+          return r2DlSign([prog.key])
+            .then(function () { return fetch(r2DlUrl(prog.key)); })
             .then(function (r) { return r.ok ? r.blob() : null; })
             .then(function (b) {
               if (b) f.file('0_Hotolbor.' + (prog.ext || 'pdf'), b);
