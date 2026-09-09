@@ -1298,15 +1298,21 @@ function deviceId(){
     return v;
   }catch(e){ return ""; }
 }
-/* Админ кодгүй шалгалтыг түр нээсэн эсэх (R2-оос нийтээр уншина) */
+/* Админ кодгүй шалгалтыг түр нээсэн эсэх.
+   ⚠ 2026-09-09 (олдвор №2): өмнө нь R2-оос ШУУД, гарын үсэггүй уншдаг байв.
+   Энэ хуудас үндсэн Firebase төсөлд нэвтэрдэггүй тул татах гарын үсэг авч
+   чадахгүй — `sys/` угтварыг хамгаалахад тэр уншилт 403 болох байсан.
+   Одоо СЕРВЕР уншиж, зөвхөн төлвийг буцаана.
+   ⚠ Сервер хүрэхгүй бол ХААЛТТАЙ гэж үзнэ (өмнөх зан төлөвтэй ижил). */
 async function otpBypassAllowed(){
   try{
-    var r=await fetch(OTP_R2+"/sys/otp_bypass.json?t="+Date.now(),{cache:"no-store"});
+    var r=await fetch("/api/otp-verify/",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"bypass"})});
     if(!r.ok) return null;
     var j=await r.json();
-    if(!j||!j.until) return null;
-    if(new Date(j.until).getTime()<Date.now()) return null;
-    return j;
+    if(!j||!j.ok||j.open!==true) return null;
+    return { by:j.by||"", until:j.until||"" };
   }catch(e){ return null; }
 }
 async function otpFallback(reason){

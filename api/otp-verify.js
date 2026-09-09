@@ -67,6 +67,24 @@ const MAX_TRIES = 8;
    api/_otpstore.js-ээс үз. */
 const OTPSTORE = require('./_otpstore.js');
 
+/* ⚠ 2026-09-09 (олдвор №2): шалгалтын хуудас `sys/otp_bypass.json`-ыг R2-оос
+   ШУУД уншдаг байв. Тэр хуудас үндсэн Firebase төсөлд нэвтэрдэггүй тул
+   татах гарын үсэг авч чадахгүй — иймд `sys/` угтварыг хамгаалахад тэр
+   уншилт 403 болно. Одоо СЕРВЕР уншиж, төлвийг л буцаана. */
+const R2 = 'https://monos-upload.buynt666.workers.dev';
+function r2GetQ(key) {
+  var q = '?cb=' + Date.now();
+  try {
+    var s = process.env.SIGN_SECRET || '';
+    if (s) {
+      var e = String(Date.now() + 10 * 60 * 1000);
+      q += '&t=' + crypto.createHmac('sha256', s)
+             .update('dl|' + key + '|' + e, 'utf8').digest('hex') + '&e=' + e;
+    }
+  } catch (err) {}
+  return q;
+}
+
 function val(f) {
   if (!f || typeof f !== 'object') return undefined;
   if ('stringValue' in f) return f.stringValue;
@@ -87,6 +105,27 @@ module.exports = async function handler(req, res) {
   const body = await readBody(req);
   const id = String(body.id || '').trim();
   const code = String(body.code || '').replace(/\D/g, '');
+
+  /* ══ КОДГҮЙ НӨӨЦ ЗАМЫН ТӨЛӨВ (action:'bypass') ═════════════════════════
+     Шалгалтын хуудас админ түр нээсэн эсэхийг ЭНДЭЭС асууна (R2 руу шууд
+     хандахаа больсон). `id` шаардахгүй тул id-ийн шалгалтаас ӨМНӨ.
+     ⚠ Зөвхөн: нээлттэй эсэх, хэн нээсэн, хэдийг хүртэл. Өөр юу ч биш. */
+  if (String(body.action || '') === 'bypass') {
+    try {
+      const br = await fetch(R2 + '/sys/otp_bypass.json' + r2GetQ('sys/otp_bypass.json'),
+        { cache: 'no-store' });
+      if (br.status === 404) return res.status(200).json({ ok: true, open: false });
+      if (!br.ok) return res.status(200).json({ ok: true, open: false, note: 'R2 ' + br.status });
+      const bj = await br.json();
+      const until = (bj && bj.until) ? new Date(bj.until).getTime() : 0;
+      if (!until || until < Date.now()) return res.status(200).json({ ok: true, open: false });
+      return res.status(200).json({ ok: true, open: true,
+        by: String((bj && bj.by) || '').slice(0, 80), until: String(bj.until) });
+    } catch (e) {
+      /* ⚠ FAIL-CLOSED: уншиж чадаагүй бол ХААЛТТАЙ гэж үзнэ */
+      return res.status(200).json({ ok: true, open: false, note: 'алдаа' });
+    }
+  }
 
   if (!id) return res.status(400).json({ ok: false, verdict: 'no-id', error: 'Кодын дугаар алга' });
 
