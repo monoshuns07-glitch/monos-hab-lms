@@ -16793,7 +16793,7 @@ var RF_STEP = ['#93A9FB', '#818CF8', '#4F46E5', '#3730A3'];
 var RF_INK = { p: '#1E293B', s: '#64748B', m: '#94A3B8', grid: '#E2E8F0', surf: '#FFFFFF' };
 
 /* Шүүлтүүрийн төлөв — БҮХ график нэг зүсмэлээр зурагдана */
-var RF_DASH = { days: 90, dept: '', table: false, kind: 'all' };
+var RF_DASH = { days: 90, dept: '', table: false, kind: 'all', from: '', to: '' };
 
 /* ⭐ МЭДЭЭЛЛИЙН ТӨРӨЛ — нэрлэсэн ангилал тул ХАРИЛЦАН ЯЛГААТАЙ өнгө.
    Палитр шалгагчаар батлагдсан: хэвийн хараанд ΔE 20.0, өнгө ялгахгүй
@@ -16879,12 +16879,39 @@ function rfDrillOpen(key) {
 function rfMonthKey(d) { return String(d).slice(0, 7); }
 function rfDaysAgo(n) { return new Date(Date.now() - n * 86400000); }
 
+/* Огнооны муж → {from, to}. Тавиагүй бол хоосон.
+   ⚠ Дуусах өдрийг БҮТНЭЭР нь оруулна (23:59:59) — эс бөгөөс тэр өдрийн
+     мэдээлэл шүүгдэж хасагдана. */
+function rfRange() {
+  var ok = /^\d{4}-\d{2}-\d{2}$/;
+  var a = String(RF_DASH.from || '').trim(), b = String(RF_DASH.to || '').trim();
+  if (!ok.test(a)) a = '';
+  if (!ok.test(b)) b = '';
+  /* ⚠ Буруу дараалалтай бол ОГНООГ нь сольно — Date объектыг сольвол
+     эхлэл нь 23:59, төгсгөл нь 00:00 болж, мужийн хоёр захын өдрийн
+     мэдээлэл шүүгдэж хасагдана (2026-09-09-нд офлайн тест илрүүлсэн). */
+  if (a && b && a > b) { var sw = a; a = b; b = sw; }
+  var out = { from: null, to: null };
+  if (a) { var f = new Date(a + 'T00:00:00'); if (!isNaN(f)) out.from = f; }
+  if (b) { var t = new Date(b + 'T23:59:59.999'); if (!isNaN(t)) out.to = t; }
+  return out;
+}
+function rfRangeOn() { var r = rfRange(); return !!(r.from || r.to); }
+
 /* ── Дата бэлдэх ── */
 function rfDashData(all) {
-  var from = RF_DASH.days ? rfDaysAgo(RF_DASH.days) : null;
+  /* ⚠ 2026-09-09: хоногийн товчны ЗЭРЭГЦЭЭ «огнооноос огноо хүртэл» муж
+     нэмэгдсэн. Муж тавигдсан бол ТЭР давамгайлж, хоногийн тоо үл тоологдоно
+     — хоёр өөр хугацааны шүүлт зэрэг ажиллавал хэрэглэгч ямар хугацааг
+     харж байгаагаа мэдэхээ болино. */
+  var rg = rfRange();
+  var from = rg.from || (RF_DASH.days ? rfDaysAgo(RF_DASH.days) : null);
+  var to = rg.to;
   var rows = (all || []).filter(function (r) {
     if (!r || !r.createdAt) return false;
-    if (from && new Date(r.createdAt) < from) return false;
+    var t = new Date(r.createdAt);
+    if (from && t < from) return false;
+    if (to && t > to) return false;
     if (RF_DASH.dept && String(r.dept || '') !== RF_DASH.dept) return false;
     return true;
   });
@@ -17547,7 +17574,14 @@ function rfRiskHTML(d) {
 function rfExportName(ext) {
   var t = new Date();
   var p = function (n) { return ('0' + n).slice(-2); };
-  return 'Work-order-dashboard_' + t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) +
+  /* ⚠ Хугацааны хүрээг НЭРЭНД бичнэ — татсан файл нь ямар зүсмэл болохыг
+     нээхээс өмнө мэдэгдэнэ (өмнө нь зөвхөн гаргасан цаг байсан тул
+     «шүүгээгүй бүтэн дата» юм шиг харагддаг байв). */
+  var per = rfRangeOn()
+    ? ((RF_DASH.from || 'эхнээс') + '_' + (RF_DASH.to || 'onoodor'))
+    : (RF_DASH.days ? RF_DASH.days + 'honog' : 'buh-hugatsaa');
+  var dp = RF_DASH.dept ? '_' + String(RF_DASH.dept).replace(/[^0-9A-Za-zА-Яа-яӨөҮү]+/g, '-').slice(0, 24) : '';
+  return 'Work-order-dashboard_' + per + dp + '_' + t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) +
     '_' + p(t.getHours()) + p(t.getMinutes()) + '.' + ext;
 }
 /* ⚠ Кодоор дуудсан `a.click()`-ийг байгууллагын Chrome чимээгүй ХААДАГ
@@ -17598,7 +17632,11 @@ function rfSaveModal(url, name, size) {
 /* Шүүлтүүрийн тайлбар — татсан файл дээр ямар зүсмэл болохыг бичнэ */
 function rfScopeText() {
   var days = RF_DASH.days;
-  return 'Хугацаа: ' + (days ? days + ' хоног' : 'Бүх хугацаа') +
+  var r = rfRange();
+  var per = r.from || r.to
+    ? ((RF_DASH.from || 'эхнээс') + ' → ' + (RF_DASH.to || 'өнөөдөр'))
+    : (days ? days + ' хоног' : 'Бүх хугацаа');
+  return 'Хугацаа: ' + per +
     ' · Алба: ' + (RF_DASH.dept || 'Бүх алба') +
     ' · Гаргасан: ' + new Date().toLocaleString('mn-MN');
 }
@@ -17856,6 +17894,12 @@ function rfFilterHTML(all) {
   var depts = {};
   (all || []).forEach(function (r) { if (r && r.dept) depts[r.dept] = 1; });
   var dl = Object.keys(depts).sort();
+  var rng = rfRangeOn();
+  var dateBox = function (which, val) {
+    return '<input type="date" data-rf-' + which + '="1" value="' + esc(val || '') + '" ' +
+      'style="border:1.5px solid ' + (rng ? RF_C.a : RF_INK.grid) + ';border-radius:9px;' +
+      'padding:5px 8px;font-family:inherit;font-size:12.5px;background:#fff;color:' + RF_INK.p + '">';
+  };
   var pill = function (k, label, on) {
     return '<button data-rf-days="' + k + '" style="border:1.5px solid ' + (on ? RF_C.a : RF_INK.grid) +
       ';background:' + (on ? RF_C.a : '#fff') + ';color:' + (on ? '#fff' : RF_INK.p) +
@@ -17865,10 +17909,21 @@ function rfFilterHTML(all) {
   return '<div class="card" style="padding:12px 15px;margin-bottom:12px;display:flex;' +
     'align-items:center;gap:9px;flex-wrap:wrap">' +
     '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + '">ХУГАЦАА</span>' +
-    pill(30, '30 хоног', RF_DASH.days === 30) +
-    pill(90, '90 хоног', RF_DASH.days === 90) +
-    pill(365, '1 жил', RF_DASH.days === 365) +
-    pill(0, 'Бүгд', RF_DASH.days === 0) +
+    /* ⚠ Огнооны муж тавигдсан үед хоногийн товч НЭГ Ч идэвхтэй харагдахгүй —
+       ямар хугацааг харж байгаа нь эргэлзээгүй байх ёстой. */
+    pill(7, '7 хоног', !rng && RF_DASH.days === 7) +
+    pill(30, '30 хоног', !rng && RF_DASH.days === 30) +
+    pill(90, '90 хоног', !rng && RF_DASH.days === 90) +
+    pill(365, '1 жил', !rng && RF_DASH.days === 365) +
+    pill(0, 'Бүгд', !rng && RF_DASH.days === 0) +
+    /* ⭐ Өөрөө сонгох муж */
+    '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + ';margin-left:6px">ХООРОНД</span>' +
+    dateBox('from', RF_DASH.from) +
+    '<span style="color:' + RF_INK.m + ';font-size:12.5px">—</span>' +
+    dateBox('to', RF_DASH.to) +
+    (rng ? '<button data-rf-clear="1" title="Огнооны хүрээг арилгах" style="border:1.5px solid ' +
+      RF_C.a + ';background:' + RF_C.a + ';color:#fff;border-radius:9px;padding:6px 10px;' +
+      'cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:700">✕ Хүрээ</button>' : '') +
     '<span style="font-size:11.5px;font-weight:700;color:' + RF_INK.m + ';margin-left:9px">АЛБА</span>' +
     '<select data-rf-dept="1" style="border:1.5px solid ' + RF_INK.grid + ';border-radius:9px;' +
     'padding:6px 10px;font-family:inherit;font-size:12.5px;background:#fff;color:' + RF_INK.p +
@@ -23082,6 +23137,11 @@ function rfAfter(sec, admin, pending) {
   sec.addEventListener('change', function (ev) {
     var ds = ev.target.closest && ev.target.closest('[data-rf-dept]');
     if (ds) { RF_DASH.dept = ds.value || ''; renderReportflow(); return; }
+    /* ⭐ «Хэднээс хэдний хооронд» — огнооны хоёр нүд */
+    var d1 = ev.target.closest && ev.target.closest('[data-rf-from]');
+    if (d1) { RF_DASH.from = d1.value || ''; renderReportflow(); return; }
+    var d2 = ev.target.closest && ev.target.closest('[data-rf-to]');
+    if (d2) { RF_DASH.to = d2.value || ''; renderReportflow(); return; }
     var wf = ev.target.closest && ev.target.closest('[data-wk-f]');
     if (wf) {
       var k = wf.getAttribute('data-wk-f');
@@ -23161,7 +23221,15 @@ function rfAfter(sec, admin, pending) {
 
     /* ── дашбоардын шүүлтүүр — БҮХ график нэг зүсмэлээр дахин зурагдана ── */
     var fd = ev.target.closest('[data-rf-days]');
-    if (fd) { RF_DASH.days = +fd.getAttribute('data-rf-days'); renderReportflow(); return; }
+    if (fd) {
+      /* ⚠ Хоногийн товч дарвал огнооны ХҮРЭЭ арилна — эс бөгөөс хоёр
+         шүүлт зэрэг идэвхтэй болж, аль нь үйлчилж байгаа нь ойлгомжгүй. */
+      RF_DASH.from = ''; RF_DASH.to = '';
+      RF_DASH.days = +fd.getAttribute('data-rf-days'); renderReportflow(); return;
+    }
+    if (ev.target.closest('[data-rf-clear]')) {
+      RF_DASH.from = ''; RF_DASH.to = ''; renderReportflow(); return;
+    }
     if (ev.target.closest('[data-rf-table]')) { RF_DASH.table = !RF_DASH.table; renderReportflow(); return; }
     /* ⭐ Дашбоардыг татах */
     var dl = ev.target.closest('[data-rf-dl]');
