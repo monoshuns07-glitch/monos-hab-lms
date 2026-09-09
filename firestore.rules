@@ -1,18 +1,23 @@
 rules_version = '2';
 
-// ⚠⚠ ЭНЭ ФАЙЛЫГ ГИТЭЭС ДЕПЛОЙ ХИЙДЭГГҮЙ.
-// .github/workflows/deploy.yml нь ЗӨВХӨН Vercel рүү файл байршуулдаг —
-// Firebase рүү огт хүрдэггүй. Амьд дүрмийг Firebase консол дээр
-// (Firestore Database → Rules → Publish) гараар тавьдаг.
+// ⚠⚠ ЭНЭ ФАЙЛ ОДОО КОДООС БАЙРШУУЛАГДДАГ (2026-09-09):
+//     node tools/deploy-rules.js --key <үйлчилгээний-дансны-түлхүүр.json>
+// Хэрэгсэл нь амьд дүрмийг ЭХЛЭЭД татаж хадгалаад (буцаахад), дараа нь
+// энэ файлыг байршуулна. Консол дээр гараар тавих шаардлагагүй.
+// ⚠ Шинэ цуглуулга нэмэх бүрд ЭНД мөр нэмээд байршуулна. Мартвал апп
+// «N цуглуулга уншигдсангүй» гэж хэлээд дата харагдахгүй.
 //
-// Тиймээс энэ файл нь амьд дүрмийн ХУУЛБАР бөгөөс бичиг баримт юм.
-// Өөрчлөх бол ХОЁУЛАНГ нь хий — эс бөгөөс дараагийн хүн үнэн гэж
-// эндүүрнэ. (2026-08-19: энэ файл 20 дүрэм дутуу байсан. Хэрэв хэн нэгэн
-// `firebase deploy --only firestore:rules` ажиллуулсан бол эрсдэл,
-// даалгавар, зөрчил зэрэг БҮХ дата тэр дороо хаагдах байв.)
-//
-// ⚠ Шинэ цуглуулга нэмэх бүрд ЭНД мөр нэмээд консол дээр Publish хийнэ.
-// Мартвал апп «N цуглуулга уншигдсангүй» гэж хэлээд дата харагдахгүй.
+// 2026-09-09 — АЮУЛГҮЙ БАЙДЛЫН ЗАСВАР (аудитын №8, №9 + шинэ олдвор):
+//   · Өмнө нь ажилтан ӨӨРИЙН users баримтын `role` талбарыг өөрчилж
+//     АДМИН болох боломжтой байв (allow update: if isOwner). Одоо эзэн нь
+//     role/department/position/email/uid/isActive-ийг ХӨНДӨЖ ЧАДАХГҮЙ.
+//   · user_roles-ыг ажилтан бүр бичиж (өөрийгөө «албаны дарга» болгож)
+//     чаддаг байв — одоо зөвхөн админ бичнэ.
+//   · Ажилтан бүх kpi_* цуглуулгын баримтыг УСТГАЖ чаддаг байв — одоо
+//     устгах эрх зөвхөн админд. Ажилтны бичдэг цуглуулга (аюул, санал,
+//     мэдээлэл, ХН захиалга, kpi_state толь) хэвээр бичигдэнэ.
+//   · users жагсаалтыг ажилтан бүтнээр уншдаг байв — одоо зөвхөн өөрийнхөө
+//     баримт; жагсаалт админд. (Ажилтны жагсаалт аппад R2-оос ирдэг.)
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -32,25 +37,42 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Хэрэглэгчийн профайл — нэвтэрсэн хүн бүр уншина (админд бүтэн жагсаалт
-    // хэрэгтэй), гэхдээ зөвхөн эзэн нь өөрийнхөө баримтыг засна.
+    // Эзэн өөрийн баримтаа засахдаа ЭРХ, АЛБА, АЛБАН ТУШААЛ, И-МЭЙЛ, UID,
+    // ИДЭВХИЙГ өөрчилж чадахгүй (нууц үг солисон туг гэх мэтийг л бичнэ).
+    function ownerSafeUpdate() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['role', 'department', 'position', 'email', 'uid', 'isActive']);
+    }
+
+    // Хэрэглэгчийн профайл — ЗӨВХӨН өөрийнхөө баримт; жагсаалт админд.
     match /users/{uid} {
-      allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isOwner(uid);
+      allow get:    if isOwner(uid) || isAdminUser();
+      allow list:   if isAdminUser();
+      allow create: if isAdminUser() ||
+        (isOwner(uid) &&
+         (!('role' in request.resource.data) || request.resource.data.role == 'employee'));
+      allow update: if isAdminUser() || (isOwner(uid) && ownerSafeUpdate());
       allow delete: if false;
     }
 
-    // Сургалтын контент — нэвтэрсэн бүх хүн уншиж бичнэ
-    // (админы эрхийг апп давхаргад шалгана, дүрэмд биш).
-    match /chapters/{docId}  { allow read, write: if isAuth(); }
-    match /topics/{docId}    { allow read, write: if isAuth(); }
-    match /trainings/{docId} { allow read, write: if isAuth(); }
-    match /questions/{docId} { allow read, write: if isAuth(); }
+    // Эрхийн давхар бүртгэл (депthead/employee override) — зөвхөн админ бичнэ,
+    // хүн бүр ЗӨВХӨН өөрийнхөө мөрийг уншина.
+    match /user_roles/{email} {
+      allow get:   if isAdminUser() ||
+        (isAuth() && request.auth.token.email != null &&
+         request.auth.token.email.lower() == email.lower());
+      allow list:  if isAdminUser();
+      allow write: if isAdminUser();
+    }
 
-    // Сургалтын явц — ажилтан ЗӨВХӨН өөрийн явцыг бичнэ.
-    // Админ бусдынхыг бичиж чадна: MiSkill импортоор 298 ажилтны бодит
-    // явцыг нэг дор шинэчлэхэд шаардлагатай (msSyncProgress).
+    // Сургалтын контент — уншина: нэвтэрсэн бүгд; бичнэ: админ.
+    match /chapters/{docId}  { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /topics/{docId}    { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /trainings/{docId} { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /questions/{docId} { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /videos/{docId}    { allow read: if isAuth(); allow write: if isAdminUser(); }
+
+    // Сургалтын явц — ажилтан ЗӨВХӨН өөрийн явцыг бичнэ; админ бусдынхыг.
     match /training_progress/{docId} {
       allow read: if isAuth();
       allow create, update: if isAuth() &&
@@ -65,7 +87,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Үйлдлийн бүртгэл — зөвхөн нэмнэ, засах/устгах боломжгүй.
+    // Үйлдлийн бүртгэл — зөвхөн нэмнэ.
     match /activity_logs/{docId} {
       allow read:   if isAuth();
       allow create: if isAuth() && request.resource.data.userId == request.auth.uid;
@@ -75,7 +97,7 @@ service cloud.firestore {
     // Мэдлэгийн сан — нэвтрээгүй зочинд ч харагдана (nohon-tulbur хуудас).
     match /knowledge_base/{docId} {
       allow read:  if true;
-      allow write: if isAuth();
+      allow write: if isAdminUser();
     }
 
     // Чатын өдрийн хэрэглээ — зөвхөн сервер (admin SDK) бичнэ.
@@ -84,33 +106,45 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // ── ХАБЭА / KPI систем ────────────────────────────────────────────────
-    match /kpi_state/{docId}           { allow read, write: if isAuth(); }
-    match /kpi_risk_dashboards/{docId} { allow read, write: if isAuth(); }
-    match /videos/{docId}              { allow read, write: if isAuth(); }
-    match /user_roles/{docId}          { allow read, write: if isAuth(); }
+    // Файлын каталог — байршуулсан хүн бүр мөр НЭМНЭ; засах/устгах админ.
+    match /files/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if isAdminUser();
+    }
 
-    // Бүртгэлүүд — «Бүтцийг задлах» үйлдлийн дараа тус тусдаа цуглуулгад
-    // очдог (script.js доторх COL_KEYS-тэй нэг мөр нэг цуглуулга).
-    match /kpi_risks/{docId}             { allow read, write: if isAuth(); }
-    match /kpi_tasks/{docId}             { allow read, write: if isAuth(); }
-    match /kpi_reports/{docId}           { allow read, write: if isAuth(); }
-    match /kpi_violations/{docId}        { allow read, write: if isAuth(); }
-    match /kpi_hrorders/{docId}          { allow read, write: if isAuth(); }
-    match /kpi_hazards/{docId}           { allow read, write: if isAuth(); }
-    match /kpi_suggestions/{docId}       { allow read, write: if isAuth(); }
-    match /kpi_incidents/{docId}         { allow read, write: if isAuth(); }
-    match /kpi_notifications/{docId}     { allow read, write: if isAuth(); }
-    match /kpi_videoViews/{docId}        { allow read, write: if isAuth(); }
-    match /kpi_examResults/{docId}       { allow read, write: if isAuth(); }
-    match /kpi_firstAidChecks/{docId}    { allow read, write: if isAuth(); }
-    match /kpi_ppeObservations/{docId}   { allow read, write: if isAuth(); }
-    match /kpi_extTrainings/{docId}      { allow read, write: if isAuth(); }
-    match /kpi_extAttendance/{docId}     { allow read, write: if isAuth(); }
-    match /kpi_externalTrainings/{docId} { allow read, write: if isAuth(); }
-    match /kpi_miskillStats/{docId}      { allow read, write: if isAuth(); }
-    match /kpi_backup/{docId}            { allow read, write: if isAuth(); }
-    match /files/{docId}                 { allow read, write: if isAuth(); }
+    // ── ХАБЭА / KPI систем ────────────────────────────────────────────────
+    // Үндсэн толь — ажилтны аюул/санал/мэдээлэл энд нэгддэг (хуучин зам).
+    match /kpi_state/{docId} {
+      allow read, create, update: if isAuth();
+      allow delete: if isAdminUser();
+    }
+    match /kpi_risk_dashboards/{docId} {
+      allow read, create, update: if isAuth();
+      allow delete: if isAdminUser();
+    }
+
+    // Ажилтны ӨӨРӨӨ бичдэг бүртгэлүүд — нэмэх/засах бүгд, устгах админ.
+    match /kpi_reports/{docId}     { allow read, create, update: if isAuth(); allow delete: if isAdminUser(); }
+    match /kpi_hazards/{docId}     { allow read, create, update: if isAuth(); allow delete: if isAdminUser(); }
+    match /kpi_suggestions/{docId} { allow read, create, update: if isAuth(); allow delete: if isAdminUser(); }
+    match /kpi_hrorders/{docId}    { allow read, create, update: if isAuth(); allow delete: if isAdminUser(); }
+
+    // Админ л бичдэг бүртгэлүүд (R2 үндсэн, энэ нь нөөц толь).
+    match /kpi_risks/{docId}             { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_tasks/{docId}             { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_violations/{docId}        { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_incidents/{docId}         { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_notifications/{docId}     { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_videoViews/{docId}        { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_examResults/{docId}       { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_firstAidChecks/{docId}    { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_ppeObservations/{docId}   { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_extTrainings/{docId}      { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_extAttendance/{docId}     { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_externalTrainings/{docId} { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_miskillStats/{docId}      { allow read: if isAuth(); allow write: if isAdminUser(); }
+    match /kpi_backup/{docId}            { allow read: if isAdminUser(); allow write: if isAdminUser(); }
 
     // Дээр заагаагүй бүхнийг хориглоно.
     match /{document=**} {

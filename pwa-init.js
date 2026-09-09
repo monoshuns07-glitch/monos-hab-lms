@@ -309,7 +309,8 @@
     if (isInstalled() || document.getElementById('pwaInstallBtn')) return;
     var btn = makeBtn('Апп суулгах', function () {
       if (!deferred) return;
-      deferred.prompt();
+      /* ⚠ prompt() зөвхөн нэг удаа, хэрэглэгчийн товшилтоор — давхар дуудвал шиддэг (v365-д бодит алдаа) */
+      try { deferred.prompt(); } catch (e) { deferred = null; return; }
       deferred.userChoice.finally(function () {
         deferred = null;
         var el = document.getElementById('pwaInstallBtn');

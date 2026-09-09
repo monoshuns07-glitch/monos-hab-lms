@@ -1,0 +1,175 @@
+{
+  "_doc": "Firestore дүрмийн тест — tools/deploy-rules.js байршуулахын ӨМНӨ ажиллуулна. name нь зөвхөн тайлбар; API-д cases[].tc илгээгдэнэ.",
+  "cases": [
+    { "name": "ажилтан ӨӨРИЙН users баримтаа уншина", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users/emp1", "method": "get" },
+      "resource": { "data": { "role": "employee", "email": "emp@x.mn" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан БУСДЫН users баримтыг уншихгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users/other1", "method": "get" },
+      "resource": { "data": { "role": "employee" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан users жагсаалтыг татахгүй (№9)", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users", "method": "list" },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "админ users жагсаалтыг татна", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "admin1", "token": { "email": "adm@x.mn" } }, "path": "/databases/(default)/documents/users", "method": "list" },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "admin" } } } } ] } },
+
+    { "name": "ажилтан өөрийн role-оо admin болгохгүй (ЭГЗЭГТЭЙ)", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users/emp1", "method": "update",
+        "resource": { "data": { "role": "admin", "email": "emp@x.mn", "department": "A" } } },
+      "resource": { "data": { "role": "employee", "email": "emp@x.mn", "department": "A" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан өөрийн албаа өөрчлөхгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users/emp1", "method": "update",
+        "resource": { "data": { "role": "employee", "email": "emp@x.mn", "department": "B" } } },
+      "resource": { "data": { "role": "employee", "email": "emp@x.mn", "department": "A" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан нууц үг солисон тугаа бичнэ (mustChangePw)", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/users/emp1", "method": "update",
+        "resource": { "data": { "role": "employee", "email": "emp@x.mn", "department": "A", "mustChangePw": false, "pwChangedAt": "2026-09-09" } } },
+      "resource": { "data": { "role": "employee", "email": "emp@x.mn", "department": "A", "mustChangePw": true } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "админ бусдын role-ыг өөрчилнө", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "admin1", "token": { "email": "adm@x.mn" } }, "path": "/databases/(default)/documents/users/emp1", "method": "update",
+        "resource": { "data": { "role": "depthead", "email": "emp@x.mn" } } },
+      "resource": { "data": { "role": "employee", "email": "emp@x.mn" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "admin" } } } } ] } },
+
+    { "name": "шинэ хэрэглэгч өөрийн баримтаа employee эрхтэй үүсгэнэ (бүртгэл)", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "new1", "token": { "email": "new@x.mn" } }, "path": "/databases/(default)/documents/users/new1", "method": "create",
+        "resource": { "data": { "role": "employee", "email": "new@x.mn", "uid": "new1" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": {} } } } ] } },
+
+    { "name": "шинэ хэрэглэгч өөрийгөө admin болгож үүсгэхгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "new1", "token": { "email": "new@x.mn" } }, "path": "/databases/(default)/documents/users/new1", "method": "create",
+        "resource": { "data": { "role": "admin", "email": "new@x.mn" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": {} } } } ] } },
+
+    { "name": "ажилтан user_roles бичихгүй (өөрийгөө дарга болгохгүй)", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/user_roles/emp@x.mn", "method": "create",
+        "resource": { "data": { "role": "depthead" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "админ user_roles бичнэ", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "admin1", "token": { "email": "adm@x.mn" } }, "path": "/databases/(default)/documents/user_roles/emp@x.mn", "method": "create",
+        "resource": { "data": { "role": "depthead" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "admin" } } } } ] } },
+
+    { "name": "ажилтан ӨӨРИЙН user_roles мөрөө уншина", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/user_roles/emp@x.mn", "method": "get" },
+      "resource": { "data": { "role": "depthead" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан бусдын user_roles уншихгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/user_roles/other@x.mn", "method": "get" },
+      "resource": { "data": { "role": "depthead" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан аюулын мэдээлэл (kpi_reports) нэмнэ", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_reports/r1", "method": "create",
+        "resource": { "data": { "id": "r1", "desc": "x" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан kpi_reports УСТГАХГҮЙ (№8)", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_reports/r1", "method": "delete" },
+      "resource": { "data": { "id": "r1" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "админ kpi_reports устгана", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "admin1", "token": { "email": "adm@x.mn" } }, "path": "/databases/(default)/documents/kpi_reports/r1", "method": "delete" },
+      "resource": { "data": { "id": "r1" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "admin" } } } } ] } },
+
+    { "name": "ажилтан ХН захиалга (kpi_hrorders) бичнэ", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_hrorders/h1", "method": "update",
+        "resource": { "data": { "id": "h1", "status": "signed" } } },
+      "resource": { "data": { "id": "h1", "status": "new" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан ХН захиалга УСТГАХГҮЙ", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_hrorders/h1", "method": "delete" },
+      "resource": { "data": { "id": "h1" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан kpi_tasks бичихгүй (админ л)", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_tasks/t1", "method": "create",
+        "resource": { "data": { "id": "t1" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан kpi_tasks уншина", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_tasks/t1", "method": "get" },
+      "resource": { "data": { "id": "t1" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан kpi_state толийг шинэчилнэ (хуучин зам)", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_state/main", "method": "update",
+        "resource": { "data": { "hazards": [ 1 ] } } },
+      "resource": { "data": { "hazards": [] } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан kpi_state устгахгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/kpi_state/main", "method": "delete" },
+      "resource": { "data": { "hazards": [] } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "ажилтан files каталогт мөр нэмнэ", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/files/f1", "method": "create",
+        "resource": { "data": { "name": "a.jpg" } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "нэвтрээгүй хүн users уншихгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": null, "path": "/databases/(default)/documents/users/emp1", "method": "get" },
+      "resource": { "data": { "role": "employee" } } } },
+
+    { "name": "нэвтрээгүй хүн мэдлэгийн сан уншина (nohon-tulbur)", "tc": {
+      "expectation": "ALLOW",
+      "request": { "auth": null, "path": "/databases/(default)/documents/knowledge_base/k1", "method": "get" },
+      "resource": { "data": { "t": "x" } } } },
+
+    { "name": "ажилтан мэдлэгийн санд бичихгүй", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/knowledge_base/k1", "method": "update",
+        "resource": { "data": { "t": "y" } } },
+      "resource": { "data": { "t": "x" } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } },
+
+    { "name": "заагаагүй цуглуулга (allowed_users) хаалттай", "tc": {
+      "expectation": "DENY",
+      "request": { "auth": { "uid": "emp1", "token": { "email": "emp@x.mn" } }, "path": "/databases/(default)/documents/allowed_users/emp1", "method": "create",
+        "resource": { "data": { "x": 1 } } },
+      "functionMocks": [ { "function": "get", "args": [ { "anyValue": {} } ], "result": { "value": { "data": { "role": "employee" } } } } ] } }
+  ]
+}

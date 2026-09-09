@@ -215,12 +215,37 @@ function readBody(req) {
   });
 }
 
-async function writeFor(email, rows) {
-  rows.sort(function (a, b) { return b.ts - a.ts; });
-  return await putJson(emailKey(email), {
-    updatedAt: new Date().toISOString(),
-    list: rows
+/* ⚠ 2026-09-09 — НЭГТГЭНЭ, ДАРЖ БИЧИХГҮЙ. Серверт (/api/exam-save) шууд
+   хадгалагдсан мөрүүд Firestore-д БАЙХГҮЙ тул хуучин «дарж бичих» нь тэднийг
+   устгах байв. Ижил мөр: id таарсан, эсвэл email+key+type+ts (2 мин). */
+function sameRow(x, r) {
+  if (!x || !r) return false;
+  if (x.id && r.id && x.id === r.id) return true;
+  return x.email === r.email && x.key === r.key && x.type === r.type &&
+    Math.abs(Number(x.ts || 0) - Number(r.ts || 0)) < 120;
+}
+function mergeRows(existing, incoming) {
+  const out = (existing || []).slice();
+  let added = 0;
+  (incoming || []).forEach(function (r) {
+    if (!out.some(function (x) { return sameRow(x, r); })) { out.push(r); added++; }
   });
+  out.sort(function (a, b) { return Number(b.ts || 0) - Number(a.ts || 0); });
+  return { list: out, added: added };
+}
+async function readList(key) {
+  try {
+    const r = await fetch(R2 + '/' + key + r2GetQ(key), { cache: 'no-store' });
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j && j.list) ? j.list : [];
+  } catch (e) { return []; }
+}
+async function writeFor(email, rows) {
+  const cur = await readList(emailKey(email));
+  const m = mergeRows(cur, rows);
+  if (!m.added) return true;                      /* шинэ зүйл алга — бичихгүй */
+  return await putJson(emailKey(email), { updatedAt: new Date().toISOString(), list: m.list });
 }
 
 /* ── ӨМНӨХ АЖИЛТНУУДЫГ САНАХ ───────────────────────
@@ -272,48 +297,26 @@ module.exports = async function handler(req, res) {
       catch (e) { failed++; }
     }
 
-    /* Бичлэггүй болсон хүний тольийг хоослоно (дээрх тайлбарыг үз) */
+    /* ⚠ 2026-09-09: ХООСЛОХГҮЙ. Firestore-д байхгүй хүн = серверт шууд
+       хадгалсан хүн байж болно. Индексийг зөвхөн НЭМЖ шинэчилнэ. */
     let blanked = 0;
     try {
       const prev = await idxRead();
-      const now = {};
-      emails.forEach(function (e) { now[e] = 1; });
-      const gone = prev.filter(function (e) { return e && !now[e]; });
-      for (const em of gone) {
-        try { if (await writeFor(em, [])) blanked++; } catch (e) {}
-      }
-      await putJson(IDX_KEY, { updatedAt: new Date().toISOString(), emails: emails });
+      const set = {};
+      prev.concat(emails).forEach(function (e) { if (e) set[e] = 1; });
+      await putJson(IDX_KEY, { updatedAt: new Date().toISOString(), emails: Object.keys(set) });
     } catch (e) { /* тольдолт бүхэлдээ зогсохгүй */ }
-    /* Админы тайлан, KPI-ийн нэгтгэлд хэрэгтэй БҮХ бичлэгийн толь.
-       Өмнө нь ажилтан бүр апп нээх бүрдээ ЭНЭ бүх бичлэгийг Firestore-оос
-       татдаг байсан нь квот дүүргэдэг гол шалтгаан байв. */
-    /* Асуултын сан — шалгалтын хуудсыг зурахад хэрэгтэй */
-    try {
-      const qr = await fetch(FS_BASE + '/habea_config/questions?key=' + EX_KEY, { cache: 'no-store' });
-      if (qr.ok) {
-        const qj = await qr.json();
-        const arr = (((qj.fields || {}).list || {}).arrayValue || {}).values || [];
-        const qs = arr.map(function (x) {
-          const g = (x.mapValue || {}).fields || {};
-          const o = {};
-          Object.keys(g).forEach(function (k) { o[k] = val(g[k]); });
-          if (o.options) {
-            o.options = (o.options || []).map(function (v) {
-              const gf = (v && v.mapValue && v.mapValue.fields) || {};
-              return { id: val(gf.id), text: val(gf.text) };
-            });
-          }
-          return o;
-        });
-        await putJson('exams/_questions.json', { updatedAt: new Date().toISOString(), list: qs });
-      }
-    } catch (e) { /* асуултгүй ч дүн тольдогдоно */ }
+    /* ⚠ Асуултын толь (exams/_questions.json)-ийг ЭНД БИЧИХГҮЙ — тэр нь
+       зөв хариулттай хуучин баримтаас ирж, /api/exam-config-ийн бичсэн
+       (зөв хариултгүй) хувилбарыг дарж бичих байв. */
 
     let allOk = false;
     try {
-      allOk = await putJson('exams/_all.json', {
-        updatedAt: new Date().toISOString(), total: all.length, list: all
-      });
+      const cur = await readList('exams/_all.json');
+      const m = mergeRows(cur, all);
+      allOk = m.added ? await putJson('exams/_all.json', {
+        updatedAt: new Date().toISOString(), total: m.list.length, list: m.list
+      }) : true;
     } catch (e) { allOk = false; }
 
     return res.status(200).json({

@@ -6,7 +6,7 @@
 <title>ХАБЭА Админ</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -217,15 +217,9 @@ body{
     <div class="card" style="padding:36px;text-align:center;border-radius:20px">
       <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--red),#FF6B35);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 20px;box-shadow:0 8px 20px rgba(227,6,19,.3)">🔐</div>
       <h1 style="font-size:22px;font-weight:900;color:var(--ink);margin-bottom:6px;letter-spacing:-.3px">ХАБЭА Админ</h1>
-      <p style="color:var(--muted);font-size:14px;margin-bottom:4px">4 оронтой PIN кодоо оруулна уу</p>
-      <div class="pin-row" id="pinRow">
-        <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p0">
-        <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p1">
-        <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p2">
-        <input class="pin-inp" type="password" maxlength="1" inputmode="numeric" id="p3">
-      </div>
-      <div id="pinErr" style="color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px"></div>
-      <button class="btn btn-primary" style="width:100%;padding:13px;font-size:15px" onclick="checkPin()">Нэвтрэх</button>
+      <p style="color:var(--muted);font-size:14px;margin-bottom:12px">Энэ хуудсанд ХАБЭА системийн <b>админ</b> эрхээр нэвтэрсэн байх ёстой.</p>
+      <div id="pinErr" style="color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px">Нэвтрэлт шалгаж байна…</div>
+      <a class="btn btn-primary" style="width:100%;padding:13px;font-size:15px;display:block;text-decoration:none" href="/kpi/">Систем рүү орж нэвтрэх</a>
     </div>
   </div>
 </div>
@@ -392,7 +386,6 @@ body{
             <div class="field"><label>Шалгалтын гарчиг</label><input class="inp" id="cfgTitle" placeholder="ХАБЭА Давтан зааварчилгааны сургалт"></div>
             <div class="field"><label>Тэнцэх босго (%)</label><input class="inp" id="cfgPass" type="number" min="1" max="100" placeholder="60" style="width:120px"></div>
             <div class="field"><label>⏱ Хугацааны хязгаар (минут, 0 = хязгааргүй)</label><input class="inp" id="cfgTime" type="number" min="0" max="180" placeholder="0" style="width:120px"><div style="font-size:12px;color:#6B7280;margin-top:4px">Тохируулбал шалгалтын хуудсанд тоолуур гарч, хугацаа дуусахад хариултууд түгжигдэн баталгаажуулах алхам руу шилжинэ (ажилтныг хаахгүй).</div></div>
-            <div class="field"><label>Админ PIN код</label><input class="inp" id="cfgPin" type="text" maxlength="6" placeholder="1234" style="width:120px"></div>
           </div>
           <div class="card" style="padding:24px;margin-bottom:16px">
             <div style="font-size:14px;font-weight:700;color:var(--ink);margin-bottom:6px">📱 QR / Форм холбоосууд</div>
@@ -437,12 +430,30 @@ body{
 
 <script>
 // ── Firebase ──
-firebase.initializeApp({apiKey:"AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",authDomain:"habea-shalgalt.firebaseapp.com",projectId:"habea-shalgalt",storageBucket:"habea-shalgalt.firebasestorage.app",messagingSenderId:"910170773266",appId:"1:910170773266:web:38c7af5f7d0c352a5bc5cb"});
-const db=firebase.firestore();
+/* ⚠ 2026-09-09: ил Firestore (habea-shalgalt) + PIN-ээс БҮРЭН салав.
+   Нэвтрэлт — аппын үндсэн төсөл (админ эрх серверт users/{uid}.role-оор
+   шалгагдана). Тохиргоо/асуулт — /api/exam-config, дүн — R2 exams/_all.json
+   (гарын үсэгтэй уншилт), устгах — /api/exam-save {action:'delete'}.
+   Гарын үсгийн зураг — exams/sig/<id>.json (хэрэгтэй үед л татна). */
+firebase.initializeApp({apiKey:'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0',authDomain:'monos-hab-system.firebaseapp.com',projectId:'monos-hab-system'});
+const R2='https://monos-upload.buynt666.workers.dev';
+async function idTok(){ const u=firebase.auth().currentUser; if(!u) throw new Error('Нэвтрээгүй'); return await u.getIdToken(); }
+async function api(url,body){
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({idToken:await idTok()},body||{}))});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||!j.ok) throw new Error((j&&(j.error||j.msg))||('HTTP '+r.status));
+  return j;
+}
+async function r2Get(key){
+  const t=await api('/api/file-token/',{kind:'dl',keys:[key]});
+  const r=await fetch(R2+'/'+key+'?cb='+Date.now()+'&t='+encodeURIComponent(t.tokens[key])+'&e='+encodeURIComponent(t.exp),{cache:'no-store'});
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error('R2 '+r.status);
+  return await r.json();
+}
 
-let CFG={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60,adminPin:"1234"};
+let CFG={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60};
 let QS=[],allResults=[],editingQIdx=null,charts={};
-const COLLECTION="habea_exam_results";
 const EXKEY=(function(){try{return new URLSearchParams(location.search).get('exam')||'';}catch(e){return '';}})();
 const QSUF=EXKEY?('_'+EXKEY):'';
 
@@ -470,43 +481,55 @@ function fmtDate(d){if(!(d instanceof Date))return"—";return d.toLocaleDateStr
 function fmtDateTime(d){if(!(d instanceof Date))return"—";return d.toLocaleString("mn-MN")}
 
 // ── PIN ──
-function setupPin(){
-  [0,1,2,3].forEach(i=>{
-    const el=document.getElementById("p"+i);
-    el.addEventListener("input",()=>{el.value=el.value.replace(/\D/,"");if(el.value&&i<3)document.getElementById("p"+(i+1)).focus();});
-    el.addEventListener("keydown",e=>{if(e.key==="Backspace"&&!el.value&&i>0)document.getElementById("p"+(i-1)).focus();});
+/* Нэвтрэлт — аппын үндсэн төслийн сессээс (нэг домэйн тул автоматаар ирнэ).
+   Админ биш бол сервер get-full-д 403 өгнө → хуудас нээгдэхгүй. */
+function startAuth(){
+  firebase.auth().onAuthStateChanged(async function(u){
+    const err=document.getElementById("pinErr");
+    if(!u){ if(err) err.textContent="Нэвтрээгүй байна. Системд нэвтэрсний дараа энэ хуудсыг дахин нээнэ үү."; return; }
+    try{
+      await api('/api/exam-config/',{action:'get-full',exam:EXKEY});   /* эрхийн шалгалт */
+      document.getElementById("loginWrap").style.display="none";
+      document.getElementById("appWrap").style.display="block";
+      await loadAll();
+    }catch(e){ if(err) err.textContent="Хандах эрх алга: "+String((e&&e.message)||e).slice(0,80); }
   });
 }
-function getPin(){return[0,1,2,3].map(i=>document.getElementById("p"+i).value).join("")}
-function clearPin(){[0,1,2,3].forEach(i=>{document.getElementById("p"+i).value=""});document.getElementById("pinErr").textContent=""}
 
-async function checkPin(){
-  try{const s=await db.collection("habea_config").doc("settings").get();if(s.exists)CFG={...CFG,...s.data()};}catch(e){}
-  if(getPin()===(CFG.adminPin||"1234")){
-    document.getElementById("loginWrap").style.display="none";
-    document.getElementById("appWrap").style.display="block";
-    await loadAll();
-  } else {
-    document.getElementById("pinErr").textContent="PIN буруу байна";
-    clearPin();setTimeout(()=>document.getElementById("p0").focus(),50);
-  }
+/* R2-ийн мөрийг энэ хуудасны хуучин бүтэц рүү хөрвүүлнэ.
+   ⚠ Хуучин (Firestore-оос тольдсон) мөрөнд id байхгүй — email+ts-ээр таньна. */
+function rowToAdmin(r){
+  const bd=Array.isArray(r.bd)?r.bd.map(b=>({id:b.id,pts:Number(b.pts)||0,earned:Number(b.earned)||0})):[];
+  return { id:r.id||((r.email||'')+'|'+(r.ts||0)), _srvId:r.id||'', _email:r.email||'', _ts:Number(r.ts)||0,
+    name:r.name||'', department:r.dept||'', position:r.pos||'', email:r.email||'', eid:r.eid||'',
+    examKey:r.key||'', examTitle:r.title||'', examType:r.type||'', percent:Number(r.percent)||0, passed:r.passed===true,
+    total:bd.reduce((s2,b)=>s2+b.earned,0), breakdown:bd, answers:r.ans||{}, signCode:r.code||'',
+    recordHash:r.hash||r.hashC||'', signature:'', hasSign:!!r.hasSign,
+    timestamp:new Date((Number(r.ts)||0)*1000), otpVerifiedAt:r.otpAt||'', signedAt:r.signedAt||'',
+    ident:r.ident||'', chk:r.chk||'', pctC:(r.pctC===undefined?null:r.pctC) };
 }
-
+async function loadResults(){
+  const all=await r2Get('exams/_all.json');
+  let rows=(all&&Array.isArray(all.list))?all.list:[];
+  if(EXKEY) rows=rows.filter(r=>(r.key||'')===EXKEY);   // зөвхөн энэ сургалтын шалгалтын дүн
+  allResults=rows.map(rowToAdmin).sort((a,b)=>b.timestamp-a.timestamp);
+}
+/* Гарын үсгийн зургийг ХЭРЭГТЭЙ үед л татна (тусдаа файл, том учраас) */
+async function sigFor(r){
+  if(!r||r.signature||!r.hasSign||!r._srvId) return (r&&r.signature)||'';
+  try{ const s2=await r2Get('exams/sig/'+r._srvId+'.json'); r.signature=(s2&&s2.signature)||''; }catch(e){}
+  return r.signature;
+}
 async function loadAll(){
   try{
-    const[sS,qS,rS]=await Promise.all([
-      db.collection("habea_config").doc("settings").get(),
-      db.collection("habea_config").doc("questions"+QSUF).get(),
-      db.collection(COLLECTION).orderBy("timestamp","desc").get()
-    ]);
-    if(sS.exists)CFG={...CFG,...sS.data()};
-    const rawQS=qS.exists&&qS.data().list?.length>0?qS.data().list:JSON.parse(JSON.stringify(DEFAULT_QS));
+    const cfg=await api('/api/exam-config/',{action:'get-full',exam:EXKEY});
+    CFG={...CFG,...(cfg.settings||{})};
+    const rawQS=(cfg.questions&&cfg.questions.length)?cfg.questions:JSON.parse(JSON.stringify(DEFAULT_QS));
     QS=rawQS.map(q=>q.type==="three-words"&&Array.isArray(q.keywords)?{...q,keywords:q.keywords.map(k=>Array.isArray(k)?k.join(","):String(k||""))}:q);
-    allResults=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
-    if(EXKEY) allResults=allResults.filter(r=>r.examKey===EXKEY); // зөвхөн энэ сургалтын шалгалтын дүн
+    await loadResults();
     console.log("[loadAll] OK, results:",allResults.length,"exam:",EXKEY||"(бүгд)");
   }catch(e){
-    console.error("[loadAll] Firestore error:",e);
+    console.error("[loadAll] error:",e);
     const msg=(e&&e.message)?e.message:String(e);
     toast("Мэдээлэл татахад алдаа: "+msg.substring(0,80),"err");
   }
@@ -960,6 +983,7 @@ function exportMonthExcel(year,month){
 }
 
 async function doExcelExport(data,suffix=""){
+  try{ await Promise.all((data||[]).filter(r=>r&&r.hasSign&&r._srvId&&!r.signature).map(sigFor)); }catch(e){}
   const{s1,s2hdr,s2rows}=buildExcelData(data);
 
   // ExcelJS байгаа эсэхийг шалгая, байхгүй бол хуучин SheetJS-ээр fallback хийе
@@ -1081,8 +1105,9 @@ function doExcelExportLegacy(data,suffix=""){
 }
 
 // ── Detail Modal ──
-function openDetail(id){
+async function openDetail(id){
   const r=allResults.find(x=>x.id===id);if(!r)return;
+  try{ await sigFor(r); }catch(e){}
   window.__curRec=r;   /* Бөглөгдсөн шалгалтын хуудас үүсгэхэд ашиглана */
   document.getElementById("dTitle").textContent=esc(r.name)+" — Дэлгэрэнгүй";
   const maxPts=totalPts();
@@ -1184,14 +1209,9 @@ document.getElementById("detailModal").addEventListener("click",e=>{if(e.target=
 
 // ── Delete All ──
 async function clearAll(){
-  if(!confirm("Бүх шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй."))return;
-  try{
-    const snap=await db.collection(COLLECTION).get();
-    const batch=db.batch();snap.docs.forEach(d=>batch.delete(d.ref));
-    await batch.commit();
-    allResults=[];renderDashboard();renderResultsTable();renderArchiveTree();
-    toast("Устгагдлаа ✅");
-  }catch(e){toast("Алдаа гарлаа","err")}
+  /* ⚠ 2026-09-09: «бүх дүнг устгах» үйлдлийг ХАССАН — нэг товчоор бүх
+     ажилтны шалгалтын түүх алга болох эрсдэлтэй байв. Нэг нэгээр устгана. */
+  toast("«Бүгдийг устгах» үйлдэл хасагдсан — дүнг нэг нэгээр нь устгана уу","warn");
 }
 
 async function deleteResult(id){
@@ -1199,7 +1219,7 @@ async function deleteResult(id){
   const name=r?esc(r.name):"";
   if(!confirm(`"${name}" - шалгалтын мэдээллийг устгахдаа итгэлтэй байна уу?\nЭнэ үйлдлийг буцаах боломжгүй.`))return;
   try{
-    await db.collection(COLLECTION).doc(id).delete();
+    await api('/api/exam-save/',{action:'delete', id:(r&&r._srvId)||'', email:(r&&r._email)||'', ts:(r&&r._ts)||0});
     allResults=allResults.filter(x=>x.id!==id);
     renderDashboard();renderResultsTable();renderArchiveTree();
     toast("Устгагдлаа ✅");
@@ -1366,12 +1386,12 @@ async function saveQuestion(){
     q.keywords=[0,1,2].map(i=>(document.getElementById("etw_"+i)?.value||"").trim().toLowerCase());
   }
   if(editingQIdx===null)QS.push(q);else QS[editingQIdx]=q;
-  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Хадгалагдлаа ✅");closeQModal();renderQuestionList();renderDashboard()}catch(e){console.error("saveQuestion:",e);toast("Алдаа: "+e.message,"err")}
+  try{await api('/api/exam-config/',{action:'save',exam:EXKEY,settings:CFG,questions:QS});toast("Хадгалагдлаа ✅");closeQModal();renderQuestionList();renderDashboard()}catch(e){console.error("saveQuestion:",e);toast("Алдаа: "+e.message,"err")}
 }
 async function deleteQ(i){
   if(!confirm(`${i+1}-р асуултыг устгахдаа итгэлтэй байна уу?`))return;
   QS.splice(i,1);
-  try{await db.collection("habea_config").doc("questions"+QSUF).set({list:QS});toast("Устгагдлаа ✅");renderQuestionList()}catch(e){toast("Алдаа гарлаа","err")}
+  try{await api('/api/exam-config/',{action:'save',exam:EXKEY,settings:CFG,questions:QS});toast("Устгагдлаа ✅");renderQuestionList()}catch(e){toast("Алдаа гарлаа","err")}
 }
 
 // ── Settings ──
@@ -1380,13 +1400,12 @@ function loadSettingsForm(){
   document.getElementById("cfgTitle").value=CFG.examTitle||"";
   document.getElementById("cfgPass").value=CFG.passPercent||60;
   var _ct=document.getElementById("cfgTime"); if(_ct) _ct.value=Number(CFG.timeLimitMin)||0;
-  document.getElementById("cfgPin").value=CFG.adminPin||"1234";
   document.getElementById("cfgReg").value=CFG.regUrl||"";
   document.getElementById("cfgEval").value=CFG.evalUrl||"";
 }
 async function saveSettings(){
-  const s={orgName:document.getElementById("cfgOrg").value.trim(),examTitle:document.getElementById("cfgTitle").value.trim(),passPercent:parseInt(document.getElementById("cfgPass").value)||60,timeLimitMin:Math.max(0,Math.min(180,parseInt((document.getElementById("cfgTime")||{}).value)||0)),adminPin:document.getElementById("cfgPin").value.trim()||"1234",regUrl:document.getElementById("cfgReg").value.trim(),evalUrl:document.getElementById("cfgEval").value.trim()};
-  try{await db.collection("habea_config").doc("settings").set(s);CFG={...s};document.getElementById("sbOrg").textContent=s.orgName||"МОНОС ХҮНС ХК";toast("Хадгалагдлаа ✅")}catch(e){toast("Алдаа гарлаа","err")}
+  const s={orgName:document.getElementById("cfgOrg").value.trim(),examTitle:document.getElementById("cfgTitle").value.trim(),passPercent:parseInt(document.getElementById("cfgPass").value)||60,timeLimitMin:Math.max(0,Math.min(180,parseInt((document.getElementById("cfgTime")||{}).value)||0)),regUrl:document.getElementById("cfgReg").value.trim(),evalUrl:document.getElementById("cfgEval").value.trim()};
+  try{await api('/api/exam-config/',{action:'save',exam:EXKEY,settings:s,questions:QS});CFG={...CFG,...s};document.getElementById("sbOrg").textContent=s.orgName||"МОНОС ХҮНС ХК";toast("Хадгалагдлаа ✅")}catch(e){toast("Алдаа гарлаа","err")}
 }
 
 // ── Month Comparison ──
@@ -1513,12 +1532,9 @@ async function refreshData(){
   const btn=document.getElementById("btnRefresh");
   btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
   try{
-    const[qS,rS]=await Promise.all([
-      db.collection("habea_config").doc("questions"+QSUF).get(),
-      db.collection(COLLECTION).orderBy("timestamp","desc").get()
-    ]);
-    if(qS.exists&&qS.data().list?.length>0)QS=qS.data().list;
-    allResults=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+    const cfg=await api('/api/exam-config/',{action:'get-full',exam:EXKEY});
+    if(cfg.questions&&cfg.questions.length)QS=cfg.questions;
+    await loadResults();
     populateDeptFilters();renderDashboard();renderResultsTable();renderArchiveTree();
     const t=new Date();document.getElementById("lastRefresh").textContent=`${t.getHours()}:${String(t.getMinutes()).padStart(2,"0")} шинэчлэгдсэн`;
     toast("Шинэчлэгдлээ ✅");
@@ -1530,15 +1546,15 @@ async function refreshData(){
 function toast(msg,type="ok"){const t=document.createElement("div");t.className="t";const cl=type==="err"?"#EF4444":type==="warn"?"#D97706":"#059669";t.innerHTML=`<span style="color:${cl}">${type==="err"?"✕":type==="warn"?"⚠":"✓"}</span>${msg}`;document.getElementById("toastBox").appendChild(t);setTimeout(()=>t.remove(),3200)}
 
 // ── Init ──
-setupPin();
-document.getElementById("p0").focus();
-document.addEventListener("keydown",e=>{if(e.key==="Enter"&&document.getElementById("loginWrap").style.display!=="none")checkPin()});
+startAuth();
 
 // Auto-refresh every 5 minutes when logged in
 setInterval(()=>{
   if(document.getElementById("appWrap").style.display!=="none"){
-    db.collection(COLLECTION).orderBy("timestamp","desc").get().then(rS=>{
-      const fresh=rS.docs.map(d=>({id:d.id,...d.data(),timestamp:d.data().timestamp?.toDate?.()??new Date()}));
+    r2Get('exams/_all.json').then(all=>{
+      let rows=(all&&Array.isArray(all.list))?all.list:[];
+      if(EXKEY) rows=rows.filter(r=>(r.key||'')===EXKEY);
+      const fresh=rows.map(rowToAdmin).sort((a,b)=>b.timestamp-a.timestamp);
       if(fresh.length!==allResults.length){
         allResults=fresh;
         populateDeptFilters();renderDashboard();renderResultsTable();renderArchiveTree();

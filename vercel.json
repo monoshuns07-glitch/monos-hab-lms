@@ -17,10 +17,6 @@
       "schedule": "0 1 25 * *"
     },
     {
-      "path": "/api/exam-sync/",
-      "schedule": "10 15 * * *"
-    },
-    {
       "path": "/api/r2-backup/",
       "schedule": "40 17 * * *"
     }

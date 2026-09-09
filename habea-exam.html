@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>ХАБЭА Шалгалт</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js" integrity="sha384-xgNdoEQu0JeBEAN3/f7mrS+EPOsrmARCvhS7PEpk7QI2wvo4YOF3xY3EjQGKHAY9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -414,8 +412,10 @@ body{
 <div class="toast-box" id="toastBox"></div>
 
 <script>
-firebase.initializeApp({apiKey:"AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",authDomain:"habea-shalgalt.firebaseapp.com",projectId:"habea-shalgalt",storageBucket:"habea-shalgalt.firebasestorage.app",messagingSenderId:"910170773266",appId:"1:910170773266:web:38c7af5f7d0c352a5bc5cb"});
-const db=firebase.firestore();
+/* ⚠ 2026-09-09: Firebase ЭНД БАЙХГҮЙ. Тохиргоо /api/exam-config-оос, дүн
+   /api/exam-save-ээр (сервер оноо тооцож R2-д хадгална). Ил Firestore-той
+   холбогдох замыг бүхэлд нь хассан — хуулбар БҮҮ сэргээ. */
+var CFG_LOAD_ERR="";
 var QP={}; try{ new URLSearchParams(location.search).forEach(function(v,k){ QP[k]=v; }); }catch(e){}
 
 const DEF_S={examTitle:"ХАБЭА Давтан зааварчилгааны сургалт",orgName:"МОНОС ХҮНС ХК",regUrl:"",evalUrl:"",passPercent:60};
@@ -477,20 +477,22 @@ function sessRestore(){
 
 async function init(){
   var KEY = (QP.exam ? "_"+QP.exam : ""); // тухайн сургалтын шалгалтын түлхүүр
-  try{
-    const[ss,qs]=await Promise.all([db.collection("habea_config").doc("settings"+KEY).get(),db.collection("habea_config").doc("questions"+KEY).get()]);
-    let ssData=ss.exists?ss.data():null, qsData=(qs.exists&&qs.data().list?.length)?qs.data():null;
-    if(KEY && (!ssData||!qsData)){ // тухайн шалгалтынх байхгүй бол үндсэн тохиргоо/асуултыг авна
-      const[ss0,qs0]=await Promise.all([db.collection("habea_config").doc("settings").get(),db.collection("habea_config").doc("questions").get()]);
-      if(!ssData&&ss0.exists)ssData=ss0.data();
-      if(!qsData&&qs0.exists&&qs0.data().list?.length)qsData=qs0.data();
-    }
-    if(ssData)CFG={...DEF_S,...ssData};
-    if(qsData){
-      const TMAP={matching:"match","three-words":"words3","three-mistakes":"mistakes3"};
-      QS=qsData.list.map(q=>({...q,type:TMAP[q.type]||q.type}));
-    }
-  }catch(e){}
+  /* ⚠ 2026-09-09: тохиргоо, асуултыг СЕРВЕРЭЭС (зөв хариултгүй). Тухайн
+     шалгалтын түлхүүрт тохиргоо байхгүй бол сервер өөрөө үндсэнийг өгнө. */
+  for(var _try=0;_try<3&&!QS.length;_try++){
+    try{
+      const _r=await fetch("/api/exam-config/?exam="+encodeURIComponent(QP.exam||"")+"&cb="+Date.now(),{cache:"no-store"});
+      const _j=await _r.json().catch(function(){return null;});
+      if(_r.ok&&_j&&_j.ok){
+        CFG={...DEF_S,...(_j.settings||{})};
+        const TMAP={matching:"match","three-words":"words3","three-mistakes":"mistakes3"};
+        QS=(_j.questions||[]).map(q=>({...q,type:TMAP[q.type]||q.type}));
+        CFG_LOAD_ERR="";
+      } else CFG_LOAD_ERR=(_j&&_j.error)||("HTTP "+_r.status);
+    }catch(e){ CFG_LOAD_ERR=String((e&&e.message)||e); }
+    if(!QS.length) await new Promise(function(r){ setTimeout(r,1200); });
+  }
+  if(!QS.length){ try{ toast("⚠️ Шалгалтын асуулт ачаалагдсангүй ("+CFG_LOAD_ERR+"). Хуудсыг дахин ачаална уу."); }catch(e){} }
   if(QP.title) CFG.examTitle = QP.title; // SafeWork-оос дамжуулсан сургалтын гарчиг
   document.getElementById("hdrTitle").textContent=CFG.examTitle||"ХАБЭА";
   try{ if(QP.name){var _n=document.getElementById("iName"); if(_n&&!_n.value)_n.value=QP.name;} if(QP.dept){var _d=document.getElementById("iDept"); if(_d&&!_d.value)_d.value=QP.dept;} var _p0=(QP.pos||QP.position||""); if(_p0){var _p=document.getElementById("iPos"); if(_p&&!_p.value)_p.value=_p0;} }catch(e){}
@@ -1129,12 +1131,13 @@ function sigLoadRegistered(cb){
   var url="";
   try{ url=localStorage.getItem(sigLocalKey())||""; }catch(e){}
   if(url){ cb(url); return; }
+  /* 2026-09-09: серверээс (R2, нотлогдсон и-мэйлээр) — ил Firestore биш */
   try{
-    db.collection("habea_signatures").doc(sigDocId()).get().then(function(s){
-      var d=(s&&s.exists)?s.data():null;
-      if(d&&d.signature){ try{localStorage.setItem(sigLocalKey(),d.signature);}catch(e){} cb(d.signature); }
-      else cb("");
-    }).catch(function(){ cb(""); });
+    fetch("/api/exam-save/",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"sig-get", otpId:OTP_ID||"", vt:QP.vt||"", vexp:QP.vexp||"", vem:QP.vem||""})})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(j){ var sg=(j&&j.ok&&j.signature)||""; if(sg){ try{localStorage.setItem(sigLocalKey(),sg);}catch(e){} } cb(sg); })
+    .catch(function(){ cb(""); });
   }catch(e){ cb(""); }
 }
 
@@ -1142,12 +1145,10 @@ function sigSaveRegistered(url){
   if(!url) return;
   try{ localStorage.setItem(sigLocalKey(),url); }catch(e){}
   try{
-    db.collection("habea_signatures").doc(sigDocId()).set({
-      email:String((typeof QP!=="undefined"&&QP.email)||"").toLowerCase(),
-      name:(emp&&emp.name)||"", dept:(emp&&emp.dept)||"", position:(emp&&emp.pos)||"",
-      signature:url, consent:true, consentText:SIG_CONSENT_TEXT,
-      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-    },{merge:true}).catch(function(){});
+    fetch("/api/exam-save/",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"sig-put", signature:url, name:(emp&&emp.name)||"", dept:(emp&&emp.dept)||"",
+        pos:(emp&&emp.pos)||"", consentText:SIG_CONSENT_TEXT,
+        otpId:OTP_ID||"", vt:QP.vt||"", vexp:QP.vexp||"", vem:QP.vem||""})}).catch(function(){});
   }catch(e){}
 }
 
@@ -1653,8 +1654,7 @@ async function otpCheckTyped(){
      сүлжээ) шилжинэ. Эс бөгөөс буруу кодтой хүн серверийг тойрч,
      хуучин сул замаар өнгөрөх боломжтой болно. */
   try{
-    var _tok="";
-    try{ var _u=firebase.auth().currentUser; if(_u) _tok=await _u.getIdToken(); }catch(e0){}
+    var _tok="";   /* энэ хуудас нэвтрэлтгүй — код өөрөө нотолгоо */
     var _r=await fetch("/api/otp-verify/",{method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({idToken:_tok,id:OTP_ID,code:code})});
@@ -1913,14 +1913,8 @@ async function finalSubmit(){ sigRelease();
   if(!OTP_OK && !OTP_BYPASS){ toast("🔐 И-мэйлээр баталгаажуулна уу"); return; }
   const btn=document.getElementById("btnFinalSubmit");
   btn.disabled=true;btn.textContent="⏳ Илгээж байна...";
-  const bd=QS.map(q=>({id:q.id,pts:pts(q),earned:grade(q,answers[q.id])}));
-  const tot=bd.reduce((s,b)=>s+b.earned,0);
-  const pct=Math.round((tot/totalPts())*100);
-  const passed=pct>=(CFG.passPercent||60);
   let signatureDataUrl="";
   try{signatureDataUrl=getSignatureDataUrl()}catch(e){console.error("Signature build err:",e)}
-
-  // Firestore 1 MB лимиттэй. Аюулгүй талд нь 700KB-аас илүү байвал signature-гүй хадгалъя.
   const sigSizeKB=signatureDataUrl?Math.round(signatureDataUrl.length/1024):0;
   if(sigSizeKB>700){
     console.warn("Signature too large (",sigSizeKB,"KB) — хасаж байна");
@@ -1928,48 +1922,41 @@ async function finalSubmit(){ sigRelease();
     signatureDataUrl="";
   }
 
+  /* ⚠ 2026-09-09: ОНООГ СЕРВЕР ТООЦНО. Зөв хариулт хөтөчид ирдэггүй болсон
+     тул энд дүн тооцохгүй — сервер хариулт + тохиргооноос дүн гаргаж буцаана.
+     Firestore ОГТ ОРОЛЦОХГҮЙ. Сервер унавал хариулт хөтөчид (session) үлдэж,
+     «Дахин илгээх» товчоор дахин оролдоно — дүн алдагдахгүй. */
+  const nowIso=new Date().toISOString();
   const doc={
     name:emp.name,department:emp.dept,position:emp.pos,
     email:(QP.email||"").toLowerCase(),eid:QP.eid||"",
     examTitle:(QP.title||(CFG&&CFG.examTitle))||"",
     examKey:(QP.exam||""),
-    examType,answers,breakdown:bd,
-    total:tot,percent:pct,passed,
-    timestamp:firebase.firestore.FieldValue.serverTimestamp()
+    examType,answers,
+    timestamp:nowIso
   };
-  if(signatureDataUrl){
-    doc.signature=signatureDataUrl;
-    doc.signedAt=firebase.firestore.FieldValue.serverTimestamp();
-  }
-  // ── Зөвшөөрөл ба өөрчлөгдөөгүйн нотолгоо ──
+  if(signatureDataUrl){ doc.signature=signatureDataUrl; doc.signedAt=nowIso; }
   doc.consent=true;
   doc.consentText=SIG_CONSENT_TEXT;
   doc.otpChannel = OTP_VIA_APP ? "app" : "email";
-  /* ⚠ Аппын зам бүтэлгүйтсэн бол ШАЛТГААНЫГ хамт хадгална. Ингэснээр
-     «зарим хүнд и-мэйлээр ирдэг» гэдгийг дахин ТААМАГЛАХГҮЙ, харна. */
-  if (!OTP_VIA_APP && OTP_WHY) doc.otpWhy = String(OTP_WHY).slice(0, 60);   /* аудитын мөр */
-  doc.consentAt=firebase.firestore.FieldValue.serverTimestamp();
+  if (!OTP_VIA_APP && OTP_WHY) doc.otpWhy = String(OTP_WHY).slice(0, 60);
+  doc.consentAt=nowIso;
   doc.signatureSource=SIG_SOURCE||"drawn";
   doc.device=String(navigator.userAgent||"").slice(0,180);
   doc.hashAlg="SHA-256";
-  /* ── ЦАХИМ БАТАЛГААЖУУЛАЛТ: нэг удаагийн код нь зурсан гарын үсгийг орлоно (тоон гарын үсэг биш) ── */
   doc.signCode=OTP_CODE||"";
   doc.signMethod=OTP_CODE?"otp":(SIG_PHOTO?"photo":"draw");
   doc.emailVerified=!!OTP_OK;
   doc.otpSkipped=!OTP_OK && !!OTP_BYPASS;
   if(doc.otpSkipped) doc.otpSkipReason=OTP_SKIP_REASON||"и-мэйл үйлчилгээ ажиллаагүй";
   if(doc.otpSkipped){ doc.otpBypassBy=OTP_BYPASS_BY||""; doc.otpBypassUntil=OTP_BYPASS_UNTIL||""; }
-  /* v530: хугацааны хязгаар, байршил, төхөөрөмж */
   doc.timeLimitMin=Number(CFG&&CFG.timeLimitMin)||0;
   doc.timedOut=!!EXAM_TIMED_OUT;
   doc.geo=EXAM_GEO||{status:"none"};
   doc.deviceId=deviceId();
   doc.otpId=OTP_ID||"";
-  /* ⚠ Баталгаажуулалтыг ХЭН шалгав: "server" (найдвартай), "client"
-     (хуучин нөөц зам), "poll" (өөр төхөөрөмж). Хоосон бол кодгүй өнгөрсөн. */
   doc.otpCheckedBy=OTP_CHECKED_BY||"";
   if(OTP_ID_MATCH!==null) doc.otpIdentityMatch=OTP_ID_MATCH;
-  /* ⚠ Хугацаа, анхаарал сарнилтын тоо — шалгалтын нөхцөлийн нотолгоо */
   doc.durationSec=Math.round((Date.now()-EXAM_T0)/1000);
   doc.tabAway=EXAM_TABAWAY;
   doc.tabAwaySec=Math.round(EXAM_AWAY_MS/1000);
@@ -1980,76 +1967,50 @@ async function finalSubmit(){ sigRelease();
   SIG_HASH=await sigMakeHash({
     n:emp.name||"", d:emp.dept||"", o:emp.pos||"",
     e:String((QP.email)||"").toLowerCase(),
-    k:String(QP.exam||""), t:examType, p:pct, s:tot,
-    a:answers, ts:new Date().toISOString()
+    k:String(QP.exam||""), t:examType, a:answers, ts:nowIso
   });
   doc.recordHash=SIG_HASH;
 
-  /* ⭐ ЭХ СУРВАЛЖ нь R2. Firestore нь зөвхөн нөөц хуулбар.
-     Өмнө нь дүн Firestore дээр байсан тул ажилтан бүр апп нээхэд
-     тэндээс уншиж, өдрийн квот дүүрч, дүн ХООСОН харагддаг байв.
-     R2-д уншилтын квот гэж БАЙХГҮЙ. */
-  let r2ok=false;
-  try{
-    const _u=firebase.auth().currentUser;
-    if(_u){
-      const _t=await _u.getIdToken();
-      const _r=await fetch('/api/exam-save/',{method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({idToken:_t,result:{
-          examKey:doc.examKey, examTitle:doc.examTitle, examType:doc.examType,
-          percent:doc.percent, passed:doc.passed, breakdown:bd,
-          /* v530: сервер оноог дахин тооцож, төхөөрөмж/байршил/нөхцөлийг бүртгэнэ */
-          answers:answers, dev:doc.deviceId, geo:doc.geo, dur:doc.durationSec, tab:doc.tabAway,
-          otpBy:doc.otpCheckedBy, skip:doc.otpSkipped, tl:doc.timeLimitMin, to:doc.timedOut }})});
-      const _j=await _r.json();
-      r2ok=!!(_j&&_j.ok);
-    }
-  }catch(e){ console.error('[Submit] R2 error:',e); }
-
-  let saved=r2ok;
-  try{
-    await db.collection("habea_exam_results").add(doc);
-    saved=true;
-  }catch(e){
-    console.error("[Submit] Firestore error:",e);
-    const msg=(e&&e.message)?e.message:String(e);
-    // Хэрэв signature-тай байгаа үед бүтсэнгүй бол signature-гүй давтан оролдоё
-    if(signatureDataUrl){
-      try{
-        const docNoSig={...doc};delete docNoSig.signature;delete docNoSig.signedAt;
-        await db.collection("habea_exam_results").add(docNoSig);
-        saved=true;
-        toast("⚠️ Гарын үсэггүйгээр хадгалагдлаа");
-      }catch(e2){
-        console.error("[Submit] Retry без подписи failed:",e2);
-        toast("❌ Хадгалж чадсангүй: "+msg.substring(0,80));
-      }
-    }else{
-      toast("❌ Хадгалж чадсангүй: "+msg.substring(0,80));
-    }
+  /* ── СЕРВЕР — 3 удаа оролдоно (сүлжээ, 5xx) ── */
+  let srv=null, errMsg="";
+  for(let attempt=0; attempt<3 && !srv; attempt++){
+    try{
+      const _r=await fetch('/api/exam-save/',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ action:'save', result:doc, otpId:OTP_ID||"", vt:QP.vt||"", vexp:QP.vexp||"", vem:QP.vem||"" })});
+      const _j=await _r.json().catch(function(){return {};});
+      if(_r.ok && _j && _j.ok){ srv=_j; break; }
+      errMsg=(_j&&(_j.msg||_j.error))||("HTTP "+_r.status);
+      if(_r.status===403||_r.status===400) break;   /* дахин оролдоод нэмэргүй */
+    }catch(e){ errMsg=String((e&&e.message)||e); }
+    if(!srv) await new Promise(function(res){ setTimeout(res, 1500*(attempt+1)); });
   }
-  if(saved){
-    sessClear();
-    toast("✅ Амжилттай хадгалагдлаа");
-   if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
+  if(!srv){
+    btn.disabled=false; btn.textContent="📤 Дахин илгээх";
+    toast("❌ Хадгалж чадсангүй: "+String(errMsg).slice(0,90)+" — хариултууд хадгалагдсан, дахин илгээнэ үү");
+    return;   /* ⚠ sessClear ХИЙХГҮЙ — хариулт хөтөчид үлдэнэ */
   }
+  sessClear();
+  toast("✅ Амжилттай хадгалагдлаа");
+  if(signatureDataUrl && SIG_SOURCE!=="registered") sigSaveRegistered(signatureDataUrl);
   btn.disabled=false;btn.textContent="📤 Шалгалт илгээх";
+  const bd=Array.isArray(srv.bd)?srv.bd:[];
+  const tot=Number(srv.tot)||0, pct=Number(srv.percent)||0, passed=!!srv.passed;
+  if(srv.code) OTP_CODE=srv.code;
   showResult(bd,tot,pct,passed);
   try{
     var _host=document.getElementById("screenResult");
     var _old=document.getElementById("sigProof"); if(_old) _old.remove();
-    if(_host&&SIG_HASH){
+    if(_host&&(srv.hash||SIG_HASH)){
       var _d=document.createElement("div"); _d.id="sigProof"; _d.className="sig-proof";
       _d.innerHTML=(OTP_CODE?"Таны тоон гарын үсэг: <b style=\"font-size:16px;letter-spacing:.2em\">"+OTP_CODE+"</b><br>":"")+
-        "Баталгааны код: <b>"+SIG_HASH.slice(0,16)+"</b><br><span>Хариулт, дүн өөрчлөгдөөгүйг энэ код нотолно.</span>";
+        "Баталгааны код: <b>"+String(srv.hash||SIG_HASH).slice(0,16)+"</b><br><span>Хариулт, дүн өөрчлөгдөөгүйг энэ код нотолно. Дүнг сервер тооцсон.</span>";
       var _c=_host.querySelector(".card")||_host; _c.appendChild(_d);
     }
   }catch(e){}
 }
 
 /* Бүртгэлийн/үнэлгээний формыг ажилтны мэдээллээр АВТОМАТААР бөглөж нээх.
-   Тохиргоонд (habea_config/settings) regUrl / evalUrl-д дараах орлуулагч бичиж болно:
+   Тохиргоонд (шалгалтын удирдлага → Тохиргоо) regUrl / evalUrl-д дараах орлуулагч бичиж болно:
      {name} {dept} {pos} {email} {score} {exam}
    Жишээ (Google Form prefill):
      https://docs.google.com/forms/d/e/XXX/viewform?usp=pp_url&entry.111={name}&entry.222={dept}&entry.333={pos} */

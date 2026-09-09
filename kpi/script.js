@@ -19,6 +19,34 @@ var firebaseConfig = {
   appId: '1:81969155633:web:20dfac4abed86e0d0ccf10'
 };
 var fdb = null, fbReady = false, fauth = null;
+
+/* ══ СҮЛЖЭЭНИЙ ГАЦААНЫ ХАМГААЛАЛТ (2026-09-09) ══
+   fetch()-д хугацааны хязгаар байгаагүй тул сервер/Worker хариу өгөхгүй
+   гацвал «Ачааллаж байна…» МӨНХӨД үлдэж, хуудас дахин ачаалахаас өөр
+   аргагүй байв. Одоо: GET 45с, жижиг POST (JSON, ≤1MB) 60с-ийн дараа
+   тасарч алдаа өгнө → апп «дахин оролдох» замаа явна.
+   ⚠ Байршуулалт (PUT, том бие, FormData/Blob) ХӨНДӨГДӨХГҮЙ — видео,
+     зураг олон минут явж болно. Гараар signal өгсөн дуудлагад ч хүрэхгүй. */
+var FETCH_TIMEOUT_GET = 45000, FETCH_TIMEOUT_POST = 60000;
+(function () {
+  try {
+    if (typeof window === 'undefined' || !window.fetch || typeof AbortSignal === 'undefined' || !AbortSignal.timeout) return;
+    var _f = window.fetch;
+    window.fetch = function (input, init) {
+      try {
+        init = init || {};
+        if (!init.signal) {
+          var m = String(init.method || 'GET').toUpperCase();
+          var body = init.body;
+          var small = body === undefined || body === null || (typeof body === 'string' && body.length <= 1000000);
+          if (m === 'GET' || m === 'HEAD') init = Object.assign({}, init, { signal: AbortSignal.timeout(FETCH_TIMEOUT_GET) });
+          else if (m === 'POST' && small) init = Object.assign({}, init, { signal: AbortSignal.timeout(FETCH_TIMEOUT_POST) });
+        }
+      } catch (e) {}
+      return _f.call(this, input, init);
+    };
+  } catch (e) {}
+})();
 try {
   if (typeof firebase !== 'undefined') {
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -5643,7 +5671,7 @@ function renderMyExams() {
       (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
       (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
     url = examBust(url);
-    return '<a href="' + r2Media(url) + '" target="_blank" rel="noopener" style="text-decoration:none">' +
+    return '<a href="' + esc(r2Media(url)) + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       cardInner +
       '</div></a>';
@@ -16131,6 +16159,11 @@ function renderRiskDept(sec, dept) {
    Татаж чадахгүй (CORS) бол шууд src-ээр — тэр үед багасгалт хийхгүй, бүтэн өргөнөөр. */
 function loadRiskIntoFrame(iframe, data, onFail) {
   function asDoc(html) {
+    /* ⚠ 2026-09-09 аудит: allow-same-origin + allow-scripts хослол нь sandbox-гүйтэй
+       адил. Гэвч tuneRiskFrame() нь contentDocument-ээр өргөнийг хэмжиж багасгадаг
+       тул same-origin ЗААВАЛ хэрэгтэй — хасвал самбар бүтэн өргөнөөр эвдэрч
+       харагдана. Самбарын HTML-ийг ЗӨВХӨН админ/албаны дарга байршуулдаг тул
+       хүлээн зөвшөөрсөн эрсдэл (ажилтан бичиж чадахгүй). */
     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
     iframe.srcdoc = html;
   }
@@ -16416,7 +16449,7 @@ function statCard(label, val, icon, color) {
 function emptyBox(msg) { return '<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i><div>' + esc(msg) + '</div></div>'; }
 
 function reportCard(r, withActions) {
-  var photo = r.photo ? '<img src="' + r2Media(r.photo) + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
+  var photo = r.photo ? '<img src="' + esc(r2Media(r.photo)) + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
     '<div style="width:54px;height:54px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#94A3B8;flex-shrink:0"><i class="ti ti-photo"></i></div>';
   var pts = reportPoints(r), actions = '';
   var urgentTag = r.urgent
@@ -16439,15 +16472,16 @@ function reportCard(r, withActions) {
       ? '<span data-wo-open="' + esc(woLink.id) + '" style="display:inline-flex;align-items:center;gap:5px;' +
         'font-size:11.5px;font-weight:700;color:' + (woIsDone(woLink) ? '#15803D' : '#4338CA') + ';cursor:pointer">' +
         (woIsDone(woLink) ? '✅ Засвар дууссан · ' : '🔧 Засварт · ') + esc(woLink.id) + ' ›</span>'
-      : '<button class="btn btn-sm" data-wo-from="' + r.id + '" style="background:#0F766E;color:#fff;' +
+      : '<button class="btn btn-sm" data-wo-from="' + esc(r.id) + '" style="background:#0F766E;color:#fff;' +
         'border-color:#0F766E"><i class="ti ti-tool"></i> ИТА-аар засварлуулах</button>') + '</div>';
   }
   if (withActions && r.status === 'reported') {
     actions = '<div style="display:flex;gap:8px;margin-top:8px">' +
-      '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();window.verifyReport(\'' + r.id + '\',\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
-      '<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.verifyReport(\'' + r.id + '\',\'reject\')">Татгалзах</button></div>';
+      /* ⚠ id-г JS мөрөнд залгахгүй (XSS) — data-* атрибут + dataset */
+      '<button class="btn btn-primary btn-sm" data-id="' + esc(r.id) + '" onclick="event.stopPropagation();window.verifyReport(this.dataset.id,\'verify\')"><i class="ti ti-check"></i> Батлах (+' + pts + ')</button>' +
+      '<button class="btn btn-secondary btn-sm" data-id="' + esc(r.id) + '" onclick="event.stopPropagation();window.verifyReport(this.dataset.id,\'reject\')">Татгалзах</button></div>';
   }
-  return '<div class="report-card" data-report="' + r.id + '">' + photo +
+  return '<div class="report-card" data-report="' + esc(r.id) + '">' + photo +
     '<div style="flex:1;min-width:0">' +
     '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + urgentTag + reportStatusTag(r.status) +
     '<span class="tag">' + reportTypeLabel(r.type) + '</span>' + riskTag(r.risk_level) + equipTag +
@@ -17610,7 +17644,7 @@ function rfSaveModal(url, name, size) {
     '<div style="font-size:15px;font-weight:800;color:#1E293B">Файл бэлэн боллоо</div>' +
     '<div style="font-size:12.5px;color:#64748B;margin-top:3px;word-break:break-all">' +
     esc(name) + (kb ? ' · ' + kb : '') + '</div></div>' +
-    '<a id="rfSaveGo" href="' + r2Media(url) + '" download="' + esc(name) + '" ' +
+    '<a id="rfSaveGo" href="' + esc(r2Media(url)) + '" download="' + esc(name) + '" ' +
     'class="btn btn-primary btn-block" style="margin-top:14px;text-decoration:none;' +
     'display:flex;align-items:center;justify-content:center;gap:8px">' +
     '<i class="ti ti-download"></i> Хадгалах</a>' +
@@ -17723,7 +17757,8 @@ function rfExportHTML(all) {
       '.rw .s{font-size:11px;color:#94A3B8;margin-top:3px}' +
       '.cl{float:right;border:0;background:#F1F5F9;border-radius:9px;padding:6px 12px;cursor:pointer;font:inherit}';
 
-    var js = '(function(){var D=' + JSON.stringify(drills) + ';' +
+    /* ⚠ JSON доторх «</script>» нь HTML-ийг таслана (XSS) — < тэмдгийг \u003c болгоно */
+    var js = '(function(){var D=' + JSON.stringify(drills).replace(/</g, '\\u003c') + ';' +
       'var V=document.querySelectorAll("[data-view]");' +
       'document.querySelectorAll(".kb button").forEach(function(b){b.onclick=function(){' +
       'document.querySelectorAll(".kb button").forEach(function(x){x.className=""});b.className="on";' +
@@ -18981,7 +19016,7 @@ function wkNewModal() {
         '</div>' +
         (sel.photo
           ? '<div style="margin-top:9px;position:relative">' +
-            '<img src="' + r2Media(sel.photo) + '" style="max-width:100%;border-radius:11px;display:block">' +
+            '<img src="' + esc(r2Media(sel.photo)) + '" style="max-width:100%;border-radius:11px;display:block">' +
             '<button type="button" id="wkPhotoDel" style="position:absolute;top:8px;right:8px;' +
             'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
             'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
@@ -19759,7 +19794,7 @@ function wkExecModal(id) {
       wkPickerHTML('wkExCam', 'Камераар', 'ti-camera', true) + '</div>' +
       (photo
         ? '<div style="margin-top:9px;position:relative">' +
-          '<img src="' + r2Media(photo) + '" style="max-width:100%;border-radius:11px;display:block">' +
+          '<img src="' + esc(r2Media(photo)) + '" style="max-width:100%;border-radius:11px;display:block">' +
           '<button type="button" id="wkExDel" style="position:absolute;top:8px;right:8px;' +
           'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
           'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
@@ -19843,7 +19878,7 @@ function wkAcceptModal(id) {
     '<b>' + esc((r.wkExecBy && r.wkExecBy.name) || '') + '</b>' +
     ((r.wkExecBy && r.wkExecBy.pos) ? ' · ' + esc(r.wkExecBy.pos) : '') + '<br>' +
     esc(r.wkExecNote || '') + '</div>' +
-    (r.wkExecPhoto ? '<img src="' + r2Media(r.wkExecPhoto) + '" style="max-width:100%;border-radius:11px;margin-bottom:12px">' : '') +
+    (r.wkExecPhoto ? '<img src="' + esc(r2Media(r.wkExecPhoto)) + '" style="max-width:100%;border-radius:11px;margin-bottom:12px">' : '') +
     '<div style="font-size:12.5px;color:#334155;font-weight:700;margin-bottom:9px">' +
     'Ажил бүрэн хийгдсэн үү?</div>' +
     '<div style="display:flex;gap:9px;flex-wrap:wrap">' +
@@ -20349,7 +20384,7 @@ function wkProofHTML(r) {
     ' — ажлыг хийж дуусгасны дараа авсан</div>' +
     (note ? '<div style="font-size:13px;color:#1E293B;line-height:1.6;margin-top:6px;' +
       'white-space:pre-wrap">' + esc(note) + '</div>' : '') +
-    (img ? '<img src="' + r2Media(img) + '" alt="Гүйцэтгэлийн зураг" ' +
+    (img ? '<img src="' + esc(r2Media(img)) + '" alt="Гүйцэтгэлийн зураг" ' +
       'style="max-width:100%;border-radius:11px;margin-top:9px;display:block">'
         : '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">Зураг хавсаргаагүй</div>') +
     '</div>' + wkExecLogHTML(r);
@@ -20371,7 +20406,7 @@ function wkExecLogHTML(r) {
       esc(x.by || '—') + (d ? ' · ' + esc(d) : '') + '</div>' +
       (x.note ? '<div style="font-size:12.5px;color:#1E293B;margin-top:4px;white-space:pre-wrap">' +
         esc(x.note) + '</div>' : '') +
-      (img ? '<img src="' + r2Media(img) + '" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">' : '') +
+      (img ? '<img src="' + esc(r2Media(img)) + '" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">' : '') +
       (x.rejectWhy ? '<div style="font-size:12px;color:#92400E;margin-top:7px">' +
         '<b>Буцаасан шалтгаан:</b> ' + esc(x.rejectWhy) + '</div>' : '') +
       '</div>';
@@ -21862,10 +21897,10 @@ function openReportDetail(id) {
       '<div style="font-size:12px;color:#64748B;margin-bottom:8px">' +
       esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—') +
       ' · ' + esc(String(r.createdAt || '').slice(0, 10)) + ' — асуудлыг мэдээлэх үед авсан</div>' +
-      '<img src="' + r2Media(r.photo) + '" alt="Мэдээлсэн зураг" ' +
+      '<img src="' + esc(r2Media(r.photo)) + '" alt="Мэдээлсэн зураг" ' +
       'style="width:100%;border-radius:11px;display:block"></div>'
     : '';
-  var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
+  var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + esc(r.signature) + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
   /* ⭐ Ажлын захиалга бол ЯВЦ + ДАРААГИЙН АЛХМЫГ хамгийн дээр нь */
   /* ⚠ 2026-09-05: ХУУЧИН УРСГАЛЫН ҮЛДЭГДЭЛ. Шинэ бичлэг (wkKind) нь өөрөө
      ажлын захиалга бөгөөд явц нь `wkFlowHTML`-д бүрэн харагдана. Гэтэл доор
@@ -26630,37 +26665,20 @@ function habExamSyncAll() {
 async function loadHabeaResultsPanel() {
   var panel = document.getElementById('habeaResultsPanel');
   if (!panel) return;
-  /* ⚠ 2026-09-07: Энэ хуудас эх сурвалжаас ШУУД уншдаг тул энд дүн
-     харагддаг ч, R2 толь хоцордог байв — KPI, «Миний дүн», тайлан бүгд
-     тольноос уншдаг тул тэнд өнөөдрийн дүн ГАРДАГГҮЙ байсан.
-     Одоо менежер энэ хуудсыг нээхэд толь ард нь гүйцнэ. */
+  /* ⚠ 2026-09-09: ил Firestore (habea-shalgalt)-оос ОГТ уншихгүй. Дүн одоо
+     сервер (/api/exam-save) → R2 exams/_all.json — гарын үсэгтэй уншина. */
   try { habExamSyncAll(); } catch (e) {}
   panel.innerHTML = '<div style="padding:24px;text-align:center;color:#8A94A6"><i class="ti ti-loader"></i> Ачааллаж байна...</div>';
   try {
-    /* ⚠ SDK-ээр БИШ, REST-ээр уншина — өөр төслийн SDK нь сүлжээ бэлэн
-       болоогүй үед кэшээс ХООСОН хариу буцаадаг (доорх
-       readHabeaExamsByEmail дээрх тайлбарыг харна уу). */
-    var rows = [];
-    var base = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-      '/databases/(default)/documents/habea_exam_results?key=' + MODEX_KEY + '&pageSize=300';
-    var tok = '', guard = 0;
-    do {
-      var rr = await fetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''), { cache: 'no-store' });
-      if (!rr.ok) throw new Error('HTTP ' + rr.status);
-      var jj = await rr.json();
-      (jj.documents || []).forEach(function (d) {
-        var f = d.fields || {};
-        var tsMs = 0;
-        try { tsMs = new Date(modExVal(f.timestamp) || 0).getTime() || 0; } catch (e2) {}
-        rows.push({
-          id: String(d.name || '').split('/').pop(),
-          name: modExVal(f.name) || '—', dept: modExVal(f.department) || '—',
-          pos: modExVal(f.position) || '—', pct: num(modExVal(f.percent)),
-          passed: modExVal(f.passed) === true, tsMs: tsMs
-        });
-      });
-      tok = jj.nextPageToken || '';
-    } while (tok && ++guard < 20);
+    var all = await riskR2GetJson('exams/_all.json', { fresh: true });
+    var rows = ((all && all.list) || []).map(function (x) {
+      return {
+        id: String(x.id || ''), email: String(x.email || ''), ts: num(x.ts),
+        name: x.name || '—', dept: x.dept || '—', pos: x.pos || '—',
+        pct: num(x.percent), passed: x.passed === true, tsMs: num(x.ts) * 1000,
+        ident: x.ident || '', chk: x.chk || ''
+      };
+    });
     rows.sort(function (a, b) { return b.tsMs - a.tsMs; });
     if (!rows.length) {
       panel.innerHTML = '<div class="empty-state" style="padding:24px"><i class="ti ti-clipboard-off"></i><div>Шалгалт байхгүй</div></div>';
@@ -26673,45 +26691,40 @@ async function loadHabeaResultsPanel() {
     }
     panel.innerHTML = '<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Нэр</th><th>Хэлтэс</th><th>Тушаал</th><th>%</th><th>Дүн</th><th>Огноо</th><th></th></tr></thead><tbody>' +
       rows.map(function (r, i) {
+        var badge = r.ident ? '<span title="Серверт нотлогдсон (' + esc(r.ident) + ')" style="font-size:10px;color:#0e8e59">🔒</span> ' : '';
         return '<tr>' +
           '<td style="color:#8A94A6;font-size:12px;font-weight:700">' + (i + 1) + '</td>' +
-          '<td style="font-weight:600">' + esc(r.name) + '</td>' +
+          '<td style="font-weight:600">' + badge + esc(r.name) + '</td>' +
           '<td>' + esc(r.dept) + '</td>' +
           '<td>' + esc(r.pos) + '</td>' +
           '<td style="font-weight:800;color:' + (r.passed ? 'var(--green)' : 'var(--red)') + '">' + r.pct + '%</td>' +
           '<td><span style="font-size:11px;font-weight:600;color:' + (r.passed ? 'var(--green)' : 'var(--red)') + '">' + (r.passed ? 'Тэнцсэн' : 'Тэнцээгүй') + '</span></td>' +
           '<td style="font-size:12px;color:#8A94A6">' + fmtHabeaTs(r.tsMs) + '</td>' +
-          '<td><button class="btn btn-ghost btn-xs" style="color:var(--red)" onclick="deleteHabeaResult(\'' + r.id + '\')">Устгах</button></td>' +
+          /* ⚠ id-г onclick-ийн JS мөрөнд БИШ, data-* атрибутад (esc-тэй) — XSS */
+          '<td><button class="btn btn-ghost btn-xs" style="color:var(--red)" data-hab-del="1" data-id="' + esc(r.id) + '" data-email="' + esc(r.email) + '" data-ts="' + r.ts + '" onclick="deleteHabeaResult(this.dataset.id, this.dataset.email, this.dataset.ts)">Устгах</button></td>' +
           '</tr>';
       }).join('') +
       '</tbody></table></div>';
   } catch (e) {
-    panel.innerHTML = '<div class="empty-state" style="padding:20px"><i class="ti ti-alert-circle"></i><div>' + esc(String(e.message || 'Алдаа')) + '</div></div>';
+    panel.innerHTML = '<div class="empty-state" style="padding:20px"><i class="ti ti-alert-circle"></i><div>' + esc(String(e.message || 'Ачаалж чадсангүй')) + '</div></div>';
   }
 }
-async function deleteHabeaResult(id) {
+async function deleteHabeaResult(id, email, ts) {
   if (!confirm('Энэ шалгалтын бичлэгийг устгахдаа итгэлтэй байна уу?')) return;
   try {
-    /* REST-ээр — өөр төслийн SDK-аас бүрэн салсан */
-    var du = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-      '/databases/(default)/documents/habea_exam_results/' + encodeURIComponent(id) + '?key=' + MODEX_KEY;
-    var dr = await fetch(du, { method: 'DELETE' });
-    if (!dr.ok) throw new Error('HTTP ' + dr.status);
+    /* Сервер устгана (админ эрх серверт шалгагдана): R2 _all + ажилтны файл + гарын үсэг */
+    if (!fauth || !fauth.currentUser) throw new Error('Нэвтрээгүй');
+    var t = await fauth.currentUser.getIdToken();
+    var dr = await fetch('/api/exam-save/', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', idToken: t, id: id || '', email: email || '', ts: num(ts) }) });
+    var dj = await dr.json().catch(function () { return {}; });
+    if (!dr.ok || !dj.ok) throw new Error((dj && dj.error) || ('HTTP ' + dr.status));
     _habCache = null;                      /* кэшийг хүчингүй болгоно */
+    try { modExamCacheClear(); } catch (e) {}
+    try { pulseBump('exam'); } catch (e) {}
     toast('Устгагдлаа ✓', 'success');
     loadHabeaResultsPanel();
-    /* ⚠ R2 толийг ШУУД шинэчилнэ — өмнө дараагийн өдрийн cron хүртэл устгасан
-       дүн ажилтны «Миний гүйцэтгэл», KPI дээр хэвээр харагддаг байв (2026-09-03). */
-    try {
-      if (fauth && fauth.currentUser) {
-        fauth.currentUser.getIdToken().then(function (t) {
-          return fetch('/api/exam-sync', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken: t, all: true }) });
-        }).then(function () { try { modExamCacheClear(); } catch (e) {} try { pulseBump('exam'); } catch (e) {} })
-          .catch(function () {});
-      }
-    } catch (e) {}
-  } catch (e) { toast('Алдаа гарлаа', 'err'); }
+  } catch (e) { toast('Устгаж чадсангүй: ' + String(e.message || e).slice(0, 80), 'err'); }
 }
 
 /* ============ Бүлэг (гадны) сургалт нэмэх — Excel/CSV-ээр хамрагдалт ============ */
