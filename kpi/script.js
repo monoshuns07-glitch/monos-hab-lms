@@ -18285,24 +18285,47 @@ var WK_LOC_DEF = [
     subs: ['Шинэ үйлдвэр', 'Хуучин үйлдвэр', 'БиБ'] },
   { id: 'xxu', name: 'Хуурай хүнсний үйлдвэр', short: 'ХХҮ',
     subs: ['Үрэл цех', 'Цай цех'] },
-  { id: 'agu', name: 'Агуулах', short: '', subs: [] },
+  { id: 'agu', name: 'Агуулах', short: '',
+    subs: ['Баруун агуулах', 'Зүүн агуулах'] },
   { id: 'ofs', name: 'Оффис', short: '', subs: ['2-р давхар', '3-р давхар'] },
   { id: 'gad', name: 'Гадна талбай', short: '', subs: [] },
   { id: 'tex', name: 'Техникийн өрөө', short: '', subs: [] }
 ];
+/* ⚠ 2026-09-09: Агуулахыг «Баруун / Зүүн» гэж хоёр хуваалаа. Байршлын мод нь
+   R2-д хадгалагддаг тул ЗӨВХӨН WK_LOC_DEF-ийг зассан ч амьд сайт дээр гарахгүй —
+   хадгалсан хуулбар дээр НЭГ УДАА нөхөж тавина. Админ хожим дэд хэсгийг устгавал
+   wkLocSave нь migv тэмдгийг бичих тул нөхөлт дахин сэргэхгүй. */
+var WK_LOC_MIG = 1;
+function wkLocMigrate(groups, migv) {
+  if ((Number(migv) || 0) >= WK_LOC_MIG) return groups;
+  (groups || []).forEach(function (g) {
+    if (g && g.id === 'agu' && !(g.subs || []).length) {
+      g.subs = ['Баруун агуулах', 'Зүүн агуулах'];
+    }
+  });
+  return groups;
+}
 async function wkLocLoad(force) {
   if (WK_LOC_OK && !force) return WK_LOC;
+  var mig = 0;
   try {
     var j = await riskR2GetJson(WK_LOC_FILE);
     WK_LOC = (j && Array.isArray(j.groups)) ? j.groups : null;
+    mig = (j && j.migv) || 0;
   } catch (e) { WK_LOC = null; }
-  if (!WK_LOC || !WK_LOC.length) WK_LOC = JSON.parse(JSON.stringify(WK_LOC_DEF));
+  if (!WK_LOC || !WK_LOC.length) {
+    WK_LOC = JSON.parse(JSON.stringify(WK_LOC_DEF));
+    mig = WK_LOC_MIG;                 /* анхны утга аль хэдийн шинэ бүтэцтэй */
+  }
+  wkLocMigrate(WK_LOC, mig);
   WK_LOC_OK = true;
   return WK_LOC;
 }
 async function wkLocSave(groups) {
   WK_LOC = groups; WK_LOC_OK = true;
-  return await riskR2PutJson(WK_LOC_FILE, { updatedAt: new Date().toISOString(), groups: groups });
+  return await riskR2PutJson(WK_LOC_FILE, {
+    updatedAt: new Date().toISOString(), migv: WK_LOC_MIG, groups: groups
+  });
 }
 function wkLocGroups() { return WK_LOC || WK_LOC_DEF; }
 function wkLocGroup(id) {
