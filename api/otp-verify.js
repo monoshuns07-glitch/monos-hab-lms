@@ -89,6 +89,35 @@ module.exports = async function handler(req, res) {
   const code = String(body.code || '').replace(/\D/g, '');
 
   if (!id) return res.status(400).json({ ok: false, verdict: 'no-id', error: 'Кодын дугаар алга' });
+
+  /* ══ ТӨЛӨВ АСУУХ (action:'status') ══════════════════════════════════════
+     Яагаад энд байна вэ: шалгалтын хуудас «и-мэйл дэх товч ӨӨР төхөөрөмж
+     дээр дарагдсан уу» гэдгийг мэдэхийн тулд кодын баримтыг ХӨТЧӨӨС ШУУД
+     уншдаг байв — тэр нь цуглуулгыг нийтэд нээлттэй байлгахыг шаарддаг
+     байсан (олдвор №1). Одоо зөвхөн сервер уншина.
+     ⚠ Тусдаа файл БИШ: Vercel-ийн үнэгүй багц 12 функц л зөвшөөрдөг тул
+     нэг сэдвийн үйлдлүүдийг нэг цэгт нэгтгэв (2026-09-09-ний унасан deploy).
+     ⚠ hash, и-мэйл, оролдлогын тоог ОГТ буцаахгүй. `code` нь ЗӨВХӨН
+     баталгаажсаны дараа буцна — тэр үед код ашиглагдсан, дахин хэрэглэгдэхгүй. */
+  if (String(body.action || '') === 'status') {
+    const st = await OTPSTORE.otpGet(id);
+    if (st.error) {
+      /* ГЭМТЭЛ — хөтөч зүгээр дахин асууна, шалгалт зогсохгүй */
+      return res.status(502).json({ ok: false, error: String(st.error).slice(0, 120) });
+    }
+    if (!st.found) return res.status(200).json({ ok: true, found: false });
+    const sd = st.data || {};
+    const sVerified = sd.verified === true;
+    return res.status(200).json({
+      ok: true, found: true,
+      used: sd.used === true,
+      verified: sVerified,
+      expired: !!(sd.expiresAt && new Date(sd.expiresAt).getTime() < Date.now()),
+      verifiedAt: String(sd.verifiedAt || ''),
+      verifiedServer: sd.verifiedServer === true,
+      code: sVerified ? String(sd.code || '') : ''
+    });
+  }
   if (!/^\d{4,8}$/.test(code)) {
     return res.status(200).json({ ok: false, verdict: 'format', error: 'Код буруу форматтай байна' });
   }

@@ -1449,8 +1449,8 @@ function otpStartPoll(){
        яг тэр нээлттэй байдал нь гарын үсэг хуурамчаар үйлдэх нүх байсан.
        Одоо зөвхөн сервер уншина. */
     try{
-      fetch("/api/otp-status/",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({id:OTP_ID})})
+      fetch("/api/otp-verify/",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({action:"status",id:OTP_ID})})
         .then(function(r){ return r.ok?r.json():null; })
         .then(function(d){
           if(!d||!d.ok||!d.found||d.verified!==true) return;
