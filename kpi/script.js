@@ -1849,6 +1849,59 @@ function riskCanAdd() {
 
 function riskR2Url(key) { return TASK_R2 + '/' + key; }
 
+/* ══════════════════════════════════════════════════════════════════════
+   R2-ЫН ӨГӨГДЛИЙГ ГАРЫН ҮСЭГТЭЙ УНШИХ           (2026-09-09, олдвор №2)
+   ----------------------------------------------------------------------
+   ⚠ ЮУ БАЙСАН БЭ: R2-ийн бүх файл интернэтээс НЭВТРЭЛТГҮЙ уншигддаг
+   байсан — 262 ажилтны бүртгэл, шалгалтын дүн, аудитын гинж, ажлын
+   захиалга бүгд. CORS энд хамгаалж ЧАДАХГҮЙ: тэр нь зөвхөн хөтчийн
+   доторх JavaScript-д үйлчилдэг, энгийн curl-д огт саад болохгүй.
+
+   Worker-т гарын үсэгтэй татах чадвар АЛЬ ХЭДИЙН бичигдсэн байсан
+   (`dl|<түлхүүр>|<хугацаа>` HMAC), сервер талд `/api/file-token`
+   `kind:'dl'` нь түүнийг олгодог — зөвхөн хоёрыг нь ХОЛБОООГҮЙ байв.
+   Энд холбож байна.
+
+   ⚠ Хамгаалалт АСААГҮЙ (Cloudflare дээр `SIGNED_GET_PREFIXES` хоосон)
+   үед Worker `t`/`e`-г үл тоомсорлоно — өнөөдөр ЮУ Ч ӨӨРЧЛӨГДӨХГҮЙ.
+   ⚠ Нэвтрээгүй үед гарын үсэг авах боломжгүй — тэр үед хуучин шигээ
+   гарын үсэггүй уншина (хамгаалалт асаагүй байхад ажиллана).
+   ══════════════════════════════════════════════════════════════════════ */
+var _dlTok = {};                       /* түлхүүр → { t, e } */
+var DL_SIGN_TTL = 5.5 * 60 * 60 * 1000; /* серверийн 6 цагаас бага зайтай */
+
+/* Хэрэгтэй түлхүүрүүдэд татах гарын үсэг авна (багцаар, кэштэй) */
+async function r2DlSign(keys) {
+  var need = [], i;
+  for (i = 0; i < keys.length; i++) {
+    var c = _dlTok[keys[i]];
+    if (!c || Number(c.e) - Date.now() < 5 * 60000) need.push(keys[i]);
+  }
+  if (!need.length) return true;
+  try {
+    var u = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+    if (!u) return false;                      /* нэвтрээгүй — гарын үсэггүй уншина */
+    var tk = await u.getIdToken();
+    var r = await fetch('/api/file-token/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: tk, kind: 'dl', keys: need.slice(0, 60) })
+    });
+    if (!r.ok) return false;
+    var j = await r.json();
+    if (!j || !j.ok || !j.tokens) return false;
+    Object.keys(j.tokens).forEach(function (k) { _dlTok[k] = { t: j.tokens[k], e: j.exp }; });
+    return true;
+  } catch (e) { return false; }
+}
+
+/* Уншихад бэлэн хаяг: кэш таслагч `cb` (⚠ `t` БИШ — тэр нь гарын үсэг) */
+function r2DlUrl(key) {
+  var c = _dlTok[key];
+  var q = '?cb=' + Date.now();
+  if (c && c.t && c.e) q += '&t=' + encodeURIComponent(c.t) + '&e=' + encodeURIComponent(c.e);
+  return riskR2Url(key) + q;
+}
+
 /* R2-оос JSON уншина (эрх шаардахгүй — CORS нь зөвхөн манай домэйнд нээлттэй) */
 /* Зөвхөн УНШИХ лавлах файлууд — эдгээрийг хэн ч «уншаад нэгтгээд бичдэггүй»
    тул богино хугацаанд кэшлэхэд аюулгүй. Хүсэлт/мэдэгдэл/гарын үсэг/индекс
@@ -1874,10 +1927,13 @@ async function riskR2GetJson(key, opts) {
        байсан тул нэг файл таслагдахад бүхэл хуудас «ачаалж чадсангүй»
        гэж зогсдог байв. Одоо 3 хүртэл оролдоно (700мс, 1500мс хүлээлт).
        404 → null, бусад 4xx → шууд алдаа — өмнөх шигээ. */
+    /* ⚠ 2026-09-09 (олдвор №2): татах гарын үсэг авна. Аваагүй ч
+       (нэвтрээгүй, сервер завгүй) уншилт зогсохгүй — гарын үсэггүй явна. */
+    try { await r2DlSign([k]); } catch (e) {}
     var waits = [700, 1500], last = null;
     for (var a = 0; a <= waits.length; a++) {
       try {
-        var r = await fetch(riskR2Url(k) + '?t=' + Date.now(), { cache: 'no-store' });
+        var r = await fetch(r2DlUrl(k), { cache: 'no-store' });
         if (r.ok) return await r.json();
         if (r.status === 404) return null;
         last = new Error('R2 ' + r.status);
@@ -4470,7 +4526,8 @@ async function pulseCheck(force) {
   if (document.hidden && !force) return;
   var j = null;
   try {
-    var r = await fetch(riskR2Url(PULSE_FILE) + '?t=' + Date.now(), { cache: 'no-store' });
+    try { await r2DlSign([PULSE_FILE]); } catch (e) {}
+    var r = await fetch(r2DlUrl(PULSE_FILE), { cache: 'no-store' });
     if (!r.ok) return;
     j = await r.json();
   } catch (e) { return; }
@@ -10828,7 +10885,8 @@ async function ackExportJobFiles(job) {
     var okZ = await new Promise(function (r) { riskLoadZip(r); });
     if (!okX || !okZ) { toast('Excel/ZIP үүсгэгч ачаалагдсангүй', 'error'); return; }
     var tplKey = 'risks/templates/' + riskSlug(job) + '.xlsx';
-    var resp = await fetch(TASK_R2 + '/' + tplKey + '?t=' + Date.now(), { cache: 'no-store' });
+    try { await r2DlSign([tplKey]); } catch (e) {}
+    var resp = await fetch(r2DlUrl(tplKey), { cache: 'no-store' });
     if (!resp.ok) { toast('Энэ ажлын эх загвар (Excel) R2-д байхгүй байна — ХАБЭА-н админ байршуулна уу', 'error'); return; }
     var tpl = await resp.arrayBuffer();
 
@@ -34344,7 +34402,8 @@ function establishSession() {
     async function sessionFromR2(uid, email) {
       var out = { dept: '', pos: '' };
       try {
-        var r = await fetch(riskR2Url('employees/all.json') + '?t=' + Date.now(), { cache: 'no-store' });
+        try { await r2DlSign(['employees/all.json']); } catch (e) {}
+        var r = await fetch(r2DlUrl('employees/all.json'), { cache: 'no-store' });
         if (r.ok) {
           var j = await r.json(); var rows = (j && j.rows) || [];
           var em = String(email || '').toLowerCase();
