@@ -3213,10 +3213,31 @@ function taskCacheLoad() {
    Одоо: админ жагсаалтыг R2-т нийтэлнэ, бусад нь тэндээс уншина.
    Firestore уншилт ТЭГ. Эх сурвалж нь users хэвээр (админ шинэчилнэ). */
 var EMP_R2_FILE = 'employees/all.json';
+
+/* ⚠ 2026-09-09 (аюулгүй байдлын дүгнэлт, олдвор №2): энэ файл нь R2-д
+   НИЙТЭД УНШИГДАХААР байрлана. Аюулгүй байдлын дүгнэлтэд «эрүүл мэнд,
+   сахилгын эмзэг мэдээлэл ил байна» гэж бичигдсэн. Бодит утгыг шалгахад
+   БҮХ 262 мөрөнд ижил ТОГТМОЛ тоо (health=75, discipline=100,
+   leadership=60) байсан — прототипээс үлдсэн хоосон багана, аппад хаана ч
+   уншигддаггүй. Мэдээлэл агуулаагүй мөртлөө НЭРЭЭРЭЭ хууль зүйн хуурамч
+   сэрэмжлүүлэг үүсгэдэг тул нийтлэхээ болив.
+   ⚠ Энэ нь №2-ын ЖИНХЭНЭ засвар БИШ — нэр, ажлын и-мэйл, алба, албан
+   тушаал, шалгалтын дүн хэвээр ил. Жинхэнэ засвар нь уншилтын гарын үсэг
+   (Worker-ийн REQUIRE_SIGNED_GET). */
+var EMP_PUBLIC_DROP = ['health', 'discipline', 'leadership'];
+function empStripPublic(rows) {
+  return (rows || []).map(function (r) {
+    if (!r || typeof r !== 'object') return r;
+    var o = {}, k;
+    for (k in r) { if (EMP_PUBLIC_DROP.indexOf(k) < 0) o[k] = r[k]; }
+    return o;
+  });
+}
+
 async function empR2Publish(rows) {
   if (!rows || !rows.length) return null;
   var p = { version: Date.now(), updatedAt: new Date().toISOString(),
-    total: rows.length, rows: rows };
+    total: rows.length, rows: empStripPublic(rows) };
   await riskR2PutJson(EMP_R2_FILE, p);
   return p;
 }
@@ -8139,15 +8160,13 @@ function r2AuthHeaders(grant, extra) {
    ЭХЛЭЭД гарын үсэгтэй шинэ аргаар, бүтэхгүй бол ХУУЧИН түлхүүрээр дахин оролдоно.
    Ингэснээр Cloudflare Worker шинэчлэгдсэн ч, шинэчлэгдээгүй ч байршуулалт тасрахгүй. */
 async function r2Put(file, key, onProgress) {
+  /* ⚠ 2026-09-09 (олдвор №16): өмнө нь гарын үсэгтэй бичилт унавал ГАРЫН
+     ҮСЭГГҮЙ дахин оролддог байв. Worker-ийг бодитоор шалгахад гарын
+     үсэггүй PUT ба хуучин `X-Key` хоёулаа 401 буцааж байна — тэр нөөц зам
+     ХЭЗЭЭ Ч амжилттай болохгүй. Зөвхөн жинхэнэ алдааг далдалж, хугацааг
+     хоёр дахин сунгаж байсан тул устгав. */
   var grant = await r2Grant(key);
-  if (!grant) return await r2PutWith(file, key, onProgress, null);
-  try {
-    return await r2PutWith(file, key, onProgress, grant);
-  } catch (e) {
-    /* Worker хуучин хэвээр (гарын үсгийг танихгүй / CORS хаасан) — хуучин аргаар нөхнө */
-    console.warn('[r2] signed upload failed, falling back to legacy key:', e && e.message);
-    return await r2PutWith(file, key, onProgress, null);
-  }
+  return await r2PutWith(file, key, onProgress, grant);
 }
 
 /* Нэг тодорхой эрхээр байршуулна (grant=null бол хуучин түлхүүр) */
