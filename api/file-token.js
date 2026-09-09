@@ -152,6 +152,22 @@ async function roleIsAdmin(idToken, uid) {
 }
 const DL_TTL = 6 * 60 * 60 * 1000;    // татах холбоос — 6 цаг
 
+/* ⚠ 2026-09-09 (олдвор №2): УГТВАРЫН татах гарын үсэг (`dlp`) — ЗӨВХӨН МЕДИА.
+   Зураг, видео, хавсралтын хаяг өгөгдөл дотор бүтэн URL болж хадгалагдсан
+   тул түлхүүр тус бүрд гарын үсэг авах боломжгүй. Нэг угтварт нэг гарын
+   үсэг олгоно.
+   ⚠ ЭНЭ ЖАГСААЛТАД ӨГӨГДЛИЙН УГТВАР БҮҮ НЭМ (employees/, exams/, audit/ …) —
+   эс бөгөөс нэг гарын үсгээр тэр угтварын БҮХ файл татагдана. Өгөгдлийн
+   файлууд түлхүүр тус бүрийн `dl` гарын үсэг хэвээр байх ёстой. */
+const DLP_PREFIXES = [
+  'evidence/',          // аюул, тайлангийн гэрэл зураг
+  'modules/',           // сургалтын модулийн файл
+  'training/program/',  // сургалтын хөтөлбөрийн баримт
+  'risks/dash/',        // эрсдэлийн самбарын HTML
+  'vid_task_',          // даалгаврын видео (сангийн үндэст)
+  'att_task_'           // даалгаврын хавсралт (сангийн үндэст)
+];
+
 function hmacHex(secret, msg) {
   return crypto.createHmac('sha256', secret).update(msg, 'utf8').digest('hex');
 }
@@ -208,9 +224,27 @@ module.exports = async function handler(req, res) {
      шалгалт шинэ табд нээгдэхэд аппын таб ард үлдэж, санах ой багатай
      утсанд УСТДАГ тул хариу өгөх код байхгүй болж, и-мэйл рүү шилждэг
      байв (2026-08-28). Одоо энэ богино эрхийг URL-аар дамжуулна. */
-  const kind = body.kind === 'dl' ? 'dl' : (body.kind === 'otp' ? 'otp' : 'up');
+  const kind = body.kind === 'dl' ? 'dl'
+             : (body.kind === 'dlp' ? 'dlp'
+             : (body.kind === 'otp' ? 'otp' : 'up'));
   const keys = Array.isArray(body.keys) ? body.keys
              : (body.key ? [body.key] : []);
+
+  /* ⚠ 'dlp' нь түлхүүр биш УГТВАР авна */
+  if (kind === 'dlp') {
+    const want = Array.isArray(body.prefixes) ? body.prefixes : [];
+    const okPfx = want.filter(function (p) { return DLP_PREFIXES.indexOf(String(p)) >= 0; });
+    if (!okPfx.length) {
+      return res.status(400).json({ ok: false, error: 'зөвшөөрөгдсөн угтвар алга',
+        allowed: DLP_PREFIXES });
+    }
+    const user2 = await verifyIdToken(body.idToken);
+    if (!user2) return res.status(401).json({ ok: false, error: 'Нэвтрээгүй байна' });
+    const exp2 = String(Date.now() + DL_TTL);
+    const out = {};
+    okPfx.forEach(function (p) { out[p] = hmacHex(secret, 'dlp|' + p + '|' + exp2); });
+    return res.status(200).json({ ok: true, kind: 'dlp', exp: exp2, prefixes: out });
+  }
 
   if (kind !== 'otp' && !keys.length) return res.status(400).json({ ok: false, error: 'key дутуу' });
   if (keys.length > 60) return res.status(400).json({ ok: false, error: 'нэг удаад 60 хүртэл' });

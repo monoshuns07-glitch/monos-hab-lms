@@ -1917,6 +1917,102 @@ function r2DlSign(keys) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   МЕДИАГИЙН УГТВАРЫН ГАРЫН ҮСЭГ                (2026-09-09, олдвор №2)
+   ----------------------------------------------------------------------
+   ⚠ Зураг, видео, хавсралтын хаяг нь ӨГӨГДӨЛ ДОТОР бүтэн URL болж
+   хадгалагдсан бөгөөд `<img src>`-ээр олон газар шууд ашиглагддаг тул
+   түлхүүр тус бүрд гарын үсэг авах боломжгүй (render нь синхрон).
+   Тиймээс НЭГ УГТВАРТ НЭГ гарын үсэг авч (6 цаг), тэр угтвар доорх бүх
+   файлд хэрэглэнэ. Worker нь түлхүүр угтвараар эхэлж байгааг шалгана.
+   ⚠ Зөвхөн МЕДИА-гийн угтвар — өгөгдлийн файлууд түлхүүр тус бүрийн
+   гарын үсэгтэй хэвээр (api/file-token.js → DLP_PREFIXES).
+   ══════════════════════════════════════════════════════════════════════ */
+var R2_MEDIA_PFX = ['evidence/', 'modules/', 'training/program/',
+                    'risks/dash/', 'vid_task_', 'att_task_'];
+var _pfxTok = {}, _pfxAt = 0, _pfxBusy = null;
+
+/* Угтварын гарын үсгүүдийг нэг удаа авч кэшлэнэ (6 цагийн эрх, 5.5 цаг барина) */
+function r2PfxSign() {
+  if (_pfxAt && Date.now() - _pfxAt < 5.5 * 60 * 60 * 1000) return Promise.resolve(true);
+  if (_pfxBusy) return _pfxBusy;
+  _pfxBusy = (async function () {
+    try {
+      var u = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+      if (!u) return false;
+      var tk = await u.getIdToken();
+      var r = await fetch('/api/file-token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: tk, kind: 'dlp', prefixes: R2_MEDIA_PFX })
+      });
+      if (!r.ok) return false;
+      var j = await r.json();
+      if (!j || !j.ok || !j.prefixes) return false;
+      _pfxTok = {};
+      Object.keys(j.prefixes).forEach(function (p) { _pfxTok[p] = { t: j.prefixes[p], e: j.exp }; });
+      _pfxAt = Date.now();
+      return true;
+    } catch (e) { return false; }
+    finally { _pfxBusy = null; }
+  })();
+  return _pfxBusy;
+}
+
+/* Хаягийг гарын үсэгтэй болгоно. R2-ийнх БИШ бол хэвээр буцаана. */
+function r2Media(u) {
+  try {
+    if (!u || typeof u !== 'string') return u;
+    if (u.indexOf(TASK_R2 + '/') !== 0) return u;          /* бидний биш — хөндөхгүй */
+    if (/[?&]t=[0-9a-f]{40,}/.test(u)) return u;           /* аль хэдийн гарын үсэгтэй */
+    var key = u.slice(TASK_R2.length + 1);
+    var qi = key.indexOf('?'); if (qi >= 0) key = key.slice(0, qi);
+    try { key = decodeURIComponent(key); } catch (e) {}
+    for (var i = 0; i < R2_MEDIA_PFX.length; i++) {
+      var p = R2_MEDIA_PFX[i];
+      if (key.indexOf(p) !== 0) continue;
+      var c = _pfxTok[p];
+      if (!c || !c.t) return u;                            /* токен алга — хэвээр */
+      return u + (u.indexOf('?') >= 0 ? '&' : '?') +
+        't=' + encodeURIComponent(c.t) + '&e=' + encodeURIComponent(c.e) +
+        '&p=' + encodeURIComponent(p);
+    }
+    return u;
+  } catch (e) { return u; }
+}
+
+/* ⚠ АЮУЛГҮЙН ТОР: render цэгт мартагдсан хаягийг DOM-д орсны дараа нөхнө.
+   Гарын үсэг залгасны дараа хөтөч дахин татна — нэг нэмэлт хүсэлт гарах ч
+   зураг эвдэрсэн хэвээр үлдэхгүй. */
+function r2MediaFix(root) {
+  try {
+    if (!root || !root.querySelectorAll) return;
+    var sel = 'img[src^="' + TASK_R2 + '"],video[src^="' + TASK_R2 + '"],' +
+              'source[src^="' + TASK_R2 + '"],a[href^="' + TASK_R2 + '"]';
+    var els = root.querySelectorAll(sel);
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i], at = el.tagName === 'A' ? 'href' : 'src';
+      var cur = el.getAttribute(at) || '', nu = r2Media(cur);
+      if (nu !== cur) el.setAttribute(at, nu);
+    }
+  } catch (e) {}
+}
+function r2MediaWatch() {
+  try {
+    if (window.__r2mo || typeof MutationObserver === 'undefined') return;
+    r2MediaFix(document);
+    window.__r2mo = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var ns = muts[i].addedNodes;
+        for (var j = 0; j < ns.length; j++) {
+          var n = ns[j];
+          if (n && n.nodeType === 1) r2MediaFix(n.parentNode || n);
+        }
+      }
+    });
+    window.__r2mo.observe(document.body, { childList: true, subtree: true });
+  } catch (e) {}
+}
+
 /* Уншихад бэлэн хаяг: кэш таслагч `cb` (⚠ `t` БИШ — тэр нь гарын үсэг) */
 function r2DlUrl(key) {
   var c = _dlTok[key];
@@ -5547,7 +5643,7 @@ function renderMyExams() {
       (me && me.dept ? '&dept=' + encodeURIComponent(me.dept) : '') +
       (me && (me.pos || me.role) ? '&pos=' + encodeURIComponent(me.pos || me.role) : '');
     url = examBust(url);
-    return '<a href="' + url + '" target="_blank" rel="noopener" style="text-decoration:none">' +
+    return '<a href="' + r2Media(url) + '" target="_blank" rel="noopener" style="text-decoration:none">' +
       '<div class="card" style="padding:24px;cursor:pointer;transition:box-shadow .15s;border:1.5px solid #E2E8F0" onmouseover="this.style.boxShadow=\'0 4px 20px rgba(0,0,0,.10)\'" onmouseout="this.style.boxShadow=\'\'">' +
       cardInner +
       '</div></a>';
@@ -12928,7 +13024,7 @@ function riskMeasureLogHTML(r, me, store) {
           ? '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:8px">' +
             x.files.map(function (f) {
               var isImg = /\.(png|jpe?g|gif|webp|heic)$/i.test(f.name || '');
-              return '<a href="' + esc(f.url) + '" target="_blank" rel="noopener" ' +
+              return '<a href="' + esc(r2Media(f.url)) + '" target="_blank" rel="noopener" ' +
                 'style="display:inline-flex;align-items:center;gap:6px;background:#F8FAFC;border:1px solid #E2E8F0;' +
                 'border-radius:9px;padding:5px 9px;font-size:11.5px;color:#475569;text-decoration:none">' +
                 (isImg ? '🖼' : '📄') + ' ' + esc(String(f.name || 'баримт').slice(0, 28)) + '</a>';
@@ -16320,7 +16416,7 @@ function statCard(label, val, icon, color) {
 function emptyBox(msg) { return '<div class="empty-state" style="padding:24px"><i class="ti ti-inbox"></i><div>' + esc(msg) + '</div></div>'; }
 
 function reportCard(r, withActions) {
-  var photo = r.photo ? '<img src="' + r.photo + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
+  var photo = r.photo ? '<img src="' + r2Media(r.photo) + '" style="width:54px;height:54px;border-radius:8px;object-fit:cover;flex-shrink:0">' :
     '<div style="width:54px;height:54px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#94A3B8;flex-shrink:0"><i class="ti ti-photo"></i></div>';
   var pts = reportPoints(r), actions = '';
   var urgentTag = r.urgent
@@ -17480,7 +17576,7 @@ function rfSaveModal(url, name, size) {
     '<div style="font-size:15px;font-weight:800;color:#1E293B">Файл бэлэн боллоо</div>' +
     '<div style="font-size:12.5px;color:#64748B;margin-top:3px;word-break:break-all">' +
     esc(name) + (kb ? ' · ' + kb : '') + '</div></div>' +
-    '<a id="rfSaveGo" href="' + url + '" download="' + esc(name) + '" ' +
+    '<a id="rfSaveGo" href="' + r2Media(url) + '" download="' + esc(name) + '" ' +
     'class="btn btn-primary btn-block" style="margin-top:14px;text-decoration:none;' +
     'display:flex;align-items:center;justify-content:center;gap:8px">' +
     '<i class="ti ti-download"></i> Хадгалах</a>' +
@@ -18830,7 +18926,7 @@ function wkNewModal() {
         '</div>' +
         (sel.photo
           ? '<div style="margin-top:9px;position:relative">' +
-            '<img src="' + sel.photo + '" style="max-width:100%;border-radius:11px;display:block">' +
+            '<img src="' + r2Media(sel.photo) + '" style="max-width:100%;border-radius:11px;display:block">' +
             '<button type="button" id="wkPhotoDel" style="position:absolute;top:8px;right:8px;' +
             'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
             'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
@@ -19608,7 +19704,7 @@ function wkExecModal(id) {
       wkPickerHTML('wkExCam', 'Камераар', 'ti-camera', true) + '</div>' +
       (photo
         ? '<div style="margin-top:9px;position:relative">' +
-          '<img src="' + photo + '" style="max-width:100%;border-radius:11px;display:block">' +
+          '<img src="' + r2Media(photo) + '" style="max-width:100%;border-radius:11px;display:block">' +
           '<button type="button" id="wkExDel" style="position:absolute;top:8px;right:8px;' +
           'background:rgba(15,23,42,.72);color:#fff;border:0;border-radius:8px;padding:5px 10px;' +
           'cursor:pointer;font-family:inherit;font-size:12px;font-weight:700">✕ Устгах</button></div>'
@@ -19692,7 +19788,7 @@ function wkAcceptModal(id) {
     '<b>' + esc((r.wkExecBy && r.wkExecBy.name) || '') + '</b>' +
     ((r.wkExecBy && r.wkExecBy.pos) ? ' · ' + esc(r.wkExecBy.pos) : '') + '<br>' +
     esc(r.wkExecNote || '') + '</div>' +
-    (r.wkExecPhoto ? '<img src="' + r.wkExecPhoto + '" style="max-width:100%;border-radius:11px;margin-bottom:12px">' : '') +
+    (r.wkExecPhoto ? '<img src="' + r2Media(r.wkExecPhoto) + '" style="max-width:100%;border-radius:11px;margin-bottom:12px">' : '') +
     '<div style="font-size:12.5px;color:#334155;font-weight:700;margin-bottom:9px">' +
     'Ажил бүрэн хийгдсэн үү?</div>' +
     '<div style="display:flex;gap:9px;flex-wrap:wrap">' +
@@ -20198,7 +20294,7 @@ function wkProofHTML(r) {
     ' — ажлыг хийж дуусгасны дараа авсан</div>' +
     (note ? '<div style="font-size:13px;color:#1E293B;line-height:1.6;margin-top:6px;' +
       'white-space:pre-wrap">' + esc(note) + '</div>' : '') +
-    (img ? '<img src="' + img + '" alt="Гүйцэтгэлийн зураг" ' +
+    (img ? '<img src="' + r2Media(img) + '" alt="Гүйцэтгэлийн зураг" ' +
       'style="max-width:100%;border-radius:11px;margin-top:9px;display:block">'
         : '<div style="font-size:11.5px;color:#94A3B8;margin-top:6px">Зураг хавсаргаагүй</div>') +
     '</div>' + wkExecLogHTML(r);
@@ -20220,7 +20316,7 @@ function wkExecLogHTML(r) {
       esc(x.by || '—') + (d ? ' · ' + esc(d) : '') + '</div>' +
       (x.note ? '<div style="font-size:12.5px;color:#1E293B;margin-top:4px;white-space:pre-wrap">' +
         esc(x.note) + '</div>' : '') +
-      (img ? '<img src="' + img + '" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">' : '') +
+      (img ? '<img src="' + r2Media(img) + '" style="max-width:100%;border-radius:10px;margin-top:8px;display:block">' : '') +
       (x.rejectWhy ? '<div style="font-size:12px;color:#92400E;margin-top:7px">' +
         '<b>Буцаасан шалтгаан:</b> ' + esc(x.rejectWhy) + '</div>' : '') +
       '</div>';
@@ -21711,7 +21807,7 @@ function openReportDetail(id) {
       '<div style="font-size:12px;color:#64748B;margin-bottom:8px">' +
       esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || '—') +
       ' · ' + esc(String(r.createdAt || '').slice(0, 10)) + ' — асуудлыг мэдээлэх үед авсан</div>' +
-      '<img src="' + r.photo + '" alt="Мэдээлсэн зураг" ' +
+      '<img src="' + r2Media(r.photo) + '" alt="Мэдээлсэн зураг" ' +
       'style="width:100%;border-radius:11px;display:block"></div>'
     : '';
   var sig = r.signature ? '<div style="margin:0 0 12px"><div style="font-size:11px;color:#94A3B8;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px"><i class="ti ti-writing-sign"></i> Гарын үсэг (баталгааны)</div><img src="' + r.signature + '" style="max-width:240px;border:1.5px solid #E2E8F0;border-radius:10px;background:#fff;padding:6px;display:block"></div>' : '';
@@ -34520,6 +34616,11 @@ function establishSession() {
 }
 
 function applyRole() {
+  /* ⚠ 2026-09-09 (олдвор №2): нэвтэрсний дараа медиагийн угтварын гарын
+     үсгүүдийг УРЬДЧИЛАН авна (6 цаг хүчинтэй) — эс бөгөөс эхний зураг
+     гарын үсэггүй татагдана. Мөн аюулгүйн торыг асаана. */
+  try { r2PfxSign().then(function () { try { r2MediaFix(document); } catch (e) {} }); } catch (e) {}
+  try { r2MediaWatch(); } catch (e) {}
   try {
     if (SESSION) {
       USER.name = (SESSION.email || '').split('@')[0] || USER.name;
