@@ -9784,52 +9784,11 @@ async function ackVerifyOtp(id, code, email) {
     console.warn('[ack] сервер хүрэхгүй, нөөц зам:', _rs.status);
   } catch (e9) { console.warn('[ack] сервер алдаа, нөөц зам:', (e9 && e9.message) || e9); }
 
-  /* ══ НӨӨЦ ЗАМ — түр зуурын, сервер тогтворжсоны дараа устгана ══ */
-  /* ⚠ OTP нь ШАЛГАЛТЫН төсөлд (habea-shalgalt) хадгалагддаг — KPI-ийн
-     Firestore биш. REST-ээр уншина, SDK-ээр БИШ: хоёрдогч SDK нь сүлжээ
-     бэлэн болоогүй үед «баримт олдсонгүй» гэж КЭШЭЭС хариу буцаадаг тул
-     хүчинтэй код «олдсонгүй» гэж бууж болзошгүй. Энэ код нь ГАРЫН ҮСГИЙН
-     үүрэг гүйцэтгэдэг учир алдаа гаргаж болохгүй. */
-  var docUrl = 'https://firestore.googleapis.com/v1/projects/' + MODEX_PROJ +
-    '/databases/(default)/documents/habea_otp/' + encodeURIComponent(id) + '?key=' + MODEX_KEY;
-  try {
-    var rr = null;
-    for (var a = 0; a < 3; a++) {
-      try {
-        rr = await fetch(docUrl, { cache: 'no-store' });
-        if (rr.status === 404) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
-        if (rr.ok) break;
-        throw new Error('HTTP ' + rr.status);
-      } catch (e1) {
-        if (a === 2) return { ok: false, error: 'Баталгаажуулах сервертэй холбогдож чадсангүй' };
-        await new Promise(function (res) { setTimeout(res, 900 * (a + 1)); });
-      }
-    }
-    var raw = await rr.json();
-    var ff = (raw && raw.fields) || null;
-    if (!ff) return { ok: false, error: 'Код олдсонгүй эсвэл хугацаа дууссан' };
-    var d = {};
-    Object.keys(ff).forEach(function (k) { d[k] = modExVal(ff[k]); });
-    if (d.used) return { ok: false, error: 'Энэ код аль хэдийн ашиглагдсан' };
-    if (d.expiresAt && new Date(d.expiresAt) < new Date()) return { ok: false, error: 'Кодын хугацаа дууссан' };
-    var stored = String(d.email || '').toLowerCase();
-    if (stored && em && stored !== em) return { ok: false, error: 'И-мэйл таарахгүй байна' };
-    var mine = await _sha256Hex(cd + '|' + id + '|' + (stored || em));
-    if (mine !== d.hash) return { ok: false, error: 'Код буруу байна' };
-    /* Ашигласан гэж тэмдэглэнэ (бүтэлгүйтвэл ч шалгалт нь аль хэдийн зөв) */
-    try {
-      await fetch(docUrl + '&updateMask.fieldPaths=used&updateMask.fieldPaths=verified' +
-        '&updateMask.fieldPaths=usedAt', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          used: { booleanValue: true }, verified: { booleanValue: true },
-          usedAt: { stringValue: new Date().toISOString() } } })
-      });
-    } catch (e) {}
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: 'Шалгаж чадсангүй: ' + ((e && e.message) || e) };
-  }
+  /* ══ НӨӨЦ ЗАМ УСТГАВ (2026-09-09, аюулгүй байдлын олдвор №1) ══
+     Кодын баримт одоо ХААЛТТАЙ төсөлд байгаа тул хөтөч түүнийг уншиж
+     чадахгүй — энэ зам «олдсонгүй» гэж л буцаана. Мөн энэ нь шалгалтыг
+     ХӨТӨЧ дээр хийдэг байсан аюулгүй байдлын нүх байв. */
+  return { ok: false, error: 'Баталгаажуулах үйлчилгээ түр хариу өгсөнгүй. Хэсэг хүлээгээд дахин оролдоно уу.' };
 }
 
 /* ── Гарын үсэг бичих ──

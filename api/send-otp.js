@@ -22,6 +22,10 @@ const FB_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
 const FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 const TTL_MIN = 10;
 
+/* ⚠ 2026-09-09 (олдвор №1 — ЭГЗЭГТЭЙ): кодын баримтыг ИЛ төсөлд бичдэг
+   байсныг ХААЛТТАЙ төсөл рүү зөөв. Дэлгэрэнгүйг api/_otpstore.js-ээс үз. */
+const OTPSTORE = require('./_otpstore.js');
+
 /* ⚠ 2026-09-09 (аюулгүй байдлын дүгнэлт, олдвор №5): өмнө нь Math.random()
    ашигладаг байв. Тэр нь криптографийн эх сурвалж БИШ — PRNG-ийн төлөвийг
    таамагласан халдагч дараагийн кодыг урьдчилан мэдэх боломжтой.
@@ -194,21 +198,23 @@ module.exports = async function handler(req, res) {
     const hash = await sha256Hex(code + '|' + id + '|' + email);
     const expires = new Date(Date.now() + TTL_MIN * 60000).toISOString();
 
-    // Firestore-д зөвхөн hash — кодыг өөрийг нь ХАДГАЛАХГҮЙ
-    const doc = {
-      fields: {
-        email: { stringValue: email },
-        hash: { stringValue: hash },
-        expiresAt: { stringValue: expires },
-        verified: { booleanValue: false },
-        used: { booleanValue: false },
-        createdAt: { stringValue: new Date().toISOString() }
-      }
-    };
-    const fr = await fetch(`${FS}/habea_otp?documentId=${id}&key=${FB_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc)
+    /* Санд зөвхөн HASH — кодыг өөрийг нь ХАДГАЛАХГҮЙ.
+       ⚠ Баримт нь ХААЛТТАЙ төсөлд (үйлчилгээний дансаар) үүснэ. Хөтөч
+       энэ санд огт хүрэхгүй — зөвхөн /api/* дамжина. */
+    const stored = await OTPSTORE.otpCreate(id, {
+      email: email, hash: hash, expiresAt: expires,
+      verified: false, used: false, tries: 0,
+      createdAt: new Date().toISOString()
     });
-    if (!fr.ok) throw new Error('Firestore: ' + fr.status + ' ' + (await fr.text()).slice(0, 200));
+    if (!stored.ok) {
+      throw new Error('Кодын санд бичиж чадсангүй: ' +
+        String(stored.error || '').slice(0, 120) + (stored.why ? ' (' + stored.why + ')' : ''));
+    }
+    /* ⚠ Хуучин (ил) байршилд буусан бол ажил зогсоогүй ч ЭНЭ НЬ АСУУДАЛ —
+       логоос хараарай. */
+    if (stored.where === 'old') {
+      console.warn('[otp] ⚠ хуучин ил санд бичив:', stored.why || '');
+    }
 
     const origin = String(body.origin || 'https://monos-hab.vercel.app').replace(/\/+$/, '');
     const link = `${origin}/otp.html?id=${encodeURIComponent(id)}&c=${encodeURIComponent(code)}`;

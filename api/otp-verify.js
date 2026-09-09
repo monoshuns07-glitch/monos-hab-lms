@@ -63,6 +63,10 @@ async function whoIs(idToken) {
    ⚠ FAIL-OPEN: тоолуурыг уншиж/бичиж чадаагүй бол өмнөх шигээ үргэлжилнэ. */
 const MAX_TRIES = 8;
 
+/* ⚠ 2026-09-09 (олдвор №1): кодыг ХААЛТТАЙ төслөөс уншина. Дэлгэрэнгүйг
+   api/_otpstore.js-ээс үз. */
+const OTPSTORE = require('./_otpstore.js');
+
 function val(f) {
   if (!f || typeof f !== 'object') return undefined;
   if ('stringValue' in f) return f.stringValue;
@@ -93,28 +97,20 @@ module.exports = async function handler(req, res) {
      таних баталгаа. Гэхдээ нэвтэрсэн бол хэн шалгуулсныг БҮРТГЭНЭ. */
   const me = await whoIs(body.idToken);
 
-  /* ── Кодыг ШАЛГАЛТЫН төслөөс уншина ── */
-  let d = null;
-  try {
-    const r = await fetch(EX_FS + '/habea_otp/' + encodeURIComponent(id) + '?key=' + EX_KEY,
-      { cache: 'no-store' });
-    if (r.status === 404) {
+  /* ── Кодыг ХААЛТТАЙ төслөөс уншина (олдохгүй бол шилжилтийн хуучнаас) ── */
+  let d = null, dWhere = 'main';
+  {
+    const got = await OTPSTORE.otpGet(id);
+    if (got.error) {
+      /* ⚠ ГЭМТЭЛ — ШИЙДВЭР БИШ. Хөтөч нөөц зам руу шилжинэ. */
+      return res.status(502).json({ ok: false, error: 'Кодын сан уншигдсангүй: ' +
+        String(got.error).slice(0, 120) });
+    }
+    if (!got.found) {
       return res.status(200).json({ ok: false, verdict: 'notfound',
         error: 'Код олдсонгүй эсвэл хугацаа дууссан' });
     }
-    if (!r.ok) throw new Error('Firestore ' + r.status);
-    const j = await r.json();
-    const ff = (j && j.fields) || null;
-    if (!ff) {
-      return res.status(200).json({ ok: false, verdict: 'notfound',
-        error: 'Код олдсонгүй эсвэл хугацаа дууссан' });
-    }
-    d = {};
-    Object.keys(ff).forEach(function (k) { d[k] = val(ff[k]); });
-  } catch (e) {
-    /* ⚠ ГЭМТЭЛ — ШИЙДВЭР БИШ. Хөтөч нөөц зам руу шилжинэ. */
-    return res.status(502).json({ ok: false, error: 'Кодын сан уншигдсангүй: ' +
-      String((e && e.message) || e).slice(0, 120) });
+    d = got.data; dWhere = got.where;
   }
 
   if (d.used === true) {
@@ -135,13 +131,7 @@ module.exports = async function handler(req, res) {
   if (mine !== String(d.hash || '')) {
     /* Буруу оролдлогыг тоолно. Бичилт алдвал ажилтныг ЗОГСООХГҮЙ. */
     var nTry = Number(d.tries || 0) + 1;
-    try {
-      await fetch(EX_FS + '/habea_otp/' + encodeURIComponent(id) + '?key=' + EX_KEY +
-        '&updateMask.fieldPaths=tries', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { tries: { integerValue: String(nTry) } } })
-      });
-    } catch (e) {}
+    try { await OTPSTORE.otpPatch(id, { tries: nTry }, dWhere); } catch (e) {}
     var left = Math.max(0, MAX_TRIES - nTry);
     return res.status(200).json({ ok: false, verdict: 'wrong', tries: nTry, left: left,
       error: left > 0 ? ('Код буруу байна. Үлдсэн оролдлого: ' + left)
@@ -158,19 +148,15 @@ module.exports = async function handler(req, res) {
   const verifiedAt = new Date().toISOString();
   let marked = false;
   try {
-    const mask = ['used', 'verified', 'verifiedAt', 'verifiedBy', 'verifiedServer']
-      .map(function (f) { return 'updateMask.fieldPaths=' + f; }).join('&');
-    const pr = await fetch(EX_FS + '/habea_otp/' + encodeURIComponent(id) + '?key=' + EX_KEY + '&' + mask, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: {
-        used: { booleanValue: true },
-        verified: { booleanValue: true },
-        verifiedAt: { stringValue: verifiedAt },
-        verifiedBy: { stringValue: (me && me.email) || '' },
-        verifiedServer: { booleanValue: true }
-      } })
-    });
-    marked = pr.ok;
+    /* ⚠ `code`-ыг ЗӨВХӨН ЭНД, баталгаажсаны ДАРАА үлдээнэ. Тэр агшинд код
+       ашиглагдсан тул дахин хэрэглэгдэхгүй. Хэрэгцээ нь: ажилтан и-мэйл дэх
+       товчийг ӨӨР төхөөрөмж дээр дарсан бол шалгалтын хуудас /api/otp-status
+       -аар кодыг авч бүртгэлд «ямар кодоор баталгаажсан» гэж тэмдэглэнэ.
+       ⚠ Баримт нь ХААЛТТАЙ төсөлд — нийтэд уншигдахгүй. */
+    marked = await OTPSTORE.otpPatch(id, {
+      used: true, verified: true, verifiedAt: verifiedAt, code: code,
+      verifiedBy: (me && me.email) || '', verifiedServer: true
+    }, dWhere);
   } catch (e) { marked = false; }
 
   /* ⚠ Тэмдэглэж чадаагүй ч ШАЛГАЛТ нь ЗӨВ болсон — ажилтныг зогсоохгүй.

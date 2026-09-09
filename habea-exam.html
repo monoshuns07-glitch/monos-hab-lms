@@ -1444,17 +1444,23 @@ function otpStartPoll(){
   if(OTP_POLL) clearInterval(OTP_POLL);
   OTP_POLL=setInterval(function(){
     if(!OTP_ID||OTP_OK) return;
+    /* ⚠ 2026-09-09 (олдвор №1): өмнө нь кодын баримтыг ХӨТЧӨӨС ШУУД уншдаг
+       байсан тул тэр цуглуулга нийтэд нээлттэй байх шаардлагатай байв —
+       яг тэр нээлттэй байдал нь гарын үсэг хуурамчаар үйлдэх нүх байсан.
+       Одоо зөвхөн сервер уншина. */
     try{
-      db.collection("habea_otp").doc(OTP_ID).get().then(function(s){
-        var d=(s&&s.exists)?s.data():null;
-        if(d&&d.verified===true){
+      fetch("/api/otp-status/",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:OTP_ID})})
+        .then(function(r){ return r.ok?r.json():null; })
+        .then(function(d){
+          if(!d||!d.ok||!d.found||d.verified!==true) return;
           if(d.code) OTP_CODE=String(d.code);
           /* ⚠ Энэ хуудас биш, ӨӨР зам (өөр төхөөрөмж) баталгаажуулсан.
              Хоосон үлдээвэл «кодгүй өнгөрсөн» мэт харагдана. */
           if(!OTP_CHECKED_BY) OTP_CHECKED_BY = d.verifiedServer ? "server" : "poll";
           otpSetVerified(false);
-        }
-      }).catch(function(){});
+        })
+        .catch(function(){});
     }catch(e){}
   },2500);
 }
@@ -1659,20 +1665,15 @@ async function otpCheckTyped(){
     console.warn("[OTP] сервер хүрэхгүй, нөөц зам:",_r.status);
   }catch(e1){ console.warn("[OTP] сервер алдаа, нөөц зам:",(e1&&e1.message)||e1); }
 
-  /* ══ ② НӨӨЦ ЗАМ — хуучин хөтөч талын шалгалт ══
-     ⚠ ТҮР ЗУУРЫН. Сервер тогтвортой ажилласны дараа УСТГАНА. Одоо
-     устгавал сүлжээний саатал шалгалтыг бүхэлд нь зогсоох эрсдэлтэй. */
-  try{
-    var s=await db.collection("habea_otp").doc(OTP_ID).get();
-    var d=(s&&s.exists)?s.data():null;
-    if(!d){ otpMsg("Код олдсонгүй. Дахин код авна уу.","err"); return; }
-    if(d.expiresAt && new Date(d.expiresAt).getTime()<Date.now()){ otpMsg("Кодын хугацаа дууссан.","err"); return; }
-    var h=await otpSha(code+"|"+OTP_ID+"|"+String(d.email||""));
-    if(h!==d.hash){ otpMsg("❌ Код таарахгүй байна. Дахин шалгана уу.","err"); return; }
-    OTP_CODE=code; OTP_CHECKED_BY="client";
-    try{ await db.collection("habea_otp").doc(OTP_ID).update({verified:true,code:code,verifiedAt:firebase.firestore.FieldValue.serverTimestamp()}); }catch(e){}
-    otpSetVerified(false);
-  }catch(e){ otpMsg("⚠️ "+String((e&&e.message)||e),"err"); }
+  /* ══ ② ХӨТӨЧ ТАЛЫН НӨӨЦ ШАЛГАЛТ — УСТГАВ (2026-09-09, олдвор №1) ══
+     Кодын баримт одоо ХААЛТТАЙ төсөлд байгаа тул хөтөч түүнийг уншиж
+     чадахгүй; нөөц зам «олдсонгүй» гэж л буцаана. Түүнээс гадна энэ зам
+     нь шалгалтыг ХӨТӨЧ дээр хийдэг байсан — кодыг өөрчилсөн хүн тойрч
+     гарах боломжтой байсан аюулгүй байдлын нүх.
+     ⚠ Серверийн тасалдлын үеийн гарц: Тохиргоо → «Кодгүй шалгалтын нөөц
+     зам»-ыг админ түр нээнэ (v530). Ажилтны ажил зогсохгүй. */
+  otpMsg("⚠️ Баталгаажуулах үйлчилгээ түр хариу өгсөнгүй. Хэсэг хүлээгээд "
+    + "дахин оролдоно уу. Давтагдвал ХАБЭА-н ажилтанд хандана уу.","err");
 }
 
 /* ══ ХУУЛСАН КОДЫГ АВТОМАТААР ОЛЖ БӨГЛӨНӨ ══
