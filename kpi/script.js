@@ -1870,28 +1870,51 @@ function riskR2Url(key) { return TASK_R2 + '/' + key; }
 var _dlTok = {};                       /* түлхүүр → { t, e } */
 var DL_SIGN_TTL = 5.5 * 60 * 60 * 1000; /* серверийн 6 цагаас бага зайтай */
 
-/* Хэрэгтэй түлхүүрүүдэд татах гарын үсэг авна (багцаар, кэштэй) */
-async function r2DlSign(keys) {
-  var need = [], i;
+/* ⚠ 2026-09-09: эхний хувилбарт уншилт бүр өөрийн түлхүүрийг ДАНГААР
+   гарын үсэглүүлдэг байсан тул хуудас нээхэд `/api/file-token` руу 56
+   тусдаа хүсэлт явж байв. Одоо 25мс-ийн цонхонд хуримтлуулж НЭГ хүсэлтээр
+   (60 хүртэл түлхүүр) авна. Дуудагч бүр өөрийн амлалтаа хүлээнэ. */
+var _dlQueue = [], _dlTimer = null, _dlWaiters = [];
+
+function _dlFlush() {
+  _dlTimer = null;
+  var keys = _dlQueue.splice(0, 60);
+  var waiters = _dlWaiters.splice(0, _dlWaiters.length);
+  if (_dlQueue.length && !_dlTimer) _dlTimer = setTimeout(_dlFlush, 0);
+  var finish = function (ok) { waiters.forEach(function (w) { try { w(ok); } catch (e) {} }); };
+  if (!keys.length) { finish(false); return; }
+  (async function () {
+    try {
+      var u = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+      if (!u) { finish(false); return; }        /* нэвтрээгүй — гарын үсэггүй уншина */
+      var tk = await u.getIdToken();
+      var r = await fetch('/api/file-token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: tk, kind: 'dl', keys: keys })
+      });
+      if (!r.ok) { finish(false); return; }
+      var j = await r.json();
+      if (!j || !j.ok || !j.tokens) { finish(false); return; }
+      Object.keys(j.tokens).forEach(function (k) { _dlTok[k] = { t: j.tokens[k], e: j.exp }; });
+      finish(true);
+    } catch (e) { finish(false); }
+  })();
+}
+
+/* Хэрэгтэй түлхүүрүүдэд татах гарын үсэг авна (багцалж, кэштэй) */
+function r2DlSign(keys) {
+  var need = [], i, c;
   for (i = 0; i < keys.length; i++) {
-    var c = _dlTok[keys[i]];
-    if (!c || Number(c.e) - Date.now() < 5 * 60000) need.push(keys[i]);
+    c = _dlTok[keys[i]];
+    if ((!c || Number(c.e) - Date.now() < 5 * 60000) && _dlQueue.indexOf(keys[i]) < 0) need.push(keys[i]);
+    else if (!c || Number(c.e) - Date.now() < 5 * 60000) need.push(null);   /* дараалалд бий — хүлээнэ */
   }
-  if (!need.length) return true;
-  try {
-    var u = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
-    if (!u) return false;                      /* нэвтрээгүй — гарын үсэггүй уншина */
-    var tk = await u.getIdToken();
-    var r = await fetch('/api/file-token/', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: tk, kind: 'dl', keys: need.slice(0, 60) })
-    });
-    if (!r.ok) return false;
-    var j = await r.json();
-    if (!j || !j.ok || !j.tokens) return false;
-    Object.keys(j.tokens).forEach(function (k) { _dlTok[k] = { t: j.tokens[k], e: j.exp }; });
-    return true;
-  } catch (e) { return false; }
+  if (!need.length) return Promise.resolve(true);
+  need.forEach(function (k) { if (k) _dlQueue.push(k); });
+  return new Promise(function (res) {
+    _dlWaiters.push(res);
+    if (!_dlTimer) _dlTimer = setTimeout(_dlFlush, 25);
+  });
 }
 
 /* Уншихад бэлэн хаяг: кэш таслагч `cb` (⚠ `t` БИШ — тэр нь гарын үсэг) */
