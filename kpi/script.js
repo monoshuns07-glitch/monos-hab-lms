@@ -1898,80 +1898,237 @@ async function riskR2GetJson(key, opts) {
   } finally { delete _r2Fly[k]; }
 }
 
-/* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
-/* Бичсэн зүйл ҮНЭХЭЭР тэнд байгаа эсэхийг шалгах гарын үсэг.
-   Жагсаалтын урт + updatedAt хангалттай — гүн харьцуулалт үнэтэй. */
-function r2Sig(o) {
+/* ══════════════════════════════════════════════════════════════════════
+   R2 БИЧИЛТ БА ТҮҮНИЙ БАТАЛГААЖУУЛАЛТ                    (v531, 2026-09-09)
+   ----------------------------------------------------------------------
+   ⚠⚠ ЯАГААД ИЙМ БОЛСОН БЭ:
+   v504-т «бичээд орхидог» гэмтлийг зассан — батлалт чимээгүй алдагдаж,
+   хэн ч мэдээгүй байсан. Гэвч баталгаажуулалт нь «мөрийн тоо | updatedAt»
+   ЯГ таарахыг шаарддаг байв. Хуваалцсан файлд өөр хүн зэрэг бичихэд тэр
+   нөхцөл угаасаа хангагдахгүй тул хуурамч алдаа өгч, бүр нөгөө хүний
+   бичилтийг ДАРЖ бичдэг байсныг v529-д хэсэгчлэн зассан.
+   2026-09-08 23:54-д үлдэгдэл тохиолдол гарсан:
+       reports/_all.json (20|…45.845Z ≠ 20|…45.847Z)
+   Мөрийн тоо ижил, агуулга ижил, ЗӨВХӨН дугтуйны цаг 2 МИЛЛИСЕКУНДЭЭР
+   зөрүүтэй: нэг файлыг хоёр бичилт бараг зэрэг хийж, сүүлд эхэлсэн нь
+   эхлээд газардсан. Хоцорсны шалгагч түүнийг «унасан» гэж уншсан.
+
+   ЗАСВАРЫН ГУРВАН ЗАРЧИМ:
+   ① ШАЛГАХ АСУУЛТ нь «алсын файл яг миний объект мөн үү» БИШ, «МИНИЙ
+      ӨӨРЧЛӨЛТ алсад хүрсэн үү» гэдэг. Эхлээд дугтуйны цагийг хасаад
+      агуулгыг харьцуулна; зөрвөл мөр бүрийг id + агуулгын хэшээр тулгана.
+   ② НЭГ ТҮЛХҮҮРИЙН бичилтүүд ДАРААЛНА (r2Queue) — уралдааныг үүсгэдэг
+      эх шалтгааныг нь болиулна.
+   ③ Жинхэнээр хүрээгүй бол ДАРЖ БИЧИХГҮЙ, НЭГДҮҮЛНЭ: алсынхыг суурь
+      болгож миний мөрүүдийг id-гаар нь тавина — өөр хүний зэрэг нэмсэн
+      мөр устахгүй. Устгал хүрээгүй бол ч бүхэлд нь дарахгүй, ЗӨВХӨН
+      тэр мөрүүдийг хасна.
+   Мөн эхний уншилт зөрвөл 600мс хүлээгээд ДАХИН уншина — R2-ийн түр
+   зуурын хоцролтыг «алдаа» гэж бүртгэхгүйн тулд.
+
+   ⚠⚠ 5 МИНУТЫН ХАМГААЛАЛТЫН ЦОНХ (R2_RACE_MS) — яагаад хэрэгтэй вэ:
+   «Алсад надад байхгүй мөр байна» гэдгийг шууд «миний устгал хүрээгүй»
+   гэж үзвэл АЮУЛТАЙ. Өөр ажилтан маягтаа 10:00:00.040-д илгээж, түүний
+   бичилт миний 10:00:00.100-гийн бичилтийн ДАРАА газардвал тэр мөр надад
+   байхгүй, цаг нь ч миний бичилтээс хуучин харагдана — уншиж дүгнэвэл
+   «устгасан» болж, түүнийг устгачихна. Яг энэ алдагдлаас сэргийлэх гэж
+   v529 хийгдсэн. Тиймээс: миний бичилтээс сүүлийн 5 минутад үүссэн мөрийг
+   ХӨНДӨХГҮЙ (зэрэг явсан бичилт байж болно), цаггүй мөрийг ч хөндөхгүй.
+   Зөвхөн ҮҮНЭЭС ХУУЧИН мөрийг л «устгал хүрээгүй» гэж үзнэ.
+   ══════════════════════════════════════════════════════════════════════ */
+var R2_RACE_MS = 5 * 60 * 1000;   /* зэрэг явсан бичилтийн хамгаалалтын цонх */
+
+/* Дугтуйны цагийн тэмдэг, бичсэн хүнийг хассан ЦЭВЭР АГУУЛГА.
+   updatedAt хэдэн миллисекундээр зөрөх нь агуулгын ялгаа БИШ. */
+function r2Body(o) {
   try {
-    if (!o || typeof o !== 'object') return String(o);
-    var arr = o.list || o.rows || null;
-    return (Array.isArray(arr) ? arr.length : Object.keys(o).length) + '|' + (o.updatedAt || o.at || '');
+    if (o === null || typeof o !== 'object') return JSON.stringify(o);
+    if (Array.isArray(o)) return JSON.stringify(o);
+    var skip = { updatedAt: 1, at: 1, by: 1, updatedBy: 1, ts: 1, v: 1 };
+    var c = {};
+    Object.keys(o).sort().forEach(function (k) { if (!skip[k]) c[k] = o[k]; });
+    return JSON.stringify(c);
   } catch (e) { return '?'; }
 }
+function r2Stamp(o) {
+  try { return (o && typeof o === 'object') ? String(o.updatedAt || o.at || '') : ''; }
+  catch (e) { return ''; }
+}
+/* Мөрийн жагсаалт — {list}, {rows} эсвэл цэвэр массив */
+function r2List(o) {
+  if (Array.isArray(o)) return o;
+  if (o && typeof o === 'object') {
+    if (Array.isArray(o.list)) return o.list;
+    if (Array.isArray(o.rows)) return o.rows;
+  }
+  return null;
+}
+function r2Rid(x) {
+  if (!x || typeof x !== 'object') return '';
+  return String(x.id || x.key || x.uid || x.no || '');
+}
+/* Мөр өөрөө хэзээ үүссэн бэ — «энэ мөрийг өөр хүн миний дараа нэмсэн үү,
+   эсвэл миний устгасан мөр амилсан уу» гэдгийг ялгахад хэрэгтэй. */
+function r2Rat(x) {
+  if (!x || typeof x !== 'object') return '';
+  var v = x.createdAt || x.at || x.ts || x.updatedAt || x.date || '';
+  if (typeof v === 'number') {
+    try { return new Date(v < 1e12 ? v * 1000 : v).toISOString(); } catch (e) { return ''; }
+  }
+  return String(v || '');
+}
+function r2Hash(s) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h.toString(36);
+}
+function r2Rhash(x) { try { return r2Hash(JSON.stringify(x)); } catch (e) { return '?'; } }
 
-async function riskR2PutJson(key, obj) {
-  var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
-  blob.name = key.split('/').pop();
-  var out = await r2Put(blob, key);
-  riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
-  /* ⚠ Цохилтын файл өөрөө цохилт үүсгэвэл мөнхийн давталт болно */
-  if (key !== PULSE_FILE) { try { pulseBump(key); } catch (e) {} }
-  /* ⚠⚠ БАТАЛГААЖУУЛАЛТ (2026-09-07): өмнө нь бичээд л ОРХИДОГ байв.
-     Бичилт унасан, эсвэл өөр сесс дарж бичсэн ч хэн ч мэдэхгүй байсан —
-     Гандолгорын батлалт яг ингэж алдагдсан. Одоо буцааж уншиж шалгана. */
-  try { await r2VerifyWrite(key, obj); } catch (e) {}
-  return out;
+/* Миний өөрчлөлт алсад хүрсэн үү → {ok, why, miss, del} */
+function r2WriteOk(got, want) {
+  if (got === null || got === undefined) return { ok: false, why: 'алсад файл алга' };
+  if (r2Body(got) === r2Body(want)) return { ok: true, why: 'агуулга ижил' };
+  var gt = r2Stamp(got), wt = r2Stamp(want);
+  if (gt && wt && gt > wt) return { ok: true, why: 'өөр хүн миний дараа бичсэн' };
+  var gl = r2List(got), wl = r2List(want);
+  if (!gl || !wl) return { ok: false, why: 'агуулга зөрүүтэй' };
+
+  /* ① Миний мөр бүр алсад ЯГ ТЭР агуулгатайгаа байна уу.
+     id бүрэн байвал id-гаар, эс бөгөөс агуулгын хэшээр тулгана. */
+  var keyed = gl.length > 0 && wl.length > 0 &&
+    gl.every(function (x) { return !!r2Rid(x); }) && wl.every(function (x) { return !!r2Rid(x); });
+  var pool = {}, used = {}, miss = 0, i, j, id, slot, hit;
+  for (i = 0; i < gl.length; i++) {
+    id = keyed ? r2Rid(gl[i]) : r2Rhash(gl[i]);
+    (pool[id] = pool[id] || []).push(i);
+  }
+  for (i = 0; i < wl.length; i++) {
+    id = keyed ? r2Rid(wl[i]) : r2Rhash(wl[i]);
+    slot = pool[id] || []; hit = -1;
+    for (j = 0; j < slot.length; j++) {
+      if (used[slot[j]]) continue;
+      if (!keyed || r2Rhash(gl[slot[j]]) === r2Rhash(wl[i])) { hit = slot[j]; break; }
+    }
+    if (hit < 0) miss++; else used[hit] = 1;
+  }
+  if (miss) return { ok: false, why: 'миний ' + miss + ' мөр хүрээгүй', miss: miss };
+
+  /* ② Алсад надад БАЙХГҮЙ мөр үлдсэн бол хэн нэмснийг ЦАГААР нь ялгана:
+       · миний бичилтээс хойш үүссэн → өөр хүн саяхан нэмсэн, зөв
+       · сүүлийн 5 минутад үүссэн → миний бичилттэй ЗЭРЭГ явсан байж болно,
+         хөндөхгүй (эс бөгөөс нөгөө хүний мөрийг устгана — v504-ийн гэмтэл)
+       · цаггүй → дүгнэх боломжгүй, хөндөхгүй
+       · үүнээс хуучин → миний устгал хүрээгүй */
+  var wms = Date.parse(wt || ''), stale = {}, nStale = 0, st, sms;
+  for (i = 0; i < gl.length; i++) {
+    if (used[i]) continue;
+    st = r2Rat(gl[i]); sms = Date.parse(st || '');
+    if (!st || isNaN(sms) || isNaN(wms)) continue;      /* цаггүй — хөндөхгүй */
+    if (sms > wms - R2_RACE_MS) continue;               /* саяхных — зэрэг бичилт байж болно */
+    stale[i] = 1; nStale++;
+  }
+  if (nStale) return { ok: false, why: 'устгасан ' + nStale + ' мөр хэвээр байна', del: true, stale: stale };
+  return { ok: true, why: 'миний мөр бүгд байна' };
 }
 
-/* Гарын үсгийг задалж авна: {n: мөрийн тоо, t: updatedAt} */
-function r2SigParts(o) {
+/* Алсынхыг суурь болгож миний мөрүүдийг id-гаар нь тавина.
+   ⚠ Өөр хүний зэрэг нэмсэн мөрийг УСТГАХГҮЙ. id бүрэн биш бол null.
+   drop — алсынхаас хасах мөрийн индексүүд (миний хүрээгүй устгал). */
+function r2MergeInto(want, got, drop) {
   try {
-    if (!o || typeof o !== 'object') return { n: -1, t: '' };
-    var arr = o.list || o.rows || null;
-    return { n: Array.isArray(arr) ? arr.length : Object.keys(o).length, t: String(o.updatedAt || o.at || '') };
-  } catch (e) { return { n: -1, t: '' }; }
+    var wl = r2List(want), gl = r2List(got);
+    if (!Array.isArray(wl) || !Array.isArray(gl)) return null;
+    if (!wl.every(function (x) { return !!r2Rid(x); })) return null;
+    if (!gl.every(function (x) { return !!r2Rid(x); })) return null;
+    var out = gl.filter(function (x, i) { return !(drop && drop[i]); }), pos = {};
+    out.forEach(function (x, i) { pos[r2Rid(x)] = i; });
+    wl.forEach(function (x) {
+      var id = r2Rid(x);
+      if (pos[id] === undefined) { pos[id] = out.length; out.push(x); } else out[pos[id]] = x;
+    });
+    if (Array.isArray(want)) return out;
+    var o = {};
+    Object.keys(want).forEach(function (k) { o[k] = want[k]; });
+    if (Array.isArray(want.list)) o.list = out;
+    else if (Array.isArray(want.rows)) o.rows = out;
+    else return null;
+    if ('updatedAt' in o) o.updatedAt = new Date().toISOString();
+    if (typeof o.total === 'number') o.total = out.length;
+    return o;
+  } catch (e) { return null; }
 }
 
-/* Бичилтийг шалгаж, ЖИНХЭНЭЭР унасан бол л НЭГ удаа дахин бичнэ.
-   ⚠⚠ 2026-09-08: өмнөх хувилбар `count|updatedAt` ЯГ таарахгүй бол
-   миний хуучин объектыг ДАХИН БИЧДЭГ байв. Хуваалцсан файлд (notify,
-   reports, workflow) миний бичилтийн дараа ӨӨР ажилтан бичсэн бол
-   updatedAt зөрөх нь хэвийн — гэтэл тэр үед нөгөө хүний бичилтийг ДАРЖ
-   бичээд, дараа нь ажилтанд улаан алдаа харуулж байв (өнөөдөр 10 удаа).
-   Гандолгорын батлалт алдагдахаас сэргийлэх гэсэн код яг тэр төрлийн
-   алдагдлыг өөрөө үүсгэж байсан.
-   ДҮРЭМ: алсынх МИНИЙХЭЭС ШИНЭ бол — зөв, юу ч хийхгүй.
-          алсынх ХУУЧИН эсвэл АЛГА бол — жинхэнэ уналт, нэг удаа дахин бичнэ. */
+/* Бичилтийг шалгаж, ЖИНХЭНЭЭР хүрээгүй бол л НЭГ удаа засна */
 async function r2VerifyWrite(key, obj) {
   if (key === PULSE_FILE) return true;              /* цохилтын файл — хэрэггүй */
-  var want = r2SigParts(obj);
-  var ok = function (got) {
-    if (!got || got.n < 0) return false;
-    if (got.n === want.n && got.t === want.t) return true;          /* яг миний бичилт */
-    if (want.t && got.t && got.t > want.t) return true;             /* өөр хүн дараа нь бичсэн — зөв */
-    if (!want.t && !got.t && got.n >= want.n) return true;          /* цаггүй файл — тоо хүрэлцэж байна */
-    return false;
+  var read = async function () {
+    try { return await riskR2GetJson(key, { fresh: true }); } catch (e) { return undefined; }
   };
-  var got = null;
-  try { got = r2SigParts(await riskR2GetJson(key, { fresh: true })); } catch (e) { got = null; }
-  if (ok(got)) return true;
-  var sig = function (p) { return p ? (p.n + '|' + p.t) : 'алга'; };
-  try { console.warn('[r2] ' + key + ' — бичилт хүрсэнгүй (' + sig(got) + ' ≠ ' + sig(want) + '), дахин бичнэ'); } catch (e) {}
+  var got = await read();
+  var v = r2WriteOk(got, obj);
+  if (v.ok) return true;
+
+  /* ⚠ R2 бичсэн даруйдаа хуучин хуулбар буцааж мэднэ. Засахаасаа өмнө
+     600мс хүлээгээд ДАХИН нэг уншина — түр зуурын хоцролтыг «алдаа»
+     болгож бүртгэхгүйн тулд. */
+  await new Promise(function (r) { setTimeout(r, 600); });
+  got = await read();
+  v = r2WriteOk(got, obj);
+  if (v.ok) return true;
+
+  /* ЗАСВАР нь үргэлж НЭГДҮҮЛЭЛТ: алсынхыг суурь болгож миний мөрүүдийг
+     тавина; устгал хүрээгүй бол нэмж ЗӨВХӨН тэр мөрүүдийг хасна. Аль ч
+     тохиолдолд өөр хүний зэрэг нэмсэн мөр хэвээр үлдэнэ. Нэгдүүлж
+     болохгүй бүтэц (id-гүй, жагсаалтгүй) дээр л миний объектыг бичнэ. */
+  var fix = r2MergeInto(obj, got, v.stale || null);
+  var how = fix ? (v.del ? 'устгалыг нөхөж' : 'нэгдүүлж') : 'дахин';
+  var err = '';
+  try { console.warn('[r2] ' + key + ' — ' + v.why + ', ' + how + ' бичнэ'); } catch (e) {}
   try {
-    var b2 = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+    var body = fix || obj;
+    var b2 = new Blob([JSON.stringify(body)], { type: 'application/json' });
     b2.name = key.split('/').pop();
     await r2Put(b2, key);
     riskR2CacheBust();
-    got = r2SigParts(await riskR2GetJson(key, { fresh: true }));
-    if (ok(got)) return true;
-  } catch (e) {}
+    got = await read();
+    if (r2WriteOk(got, body).ok) return true;
+  } catch (e) { err = ' · засах бичилт: ' + String((e && e.message) || e).slice(0, 60); }
+
   /* ⚠ Хоёр удаа бүтсэнгүй — ЧИМЭЭГҮЙ өнгөрөхгүй, гэхдээ ажилтныг ЗОГСООХГҮЙ:
      бүртгэлд үлдээж, мэдэгдлийг зөвхөн админд харуулна. */
-  try { sysErrLog('r2', 'Бичилт баталгаажсангүй: ' + key + ' (' + sig(got) + ' ≠ ' + sig(want) + ')', 'riskR2PutJson'); } catch (e) {}
+  try { sysErrLog('r2', 'Бичилт баталгаажсангүй: ' + key + ' — ' + v.why + ' (' + how + ' бичсэн ч болсонгүй)' + err, 'riskR2PutJson'); } catch (e) {}
   try { if (isAdmin()) toast('⚠ «' + key + '» хадгалалт баталгаажсангүй — эрүүл мэндийн самбарыг шалгана уу', 'error'); } catch (e) {}
   return false;
 }
 
+/* Нэг ТҮЛХҮҮРИЙН бичилтүүдийг дараалуулна. Зэрэг бичвэл нэгнийх нь PUT
+   нөгөөгийн шалгалтын дундуур газардаж, хуурамч «унасан» гардаг байв
+   (2026-09-08-ны reports/_all.json). Алдаа дуудагч руу хэвээр очно. */
+var _r2Wq = {};
+function r2Queue(key, fn) {
+  var k = String(key);
+  var prev = _r2Wq[k] || Promise.resolve();
+  var next = prev.then(fn, fn);
+  _r2Wq[k] = next.then(function () {}, function () {});   /* дараагийнхыг унагаахгүй */
+  return next;
+}
+
+/* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
+async function riskR2PutJson(key, obj) {
+  return await r2Queue(key, async function () {
+    var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+    blob.name = key.split('/').pop();
+    var out = await r2Put(blob, key);
+    riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
+    /* ⚠ Цохилтын файл өөрөө цохилт үүсгэвэл мөнхийн давталт болно */
+    if (key !== PULSE_FILE) { try { pulseBump(key); } catch (e) {} }
+    try { await r2VerifyWrite(key, obj); } catch (e) {}
+    return out;
+  });
+}
 
 /* ══════════════════ СИСТЕМИЙН ЭРҮҮЛ МЭНД ══════════════════════════════
    ⚠ ЯАГААД ХЭРЭГТЭЙ ВЭ (2026-08-28):
