@@ -288,8 +288,13 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: ok, one: true, rows: rows.length });
     }
     const all = await readAll();
+    /* ⚠ 2026-09-09: хуучин мөр бүрийг R2 дахь _all.json-той ЭХЛЭЭД тулгаж,
+       ЗӨВХӨН дутуу мөртэй ажилтны файлыг нэгтгэнэ. Өмнө нь 118 ажилтны
+       файлыг бүгдийг уншиж/бичиж 60 секундэд багтахгүй 504 өгч байв. */
+    const allCur = await readList('exams/_all.json');
+    const fresh = all.filter(function (r) { return !allCur.some(function (x) { return sameRow(x, r); }); });
     const by = {};
-    all.forEach(function (r) { if (r.email) (by[r.email] = by[r.email] || []).push(r); });
+    fresh.forEach(function (r) { if (r.email) (by[r.email] = by[r.email] || []).push(r); });
     const emails = Object.keys(by);
     let wrote = 0, failed = 0;
     for (const em of emails) {
@@ -312,8 +317,7 @@ module.exports = async function handler(req, res) {
 
     let allOk = false;
     try {
-      const cur = await readList('exams/_all.json');
-      const m = mergeRows(cur, all);
+      const m = mergeRows(allCur, all);
       allOk = m.added ? await putJson('exams/_all.json', {
         updatedAt: new Date().toISOString(), total: m.list.length, list: m.list
       }) : true;
