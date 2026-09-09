@@ -1,7 +1,17 @@
 [
   {
-    "origin": ["*"],
-    "method": ["GET", "PUT", "POST", "HEAD"],
+    "origin": [
+      "https://monos-hab.vercel.app",
+      "https://monos-hab-lms.vercel.app",
+      "http://localhost:8000",
+      "http://127.0.0.1:8000"
+    ],
+    "method": [
+      "GET",
+      "PUT",
+      "POST",
+      "HEAD"
+    ],
     "responseHeader": [
       "Content-Type",
       "Authorization",

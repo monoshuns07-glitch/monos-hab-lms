@@ -22,10 +22,16 @@ const FB_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
 const FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 const TTL_MIN = 10;
 
+/* ⚠ 2026-09-09 (аюулгүй байдлын дүгнэлт, олдвор №5): өмнө нь Math.random()
+   ашигладаг байв. Тэр нь криптографийн эх сурвалж БИШ — PRNG-ийн төлөвийг
+   таамагласан халдагч дараагийн кодыг урьдчилан мэдэх боломжтой.
+   Одоо crypto.randomInt (үйлдлийн системийн энтропи).
+   ⚠ Кодын урт, формат ӨӨРЧЛӨГДӨӨГҮЙ — 6 орон, дугаар 28 тэмдэгт хэвээр. */
 function rnd(n) {
   const a = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const nc = require('crypto');
   let s = '';
-  for (let i = 0; i < n; i++) s += a[Math.floor(Math.random() * a.length)];
+  for (let i = 0; i < n; i++) s += a[nc.randomInt(a.length)];
   return s;
 }
 
@@ -183,7 +189,7 @@ module.exports = async function handler(req, res) {
     const email = String(body.email || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'И-мэйл хаяг буруу байна' });
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(require('crypto').randomInt(100000, 1000000));
     const id = rnd(28);
     const hash = await sha256Hex(code + '|' + id + '|' + email);
     const expires = new Date(Date.now() + TTL_MIN * 60000).toISOString();

@@ -56,6 +56,13 @@ async function whoIs(idToken) {
   } catch (e) { return null; }
 }
 
+/* ⚠ 2026-09-09 (олдвор №5б): буруу оролдлогын тоолуур байгаагүй тул 6 оронтой
+   кодыг автомат скриптээр тасралтгүй оролдох боломжтой байв. Одоо 8 буруу
+   оролдлогын дараа ТУХАЙН КОДЫГ хаана — ажилтан «Дахин илгээх»-ээр шинэ код
+   авах боломжтой тул ажил зогсохгүй.
+   ⚠ FAIL-OPEN: тоолуурыг уншиж/бичиж чадаагүй бол өмнөх шигээ үргэлжилнэ. */
+const MAX_TRIES = 8;
+
 function val(f) {
   if (!f || typeof f !== 'object') return undefined;
   if ('stringValue' in f) return f.stringValue;
@@ -116,13 +123,29 @@ module.exports = async function handler(req, res) {
   if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
     return res.status(200).json({ ok: false, verdict: 'expired', error: 'Кодын хугацаа дууссан' });
   }
+  if (Number(d.tries || 0) >= MAX_TRIES) {
+    return res.status(200).json({ ok: false, verdict: 'locked',
+      error: 'Хэт олон буруу оролдлого. «Дахин илгээх» дарж шинэ код авна уу.' });
+  }
 
   const stored = String(d.email || '').toLowerCase().trim();
   const mine = crypto.createHash('sha256')
     .update(code + '|' + id + '|' + stored, 'utf8').digest('hex');
 
   if (mine !== String(d.hash || '')) {
-    return res.status(200).json({ ok: false, verdict: 'wrong', error: 'Код буруу байна' });
+    /* Буруу оролдлогыг тоолно. Бичилт алдвал ажилтныг ЗОГСООХГҮЙ. */
+    var nTry = Number(d.tries || 0) + 1;
+    try {
+      await fetch(EX_FS + '/habea_otp/' + encodeURIComponent(id) + '?key=' + EX_KEY +
+        '&updateMask.fieldPaths=tries', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { tries: { integerValue: String(nTry) } } })
+      });
+    } catch (e) {}
+    var left = Math.max(0, MAX_TRIES - nTry);
+    return res.status(200).json({ ok: false, verdict: 'wrong', tries: nTry, left: left,
+      error: left > 0 ? ('Код буруу байна. Үлдсэн оролдлого: ' + left)
+                      : 'Код буруу байна. Оролдлого дууслаа — шинэ код авна уу.' });
   }
 
   /* ⚠ ТАНИЛТЫН ЗӨРҮҮГ ХАТУУ ХААХГҮЙ, ХАРИН БҮРТГЭНЭ.
