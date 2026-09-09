@@ -127,7 +127,11 @@ async function otpCreate(id, doc) {
 
 /* ⚠ ЗӨВХӨН ОСЛЫН ҮЕД: шинэ зам ажиллахгүй бол ажилтныг зогсоохгүйн тулд
    хуучин (ил) байршилд бичнэ. Ийм тохиолдол `where:'old'` гэж мэдэгдэнэ. */
+/* ⚠ 2026-09-09: хуучин сан ХААГДСАН. Тэр рүү бичих оролдлого утгагүй тул
+   шууд бүтэлгүй гэж хариулна (сүлжээний хүсэлт үүсгэхгүй). */
+const LEGACY_CLOSED = true;
 async function createOld(id, doc, why) {
+  if (LEGACY_CLOSED) return { ok: false, where: 'old', error: 'хуучин сан хаалттай', why: why };
   try {
     const r = await fetch(OLD_FS + '/' + COL + '?documentId=' + encodeURIComponent(id) +
       '&key=' + OLD_KEY, {
@@ -160,7 +164,10 @@ async function otpGet(id) {
   try {
     const r = await fetch(OLD_FS + '/' + COL + '/' + encodeURIComponent(id) + '?key=' + OLD_KEY,
       { cache: 'no-store' });
-    if (r.status === 404) return { found: false, where: 'none' };
+    /* ⚠ 2026-09-09: хуучин ил төсөл ХААГДСАН (deny-all) тул 403 ирнэ.
+       Энэ нь «алдаа» БИШ, «энд байхгүй» гэсэн үг — эс бөгөөс буруу код
+       бичсэн ажилтанд «Код буруу» гэхийн оронд серверийн алдаа гарна. */
+    if (r.status === 404 || r.status === 403 || r.status === 401) return { found: false, where: 'none' };
     if (!r.ok) return { error: 'old Firestore ' + r.status };
     const j = await r.json();
     if (!j || !j.fields) return { found: false, where: 'none' };

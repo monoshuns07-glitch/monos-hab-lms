@@ -39,24 +39,46 @@
   firebase.initializeApp(firebaseConfig);
   window.fbDb = firebase.firestore();
 
-  /* Засварласан агуулгыг ӨӨР ТӨСӨЛД хадгална.
-     monos-hab-system-ийн Firestore дүрэм нэргүй хэрэглэгчийн бичилтийг хориглодог тул
-     "Firestore Rules зөвшөөрөөгүй" алдаа гардаг байсан.
-     habea-shalgalt (шалгалтын систем) төсөл бичилт зөвшөөрдөг. */
-  try {
-    var _contentApp = firebase.initializeApp({
-      apiKey: "AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E",
-      authDomain: "habea-shalgalt.firebaseapp.com",
-      projectId: "habea-shalgalt",
-      storageBucket: "habea-shalgalt.firebasestorage.app",
-      messagingSenderId: "910170773266",
-      appId: "1:910170773266:web:38c7af5f7d0c352a5bc5cb"
-    }, "daatgal-content");
-    window.fbContent = _contentApp.firestore();
-  } catch (e) {
-    console.error("[Daatgal] content app:", e);
-    window.fbContent = window.fbDb;
-  }
+  /* ⚠ 2026-09-09: Засварласан агуулга өмнө нь ӨӨР, НИЙТЭД ИЛ Firebase
+     төсөлд (habea-shalgalt) хадгалагддаг байв. Тэр төсөл хаагдсан тул
+     одоо R2-д — уншихад гарын үсэг, хадгалахад СЕРВЕР админ эрхийг
+     шалгана (хуудсанд бичсэн нууц үг нь зөвхөн засварын горим нээнэ). */
+  window.DAATGAL_R2 = 'https://monos-upload.buynt666.workers.dev';
+  window.DAATGAL_CONTENT_KEY = 'daatgal/content.json';
+  window.DAATGAL_IMAGES_KEY = 'daatgal/images.json';
+  window.dgToken = async function (kind, keys) {
+    var u = null;
+    try { u = firebase.auth().currentUser; } catch (e) {}
+    if (!u) return null;
+    var t = await u.getIdToken();
+    var r = await fetch('/api/file-token/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: t, kind: kind, keys: keys })
+    });
+    var j = await r.json().catch(function () { return null; });
+    if (!r.ok || !j || !j.ok) return null;
+    return j;
+  };
+  window.dgGetJson = async function (key) {
+    var t = await window.dgToken('dl', [key]);
+    if (!t) return null;
+    var r = await fetch(window.DAATGAL_R2 + '/' + key + '?cb=' + Date.now() +
+      '&t=' + encodeURIComponent(t.tokens[key]) + '&e=' + encodeURIComponent(t.exp), { cache: 'no-store' });
+    if (r.status === 404) return null;
+    if (!r.ok) throw new Error('R2 ' + r.status);
+    return await r.json();
+  };
+  window.dgPutJson = async function (key, obj) {
+    var t = await window.dgToken('up', [key]);
+    if (!t) { var e = new Error('эрх алга'); e.noRight = true; throw e; }
+    var r = await fetch(window.DAATGAL_R2 + '/' + key, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Up': t.tokens[key], 'X-Exp': t.exp },
+      body: JSON.stringify(obj)
+    });
+    if (!r.ok) throw new Error('R2 ' + r.status);
+    return true;
+  };
 </script>
 <style>
 @property --angle{syntax:'<angle>';initial-value:0deg;inherits:false}
@@ -4754,45 +4776,30 @@
     } catch(e){
     }
 
-    if(!window.fbContent){
-      showToast('⚠ Firebase холбогдоогүй. Зөвхөн таны төхөөрөмжид хадгалагдлаа.');
-      return;
-    }
-
     showToast('Үүл рүү хадгалж байна...');
     try {
-      await window.fbContent.collection('daatgal_content').doc('main').set({
-        text: textData,
-        adminPass: ADMIN_PASSWORD,
-        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      /* ⚠ Хадгалах эрхийг СЕРВЕР шалгана (админ эсэх). Хуудасны нууц үг нь
+         зөвхөн засварын горим нээдэг — хадгалах эрх ОЛГОДОГГҮЙ. */
+      await window.dgPutJson(window.DAATGAL_CONTENT_KEY, {
+        text: textData, updatedAt: new Date().toISOString()
       });
-
-      const imgKeys = Object.keys(imgData);
-      if(imgKeys.length > 0){
-        const batch = window.fbContent.batch();
-        imgKeys.forEach(key=>{
-          const ref = window.fbContent.collection('daatgal_images').doc(key);
-          batch.set(ref, {
-            data: imgData[key],
-            adminPass: ADMIN_PASSWORD,
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
+      var imgKeys = Object.keys(imgData);
+      if (imgKeys.length > 0) {
+        await window.dgPutJson(window.DAATGAL_IMAGES_KEY, {
+          images: imgData, updatedAt: new Date().toISOString()
         });
-        await batch.commit();
       }
-
-      const imgCount = Object.keys(imgData).length;
-      if(imgCount > 0){
-        showToast('Үүлэнд хадгалагдлаа ✓ (' + imgCount + ' зураг). Бүх хэрэглэгчид шууд харна.');
+      if (imgKeys.length > 0) {
+        showToast('Үүлэнд хадгалагдлаа ✓ (' + imgKeys.length + ' зураг). Бүх хэрэглэгчид шууд харна.');
       } else {
         showToast('Үүлэнд хадгалагдлаа ✓ Бүх хэрэглэгчид шууд харна.');
       }
     } catch(err){
-      console.error('Firebase save error:', err);
-      if(err.code === 'permission-denied'){
-        showToast('⚠ Firestore Rules зөвшөөрөөгүй байна. Консольд нууц үгээ шалгана уу.');
+      console.error('R2 save error:', err);
+      if (err && err.noRight) {
+        showToast('⚠ Үүлэнд хадгалах эрх алга. Энэ үйлдлийг ХАБЭА-н админ эрхтэй хүн хийнэ. Таны төхөөрөмжид хадгалагдсан.');
       } else {
-        showToast('⚠ Үүл рүү хадгалж чадсангүй. Интернет холболтоо шалгана уу.');
+        showToast('⚠ Үүл рүү хадгалж чадсангүй (' + String((err && err.message) || err).slice(0, 40) + '). Интернет холболтоо шалгана уу.');
       }
     }
   }
@@ -4818,32 +4825,22 @@
     } catch(e){}
   }
 
-  async function loadFromFirebase(){
-    if(!window.fbDb) return;
+  async function loadFromCloud(){
     try {
-      const textDoc = await window.fbContent.collection('daatgal_content').doc('main').get();
-      if(textDoc.exists){
-        const data = textDoc.data();
-        if(data && data.text){
-          applyTextData(data.text);
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data.text)); } catch(e){}
-        }
+      const doc = await window.dgGetJson(window.DAATGAL_CONTENT_KEY);
+      if (doc && doc.text) {
+        applyTextData(doc.text);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(doc.text)); } catch(e){}
       }
-
-      const imgSnap = await window.fbContent.collection('daatgal_images').get();
-      if(!imgSnap.empty){
-        const imgData = {};
-        imgSnap.forEach(doc=>{
-          const d = doc.data();
-          if(d && d.data) imgData[doc.id] = d.data;
-        });
-        if(Object.keys(imgData).length > 0){
-          applyImageOverrides(imgData);
-          try { localStorage.setItem(IMAGES_KEY, JSON.stringify(imgData)); } catch(e){}
-        }
+      const img = await window.dgGetJson(window.DAATGAL_IMAGES_KEY);
+      const imgData = (img && img.images) || null;
+      if (imgData && Object.keys(imgData).length > 0) {
+        applyImageOverrides(imgData);
+        try { localStorage.setItem(IMAGES_KEY, JSON.stringify(imgData)); } catch(e){}
       }
     } catch(err){
-      console.warn('Firebase load failed (using local cache):', err);
+      /* Сүлжээ/эрхийн алдаа — суурь агуулга ба локал кэш хэвээр харагдана */
+      console.warn('Cloud load failed (using local cache):', err);
     }
   }
 
@@ -4851,7 +4848,7 @@
   applyEmbeddedImages();
   wrapImages();
   loadSavedContent();
-  loadFromFirebase();
+  loadFromCloud();
 
   (function checkInAppOnLoad(){
     const inApp = detectInAppBrowser();

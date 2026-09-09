@@ -133,6 +133,11 @@ function rowFrom(doc) {
 
 /* ⚠ Firestore REST нь pageSize-аас БАГА буцааж болно — nextPageToken
    дуустал заавал дагана, эс бөгөөс бичлэг дутуу тольдогдоно. */
+/* ⚠ 2026-09-09: хуучин ил төсөл ХААГДСАН (deny-all дүрэм). Уншилт 403
+   буцаана. Энэ нь эвдрэл БИШ — бүх дүн аль хэдийн R2-д (exams/_all.json,
+   231 мөр) нэгтгэгдсэн, шинэ дүн шууд R2 руу бичигддэг. Тиймээс энэ
+   функц «хаалттай» гэж мэдэгдээд ЦЭВЭР зогсоно. */
+class LegacyClosed extends Error {}
 async function readAll() {
   const out = [];
   let tok = '';
@@ -140,6 +145,7 @@ async function readAll() {
     const u = FS_BASE + '/habea_exam_results?key=' + EX_KEY + '&pageSize=300' +
       (tok ? '&pageToken=' + tok : '');
     const r = await fetch(u, { cache: 'no-store' });
+    if (r.status === 403 || r.status === 401) throw new LegacyClosed('legacy closed');
     if (!r.ok) throw new Error('Firestore HTTP ' + r.status);
     const j = await r.json();
     (j.documents || []).forEach(function (d) { out.push(rowFrom(d)); });
@@ -328,6 +334,11 @@ module.exports = async function handler(req, res) {
       wrote: wrote, failed: failed, blanked: blanked, all: allOk
     });
   } catch (e) {
+    if (e instanceof LegacyClosed) {
+      /* Хуучин сан хаагдсан — дуудагч дахин оролдох шаардлагагүй */
+      return res.status(200).json({ ok: true, legacyClosed: true, total: 0, people: 0,
+        note: 'Хуучин шалгалтын сан хаагдсан. Дүн R2-д бүрэн байна.' });
+    }
     return res.status(502).json({ ok: false, error: String((e && e.message) || e).slice(0, 160) });
   }
 };

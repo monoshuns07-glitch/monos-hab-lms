@@ -67,7 +67,11 @@ const USER_PREFIXES = [
    `audit/` — аудитын гинж; ажилтан дарж бичвэл нотлох чанар алдагдана. */
 /* v530: `sys/otp_bypass.json` — кодгүй шалгалтын түр зөвшөөрөл; ажилтан бичиж чадвал
    хаалт утгагүй болно. `sys/` угтвар ажилтанд нээлттэй тул энд тусгайлан хаана. */
-const ADMIN_ONLY_PREFIXES = ['training/attend/', 'audit/', 'sys/otp_bypass.json'];
+/* ⚠ Эдгээрт БИЧИХ эрхийг зөвхөн админд олгоно (татахад хамаарахгүй).
+   `daatgal/` — «Даатгал» хуудасны үүлэн агуулга: өмнө нь хуудсанд бичсэн
+   нууц үгээр хамгаалагддаг байсныг (эх кодоос уншигдана) 2026-09-09-нд
+   серверийн админ шалгалт болгов. */
+const ADMIN_ONLY_PREFIXES = ['training/attend/', 'audit/', 'sys/otp_bypass.json', 'daatgal/'];
 
 function isAdminOnlyKey(key) {
   return ADMIN_ONLY_PREFIXES.some(function (p) { return String(key).indexOf(p) === 0; });
@@ -93,7 +97,7 @@ const AUDIT_KEYS = [
   'training/attend/', 'training/owners.json', 'exams/', 'reports/_all.json',
   'kpi/state.json', 'workflow/_open.json', 'workflow/_locations.json',
   'employees/all.json', 'lms/', 'miskill/', 'risks/', 'sys/cols.json', 'audit/',
-  'sys/otp_bypass.json'
+  'sys/otp_bypass.json', 'daatgal/'
 ];
 function auditWorthy(key) {
   return AUDIT_KEYS.some(function (p) { return String(key).indexOf(p) === 0; });

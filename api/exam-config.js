@@ -209,7 +209,10 @@ module.exports = async function handler(req, res) {
       const qd = await legacyDoc('habea_config/questions' + suf);
       const sd = await legacyDoc('habea_config/settings' + suf);
       const questions = (qd && Array.isArray(qd.list)) ? qd.list : [];
-      if (!questions.length) return res.status(404).json({ ok: false, error: 'Хуучин төсөлд асуулт алга (' + key + ')' });
+      /* ⚠ 2026-09-09: хуучин ил төсөл ХААГДСАН — энэ шилжүүлэлт аль хэдийн
+         хийгдсэн (exams/config/default.json). Дахин хэрэглэх шаардлагагүй. */
+      if (!questions.length) return res.status(404).json({ ok: false,
+        error: 'Хуучин сан хаагдсан эсвэл асуулт алга (' + key + ') — шилжүүлэлт аль хэдийн хийгдсэн' });
       const settings = cleanSettings(sd || {});      /* adminPin зэрэг халагдана */
       const doc = { updatedAt: new Date().toISOString(), by: u.email, key: key, settings: settings, questions: questions, importedFrom: 'habea-shalgalt' };
       await putJson(cfgPath(key), doc);
