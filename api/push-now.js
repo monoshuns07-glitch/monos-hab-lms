@@ -12,6 +12,25 @@
 const crypto = require('crypto');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
+
+/* ⚠ 2026-09-09 (аюулгүй байдлын олдвор №2): R2-ийн уншилт хамгаалалттай
+   болсон тул серверийн уншилт ч ГАРЫН ҮСЭГТЭЙ явна. Worker-ийн шалгадагтай
+   ижил: HMAC-SHA256 `dl|<түлхүүр>|<хугацаа>`.
+   ⚠ Кэш таслагч `cb=` — `t` БИШ (тэр нь гарын үсэг).
+   ⚠ SIGN_SECRET байхгүй бол гарын үсэггүй явна (fail-open). */
+function r2GetQ(key) {
+  var q = '?cb=' + Date.now();
+  try {
+    var s = process.env.SIGN_SECRET || '';
+    if (s) {
+      var e = String(Date.now() + 10 * 60 * 1000);
+      q += '&t=' + require('crypto').createHmac('sha256', s)
+             .update('dl|' + key + '|' + e, 'utf8').digest('hex') + '&e=' + e;
+    }
+  } catch (err) {}
+  return q;
+}
+
 const SUBS_KEY = 'push/subs.json';
 const VAPID_SUB = 'mailto:buynt666@gmail.com';
 const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
@@ -114,7 +133,7 @@ module.exports = async function handler(req, res) {
 
   let file = null;
   try {
-    const r = await fetch(R2 + '/' + SUBS_KEY + '?t=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(R2 + '/' + SUBS_KEY + r2GetQ(SUBS_KEY), { cache: 'no-store' });
     file = r.ok ? await r.json() : null;
   } catch (e) {}
   const list = (file && Array.isArray(file.list)) ? file.list : [];

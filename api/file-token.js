@@ -21,6 +21,25 @@ const UP_TTL = 15 * 60 * 1000;        // байршуулах эрх — 15 ми
 /* Аудитын лог бичих, эрх шалгахад хэрэгтэй хаягууд.
    ⚠ R2 нь бусад цэгүүд (r2-backup, trn-digest)-тэй ИЖИЛ байх ёстой. */
 const R2 = 'https://monos-upload.buynt666.workers.dev';
+
+/* ⚠ 2026-09-09 (аюулгүй байдлын олдвор №2): R2-ийн уншилт хамгаалалттай
+   болсон тул серверийн уншилт ч ГАРЫН ҮСЭГТЭЙ явна. Worker-ийн шалгадагтай
+   ижил: HMAC-SHA256 `dl|<түлхүүр>|<хугацаа>`.
+   ⚠ Кэш таслагч `cb=` — `t` БИШ (тэр нь гарын үсэг).
+   ⚠ SIGN_SECRET байхгүй бол гарын үсэггүй явна (fail-open). */
+function r2GetQ(key) {
+  var q = '?cb=' + Date.now();
+  try {
+    var s = process.env.SIGN_SECRET || '';
+    if (s) {
+      var e = String(Date.now() + 10 * 60 * 1000);
+      q += '&t=' + require('crypto').createHmac('sha256', s)
+             .update('dl|' + key + '|' + e, 'utf8').digest('hex') + '&e=' + e;
+    }
+  } catch (err) {}
+  return q;
+}
+
 const FB_PROJECT = process.env.FB_PROJECT_ID || 'monos-hab-system';
 const FS = 'https://firestore.googleapis.com/v1/projects/' + FB_PROJECT +
   '/databases/(default)/documents';
@@ -87,7 +106,7 @@ async function auditAppend(entry) {
   const file = 'audit/' + day + '.json';
   let cur = null;
   try {
-    const r = await fetch(R2 + '/' + file + '?t=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(R2 + '/' + file + r2GetQ(file), { cache: 'no-store' });
     if (r.ok) cur = await r.json();
   } catch (e) { cur = null; }
   if (!cur || !Array.isArray(cur.rows)) cur = { day: day, rows: [], last: '' };

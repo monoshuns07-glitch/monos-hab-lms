@@ -19,6 +19,25 @@ const crypto = require('crypto');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
 
+
+/* ⚠ 2026-09-09 (аюулгүй байдлын олдвор №2): R2-ийн уншилт хамгаалалттай
+   болсон тул серверийн уншилт ч ГАРЫН ҮСЭГТЭЙ явна. Worker-ийн шалгадагтай
+   ижил: HMAC-SHA256 `dl|<түлхүүр>|<хугацаа>`.
+   ⚠ Кэш таслагч `cb=` — `t` БИШ (тэр нь гарын үсэг).
+   ⚠ SIGN_SECRET байхгүй бол гарын үсэггүй явна (fail-open). */
+function r2GetQ(key) {
+  var q = '?cb=' + Date.now();
+  try {
+    var s = process.env.SIGN_SECRET || '';
+    if (s) {
+      var e = String(Date.now() + 10 * 60 * 1000);
+      q += '&t=' + require('crypto').createHmac('sha256', s)
+             .update('dl|' + key + '|' + e, 'utf8').digest('hex') + '&e=' + e;
+    }
+  } catch (err) {}
+  return q;
+}
+
 /* ⚠ ШИНЭ ЧУХАЛ ФАЙЛ НЭМБЭЛ ЭНД БИЧНЭ — эс бөгөөс нөөцлөгдөхгүй. */
 const KEYS = [
   'reports/_all.json',        /* аюул, ажлын захиалга */
@@ -77,7 +96,7 @@ function upHeaders(key) {
 
 async function getRaw(key) {
   try {
-    const r = await fetch(R2 + '/' + key + '?t=' + Date.now(), { cache: 'no-store' });
+    const r = await fetch(R2 + '/' + key + r2GetQ(key), { cache: 'no-store' });
     if (!r.ok) return null;
     return await r.text();
   } catch (e) { return null; }

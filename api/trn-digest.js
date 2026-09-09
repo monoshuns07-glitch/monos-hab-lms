@@ -20,6 +20,25 @@
 const { sendViaGmail } = require('./_smtp.js');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
+
+/* ⚠ 2026-09-09 (аюулгүй байдлын олдвор №2): R2-ийн уншилт хамгаалалттай
+   болсон тул серверийн уншилт ч ГАРЫН ҮСЭГТЭЙ явна. Worker-ийн шалгадагтай
+   ижил: HMAC-SHA256 `dl|<түлхүүр>|<хугацаа>`.
+   ⚠ Кэш таслагч `cb=` — `t` БИШ (тэр нь гарын үсэг).
+   ⚠ SIGN_SECRET байхгүй бол гарын үсэггүй явна (fail-open). */
+function r2GetQ(key) {
+  var q = '?cb=' + Date.now();
+  try {
+    var s = process.env.SIGN_SECRET || '';
+    if (s) {
+      var e = String(Date.now() + 10 * 60 * 1000);
+      q += '&t=' + require('crypto').createHmac('sha256', s)
+             .update('dl|' + key + '|' + e, 'utf8').digest('hex') + '&e=' + e;
+    }
+  } catch (err) {}
+  return q;
+}
+
 const HAB_PROJ = 'habea-shalgalt';
 const HAB_KEY = 'AIzaSyBRaHjzrEedBZc1Z5zNnJuJvLboKwKed2E';
 const FB_WEB_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
@@ -67,7 +86,7 @@ function fval(f) {
 }
 
 async function r2Json(key) {
-  const r = await fetch(R2 + '/' + key + '?t=' + Date.now(), { cache: 'no-store' });
+  const r = await fetch(R2 + '/' + key + r2GetQ(key), { cache: 'no-store' });
   if (!r.ok) { if (r.status === 404) return null; throw new Error('R2 ' + r.status + ' ' + key); }
   return await r.json();
 }
