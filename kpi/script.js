@@ -784,6 +784,31 @@ async function syncEmployeesWithRealData() {
         return pv ? Object.assign({}, pv, r) : r;
       });
       empCacheSave(DB.employees);
+      /* ⚠⚠ 2026-09-10: БҮТЭН ЖАГСААЛТЫГ (`employeesAll`) ЗААВАЛ ЭНД НЭГТГЭНЭ.
+         Тэр жагсаалт нь `empKeepAll()`-оор зөвхөн УРТСДАГ байсан тул ажлаас
+         гарсан хүн МӨНХӨД үлдэж, `empAll()` түүнийг (илүү урт учраас) буцааж,
+         албан тушаалаар хайхад (ХН-ийн захиалгын гарын үсэг) ГАРСАН хүн
+         сонгогдож урсгал гацдаг байв — 2026-09-10-нд бодитоор илэрсэн:
+         kpi/state.json дахь 314 мөрт хуучин Хүний нөөцийн ахлах менежер
+         хэвээр байсан тул шинэ менежер хэзээ ч сонгогдохгүй байв.
+         ⚠ Хуучин мөрийг УСТГАХГҮЙ (түүх, хуучин нэр хэрэгтэй) — зөвхөн
+         `onLeave: true` гэж тэмдэглэнэ; R2 дахь жагсаалт нь ХН-ийн бүртгэлээс
+         гардаг БҮТЭН, өнөөгийн жагсаалт тул түүнд байхгүй хүн = гарсан хүн.
+         ⚠ Хагас уншилтаас болж бүх хүнийг «гарсан» болгохоос сэргийлж доод
+         хязгаар тавив. */
+      try {
+        if (DB.employees.length >= 50) {
+          var freshUid = {};
+          DB.employees.forEach(function (e) { if (e && e.uid) freshUid[e.uid] = 1; });
+          var mergedAll = DB.employees.slice();
+          (DB.employeesAll || []).forEach(function (o) {
+            if (o && o.uid && !freshUid[o.uid]) {
+              var cp = Object.assign({}, o); cp.onLeave = true; mergedAll.push(cp);
+            }
+          });
+          DB.employeesAll = mergedAll;
+        }
+      } catch (e) {}
       console.log('[emp] R2-оос ' + DB.employees.length + ' ажилтан');
       shown = true;
       /* Ажилтанд энэ хангалттай — Firestore рүү огт хандахгүй */
