@@ -269,7 +269,8 @@ module.exports = async function handler(req, res) {
         ' — ' + (r.gateAb || '') + ' (зэрэг ' + (r.urg || 3) + ')';
       r.esc.noclaim = stamp;
     } else if (j.k === 'half') {
-      to = r.claimer ? [r.claimer] : [];
+      /* ⭐ Олон хүн томилогдсон бол бүгдэд нь (2026-09-10) */
+      to = (Array.isArray(r.team) && r.team.length) ? r.team.slice() : (r.claimer ? [r.claimer] : []);
       const left = Math.max(0, (new Date(r.createdAt).getTime() + Number(r.hours) * 3600000 - now) / 3600000);
       title = '⏳ Хугацааны тал өнгөрлөө — ' + hoursText(left) + ' үлдсэн';
       r.esc.half = stamp;
@@ -322,7 +323,7 @@ module.exports = async function handler(req, res) {
   } catch (e) {}
   /* Толь дээрх и-мэйл нь ажилтны жагсаалтад байхгүй хүнийг ч нөхнө */
   rows.forEach(function (r) {
-    [].concat(r.leads || [], r.director || [], r.claimer || []).forEach(function (x) {
+    [].concat(r.leads || [], r.director || [], r.claimer || [], r.team || []).forEach(function (x) {
       if (x && x.uid && x.email && !mailOf[x.uid]) mailOf[x.uid] = String(x.email).trim();
     });
   });

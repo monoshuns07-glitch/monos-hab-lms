@@ -3940,7 +3940,8 @@ function repVisible(rows) {
     if (rfNeedAllRows()) return rows;
     var uid = (SESSION && SESSION.uid) || '';
     return rows.filter(function (r) {
-      return r && (r.reporterUid === uid || (r.wkClaimBy && r.wkClaimBy.uid === uid));
+      /* ⭐ Томилогдсон багийн гишүүн, хариуцагч ч өөрийн ажлаа харна (2026-09-10) */
+      return r && (r.reporterUid === uid || wkTeamHas(r, uid) || wkIsOwnerMe(r, uid));
     });
   } catch (e) { return rows; }
 }
@@ -17684,11 +17685,12 @@ function rfDashData(all) {
     push(d.whoRows, who, r);
 
     /* ── Хэн хүлээж авсан (гүйцэтгэгч) ── */
-    if (r.wkClaimBy && r.wkClaimBy.name) {
-      var doer = String(r.wkClaimBy.name).trim();
+    wkTeamOf(r).forEach(function (p) {             /* багийн гишүүн бүрд тоологдоно */
+      if (!p || !p.name) return;
+      var doer = String(p.name).trim();
       d.byDoer[doer] = (d.byDoer[doer] || 0) + 1;
       push(d.doerRows, doer, r);
-    }
+    });
 
     /* ── Зураг хавсаргасан эсэх (маягтын 5-р алхам) ── */
     if (hasImg(r.photo)) d.hasPhoto.push(r); else d.noPhoto.push(r);
@@ -18350,7 +18352,7 @@ function rfExportHTML(all) {
               st: r.status === 'verified' ? 'Баталгаажсан'
                 : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
               wk: WK_STATUS[wkStatus(r)] ? WK_STATUS[wkStatus(r)].l : '',
-              doer: (r.wkClaimBy && r.wkClaimBy.name) || '',
+              doer: wkTeamOf(r).map(function (p) { return p.name || ''; }).filter(Boolean).join(', '),
               photo: hasImg(r.photo) ? 'тийм' : 'үгүй'
             };
           })
@@ -18509,7 +18511,7 @@ function rfExportXlsx(all) {
           String(r.desc || ''),
           r.status === 'verified' ? 'Баталгаажсан' : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй',
           (WK_STATUS[wkStatus(r)] || {}).l || '',
-          (r.wkClaimBy && r.wkClaimBy.name) || '',
+          wkTeamOf(r).map(function (p) { return p.name || ''; }).filter(Boolean).join(', '),
           String(r.wkExecAt || '').slice(0, 16).replace('T', ' '),
           r.wkAccept === 'done' ? 'Тийм' : r.wkAccept === 'reject' ? 'Буцаасан' : '',
           hasImg(r.photo) ? 'тийм' : 'үгүй'
@@ -19799,7 +19801,7 @@ function wkHasProof(r) {
 function wkTrustFlags(r) {
   var f = [];
   if (!r) return f;
-  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+  var cl = wkClaimView(r), ac = r.wkAcceptBy || {};
   var mins = function (a, b) {
     var x = new Date(a).getTime(), y = new Date(b).getTime();
     if (isNaN(x) || isNaN(y)) return null;
@@ -19869,7 +19871,7 @@ function wkTrustHTML(r) {
 function wkChainHTML(r) {
   if (!r) return '';
   var st = wkStatus(r);
-  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+  var cl = wkClaimView(r), ac = r.wkAcceptBy || {};
   var closed = st === 'closed';
   /* ⚠ Зөвхөн өдрөөр бичихэд нэг өдөр бүртгэгдсэн хэдэн ажлын дараалал
      юунд үндэслэснийг ойлгох аргагүй байв — цаг, минутыг нь ч харуулна. */
@@ -20139,23 +20141,37 @@ function wkUnclaim(id) {
   var me = reqMe(); if (!me) return;
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r || !r.wkClaimBy || !r.wkClaimBy.uid) { toast('Энэ ажлыг хэн ч хүлээж аваагүй байна', 'warn'); return; }
-  if (r.wkClaimBy.uid !== me.uid && !isAdmin()) { toast('Зөвхөн хүлээж авсан хүн эсвэл админ цуцална', 'warn'); return; }
+  if (!wkTeamHas(r, me.uid) && !isAdmin()) { toast('Зөвхөн томилогдсон хүн эсвэл админ цуцална', 'warn'); return; }
   if (wkStatus(r) !== 'claimed') { toast('Гүйцэтгэсний дараа цуцлах боломжгүй', 'warn'); return; }
   var why = prompt('Хүлээн авснаа цуцлах шалтгаан (заавал биш):', '') ;
   if (why === null) return;
   var prev = r.wkClaimBy;
+  /* ⭐ Олон хүн томилогдсон бол ЗӨВХӨН өөрийгөө хасна — бусад нь үргэлжлүүлнэ (2026-09-10) */
+  var _rest = wkTeamOf(r).filter(function (p) { return p.uid !== me.uid; });
+  var _onlyMe = wkTeamHas(r, me.uid) && _rest.length > 0;
   wkPatch(id, function (x) {
     x.wkUnclaimLog = (x.wkUnclaimLog || []).concat([{
       uid: me.uid, name: me.name || '', at: new Date().toISOString(),
-      was: { uid: prev.uid, name: prev.name || '', at: prev.at || '' }, why: String(why || '').slice(0, 200)
+      was: { uid: prev.uid, name: prev.name || '', at: prev.at || '' }, why: String(why || '').slice(0, 200),
+      self: _onlyMe
     }]);
+    if (_onlyMe) {
+      x.wkTeam = _rest;
+      if (x.wkClaimBy && x.wkClaimBy.uid === me.uid) x.wkClaimBy = _rest[0];
+      if (x.wkOwner && x.wkOwner.uid === me.uid) {
+        x.wkOwner = { uid: _rest[0].uid, name: _rest[0].name || '', pos: _rest[0].pos || '', at: new Date().toISOString() };
+      }
+      return;
+    }
     x.wkClaimBy = null;                          /* → төлөв дахин «шинэ» */
+    delete x.wkTeam;
     x.wkOwner = null;                            /* хариуцагч ч чөлөөлөгдөнө */
-  }, '↩ Хүлээн авалт цуцлагдлаа — ажил дахин нээлттэй боллоо');
+  }, _onlyMe ? '↩ Та энэ ажлаас гарлаа — бусад томилогдсон хүн үргэлжлүүлнэ'
+             : '↩ Хүлээн авалт цуцлагдлаа — ажил дахин нээлттэй боллоо');
   try {
     var rr = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
     var rep = woEmpByUid(rr.reporterUid);
-    if (rep) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
+    if (rep && !_onlyMe) ntfSend([rep], { kind: 'wk', url: '/kpi/?page=reportflow',
       title: '↩ Хүлээн авалт цуцлагдлаа',
       body: (prev.name || '') + ' хүлээн авснаа цуцаллаа' + (why ? ' — ' + String(why).slice(0, 80) : '') + '. Ажил дахин нээлттэй.' });
   } catch (e) {}
@@ -20345,6 +20361,7 @@ function wkMoveModal(id) {
       }]);
       x.wkGate = to;
       x.wkClaimBy = null;              /* шинэ алба дахин хүлээж авна */
+      delete x.wkTeam;                 /* томилогдсон баг ч чөлөөлөгдөнө */
       /* ⚠ Хариуцагчийг ч чөлөөлнө — өмнөх албаны ахлах шинэ албаны ажлыг
          хариуцсан хэвээр үлдэх нь буруу (2026-09-05) */
       x.wkOwner = null;
@@ -20570,8 +20587,8 @@ function wkAcceptModal(id) {
         x.wkExecAt = ''; x.wkExecNote = ''; x.wkExecPhoto = '';
       }, '↩ Ажил буцаагдлаа');
       try {
-        var ex2 = woEmpByUid(r2.wkClaimBy && r2.wkClaimBy.uid);
-        if (ex2) ntfSend([ex2], { kind: 'wk', url: '/kpi/?page=reportflow',
+        var ex2 = wkTeamOf(r2).map(function (p) { return woEmpByUid(p.uid); }).filter(Boolean);
+        if (ex2.length) ntfSend(ex2, { kind: 'wk', url: '/kpi/?page=reportflow',
           title: '↩ Ажил буцаагдлаа — дахин хийх шаардлагатай', body: why.slice(0, 110) });
       } catch (e) {}
       return;
@@ -20785,6 +20802,51 @@ function wkCanAssign(r) {
     return /дарга|ахлах|менежер/i.test(pos);
   } catch (e) { return false; }
 }
+/* ══ ТОМИЛОГДСОН БАГ (2026-09-10) ══════════════════════════════════
+   ⭐ Хэрэглэгчийн хүсэлт: захирал нэг ажилд ХЭДЭН Ч хүн томилдог байх.
+   wkTeam = томилогдсон бүх хүн (эхнийх нь үндсэн гүйцэтгэгч).
+   wkClaimBy = үндсэн гүйцэтгэгч хэвээр — хуучин бүх код (төлөв, сервер,
+   тайлан) түүгээр ажиллана. Хуучин бичлэгт wkTeam байхгүй → wkClaimBy-г
+   ганц гишүүнтэй баг гэж үзнэ.
+   ⚠ wkClaimBy-г цэвэрлэх БҮХ газарт wkTeam-ийг ч устга (буцаах, цуцлах,
+     алба шилжүүлэх) — эс бөгөөс «шинэ» ажил хуучин багтаа харагдана. */
+function wkTeamOf(r) {
+  var out = [], seen = {};
+  var add = function (p) { if (p && p.uid && !seen[p.uid]) { seen[p.uid] = 1; out.push(p); } };
+  if (r && r.wkClaimBy && r.wkClaimBy.uid) add(r.wkClaimBy);
+  ((r && Array.isArray(r.wkTeam)) ? r.wkTeam : []).forEach(add);
+  return out;
+}
+function wkTeamHas(r, uid) {
+  if (!uid) return false;
+  return wkTeamOf(r).some(function (p) { return p.uid === uid; });
+}
+/* «А, Б +2» — карт дээр товч харуулна */
+function wkTeamLabel(r, max) {
+  var tm = wkTeamOf(r), lim = max || 3;
+  var nm = function (p) { try { return wkPersonName(p.uid, p.name); } catch (e) { return p.name || ''; } };
+  var head = tm.slice(0, lim).map(nm).filter(Boolean).join(', ');
+  return tm.length > lim ? head + ' +' + (tm.length - lim) : head;
+}
+/* Маягт, тайланд: үндсэн гүйцэтгэгчийн мэдээлэл + бүх хүний нэр */
+function wkClaimView(r) {
+  var c = {};
+  try { Object.keys((r && r.wkClaimBy) || {}).forEach(function (k) { c[k] = r.wkClaimBy[k]; }); } catch (e) {}
+  var tm = wkTeamOf(r);
+  if (tm.length > 1) c.name = tm.map(function (p) { return p.name || ''; }).filter(Boolean).join(', ');
+  return c;
+}
+/* Хүн гараар (цуцлах/буцаах) чөлөөлсөн сүүлийн агшин — тольд үлдсэн
+   серверийн хуучин автомат оноолтыг дахин БУУЛГАХГҮЙН тулд */
+function wkManualFreeAt(r) {
+  var a = String((r && r.wkAsgCancelAt) || '');
+  try {
+    var u = ((r && r.wkUnclaimLog) || []).slice(-1)[0];
+    if (u && String(u.at || '') > a) a = String(u.at);
+  } catch (e) {}
+  return a;
+}
+
 /* ХАРИУЦАГЧ — хуучин бичлэгт байхгүй бол гүйцэтгэгчийг нь хариуцагч гэж үзнэ */
 function wkOwnerOf(r) {
   if (!r) return null;
@@ -20798,7 +20860,7 @@ function wkIsOwnerMe(r, uid) {
 /* Би энэ ажилд оролцож байна уу (хариуцагч эсвэл гүйцэтгэгч) */
 function wkMineWork(r, uid) {
   if (!uid) return false;
-  if (r && r.wkClaimBy && r.wkClaimBy.uid === uid) return true;
+  if (wkTeamHas(r, uid)) return true;             /* томилогдсон багийн аль ч гишүүн */
   return wkIsOwnerMe(r, uid);
 }
 
@@ -20847,76 +20909,239 @@ function wkGateStaff(r) {
   return res;
 }
 
+/* ══ ХҮН ТОМИЛОХ (2026-09-10 шинэчлэл) ══════════════════════════════
+   ⭐ Хэрэглэгчийн хүсэлт: Үйлдвэрийн захирал зөвхөн ИТА, ХАБЭА-ны хүмүүсээс
+   томилж чаддаг байв. Одоо:
+     · захирал / админ — НИЙТ ажилтнаас сонгоно (wkAssignPool)
+     · албаны дарга, ахлах — өмнөх шигээ өөрийн албаны ажилтнаас
+     · НЭГ биш, ХЭДЭН Ч хүн (wkTeam). Эхнийх нь үндсэн гүйцэтгэгч
+     · Томилогдсон ажилд цонх одоогийн багийг сонгосон байдлаар нээгдэж,
+       хүн нэмэх / хасах, эсвэл томилолтыг бүхэлд нь ЦУЦЛАХ боломжтой. */
+function wkAssignWide() {
+  try { return !!(isAdmin() || wkIsDirector()); } catch (e) { return false; }
+}
+function wkAssignPool(r) {
+  if (!wkAssignWide()) return wkGateStaff(r);
+  var res = [], seen = {};
+  try {
+    empAll().forEach(function (e) {
+      if (!e || !e.uid || seen[e.uid]) return;
+      if (e.onLeave || e.isActive === false) return;
+      if (wkIsSelf(r, e.uid)) return;             /* мэдээлсэн хүнийг өөрийг нь томилохгүй */
+      seen[e.uid] = 1;
+      res.push(e);
+    });
+  } catch (e) {}
+  res.sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'mn'); });
+  return res;
+}
+
 /* ── Хүн томилох цонх ── */
 function wkAssignModal(id) {
   var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
   if (!r) return;
   var _isRe = wkStatus(r) === 'claimed';
   if (_isRe ? !wkCanReassign(r) : !wkCanAssign(r)) { toast('Танд томилох эрх байхгүй', 'warn'); return; }
-  var staff = wkGateStaff(r);
-  if (!staff.length) { toast('Тухайн албаны ажилтны жагсаалт ачаалагдаагүй байна', 'warn'); return; }
+  var wide = wkAssignWide();
+  var staff = wkAssignPool(r).slice();
+  var cur = _isRe ? wkTeamOf(r) : [];
+  /* Одоо томилогдсон хүн жагсаалтад байхгүй (өөр алба г.м.) бол дээр нь нэмж харуулна */
+  cur.slice().reverse().forEach(function (p) {
+    if (!staff.some(function (e) { return e.uid === p.uid; })) {
+      staff.unshift(woEmpByUid(p.uid) || { uid: p.uid, name: p.name || '', pos: p.pos || '' });
+    }
+  });
+  if (!staff.length) { toast('Ажилтны жагсаалт ачаалагдаагүй байна', 'warn'); return; }
+  var byEmp = {};
+  staff.forEach(function (e) { byEmp[e.uid] = e; });
+  var pick = cur.map(function (p) { return p.uid; });
 
   var node = elc('div', '');
   node.innerHTML =
-    '<div style="font-size:13px;color:#64748B;line-height:1.6;margin-bottom:12px">' +
+    '<div style="font-size:13px;color:#64748B;line-height:1.6;margin-bottom:10px">' +
     (_isRe
-      ? 'Энэ ажлыг одоо <b>' + esc((r.wkClaimBy && r.wkClaimBy.name) || '') + '</b> хүлээж авсан байна. ' +
-        'Албаныхаа өөр ажилтанд даалгах бол сонгоно уу — шинэ хүнд мэдэгдэл очно.'
-      : 'Энэ ажлыг хэн хийхийг сонгоно уу. Томилогдсон хүнд мэдэгдэл очиж, ажил нь ' +
-        '«Хийгдэж байна» төлөвт шилжинэ.') + '</div>' +
-    '<input id="wkAsQ" placeholder="Нэрээр хайх…" style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;' +
-    'border-radius:11px;font-family:inherit;font-size:14px;margin-bottom:10px;box-sizing:border-box">' +
-    '<div id="wkAsList" style="max-height:340px;overflow:auto;border:1px solid #E2E8F0;border-radius:11px">' +
+      ? 'Одоо томилогдсон хүмүүс сонгогдсон байна. Хүн <b>нэмэх</b> бол чагтлана, <b>хасах</b> бол чагтыг авна. ' +
+        'Нэмсэн хүнд томилолтын, хассан хүнд цуцлалтын мэдэгдэл очно.'
+      : 'Энэ ажлыг хийх хүнийг сонгоно уу — <b>хэдэн ч хүн</b> сонгож болно. Томилогдсон хүмүүст мэдэгдэл очиж, ' +
+        'ажил «Хийгдэж байна» төлөвт шилжинэ.') +
+    (wide ? ' <b style="color:#4F46E5">Нийт ажилтнаас сонгоно.</b>' : '') + '</div>' +
+    '<div id="wkAsSel" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>' +
+    '<input id="wkAsQ" placeholder="' + (wide ? 'Нэр, албан тушаал, албаар хайх…' : 'Нэрээр хайх…') + '" ' +
+    'style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;border-radius:11px;font-family:inherit;' +
+    'font-size:14px;margin-bottom:10px;box-sizing:border-box">' +
+    '<div id="wkAsList" style="max-height:min(46vh,360px);overflow:auto;border:1px solid #E2E8F0;border-radius:11px">' +
     staff.map(function (e) {
-      return '<div data-wk-as-pick="' + esc(e.uid) + '" style="display:flex;justify-content:space-between;' +
-        'align-items:center;gap:10px;padding:11px 13px;border-bottom:1px solid #F1F5F9;cursor:pointer" ' +
-        'data-name="' + esc(String(e.name || '').toLowerCase()) + '">' +
-        '<div style="min-width:0"><div style="font-weight:700;font-size:13.5px;color:#0F1117">' + esc(e.name) + '</div>' +
-        '<div style="font-size:11.5px;color:#94A3B8">' + esc(e.pos || e.role || '') + '</div></div>' +
-        '<span style="flex-shrink:0;color:#4F46E5;font-size:12.5px;font-weight:800">Томилох →</span></div>';
-    }).join('') + '</div>';
+      var sub = [e.pos || e.role || '', wide ? (e.dept || '') : ''].filter(Boolean).join(' · ');
+      return '<label data-wk-as-row="' + esc(e.uid) + '" data-q="' + esc(String((e.name || '') + ' ' + sub).toLowerCase()) + '" ' +
+        'style="display:flex;align-items:center;gap:11px;padding:10px 13px;border-bottom:1px solid #F1F5F9;cursor:pointer">' +
+        '<input type="checkbox" data-wk-as-pick="' + esc(e.uid) + '" style="width:18px;height:18px;flex-shrink:0;accent-color:#4F46E5">' +
+        '<span style="min-width:0;flex:1"><span style="display:block;font-weight:700;font-size:13.5px;color:#0F1117">' +
+        esc(e.name || '') + '</span><span style="display:block;font-size:11.5px;color:#94A3B8;overflow:hidden;' +
+        'text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</span></span></label>';
+    }).join('') + '</div>' +
+    '<div id="wkAsEmpty" style="display:none;padding:12px;text-align:center;color:#94A3B8;font-size:13px">Олдсонгүй</div>' +
+    '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:12px">' +
+    '<button class="btn btn-primary" id="wkAsGo" style="flex:1;min-width:170px"></button>' +
+    (_isRe ? '<button class="btn btn-secondary" id="wkAsCancel" style="color:#B91C1C;border-color:#FECACA">' +
+      '<i class="ti ti-user-x"></i> Томилолт цуцлах</button>' : '') + '</div>';
 
+  var sync = function () {
+    node.querySelectorAll('[data-wk-as-pick]').forEach(function (cb) {
+      cb.checked = pick.indexOf(cb.getAttribute('data-wk-as-pick')) >= 0;
+    });
+    node.querySelector('#wkAsSel').innerHTML = pick.map(function (u, i) {
+      var e = byEmp[u] || {};
+      return '<span style="display:inline-flex;align-items:center;gap:6px;background:#EEF2FF;color:#3730A3;' +
+        'border-radius:999px;padding:4px 5px 4px 11px;font-size:12.5px;font-weight:700"' +
+        (i === 0 ? ' title="Үндсэн гүйцэтгэгч"' : '') + '>' + (i === 0 ? '⭐ ' : '') + esc(e.name || u) +
+        '<button type="button" data-wk-as-x="' + esc(u) + '" aria-label="Хасах" style="border:0;background:#C7D2FE;' +
+        'color:#3730A3;width:20px;height:20px;border-radius:50%;cursor:pointer;font-weight:900;line-height:1;padding:0">×</button></span>';
+    }).join('');
+    var go = node.querySelector('#wkAsGo');
+    go.disabled = !pick.length;
+    go.style.opacity = pick.length ? '' : '.55';
+    go.innerHTML = '<i class="ti ti-user-check"></i> ' + (pick.length
+      ? (_isRe ? 'Хадгалах' : 'Томилох') + ' (' + pick.length + ' хүн)'
+      : 'Хүн сонгоно уу');
+  };
   var q = node.querySelector('#wkAsQ');
   q.addEventListener('input', function () {
-    var v = (q.value || '').toLowerCase().trim();
-    node.querySelectorAll('[data-wk-as-pick]').forEach(function (row) {
-      row.style.display = (!v || (row.getAttribute('data-name') || '').indexOf(v) >= 0) ? '' : 'none';
+    var v = (q.value || '').toLowerCase().trim(), shown = 0;
+    node.querySelectorAll('[data-wk-as-row]').forEach(function (row) {
+      var ok = !v || (row.getAttribute('data-q') || '').indexOf(v) >= 0;
+      row.style.display = ok ? '' : 'none';
+      if (ok) shown++;
     });
+    node.querySelector('#wkAsEmpty').style.display = shown ? 'none' : 'block';
+  });
+  node.addEventListener('change', function (ev) {
+    var cb = ev.target && ev.target.closest ? ev.target.closest('[data-wk-as-pick]') : null;
+    if (!cb) return;
+    var u = cb.getAttribute('data-wk-as-pick'), i = pick.indexOf(u);
+    if (cb.checked && i < 0) pick.push(u);
+    if (!cb.checked && i >= 0) pick.splice(i, 1);
+    sync();
   });
   node.addEventListener('click', function (ev) {
-    var pick = ev.target.closest('[data-wk-as-pick]');
-    if (!pick) return;
-    var uid = pick.getAttribute('data-wk-as-pick');
-    var emp = staff.filter(function (e) { return e.uid === uid; })[0];
-    if (!emp) return;
-    var byName = '';
-    try { var me2 = myEmp(); byName = (me2 && me2.name) || (SESSION && SESSION.email) || ''; } catch (e) {}
-    wkPatch(id, function (x) {
-      var prev = x.wkClaimBy;
-      if (prev && prev.uid && prev.uid !== emp.uid) {
-        x.wkHandLog = (x.wkHandLog || []).concat([{
-          from: { uid: prev.uid, name: prev.name || '' },
-          to: { uid: emp.uid, name: emp.name || '' },
-          by: byName, at: new Date().toISOString()
-        }]);
-      }
-      x.wkClaimBy = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
-        at: new Date().toISOString(), assignedBy: byName };
-      /* Анх томилогдсон хүн = хариуцагч. Даалгах үед хариуцагч ХЭВЭЭР. */
-      if (!(x.wkOwner && x.wkOwner.uid)) {
-        x.wkOwner = { uid: emp.uid, name: emp.name || '', pos: emp.pos || emp.role || '',
-          at: new Date().toISOString(), assignedBy: byName };
-      }
-    }, '✓ ' + emp.name + (_isRe ? ' -д даалгалаа' : ' -д томиллоо'));
-    try {
-      ntfSend([emp], { kind: 'wk', url: '/kpi/?page=reportflow',
-        title: _isRe ? '📌 Танд ажил даалгалаа' : '📌 Танд ажил томилогдлоо',
-        body: (byName ? byName + (_isRe ? ' даалгалаа · ' : ' томиллоо · ') : '') +
-          String(r.desc || '').slice(0, 80) });
-    } catch (e) {}
+    var x = ev.target.closest('[data-wk-as-x]');
+    if (x) {
+      ev.preventDefault();
+      var i = pick.indexOf(x.getAttribute('data-wk-as-x'));
+      if (i >= 0) pick.splice(i, 1);
+      sync();
+      return;
+    }
+    if (ev.target.closest('#wkAsCancel')) { try { closeModal(); } catch (e) {} wkAssignCancel(id); return; }
+    if (!ev.target.closest('#wkAsGo') || !pick.length) return;
+    var emps = pick.map(function (u) { return byEmp[u]; }).filter(Boolean);
     try { closeModal(); } catch (e) {}
+    wkAssignSave(id, emps, _isRe);
   });
-  buildModal(_isRe ? 'Өөр хүнд даалгах' : 'Хүн томилох', node, { width: 'min(520px, 96vw)' });
+  sync();
+  buildModal(_isRe ? 'Томилолт өөрчлөх' : 'Хүн томилох', node, { width: 'min(560px, 96vw)' });
+}
+
+/* Сонгосон хүмүүсийг хадгална — нэмсэн/хассаныг тооцож мэдэгдэнэ */
+function wkAssignSave(id, emps, isRe) {
+  var r0 = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r0 || !emps || !emps.length) return null;
+  var byName = '', byUid = '';
+  try { var me2 = myEmp(); byName = (me2 && me2.name) || (SESSION && SESSION.email) || ''; } catch (e) {}
+  try { byUid = ((reqMe() || {}).uid) || (SESSION && SESSION.uid) || ''; } catch (e) {}
+  var before = isRe ? wkTeamOf(r0) : [];
+  var had = {}, want = {};
+  before.forEach(function (p) { had[p.uid] = 1; });
+  emps.forEach(function (e) { want[e.uid] = 1; });
+  var added = emps.filter(function (e) { return !had[e.uid]; });
+  var removed = before.filter(function (p) { return !want[p.uid]; });
+  if (!added.length && !removed.length) { toast('Өөрчлөлт алга', 'info'); return null; }
+  var now = new Date().toISOString();
+  var mk = function (e) {
+    return { uid: e.uid, name: e.name || '', pos: e.pos || e.role || '', at: now, assignedBy: byName, assignedByUid: byUid };
+  };
+  var msg = '✓ ' + [added.length ? added.length + ' хүн томиллоо' : '',
+    removed.length ? removed.length + ' хүний томилолт цуцаллаа' : ''].filter(Boolean).join(', ');
+  var rr = wkPatch(id, function (x) {
+    var team = (isRe ? wkTeamOf(x) : []).filter(function (p) { return want[p.uid]; });
+    emps.forEach(function (e) {
+      if (!team.some(function (p) { return p.uid === e.uid; })) team.push(mk(e));
+    });
+    var prev = x.wkClaimBy;
+    var primary = (prev && prev.uid && want[prev.uid]) ? prev : team[0];
+    if (prev && prev.uid && prev.uid !== primary.uid) {
+      x.wkHandLog = (x.wkHandLog || []).concat([{
+        from: { uid: prev.uid, name: prev.name || '' }, to: { uid: primary.uid, name: primary.name || '' },
+        by: byName, at: now
+      }]);
+    }
+    x.wkClaimBy = primary;
+    x.wkTeam = team;
+    /* Анх томилогдсон хүн = хариуцагч; өөр хүнд даалгахад хариуцагч ХЭВЭЭР.
+       ⚠ Харин хариуцагчийг ӨӨР хүн (жишээ нь захирал) багаас хассан бол
+       шинэ үндсэн гүйцэтгэгч хариуцна. */
+    var ow = x.wkOwner;
+    if (!(ow && ow.uid) || (had[ow.uid] && !want[ow.uid] && ow.uid !== byUid)) {
+      x.wkOwner = { uid: primary.uid, name: primary.name || '', pos: primary.pos || '', at: now, assignedBy: byName };
+    }
+    x.wkAsgLog = (x.wkAsgLog || []).concat([{
+      at: now, by: byName, byUid: byUid,
+      add: added.map(function (e) { return e.name || ''; }),
+      remove: removed.map(function (p) { return p.name || ''; })
+    }]);
+  }, msg);
+  try {
+    var body = String(r0.desc || '').slice(0, 80);
+    if (added.length) ntfSend(added.map(function (e) { return woEmpByUid(e.uid) || e; }), {
+      kind: 'wk', url: '/kpi/?page=reportflow',
+      title: isRe ? '📌 Танд ажил даалгалаа' : '📌 Танд ажил томилогдлоо',
+      body: (byName ? byName + (isRe ? ' даалгалаа · ' : ' томиллоо · ') : '') + body });
+    if (removed.length) ntfSend(removed.map(function (p) { return woEmpByUid(p.uid) || p; }), {
+      kind: 'wk', url: '/kpi/?page=reportflow',
+      title: '✖ Таны томилолт цуцлагдлаа',
+      body: (byName ? byName + ' цуцаллаа · ' : '') + body });
+  } catch (e) {}
+  return rr;
+}
+
+/* ── Томилолт цуцлах (2026-09-10) ──
+   Томилсон хүн (захирал, дарга) томилолтоо БҮХЭЛД нь цуцална. Ажил дахин
+   «шинэ» болж, гарцын бүх хүнд харагдана.
+   ⚠ Гүйцэтгэсний дараа цуцлахгүй — тэр үед батлах/буцаах урсгал явна. */
+function wkAssignCancel(id) {
+  var r = (DB.reports || []).filter(function (x) { return x.id === id; })[0];
+  if (!r) return null;
+  if (wkStatus(r) !== 'claimed') { toast('Гүйцэтгэгдээгүй, томилогдсон ажлын томилолтыг л цуцална', 'warn'); return null; }
+  if (!wkCanReassign(r)) { toast('Танд томилолт цуцлах эрх байхгүй', 'warn'); return null; }
+  var team = wkTeamOf(r);
+  var names = team.map(function (p) { return p.name || ''; }).filter(Boolean).join(', ');
+  var why = prompt('«' + String(r.desc || '').slice(0, 60) + '»\n\n' + (names ? names + ' — ' : '') +
+    'томилолтыг цуцлах уу? Ажил дахин нээлттэй болно.\n\nШалтгаан (заавал биш):', '');
+  if (why === null) return null;
+  var byName = '', byUid = '';
+  try { var me2 = myEmp(); byName = (me2 && me2.name) || (SESSION && SESSION.email) || ''; } catch (e) {}
+  try { byUid = ((reqMe() || {}).uid) || (SESSION && SESSION.uid) || ''; } catch (e) {}
+  var now = new Date().toISOString();
+  var ow = wkOwnerOf(r);
+  var rr = wkPatch(id, function (x) {
+    x.wkAsgLog = (x.wkAsgLog || []).concat([{
+      at: now, by: byName, byUid: byUid, cancel: true,
+      remove: wkTeamOf(x).map(function (p) { return p.name || ''; }), why: String(why || '').slice(0, 200)
+    }]);
+    x.wkAsgCancelAt = now;              /* тольд үлдсэн хуучин автомат оноолтыг дахин буулгахгүй */
+    x.wkClaimBy = null;                 /* → төлөв дахин «шинэ» */
+    delete x.wkTeam;
+    x.wkOwner = null;                   /* хариуцагч ч чөлөөлөгдөнө */
+  }, '↩ Томилолт цуцлагдлаа — ажил дахин нээлттэй боллоо');
+  try {
+    var to = team.map(function (p) { return woEmpByUid(p.uid) || p; });
+    if (ow && ow.uid && !team.some(function (p) { return p.uid === ow.uid; })) to.push(woEmpByUid(ow.uid) || ow);
+    to = to.filter(function (e) { return e && e.uid && e.uid !== byUid; });
+    if (to.length) ntfSend(to, { kind: 'wk', url: '/kpi/?page=reportflow',
+      title: '✖ Томилолт цуцлагдлаа',
+      body: (byName ? byName + ' цуцаллаа' : 'Цуцлагдлаа') + (why ? ' — ' + String(why).slice(0, 80) : '') +
+        ' · ' + String(r.desc || '').slice(0, 70) });
+  } catch (e) {}
+  return rr;
 }
 
 /* ── Яаралтай шаардах (захирал) ── */
@@ -20989,12 +21214,13 @@ function wkNextStep(r) {
     };
   }
   if (st === 'claimed') {
-    var nm = (r.wkClaimBy && r.wkClaimBy.name) || 'хүлээж авсан ажилтан';
+    var _tm = wkTeamOf(r);
+    var nm = _tm.length ? wkTeamLabel(r, 6) : 'хүлээж авсан ажилтан';
     if (r.wkClaimBy && r.wkClaimBy.auto) nm += ' — хугацаа дуусахад автоматаар оноогдсон';
     else if (r.wkClaimBy && r.wkClaimBy.assignedBy) nm += ' — ' + r.wkClaimBy.assignedBy + ' томилсон';
     return {
       do: 'Ажлыг гүйцэтгээд «Гүйцэтгэсэн» товчийг дарна',
-      who: nm + ' (хүлээж авсан хүн)',
+      who: nm + (_tm.length > 1 ? ' (томилогдсон ' + _tm.length + ' хүн — аль нэг нь дарна)' : ' (хүлээж авсан хүн)'),
       tone: 'work'
     };
   }
@@ -21066,10 +21292,10 @@ function wkFlowHTML(r) {
     { l: 'Мэдээлсэн', sub: r.reporterName || '' },
     { l: (r.wkClaimBy && r.wkClaimBy.auto && wkStatus(r) === 'claimed')
         ? 'Системээс оноосон' : 'Хүлээж авсан',
-      sub: ((r.wkClaimBy && r.wkClaimBy.name) || '') +
+      sub: ((r.wkClaimBy && r.wkClaimBy.uid) ? wkTeamLabel(r, 3) : '') +
         (function () {
           var o = wkOwnerOf(r);
-          return (o && o.uid && r.wkClaimBy && o.uid !== r.wkClaimBy.uid)
+          return (o && o.uid && r.wkClaimBy && !wkTeamHas(r, o.uid))
             ? ' · хариуцагч: ' + o.name : '';
         })() },
     { l: 'Гүйцэтгэсэн', sub: r.wkExecAt ? String(r.wkExecAt).slice(0, 10) : '' },
@@ -21132,7 +21358,7 @@ function wkRowHTML(r) {
   var mine = r.reporterUid === me.uid;
   var myGate = wkMyGate();
   var inMyGate = wkGateHas(r, myGate);
-  var claimedByMe = r.wkClaimBy && r.wkClaimBy.uid === me.uid;
+  var claimedByMe = wkTeamHas(r, me.uid);          /* томилогдсон багийн аль ч гишүүн */
   var ownerMe = wkIsOwnerMe(r, me.uid);          /* хариуцагч — даалгасан ч хэвээр */
 
   /* Товчлуурууд — тухайн хүн ЮУ ХИЙЖ ЧАДАХ вэ */
@@ -21143,9 +21369,12 @@ function wkRowHTML(r) {
   /* Дарга/админ/захирал — хэн ч аваагүй бол ГАРААР хүн томилно */
   if (st === 'new' && wkCanAssign(r))
     acts.push(['wk-assign', 'Хүн томилох', '#0891B2', 'ti-user-plus']);
-  /* Томилогдсон ажлыг албаныхаа өөр хүнд даалгах */
-  if (st === 'claimed' && wkCanReassign(r))
-    acts.push(['wk-assign', 'Өөр хүнд даалгах', '#7C3AED', 'ti-user-share']);
+  /* Томилогдсон ажлын багийг өөрчлөх (хүн нэмэх/хасах, өөр хүнд даалгах) ба
+     томилолтыг бүхэлд нь цуцлах (2026-09-10) */
+  if (st === 'claimed' && wkCanReassign(r)) {
+    acts.push(['wk-assign', 'Томилолт өөрчлөх', '#7C3AED', 'ti-users']);
+    acts.push(['wk-asgcancel', 'Томилолт цуцлах', '#B91C1C', 'ti-user-x']);
+  }
   /* Захирал — хүлээж авахгүй байгааг сэрээнэ */
   if ((isAdmin() || wkIsDirector()) && st !== 'closed')
     acts.push(['wk-demand', 'Яаралтай шаардах', '#B91C1C', 'ti-alert-triangle']);
@@ -21213,11 +21442,11 @@ function wkRowHTML(r) {
     wkHazChipsHTML(r) +
     '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px">📍 ' + esc(wkLocLabel(r)) +
     ' · 👤 ' + esc(wkPersonName(r.reporterUid, r.reporterFull || r.reporterName)) +
-    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(wkPersonName(r.wkClaimBy.uid, r.wkClaimBy.name)) : '') +
+    (r.wkClaimBy && r.wkClaimBy.uid ? ' · 👷 ' + esc(wkTeamLabel(r, 3)) : '') +
     /* Хариуцагч нь гүйцэтгэгчээс ӨӨР бол хоёуланг нь харуулна */
     (function () {
       var o = wkOwnerOf(r);
-      if (!o || !o.uid || !r.wkClaimBy || o.uid === r.wkClaimBy.uid) return '';
+      if (!o || !o.uid || !r.wkClaimBy || wkTeamHas(r, o.uid)) return '';
       return ' · <span style="color:#7C3AED">🎯 ' + esc(wkPersonName(o.uid, o.name)) + ' хариуцаж байна</span>';
     })() + '</div>' +
     /* ── ДУУССАН бол гинжин хэлхээг бүтнээр: хэн өгсөн → хэн хийсэн → хэн баталсан.
@@ -21445,7 +21674,8 @@ function wkListHTML(all) {
   if (deptRows.length || wkIsDeptBoss() || _amOwner) tabs.push({ k: 'dept', l: 'Манай алба', n: deptOpen,
     tone: deptOpen ? '#4F46E5' : '' });
   if (myGate) tabs.push({ k: 'in', l: 'Ирсэн', n: inbox.length, tone: inbox.length ? '#C81E3A' : '' });
-  if (myGate) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
+  /* ⭐ Захирал ИТА/ХАБЭА-аас гадуурх ажилтныг ч томилдог тул тэдэнд ч «Миний авсан» гарна */
+  if (myGate || mineClaim.length) tabs.push({ k: 'my', l: 'Миний авсан', n: mineClaim.length });
   tabs.push({ k: 'rep', l: 'Миний мэдээлсэн', n: toAccept.length, tone: toAccept.length ? '#4F46E5' : '' });
   /* ⚠ Гүйцэтгэсэн ч БАТЛАГДААГҮЙ ажил хаана ч харагддаггүй байсан тул
      «дууссан тоо буурчихлаа» гэсэн ойлгомжгүй байдал үүсдэг байв.
@@ -21895,7 +22125,9 @@ async function wkMirrorPull(all) {
     });
     /* ⚠ Сервер хугацаа дуусахад даргад АВТОМАТААР оноосон бол энд
        Firestore руу буулгана. Хэн нэг нь аль хэдийн авсан бол ХҮРЭХГҮЙ. */
-    if (m.autoAssign && m.autoAssign.uid && !(r.wkClaimBy && r.wkClaimBy.uid)) {
+    /* ⚠ Хүн гараар цуцалсан/буцаасны ДАРАА тольд үлдсэн хуучин автомат оноолтыг дахин буулгахгүй */
+    if (m.autoAssign && m.autoAssign.uid && !(r.wkClaimBy && r.wkClaimBy.uid) &&
+        !(wkManualFreeAt(r) > String(m.autoAssign.at || ''))) {
       r.wkClaimBy = { uid: m.autoAssign.uid, name: m.autoAssign.name || '',
         pos: '', at: m.autoAssign.at || new Date().toISOString(), auto: true };
       _pf.wkClaimBy = null; _ps.wkClaimBy = r.wkClaimBy;
@@ -21975,6 +22207,8 @@ async function wkMirrorPush(all, full) {
       claimer: cl || ((r.wkClaimBy && r.wkClaimBy.uid)
         ? { uid: r.wkClaimBy.uid, name: r.wkClaimBy.name || '',
             email: (r.wkClaimBy.email || '') } : null),
+      /* ⭐ Томилогдсон баг — сервер хугацааны сануулгыг бүгдэд нь илгээнэ */
+      team: wkTeamOf(r).map(function (p) { return slim(woEmpByUid(p.uid)) || { uid: p.uid, name: p.name || '' }; }),
       director: slim(dir)
     });
   });
@@ -22114,8 +22348,8 @@ function wkEscOne(j) {
         ' — ' + g.ab + ' (зэрэг ' + wkUrg(r) + ')';
       r.wkEscNoClaim = new Date().toISOString();
     } else if (j.k === 'half') {
-      var cl = woEmpByUid(r.wkClaimBy && r.wkClaimBy.uid);
-      to = cl ? [cl] : [];
+      /* ⭐ Олон хүн томилогдсон бол бүгдэд нь сануулна */
+      to = wkTeamOf(r).map(function (p) { return woEmpByUid(p.uid); }).filter(Boolean);
       /* ⭐ Хариуцагч нь өөр хүн бол түүнд ч сануулна */
       try {
         var ow = wkOwnerOf(r);
@@ -22367,7 +22601,7 @@ function wkSheetRows(r) {
   var risk = { low: 'Бага эрсдэл', mid: 'Дунд эрсдэл', high: 'Өндөр эрсдэл' };
   var st = r.status === 'verified' ? 'Баталгаажсан'
     : r.status === 'rejected' ? 'Татгалзсан' : 'Хүлээгдэж буй';
-  var cl = r.wkClaimBy || {}, ac = r.wkAcceptBy || {};
+  var cl = wkClaimView(r), ac = r.wkAcceptBy || {};
 
   var A = [
     ['МОНОС ХҮНС ХХК — ХАБЭА-Н АЛБА'],
@@ -22468,7 +22702,7 @@ function wkFormCells(r) {
     '\nХаана: ' + (wkLocLabel(r) || '') +
     '\nХариуцах алба: ' + g.name +
     (r.photo ? '\n(Зураг хавсаргасан — системээс харна уу)' : '');
-  var cl = r.wkClaimBy || {};
+  var cl = wkClaimView(r);
   var ac = r.wkAcceptBy || {};
   return {
     N1: 'WO number:  ' + (r.id || ''),
@@ -23771,7 +24005,7 @@ function rfTabsHTML(woN) {
       var st = wkStatus(r);
       if (wkGateHas(r, _mg) && st === 'new') return true;
       if (r.reporterUid === _me.uid && st === 'executed') return true;
-      if (r.wkClaimBy && r.wkClaimBy.uid === _me.uid && st === 'claimed') return true;
+      if (wkTeamHas(r, _me.uid) && st === 'claimed') return true;
       return false;
     }).length;
   } catch (e) {}
@@ -23896,6 +24130,8 @@ function rfAfter(sec, admin, pending) {
     if (wdl) { ev.stopPropagation(); reportDeleteHard(wdl.getAttribute('data-wk-del')); return; }
     var was = ev.target.closest('[data-wk-assign]');
     if (was) { ev.stopPropagation(); wkAssignModal(was.getAttribute('data-wk-assign')); return; }
+    var wac = ev.target.closest('[data-wk-asgcancel]');
+    if (wac) { ev.stopPropagation(); wkAssignCancel(wac.getAttribute('data-wk-asgcancel')); return; }
     var wdm = ev.target.closest('[data-wk-demand]');
     if (wdm) { ev.stopPropagation(); wkDemand(wdm.getAttribute('data-wk-demand')); return; }
     var wm = ev.target.closest('[data-wk-move]');
