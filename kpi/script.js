@@ -31753,6 +31753,18 @@ function hrFindByPos(re) {
   for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i]))) return list[i]; }
   return null;
 }
+/* ⚠ 2026-09-10: гарын үсэг зурах хүнийг АЛБАН ТУШААЛААР олдог тул нэг
+   тушаалтай ХОЁР хүн байвал `hrFindByPos` жагсаалтын эхнийхийг чимээгүй
+   сонгоно — бүртгэл дахин эрэмбэлэгдэхэд эзэн нь өөрчлөгдөж болно.
+   (2026-09-10-нд «Санхүүгийн менежер» тушаалтай 2 хүн байсан.)
+   Тоог нь буцааж, дэлгэц дээр ил анхааруулна. Хэн зөв болохыг систем
+   ТААМАГЛАХГҮЙ — ХН-ийн алба тушаалын нэрийг ялгаж бичнэ. */
+function hrCountByPos(re) {
+  var list = [], n = 0;
+  try { list = empAll() || []; } catch (e) { list = DB.employees || []; }
+  for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i]))) n++; }
+  return n;
+}
 function hrIsDirector(e) {
   var p = hrPosOf(e); if (!p) return null;
   for (var i = 0; i < HR_DIRECTORS.length; i++) { if (HR_DIRECTORS[i].pos.test(p)) return HR_DIRECTORS[i]; }
@@ -31819,8 +31831,8 @@ function hrStepWho(o, i) {
     var e = hrFindByPos(D.pos);
     return { name: (e && e.name) || '', pos: D.label, missing: !e };
   }
-  if (s.key === 'hr')  { var h = hrFindByPos(HR_POS_SIGN_HR); return { name: (h && h.name) || '', pos: 'Хүний нөөцийн ахлах менежер', missing: !h }; }
-  if (s.key === 'fin') { var f = hrFindByPos(HR_POS_FIN); return { name: (f && f.name) || '', pos: 'Санхүүгийн менежер', missing: !f }; }
+  if (s.key === 'hr')  { var h = hrFindByPos(HR_POS_SIGN_HR); return { name: (h && h.name) || '', pos: 'Хүний нөөцийн ахлах менежер', missing: !h, many: hrCountByPos(HR_POS_SIGN_HR) }; }
+  if (s.key === 'fin') { var f = hrFindByPos(HR_POS_FIN); return { name: (f && f.name) || '', pos: 'Санхүүгийн менежер', missing: !f, many: hrCountByPos(HR_POS_FIN) }; }
   return null;
 }
 
@@ -32458,15 +32470,19 @@ function hrDetail(id) {
     row('Унаа', lookup(HR_UNAA, o.unaa)) +
     row('Утас', lookup(HR_UTAS, o.utas)) +
 
+    /* ⚠ 2026-09-10: энэ хэсгийг санал байхгүй үед НУУДАГ байсан тул дугаар
+       1 → 2 → 4 гэж үсэрдэг байв. Цаасан маягт дээр 4 хэсэг ҮРГЭЛЖ байдаг
+       тул үргэлж харуулж, хоосон үед шалтгааныг бичнэ. */
+    '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 6px">3. Дотоод эх үүсвэрээс томилох санал</div>' +
     ((o.inner || []).length
-      ? '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 6px">3. Дотоод эх үүсвэрээс томилох санал</div>' +
-        o.inner.map(function (x) {
+      ? o.inner.map(function (x) {
           return '<div style="padding:7px 10px;background:#F8FAFC;border-radius:9px;margin-bottom:5px">' +
             '<div style="font-size:13px;font-weight:600">' + esc(x.name) + '</div>' +
             '<div style="font-size:11.5px;color:#94A3B8">' + esc(x.curPos) + ' · ' + esc(x.dept) +
             (x.years ? ' · ' + x.years + ' жил' : '') + '</div></div>';
         }).join('')
-      : '') +
+      : '<div style="padding:7px 10px;background:#F8FAFC;border-radius:9px;font-size:12.5px;color:#94A3B8">' +
+        'Дотоод эх үүсвэрээс томилох санал оруулаагүй</div>') +
 
     '<div style="font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:#4F46E5;font-weight:800;margin:16px 0 8px">4. Баталгаажилт</div>' +
     HR_STEPS.map(function (s, i) {
@@ -32485,7 +32501,11 @@ function hrDetail(id) {
           '<div style="font-size:12px;color:#64748B">' +
             (done ? esc(st.name) + ' · ' + esc(st.pos) : (who && who.missing
               ? '<span style="color:#DC2626">' + esc(who.pos) + ' — бүртгэлээс олдсонгүй</span>'
-              : esc((who && who.name) || '') + (who && who.pos ? ' · ' + esc(who.pos) : ''))) +
+              : esc((who && who.name) || '') + (who && who.pos ? ' · ' + esc(who.pos) : '') +
+                 (who && who.many > 1
+                   ? '<div style="font-size:11.5px;color:#B45309;margin-top:2px">⚠ Энэ албан тушаалтай ' + who.many +
+                     ' хүн бүртгэлд байна — систем эхнийхийг сонгож байна. ХН-ийн алба тушаалын нэрийг ялгаж бичнэ үү.</div>'
+                   : ''))) +
           '</div>' +
           (done ? '<div style="font-size:11.5px;color:#16A34A;margin-top:2px">✓ ' + esc(hrDate(st.at)) + ' — цахимаар баталсан</div>' : '') +
           (st.note ? '<div style="font-size:12px;color:#475569;margin-top:3px;white-space:pre-wrap">' + esc(st.note) + '</div>' : '') +
