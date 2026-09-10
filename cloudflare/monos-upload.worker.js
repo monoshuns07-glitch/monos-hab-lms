@@ -71,8 +71,9 @@ function corsHeaders(env, request) {
   return {
     'Access-Control-Allow-Origin': out,
     'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Key, X-Up, X-Exp',
-    'Access-Control-Expose-Headers': 'ETag',
+    /* X-If-Match / X-Etag — зэрэг бичилтийн хамгаалалт (2026-09-10) */
+    'Access-Control-Allow-Headers': 'Content-Type, X-Key, X-Up, X-Exp, X-If-Match',
+    'Access-Control-Expose-Headers': 'ETag, X-Etag',
     'Vary': 'Origin',
   };
 }
@@ -214,10 +215,14 @@ export default {
       }
       const obj = await env.BUCKET.get(key);
       if (!obj) return new Response('Not found', { status: 404, headers: cors });
+      /* X-Etag — хөтөч «уншсан хувилбараа» мэдэж, бичихдээ X-If-Match-аар
+         буцааж өгнө. Стандарт ETag-ийг ЗОРИУД тавихгүй: хөтөч/кэш нөхцөлт
+         хүсэлт (304) эхлүүлж одоогийн ачаалалтыг өөрчлөхгүйн тулд. */
       return new Response(obj.body, {
         headers: { ...cors,
           'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
-          'Accept-Ranges': 'bytes' }
+          'Accept-Ranges': 'bytes',
+          'X-Etag': obj.etag }
       });
     }
 
@@ -226,11 +231,31 @@ export default {
       const st = await mayWrite(request, url, key, env);
       if (st !== 'ok') return deny(st, cors);
       if (!key) return new Response('Key required', { status: 400, headers: cors });
-      await env.BUCKET.put(key, request.body, {
+      /* ⚠ ЗЭРЭГ БИЧИЛТИЙН ХАМГААЛАЛТ (2026-09-10).
+         Олон хөтөч нэг JSON файлыг «уншаад → нэгтгээд → бичдэг». Хоёр хүн
+         зэрэг бичвэл сүүлд газардсан нь эхнийхийн өөрчлөлтийг ЧИМЭЭГҮЙ
+         дардаг байв (ажлын захиалгын батлалт алга болсон). Хөтөч уншихдаа
+         авсан X-Etag-аа X-If-Match-аар буцааж өгвөл файл тэр хооронд
+         өөрчлөгдсөн үед БИЧИХГҮЙ, 412 буцаана — хөтөч шинээр уншиж нэгтгэнэ.
+         Толгойгүй бичилт (медиа, хуучин хөтөч) урьдын адил шууд бичигдэнэ. */
+      const ifMatch = (request.headers.get('X-If-Match') || '').trim();
+      const putOpts = {
         httpMetadata: { contentType: request.headers.get('Content-Type') || 'application/octet-stream' },
-      });
-      return new Response(JSON.stringify({ url: url.origin + '/' + encodeURIComponent(key), key }),
-        { headers: { ...cors, 'Content-Type': 'application/json' } });
+      };
+      if (ifMatch) putOpts.onlyIf = { etagMatches: ifMatch };
+      let saved = null;
+      try {
+        saved = await env.BUCKET.put(key, request.body, putOpts);
+      } catch (err) {
+        if (!(ifMatch && /precondition/i.test(String((err && err.message) || err)))) throw err;
+        saved = null;
+      }
+      if (!saved) {
+        return new Response(JSON.stringify({ conflict: true, key }),
+          { status: 412, headers: { ...cors, 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ url: url.origin + '/' + encodeURIComponent(key), key, etag: saved.etag }),
+        { headers: { ...cors, 'Content-Type': 'application/json', 'X-Etag': saved.etag } });
     }
 
     return new Response('Method Not Allowed', { status: 405, headers: cors });
