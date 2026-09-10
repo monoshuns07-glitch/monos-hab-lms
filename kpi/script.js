@@ -3363,6 +3363,307 @@ function taskUnclaim(id) {
   });
 }
 
+/* ═════════════════════════════════════════════════════════════════════
+   ХУГАЦАА СУНГУУЛАХ ХҮСЭЛТ                                     (2026-09-10)
+   ----------------------------------------------------------------------
+   Даалгаврыг хүлээж аваад гүйцэтгэж буй хүн хугацаандаа амжихгүй бол
+   хугацаа сунгуулах хүсэлт гаргана; даалгавар ӨГСӨН хүн шийднэ.
+     extReq     — хүлээгдэж буй НЭГ хүсэлт (эсвэл null)
+     extensions — бүх хүсэлтийн түүх (сунгасан / татгалзсан / цуцалсан)
+     origDueDate — анхны дуусах огноо (эхний сунгалтад тавигдана)
+   ⚠ Хүсэлт гаргасан хүн өөрийнхөө хүсэлтийг ХЭЗЭЭ Ч шийдэхгүй.
+   ⚠ Өгсөн хүн ажлаас гарсан / бүртгэлээс олдохгүй бол хүсэлт мөнхөд
+     гацахгүйн тулд хянах эрхтэй удирдагч шийднэ (ХН-ийн захиалгын гацааны
+     сургамж, 2026-09-10).
+   ═════════════════════════════════════════════════════════════════════ */
+var TASK_EXT_MIN_WHY = 5;
+function taskExtReq(t) { return (t && t.extReq && t.extReq.toDate) ? t.extReq : null; }
+function taskExtList(t) { return (t && Array.isArray(t.extensions)) ? t.extensions : []; }
+/* Даалгавар өгсөн хүний бүртгэл — createdByEmail-ээр */
+function taskGiverEmp(t) {
+  if (!t || !t.createdByEmail) return null;
+  try {
+    return (empAll() || []).filter(function (e) { return e && _sameEmail(e.email, t.createdByEmail); })[0] || null;
+  } catch (e) { return null; }
+}
+/* Хүсэлт гаргах эрх — оногдсон гүйцэтгэгч, эсвэл нэр заагаагүй даалгаврыг хүлээж авсан хүн */
+function taskCanRequestExt(t) {
+  if (!t || !t.dueDate) return false;
+  if (taskIsUnapproved(t) || taskIsClosed(t) || t.status === 'submitted') return false;
+  if (taskExtReq(t)) return false;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (!me) return false;
+  /* Даалгавар өгсөн хүн өөрөө хүсэлт гаргахгүй — өөрөө шийднэ */
+  if (t.createdByEmail && SESSION && _sameEmail(t.createdByEmail, SESSION.email)) return false;
+  var ids = taskIdsOf(t);
+  if (ids.length) return ids.indexOf(me.id) > -1 || taskClaimedBy(t, me.id);
+  return taskClaimedBy(t, me.id);
+}
+/* Шийдэх эрх — даалгавар өгсөн хүн эсвэл админ */
+function taskCanDecideExt(t) {
+  var rq = taskExtReq(t);
+  if (!rq || taskIsClosed(t)) return false;
+  var me = null; try { me = myEmp(); } catch (e) {}
+  if (me && rq.byId && String(rq.byId) === String(me.id)) return false;
+  if (SESSION && rq.byUid && rq.byUid === SESSION.uid) return false;
+  if (isAdmin()) return true;
+  if (t.createdByEmail && SESSION && _sameEmail(t.createdByEmail, SESSION.email)) return true;
+  var g = taskGiverEmp(t);
+  var gone = !g || g.onLeave === true || g.isActive === false;
+  return gone && canReviewTask(t);
+}
+/* Огнооны шалгалт — алдааны бичвэр, эсвэл '' */
+function taskExtValid(t, toDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(toDate || ''))) return 'Шинэ огноог сонгоно уу';
+  var nd = _dayNum(toDate), cur = _dayNum(t && t.dueDate), today = _dayNum(new Date());
+  if (isNaN(nd)) return 'Огноо буруу байна';
+  if (!isNaN(cur) && nd <= cur) return 'Шинэ огноо одоогийн дуусах хугацаанаас (' + t.dueDate + ') хойш байх ёстой';
+  if (nd < today) return 'Өнгөрсөн огноо сонгох боломжгүй';
+  return '';
+}
+/* Сонгож болох хамгийн эрт огноо: дуусах огнооны маргааш, хэтэрсэн бол өнөөдөр */
+function taskExtMinDate(t) {
+  var today = new Date(); today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  var cur = (t && t.dueDate) ? new Date(t.dueDate + 'T00:00:00') : null;
+  if (cur && !isNaN(cur.getTime()) && cur >= today) {
+    return _ymd(new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1));
+  }
+  return _ymd(today);
+}
+/* Серверийн хамгийн шинэ хувилбар — зэрэг өөрчлөлтийг дарахгүйн тулд */
+async function taskFreshById(id) {
+  var loc = (DB.tasks || []).filter(function (x) { return x && x.id === id; })[0] || null;
+  try {
+    var p = await riskR2GetJson(TASK_R2_FILE, { fresh: true });
+    var rem = ((p && p.rows) || []).filter(function (x) { return x && x.id === id; })[0] || null;
+    if (rem && (!loc || String(rem.updatedAt || '') >= String(loc.updatedAt || ''))) {
+      if (loc) {
+        Object.keys(loc).forEach(function (k) { if (!(k in rem)) delete loc[k]; });
+        Object.assign(loc, rem);
+        return loc;
+      }
+      DB.tasks = DB.tasks || []; DB.tasks.unshift(rem);
+      return rem;
+    }
+  } catch (e) {}
+  return loc;
+}
+/* Хүсэлт + түүхийн хэсэг. full=false — картад товч */
+function taskExtHTML(t, full) {
+  if (!t || taskIsUnapproved(t)) return '';
+  var rq = taskExtReq(t), hist = taskExtList(t), H = '';
+  if (rq && !taskIsClosed(t)) {
+    H += '<div style="margin-top:' + (full ? '12px' : '8px') + ';background:#FFFBEB;border:1.5px solid #FDE68A;' +
+      'border-radius:10px;padding:' + (full ? '10px 12px' : '7px 10px') + '">' +
+      '<div style="font-size:10.5px;font-weight:800;color:#B45309;letter-spacing:.4px">⏳ ХУГАЦАА СУНГАХ ХҮСЭЛТ</div>' +
+      '<div style="font-size:' + (full ? '13.5px' : '12.5px') + ';font-weight:800;color:#92400E;margin-top:2px">' +
+      esc(rq.fromDate || '') + ' → ' + esc(rq.toDate || '') + '</div>' +
+      (full ? '<div style="font-size:12.5px;color:#92400E;margin-top:4px;line-height:1.55;white-space:pre-wrap">' +
+        esc(rq.why || '') + '</div>' : '') +
+      '<div style="font-size:11px;color:#B45309;margin-top:3px">' + esc(rq.byName || '') +
+      (full ? ' · ' + esc(String(rq.at || '').slice(0, 16).replace('T', ' ')) : '') + '</div></div>';
+  }
+  if (full && hist.length) {
+    var LBL = { approved: ['Сунгасан', '#15803D'], rejected: ['Татгалзсан', '#B91C1C'], cancelled: ['Цуцлагдсан', '#64748B'] };
+    H += '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12.5px;color:#64748B">' +
+      'Сунгалтын түүх (' + hist.length + ')</summary>' +
+      hist.slice().reverse().map(function (h) {
+        var L = LBL[h.status] || [h.status || '', '#64748B'];
+        var to = h.status === 'approved' ? (h.finalDate || h.toDate) : h.toDate;
+        return '<div style="padding:7px 0;border-bottom:1px solid #F1F5F9;font-size:12px;color:#475569;line-height:1.55">' +
+          '<b style="color:' + L[1] + '">' + esc(L[0]) + '</b> · ' + esc(h.fromDate || '') + ' → ' + esc(to || '') +
+          (h.status === 'approved' && h.finalDate && h.finalDate !== h.toDate ? ' <span style="color:#94A3B8">(хүссэн: ' + esc(h.toDate) + ')</span>' : '') +
+          '<br>Хүссэн: ' + esc(h.byName || '') + ' — ' + esc(h.why || '') +
+          (h.decidedAt ? '<br>' + (h.decidedBy ? 'Шийдсэн: ' + esc(h.decidedBy) + ' · ' : '') +
+            esc(String(h.decidedAt).slice(0, 10)) + (h.note ? ' — ' + esc(h.note) : '') : '') +
+          '</div>';
+      }).join('') + '</details>';
+  }
+  return H;
+}
+function taskExtNotifyGiver(t) {
+  try {
+    var rq = taskExtReq(t), g = taskGiverEmp(t);
+    if (!rq || !g || !g.uid || typeof ntfSend !== 'function') return;
+    ntfSend([g], { kind: 'task', url: '/kpi/?page=tasks', title: 'Хугацаа сунгах хүсэлт',
+      body: (rq.byName || 'Гүйцэтгэгч') + ' «' + String(t.title || '').slice(0, 60) + '» даалгаврын хугацааг ' +
+        rq.fromDate + ' → ' + rq.toDate + ' болгож сунгахыг хүсэв: ' + String(rq.why || '').slice(0, 100)
+    }).catch(function () {});
+  } catch (e) {}
+}
+function taskExtNotifyRequester(t, rec) {
+  try {
+    if (!rec || typeof ntfSend !== 'function') return;
+    var e = (empAll() || []).filter(function (x) {
+      return x && ((rec.byUid && x.uid === rec.byUid) || (rec.byId && String(x.id) === String(rec.byId)));
+    })[0];
+    if (!e || !e.uid) return;
+    ntfSend([e], { kind: 'task', url: '/kpi/?page=tasks',
+      title: rec.status === 'approved' ? 'Хугацаа сунгагдлаа' : 'Хугацаа сунгах хүсэлтийг татгалзав',
+      body: '«' + String(t.title || '').slice(0, 60) + '» — ' +
+        (rec.status === 'approved' ? ('шинэ дуусах хугацаа ' + rec.finalDate) : ('дуусах хугацаа ' + rec.fromDate + ' хэвээр')) +
+        (rec.note ? '. ' + String(rec.note).slice(0, 100) : '')
+    }).catch(function () {});
+  } catch (e) {}
+}
+/* ── Гүйцэтгэгч: хүсэлт гаргах ── */
+function taskExtRequestModal(id) {
+  var t = (DB.tasks || []).filter(function (x) { return x && x.id === id; })[0];
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanRequestExt(t)) { toast('Энэ даалгаварт хугацаа сунгуулах хүсэлт гаргах боломжгүй', 'warn'); return; }
+  var g = taskGiverEmp(t), minD = taskExtMinDate(t), nPrev = taskExtList(t).filter(function (h) { return h.status === 'approved'; }).length;
+  formModal({
+    title: 'Хугацаа сунгуулах хүсэлт — ' + (t.title || ''),
+    width: '500px',
+    fields: [
+      { name: 'toDate', label: 'Шинэ дуусах огноо (одоогийн: ' + t.dueDate + ')', type: 'date', required: true, min: minD, value: minD },
+      { name: 'why', label: 'Яагаад хугацаандаа амжихгүй байгаа вэ?', type: 'textarea', rows: 4, required: true,
+        placeholder: 'Жишээ: Сэлбэг материал 9-р сарын 15-нд ирэх тул засварыг түүнээс хойш хийх боломжтой.' }
+    ],
+    submitLabel: 'Хүсэлт илгээх',
+    onSubmit: function (v) {
+      var err = taskExtValid(t, v.toDate);
+      if (err) { toast(err, 'warn'); return false; }
+      var why = String(v.why || '').trim();
+      if (why.length < TASK_EXT_MIN_WHY) { toast('Шалтгаанаа тодорхой бичнэ үү', 'warn'); return false; }
+      taskExtRequest(id, v.toDate, why);
+    }
+  });
+  try {
+    var root = document.querySelector('.modal-root');
+    var grp = root && root.querySelector('[data-field="toDate"]');
+    if (grp) {
+      var note = elc('div', '', '<i class="ti ti-user-check"></i> Хүсэлтийг даалгавар өгсөн <b>' +
+        esc((g && g.name) || t.createdBy || 'удирдагч') + '</b> шийднэ. Шийдэх хүртэл одоогийн хугацаа (<b>' +
+        esc(t.dueDate) + '</b>) хүчинтэй.' + (nPrev ? ' Энэ даалгаврыг өмнө нь ' + nPrev + ' удаа сунгасан.' : ''));
+      note.style.cssText = 'background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:9px 12px;' +
+        'margin-bottom:12px;font-size:12.5px;color:#92400E;line-height:1.5';
+      grp.parentNode.insertBefore(note, grp);
+    }
+  } catch (e) {}
+}
+async function taskExtRequest(id, toDate, why) {
+  var t = await taskFreshById(id);
+  if (!t) { toast('Даалгавар олдсонгүй', 'error'); return; }
+  if (!taskCanRequestExt(t)) { toast('Хүсэлт гаргах боломжгүй — даалгаврын төлөв өөрчлөгдсөн байж магадгүй', 'warn'); renderTasks(); return; }
+  var err = taskExtValid(t, toDate);
+  if (err) { toast(err, 'warn'); return; }
+  var me = null; try { me = myEmp(); } catch (e) {}
+  try { taskClaimAdd(t); } catch (e) {}          /* хүсэлт гаргасан = ажлыг хүлээж авсан */
+  t.extReq = {
+    id: 'EXT-' + Date.now().toString(36),
+    byId: (me && me.id) || '', byUid: (me && me.uid) || (SESSION && SESSION.uid) || '',
+    byName: taskMyName(), at: new Date().toISOString(),
+    fromDate: t.dueDate, toDate: toDate, why: why
+  };
+  renderTasks();
+  var ok = await taskPersist(t);
+  if (ok) {
+    toast('⏳ Хүсэлт илгээгдлээ — даалгавар өгсөн хүн шийднэ', 'success');
+    taskExtNotifyGiver(t);
+  }
+  renderTasks();
+}
+async function taskExtCancel(id) {
+  if (!confirm('Хугацаа сунгуулах хүсэлтээ цуцлах уу?')) return;
+  var t = await taskFreshById(id), rq = taskExtReq(t);
+  if (!t || !rq) { toast('Хүсэлт олдсонгүй', 'warn'); renderTasks(); return; }
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var mine = (me && rq.byId && String(rq.byId) === String(me.id)) || (SESSION && rq.byUid && rq.byUid === SESSION.uid);
+  if (!mine && !isAdmin()) { toast('Зөвхөн хүсэлт гаргасан хүн цуцална', 'warn'); return; }
+  t.extensions = taskExtList(t).concat([Object.assign({}, rq, {
+    status: 'cancelled', decidedBy: taskMyName(), decidedAt: new Date().toISOString(), note: 'Хүсэлт гаргагч цуцалсан'
+  })]);
+  t.extReq = null;
+  renderTasks();
+  var ok = await taskPersist(t);
+  if (ok) toast('Хүсэлт цуцлагдлаа', 'warn');
+  renderTasks();
+}
+/* ── Даалгавар өгсөн хүн: шийдэх ── */
+function taskExtDecideModal(id) {
+  var t = (DB.tasks || []).filter(function (x) { return x && x.id === id; })[0], rq = taskExtReq(t);
+  if (!t || !rq) { toast('Хүсэлт олдсонгүй', 'warn'); return; }
+  if (!taskCanDecideExt(t)) { toast('Танд энэ хүсэлтийг шийдэх эрх алга', 'warn'); return; }
+  var nPrev = taskExtList(t).filter(function (h) { return h.status === 'approved'; }).length;
+  formModal({
+    title: 'Хугацаа сунгах хүсэлт — ' + (t.title || ''),
+    width: '520px',
+    fields: [
+      { name: 'decision', label: 'Шийдвэр', type: 'select', value: 'approve',
+        options: [
+          { value: 'approve', label: '✅ Хугацааг сунгах' },
+          { value: 'reject', label: '✕ Татгалзах — одоогийн хугацаа (' + t.dueDate + ') хэвээр' }
+        ] },
+      { name: 'finalDate', label: 'Сунгах огноо (хүссэн: ' + rq.toDate + ') — өөр огноо өгч болно', type: 'date',
+        value: rq.toDate, min: taskExtMinDate(t) },
+      { name: 'note', label: 'Тайлбар (татгалзвал заавал — гүйцэтгэгч харна)', type: 'textarea', rows: 3,
+        placeholder: 'Жишээ: 18-ны дотор заавал дуусгах — аудит 19-нд.' }
+    ],
+    submitLabel: 'Хадгалах',
+    onSubmit: function (v) {
+      var dec = v.decision === 'reject' ? 'reject' : 'approve';
+      var note = String(v.note || '').trim();
+      if (dec === 'reject' && note.length < TASK_EXT_MIN_WHY) { toast('Татгалзах шалтгаанаа бичнэ үү — гүйцэтгэгч мэдэх ёстой', 'warn'); return false; }
+      if (dec === 'approve') { var err = taskExtValid(t, v.finalDate); if (err) { toast(err, 'warn'); return false; } }
+      taskExtDecide(id, dec, v.finalDate, note);
+    }
+  });
+  try {
+    var root = document.querySelector('.modal-root');
+    var grp = root && root.querySelector('[data-field="decision"]');
+    if (grp) {
+      var box = elc('div', '', '<div style="font-size:10.5px;font-weight:800;color:#B45309;letter-spacing:.4px">ХҮСЭЛТ</div>' +
+        '<div style="font-size:14px;font-weight:800;color:#92400E;margin-top:2px">' + esc(rq.fromDate) + ' → ' + esc(rq.toDate) + '</div>' +
+        '<div style="font-size:12.5px;color:#92400E;margin-top:4px;line-height:1.55;white-space:pre-wrap">' + esc(rq.why || '') + '</div>' +
+        '<div style="font-size:11.5px;color:#B45309;margin-top:4px">' + esc(rq.byName || '') + ' · ' +
+        esc(String(rq.at || '').slice(0, 16).replace('T', ' ')) + (nPrev ? ' · өмнө нь ' + nPrev + ' удаа сунгасан' : '') + '</div>');
+      box.style.cssText = 'background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:11px;padding:10px 12px;margin-bottom:12px';
+      grp.parentNode.insertBefore(box, grp);
+    }
+  } catch (e) {}
+}
+async function taskExtDecide(id, dec, finalDate, note) {
+  var t = await taskFreshById(id), rq = taskExtReq(t);
+  if (!t || !rq) { toast('Хүсэлт олдсонгүй — аль хэдийн шийдэгдсэн байж магадгүй', 'warn'); renderTasks(); return; }
+  if (!taskCanDecideExt(t)) { toast('Танд шийдэх эрх алга', 'warn'); return; }
+  if (dec === 'approve') { var err = taskExtValid(t, finalDate); if (err) { toast(err, 'warn'); return; } }
+  var me = null; try { me = myEmp(); } catch (e) {}
+  var rec = Object.assign({}, rq, {
+    status: dec === 'approve' ? 'approved' : 'rejected',
+    decidedBy: taskMyName(), decidedByEmail: (SESSION && SESSION.email) || '',
+    decidedByPos: (me && (me.pos || me.role)) || '', decidedAt: new Date().toISOString(),
+    note: note || '', finalDate: dec === 'approve' ? finalDate : ''
+  });
+  if (dec === 'approve') {
+    if (!t.origDueDate) t.origDueDate = t.dueDate;
+    t.dueDate = finalDate;
+  }
+  t.extensions = taskExtList(t).concat([rec]);
+  t.extReq = null;
+  renderTasks();
+  var ok = await taskPersist(t);
+  if (ok) {
+    toast(dec === 'approve' ? '✓ Хугацаа ' + finalDate + ' хүртэл сунгагдлаа' : 'Хүсэлтийг татгалзлаа',
+      dec === 'approve' ? 'success' : 'warn');
+    taskExtNotifyRequester(t, rec);
+  }
+  renderTasks();
+}
+/* ── Даалгавар устгах (админ) — жагсаалт ба дэлгэрэнгүй цонх хоёуланд ── */
+function taskDeleteById(tid) {
+  if (!isAdmin()) { toast('Зөвхөн админ устгана', 'warn'); return; }
+  if (!confirm('Энэ даалгаврыг устгах уу?')) return;
+  DB.tasks = (DB.tasks || []).filter(function (x) { return x.id !== tid; });
+  renderTasks(); renderDashboard();
+  /* ⚠ Эхлээд tombstone — эс бөгөөс R2 merge үед бусдын хуулбараас «амилж» буцаж ирнэ */
+  delTombAdd([tid])
+    .then(function () { return taskR2Merge([], { apply: false }); })
+    .catch(function (e) { console.error('[task] del', e); })
+    .then(function () { try { saveDB(); } catch (e) {} try { pulseBump('db'); } catch (e) {} });
+  toast('Даалгавар устгагдлаа', 'warn');
+}
+
 /* R2 дахь файлыг read → merge → write. changed = өөрчилсөн даалгаврууд */
 async function taskR2Merge(changed, opts) {
   opts = opts || {};
@@ -30164,7 +30465,7 @@ function ntfModal() {
           (isNew ? '#C7D2FE' : '#F1F5F9') + ';border-radius:12px;margin-bottom:8px;background:' +
           (isNew ? '#EEF2FF' : '#fff') + '">' +
           '<span style="flex:0 0 24px;font-size:17px;line-height:1.3">' +
-          (x.kind === 'mea' ? '✅' : x.kind === 'req' ? '📨' : '🔔') + '</span>' +
+          (x.kind === 'mea' ? '✅' : x.kind === 'req' ? '📨' : x.kind === 'task' ? '⏳' : '🔔') + '</span>' +
           '<span style="flex:1;min-width:0">' +
           '<span style="display:block;font-size:13px;font-weight:700;color:#1E293B;line-height:1.45">' +
           esc(x.title || '') + '</span>' +
@@ -30720,7 +31021,10 @@ function taskStepHTML(x) {
     esc(lab) + '</span></div>';
 }
 /* Хэн авсан / хэн ч аваагүй гэдгийг НЭГ мөрөөр */
-function taskClaimLineHTML(x) {
+/* ⚠ 2026-09-10: хүлээгдэж буй сунгалтын хүсэлтийг карт, жагсаалт хоёуланд
+   харуулахын тулд энэ мөрийн ард залгана (хоёр газраас дуудагддаг). */
+function taskClaimLineHTML(x) { return _taskClaimLineCore(x) + taskExtHTML(x, false); }
+function _taskClaimLineCore(x) {
   if (taskIsUnapproved(x) || taskIsClosed(x) || x.status === 'submitted') return '';
   var nm = taskClaimNames(x);
   if (nm) {
@@ -30828,8 +31132,13 @@ function taskMiniCard(x, ctx) {
   } else if (!closedT && (mine || (ctx.emp && !ids.length))) {
     if (taskCanClaim(x))
       acts.push('<button class="btn btn-sm" style="background:#DCFCE7;color:#15803D;border-color:#BBF7D0" data-task-claim="' + esc(x.id) + '">✋ Би авлаа</button>');
+    if (taskCanRequestExt(x))
+      acts.push('<button class="btn btn-sm" style="background:#FFFBEB;color:#92400E;border-color:#FDE68A" data-task-ext="' + esc(x.id) + '">⏳ Сунгуулах</button>');
     acts.push('<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '">Илгээх</button>');
   }
+  /* Даалгавар өгсөн хүнд — сунгалтын хүсэлт шийдэх (аль салаанд ч) */
+  if (taskCanDecideExt(x))
+    acts.unshift('<button class="btn btn-sm btn-primary" data-task-extdec="' + esc(x.id) + '">⏳ Сунгалт шийдэх</button>');
   return '<div data-task-open="' + esc(x.id) + '" style="background:#fff;border:1px solid #E9EDF2;' +
     'border-left:4px solid ' + (i.late ? '#C81E3A' : pr.color) + ';border-radius:11px;padding:11px 12px;' +
     'margin-bottom:9px;cursor:pointer">' +
@@ -30898,6 +31207,10 @@ function taskDetailModal(id) {
     row('Алба', esc(x.dept === 'all' ? 'Бүх алба' : (x.dept || '—'))) +
     row('Эхлэх', esc(x.startDate || '—')) +
     row('Дуусах', esc(x.dueDate || '—')) +
+    (x.origDueDate && x.origDueDate !== x.dueDate
+      ? row('Анхны дуусах', esc(x.origDueDate) + ' · ' +
+          taskExtList(x).filter(function (h) { return h.status === 'approved'; }).length + ' удаа сунгасан', '#B45309')
+      : '') +
     row('Даалгавар өгсөн', esc(x.createdBy || '—')) +
     (taskClaimCount(x) ? row('Хүлээж авсан', esc(taskClaimNames(x)), '#15803D') : '') +
     (x.approverName ? row('Батлах хүн', esc(x.approverName)) : '') +
@@ -30914,6 +31227,21 @@ function taskDetailModal(id) {
       '<i class="ti ti-photo"></i> Гүйцэтгэлийн нотолгоо: ' + esc(taskFileName(x.proofUrl)) + '</a></div>' : '') +
     (x.reviewComment ? '<div style="margin-top:8px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;' +
       'padding:9px 12px;font-size:12.5px;color:#92400E"><b>Хянагчийн тайлбар:</b> ' + esc(x.reviewComment) + '</div>' : '') +
+    /* ⏳ Хугацаа сунгуулах хүсэлт ба түүх */
+    taskExtHTML(x, true) +
+    (taskCanRequestExt(x)
+      ? '<button class="btn" style="width:100%;margin-top:12px;background:#FFFBEB;color:#92400E;border-color:#FDE68A;' +
+        'font-weight:800" data-task-ext="' + esc(x.id) + '">⏳ Хугацаа сунгуулах хүсэлт гаргах</button>' : '') +
+    (taskCanDecideExt(x)
+      ? '<button class="btn btn-primary" style="width:100%;margin-top:12px;font-weight:800" data-task-extdec="' +
+        esc(x.id) + '">⏳ Сунгах хүсэлтийг шийдэх</button>' : '') +
+    (taskExtReq(x) && !taskCanDecideExt(x) && (function () {
+        var me = null; try { me = myEmp(); } catch (e) {}
+        var rq = taskExtReq(x);
+        return (me && String(rq.byId) === String(me.id)) || (SESSION && rq.byUid && rq.byUid === SESSION.uid);
+      })()
+      ? '<button class="btn" style="width:100%;margin-top:10px;background:#F8FAFC;color:#64748B;border-color:#E2E8F0" ' +
+        'data-task-extcancel="' + esc(x.id) + '">Сунгах хүсэлтээ цуцлах</button>' : '') +
     /* ✋ Хүлээж авах — цонхноос шууд */
     (taskCanClaim(x)
       ? '<button class="btn" style="width:100%;margin-top:14px;background:#DCFCE7;color:#15803D;border-color:#BBF7D0;' +
@@ -30921,13 +31249,25 @@ function taskDetailModal(id) {
       : (taskCanUnclaim(x)
         ? '<button class="btn" style="width:100%;margin-top:14px;background:#F8FAFC;color:#64748B;border-color:#E2E8F0" ' +
           'data-task-unclaim="' + esc(x.id) + '">Хүлээж авснаа цуцлах</button>'
-        : ''));
+        : '')) +
+    /* 🗑 Админ — дэлгэрэнгүй цонхноос ч устгана (самбар горимын картад устгах товч байхгүй) */
+    (isAdmin()
+      ? '<button class="btn" style="width:100%;margin-top:14px;background:#FEF2F2;color:#991B1B;border-color:#FECACA" ' +
+        'data-task-del2="' + esc(x.id) + '"><i class="ti ti-trash"></i> Даалгавар устгах</button>' : '');
   /* ⚠ Цонхны товчлуур нь хуудасны сонсогчид БАРИГДАХГҮЙ — өөрөө холбоно */
   node.addEventListener('click', function (ev) {
     var cl = ev.target.closest('[data-task-claim]');
     if (cl) { try { closeModal(); } catch (e) {} taskClaim(cl.getAttribute('data-task-claim')); return; }
     var uc = ev.target.closest('[data-task-unclaim]');
     if (uc) { try { closeModal(); } catch (e) {} taskUnclaim(uc.getAttribute('data-task-unclaim')); return; }
+    var e1 = ev.target.closest('[data-task-ext]');
+    if (e1) { try { closeModal(); } catch (e) {} setTimeout(function () { taskExtRequestModal(e1.getAttribute('data-task-ext')); }, 60); return; }
+    var e2 = ev.target.closest('[data-task-extdec]');
+    if (e2) { try { closeModal(); } catch (e) {} setTimeout(function () { taskExtDecideModal(e2.getAttribute('data-task-extdec')); }, 60); return; }
+    var e3 = ev.target.closest('[data-task-extcancel]');
+    if (e3) { try { closeModal(); } catch (e) {} taskExtCancel(e3.getAttribute('data-task-extcancel')); return; }
+    var e4 = ev.target.closest('[data-task-del2]');
+    if (e4) { try { closeModal(); } catch (e) {} taskDeleteById(e4.getAttribute('data-task-del2')); return; }
   });
   buildModal('Даалгаврын дэлгэрэнгүй', node, { width: 'min(560px, 96vw)' });
 }
@@ -31151,6 +31491,8 @@ function renderTasks() {
       '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">' +
       (canSubmit && taskCanClaim(x) ? '<button class="btn btn-sm" style="background:#DCFCE7;color:#15803D;border-color:#BBF7D0" data-task-claim="' + esc(x.id) + '"><i class="ti ti-hand-click"></i> Би авлаа</button>' : '') +
       (taskCanUnclaim(x) ? '<button class="btn btn-sm" style="background:#F8FAFC;color:#64748B;border-color:#E2E8F0" data-task-unclaim="' + esc(x.id) + '" title="Хүлээж авснаа цуцлах"><i class="ti ti-hand-off"></i></button>' : '') +
+      (taskCanRequestExt(x) ? '<button class="btn btn-sm" style="background:#FFFBEB;color:#92400E;border-color:#FDE68A" data-task-ext="' + esc(x.id) + '"><i class="ti ti-calendar-plus"></i> Хугацаа сунгуулах</button>' : '') +
+      (taskCanDecideExt(x) ? '<button class="btn btn-sm btn-primary" data-task-extdec="' + esc(x.id) + '"><i class="ti ti-calendar-check"></i> Сунгалт шийдэх</button>' : '') +
       (canSubmit ? '<button class="btn btn-sm" style="background:#EDE9FE;color:#5B21B6;border-color:#DDD6FE" data-task-submit="' + esc(x.id) + '"><i class="ti ti-send"></i> Гүйцэтгэсэн</button>' : '') +
       (canReview ? '<button class="btn btn-sm btn-primary" data-task-review="' + esc(x.id) + '"><i class="ti ti-eye-check"></i> Хянах</button>' : '') +
       (canRegrade ? '<button class="btn btn-sm" style="background:#F1F5F9;color:#475569;border-color:#E2E8F0" data-task-review="' + esc(x.id) + '"><i class="ti ti-pencil"></i> Дүн засах</button>' : '') +
@@ -31158,6 +31500,19 @@ function renderTasks() {
       '</div></div>';
   }
 
+  /* ⏳ Даалгавар өгсөн хүнд — шийдэх ёстой сунгалтын хүсэлтүүд */
+  var myExt = tasks.filter(taskCanDecideExt);
+  if (myExt.length) {
+    html += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:14px;padding:14px 16px;margin-bottom:16px">' +
+      '<div style="font-size:14px;font-weight:800;color:#92400E;margin-bottom:6px">⏳ Таны шийдэх ёстой ' + myExt.length + ' хугацаа сунгах хүсэлт</div>' +
+      myExt.map(function (x) {
+        var rq = taskExtReq(x);
+        return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-top:1px solid #FDE68A">' +
+          '<span style="flex:1;min-width:180px;font-size:13px;color:#78350F"><b>' + esc(taskClamp(x.title, 60)) + '</b> · ' +
+          esc(rq.byName || '') + ' · ' + esc(rq.fromDate) + ' → ' + esc(rq.toDate) + '</span>' +
+          '<button class="btn btn-sm btn-primary" data-task-extdec="' + esc(x.id) + '">Шийдэх</button></div>';
+      }).join('') + '</div>';
+  }
   if (myReview.length) {
     html += '<div style="background:#F5F3FF;border:1.5px solid #DDD6FE;border-radius:14px;padding:14px 16px;margin-bottom:16px">' +
       '<div style="font-size:14px;font-weight:800;color:#5B21B6;margin-bottom:4px">⏳ Таны хянах ёстой ' + myReview.length + ' даалгавар</div>' +
@@ -31302,6 +31657,11 @@ function taskWire(sec) {
       if (cl) { taskClaim(cl.getAttribute('data-task-claim')); return; }
       var uc = ev.target.closest('[data-task-unclaim]');
       if (uc) { taskUnclaim(uc.getAttribute('data-task-unclaim')); return; }
+      /* ⏳ Хугацаа сунгуулах хүсэлт / шийдэх */
+      var ex1 = ev.target.closest('[data-task-ext]');
+      if (ex1) { taskExtRequestModal(ex1.getAttribute('data-task-ext')); return; }
+      var ex2 = ev.target.closest('[data-task-extdec]');
+      if (ex2) { taskExtDecideModal(ex2.getAttribute('data-task-extdec')); return; }
 
       var sb = ev.target.closest('[data-task-submit]');
       if (sb) { actionSubmitTask(sb.getAttribute('data-task-submit')); return; }
@@ -31310,19 +31670,7 @@ function taskWire(sec) {
       if (rv) { actionReviewTask(rv.getAttribute('data-task-review')); return; }
 
       var dl = ev.target.closest('[data-task-del]');
-      if (dl) {
-        var tid2 = dl.getAttribute('data-task-del');
-        if (!confirm('Энэ даалгаврыг устгах уу?')) return;
-        DB.tasks = DB.tasks.filter(function (x) { return x.id !== tid2; });
-        renderTasks(); renderDashboard();
-        /* ⚠ Эхлээд tombstone — эс бөгөөс R2 merge үед бусдын хуулбараас
-           «амилж» буцаж ирнэ */
-        delTombAdd([tid2])
-          .then(function () { return taskR2Merge([], { apply: false }); })   /* R2 ЭХЛЭЭД */
-          .catch(function (e) { console.error('[task] del', e); })
-          .then(function () { try { saveDB(); } catch (e) {} try { pulseBump('db'); } catch (e) {} });
-        toast('Даалгавар устгагдлаа', 'warn');
-      }
+      if (dl) { taskDeleteById(dl.getAttribute('data-task-del')); return; }
     });
   }
 }
@@ -31345,6 +31693,15 @@ function actionSubmitTask(tid) {
       /* ⚠ Хүлээж авалгүй шууд илгээсэн бол хийсэн нь тодорхой тул
          автоматаар бүртгэнэ — эс бөгөөс түүх дутуу үлдэнэ. */
       try { taskClaimAdd(x); } catch (e) {}
+      /* ⚠ Гүйцэтгэлээ илгээсэн бол сунгалтын хүсэлт утгагүй — түүхэнд «цуцлагдсан» гэж үлдэнэ */
+      try {
+        var _rq = taskExtReq(x);
+        if (_rq) {
+          x.extensions = taskExtList(x).concat([Object.assign({}, _rq, { status: 'cancelled',
+            decidedAt: new Date().toISOString(), note: 'Гүйцэтгэлээ илгээсэн тул автоматаар цуцлагдав' })]);
+          x.extReq = null;
+        }
+      } catch (e) {}
       x.status = 'submitted';
       x.submitNote = (v.note || '').trim();
       x.proofUrl = v.proof || '';
@@ -31372,12 +31729,14 @@ function actionReviewTask(tid) {
   var lateN = taskLateDays(x);
   var lateTxt = lateN ? ' ⏰ ХУГАЦАА ' + lateN + ' ХОНОГ ХОЦОРСОН' : '';
   var proofTxt = x.proofUrl ? ' 📎 Нотолгоо хавсаргасан' : ' ⚠ Нотолгоо хавсаргаагүй';
+  var _nExt = taskExtList(x).filter(function (h) { return h.status === 'approved'; }).length;
+  var extTxt = _nExt ? ' ⏳ ' + _nExt + ' удаа сунгасан (анх: ' + (x.origDueDate || '?') + ')' : '';
 
   formModal({
     title: 'Гүйцэтгэл хянах — ' + (x.title || ''),
     width: '540px',
     fields: [
-      { name: 'score', label: 'Гүйцэтгэлийн үнэлгээ' + (who ? ' · ' + who : '') + lateTxt + ' ·' + proofTxt, type: 'select',
+      { name: 'score', label: 'Гүйцэтгэлийн үнэлгээ' + (who ? ' · ' + who : '') + lateTxt + extTxt + ' ·' + proofTxt, type: 'select',
         value: String(x.score != null ? x.score : 100),
         options: [
           { value: '100', label: '100% — Маш сайн, бүрэн гүйцэт' },
