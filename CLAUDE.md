@@ -158,8 +158,15 @@ Node дээр аппын БҮХ жинхэнэ логикийг ажиллуул
 - Firestore дүрэм: `node tools/deploy-rules.js --key <sa.json>` (амьд дүрмийг `tools/rules-backup/`-д хадгалаад байршуулна; `--rollback <id>`). Консол дээр гараар БҮҮ тавь.
 - Дүрмийн гол зарчим: ажилтан `users/{өөрийн}`-ийн role/department/position/email/uid/isActive-ийг өөрчилж ЧАДАХГҮЙ; `user_roles` зөвхөн админ; `kpi_*` устгах зөвхөн админ.
 
-## Хуваалцсан R2 JSON файлд бичих (2026-09-10)
-- Олон хүн «уншаад → нэгтгээд → бичдэг» файлыг (`reports/_all.json`, `tasks/all.json`, `notify/_all.json`, `workflow/_deleted.json`) ЗААВАЛ `r2CasJson(key, build)`-аар бич. `riskR2PutJson` зэрэг бичилтэд нэгнийхээ өөрчлөлтийг ЧИМЭЭГҮЙ дардаг (RP-MTCPB3I6OPC-ийн батлалт ингэж алга болсон).
-- Worker уншихад `X-Etag` өгч, бичихэд `X-If-Match` шалгана (412 → апп дахин уншиж нэгтгэнэ). ⚠ Worker-ийн энэ өөрчлөлт deploy хийгдсэн эсэхийг шалга: хийгдээгүй бол апп урьдын аргаар бичиж, хамгаалалт дутуу үлдэнэ.
-- Ажлын захиалгын мөрийг БҮТНЭЭР нь бүү илгээ: `wkPatch` эсвэл `reportPushToServer(r, { patch })` — зөвхөн өөрчилсөн талбар, серверийн шинэ мөр дээр 3 талт нэгтгэлээр тавигдана. `{ notify: true }` зөвхөн шинэ мөр үүсгэхэд.
-- Серверт хүрээгүй бичилт `localStorage.kpi_rep_outbox_v1`-д хадгалагдаж, апп нээгдэх / сүлжээ сэргэхэд дахин илгээгдэнэ.
+## Найдвартай бичилт — зэрэг бичилтийн хамгаалалт (2026-09-11)
+Олон хүн нэг файлыг «уншаад → нэгтгээд → бичдэг» тул хамгаалалтгүй бичилт бусдын өөрчлөлтийг ЧИМЭЭГҮЙ дардаг (ажлын захиалгын батлалт ингэж алга болсон).
+- **Апп:** олон хүн өөрчилдөг файлыг ЗААВАЛ `r2CasJson(key, build)`-аар бич. `build(cur)` цэвэр функц — оролдлого бүрт ШИНЭ хуулбар дээр дахин дуудагдана; `null` → бичихгүй; `{quiet:true}` → pulse дэгдээхгүй. Одоо ингэж бичигддэг: reports/_all.json, tasks/all.json, notify/_all.json, workflow/_deleted.json, workflow/_open.json, sys/clients.json, sys/errors.json, push/subs.json, requests/_all.json, workorders/_all.json, meetings/_weekly.json, ack/*.json.
+- `riskR2PutJson` ч сүүлд уншсан тамгаар (X-If-Match) бичиж, 412/428 үед ID-гаар нэгтгэнэ: миний УНШСАН хуулбарт байсан атлаа бичилтэд байхгүй мөр = устгал; уншаагүй мөр = үлдэнэ. ID давхардсан жагсаалтыг нэгтгэхгүй.
+- **Ажлын захиалга:** `wkPatch` эсвэл `reportPushToServer(r, {patch})` — зөвхөн өөрчилсөн талбар, серверийн шинэ мөр дээр 3 талт нэгтгэл (танигдах элементтэй жагсаалтыг элемент бүрээр). `{notify:true}` зөвхөн шинээр үүсгэхэд. Серверт хүрээгүй бичилт `localStorage.kpi_rep_outbox_v1`-д хадгалагдаж дахин илгээгдэнэ.
+- **Даалгавар:** `TASK_BASE` (ачаалсан хуулбар) — бичихдээ «суурь → одоо» ялгааг серверийн шинэ мөр дээр тавина.
+- **Цаг:** тамгыг `nowIso()` (Worker-ийн X-Now-оос сурсан серверийн цаг)-аар бич; төхөөрөмжийн буруу цаг бусдыг дарахгүй.
+- **Сервер (api/):** `require('./_r2cas.js').casJson(key, build)` — аудитын гинж, шалгалтын дүн/синк, сэрэмжлүүлэг, push бүртгэл.
+- **Firestore:** хүний нөөцийн тушаал `hrPushToServer` — гүйлгээ (runTransaction) + нөхөөс (`HR_BASE`); админы `saveCols` зөвхөн өөрчилсөн талбарыг `mergeFields`-ээр бичнэ, hrorders-ыг огт бичихгүй.
+- **Worker** (`cloudflare/`): GET → `X-Etag`, `X-Now`; PUT → `X-If-Match` (зөрвөл 412), `X-If-None-Match: *` (байхгүй үед л үүсгэ), `CAS_REQUIRED_KEYS` дахь файлд тамгагүй PUT → 428. Deploy: `cd D:\monos-hab-lms\cloudflare && npx wrangler deploy`.
+- ⚠ Шинэ хуваалцсан файл нэмбэл r2CasJson ашиглаад, шаардлагатай бол `CAS_REQUIRED_KEYS`-д нэм.
+- Шалгалт (scratchpad): `t_cas.js`, `t_reliab.js`, `t_reliab2.js`, `t_srvcas.js`, `t_srvcas2.js`; амьд: `t_worker_cas2.js`. ⚠ Урт туршилтыг node-ийн нэрийг өөрчилсөн хуулбараар ажиллуул (n8n ажиглагч node.exe-г хаадаг).

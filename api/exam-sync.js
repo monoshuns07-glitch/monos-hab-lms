@@ -20,6 +20,7 @@
      · ажилтны idToken → ЗӨВХӨН өөрийнхийг (шалгалт өгмөгц)
    ========================================================================== */
 const crypto = require('crypto');
+const { casJson } = require('./_r2cas.js');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
 
@@ -248,10 +249,15 @@ async function readList(key) {
   } catch (e) { return []; }
 }
 async function writeFor(email, rows) {
-  const cur = await readList(emailKey(email));
-  const m = mergeRows(cur, rows);
-  if (!m.added) return true;                      /* шинэ зүйл алга — бичихгүй */
-  return await putJson(emailKey(email), { updatedAt: new Date().toISOString(), list: m.list });
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай — exam-save яг энэ агшинд шинэ дүн
+     бичвэл дарагдахгүй (ШИНЭ хуулбар дээр нэгтгэнэ) */
+  await casJson(emailKey(email), function (cur) {
+    const list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+    const m = mergeRows(list, rows);
+    if (!m.added) return null;                    /* шинэ зүйл алга — бичихгүй */
+    return { updatedAt: new Date().toISOString(), list: m.list };
+  });
+  return true;
 }
 
 /* ── ӨМНӨХ АЖИЛТНУУДЫГ САНАХ ───────────────────────
@@ -312,10 +318,13 @@ module.exports = async function handler(req, res) {
        хадгалсан хүн байж болно. Индексийг зөвхөн НЭМЖ шинэчилнэ. */
     let blanked = 0;
     try {
-      const prev = await idxRead();
-      const set = {};
-      prev.concat(emails).forEach(function (e) { if (e) set[e] = 1; });
-      await putJson(IDX_KEY, { updatedAt: new Date().toISOString(), emails: Object.keys(set) });
+      await casJson(IDX_KEY, function (idx) {
+        const prev = (idx && Array.isArray(idx.emails)) ? idx.emails : [];
+        const set = {};
+        prev.concat(emails).forEach(function (e) { if (e) set[e] = 1; });
+        if (Object.keys(set).length === prev.length) return null;
+        return { updatedAt: new Date().toISOString(), emails: Object.keys(set) };
+      });
     } catch (e) { /* тольдолт бүхэлдээ зогсохгүй */ }
     /* ⚠ Асуултын толь (exams/_questions.json)-ийг ЭНД БИЧИХГҮЙ — тэр нь
        зөв хариулттай хуучин баримтаас ирж, /api/exam-config-ийн бичсэн
@@ -323,10 +332,13 @@ module.exports = async function handler(req, res) {
 
     let allOk = false;
     try {
-      const m = mergeRows(allCur, all);
-      allOk = m.added ? await putJson('exams/_all.json', {
-        updatedAt: new Date().toISOString(), total: m.list.length, list: m.list
-      }) : true;
+      await casJson('exams/_all.json', function (cur) {
+        const list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+        const m = mergeRows(list, all);
+        if (!m.added) return null;
+        return { updatedAt: new Date().toISOString(), total: m.list.length, list: m.list };
+      });
+      allOk = true;
     } catch (e) { allOk = false; }
 
     return res.status(200).json({

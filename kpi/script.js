@@ -1453,6 +1453,8 @@ function ensureIds() {
 async function saveCols() {
   if (!fbReady || !fdb) return;
   ensureIds();
+  var FP = null, DEL = null;
+  try { FP = firebase.firestore.FieldPath; DEL = firebase.firestore.FieldValue.delete(); } catch (e) { FP = null; DEL = null; }
   var batch = fdb.batch(), ops = 0;
   for (var i = 0; i < COL_KEYS.length; i++) {
     var k = COL_KEYS[i];
@@ -1461,7 +1463,28 @@ async function saveCols() {
     for (var id in cur) {
       var s = '';
       try { s = JSON.stringify(cur[id]); } catch (e) { continue; }
-      if (prev[id] !== s) { batch.set(colRef(k).doc(id), cur[id]); ops++; }
+      if (prev[id] === s) continue;
+      /* ⚠ 2026-09-11: хүний нөөцийн тушаалыг ЭНД бичихгүй — hrPushToServer гүйлгээгээр
+         бичдэг. Эс бөгөөс админы хуучин хуулбар гарын үсгийг дарж болох байв. */
+      if (k === 'hrorders') continue;
+      var docObj = JSON.parse(s), old = null;
+      try { old = prev[id] ? JSON.parse(prev[id]) : null; } catch (e) { old = null; }
+      if (old && FP && DEL) {
+        /* ⚠ 2026-09-11: ЗӨВХӨН ӨӨРЧЛӨГДСӨН талбаруудыг бичнэ (mergeFields) — өөр хүний
+           өөр талбарт хийсэн өөрчлөлтийг админы хуучин хуулбар дарахгүй. */
+        var part = {}, fields = [], keys = {};
+        Object.keys(old).forEach(function (f) { keys[f] = 1; });
+        Object.keys(docObj).forEach(function (f) { keys[f] = 1; });
+        Object.keys(keys).forEach(function (f) {
+          if (JSON.stringify(old[f]) === JSON.stringify(docObj[f])) return;
+          part[f] = (f in docObj) ? docObj[f] : DEL;
+          fields.push(new FP(f));
+        });
+        if (!fields.length) continue;
+        batch.set(colRef(k).doc(id), part, { mergeFields: fields }); ops++;
+      } else {
+        batch.set(colRef(k).doc(id), docObj); ops++;
+      }
       if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
     }
     for (var id2 in prev) {
@@ -2108,8 +2131,9 @@ async function riskR2GetJson(key, opts) {
     for (var a = 0; a <= waits.length; a++) {
       try {
         var r = await fetch(r2DlUrl(k), { cache: 'no-store' });
-        if (r.ok) return await r.json();
-        if (r.status === 404) return null;
+        srvSkewLearn(r);
+        if (r.ok) { r2TagRemember(k, r); var _jj = await r.json(); r2BaseRemember(k, _jj); return _jj; }
+        if (r.status === 404) { _r2Tag[k] = ''; _r2TagAt[k] = srvNow(); _r2Base[k] = { ids: {}, at: srvNow() }; return null; }
         last = new Error('R2 ' + r.status);
         if (r.status !== 429 && r.status < 500) throw last;   /* 401/403 г.м. — давтахгүй */
       } catch (e) {
@@ -2201,6 +2225,111 @@ function r2Rid(x) {
    ДАРАА шинэчилсэн мөрийг миний хуучин хуулбараар буцааж дардаг байв. */
 function r2RowStamp(x) { return (x && typeof x === 'object' && x.updatedAt) ? String(x.updatedAt) : ''; }
 function r2RowNewer(a, b) { var sa = r2RowStamp(a), sb = r2RowStamp(b); return !!(sa && sb && sa > sb); }
+
+/* ══ СЕРВЕРИЙН ЦАГ (2026-09-11) ══
+   ⚠ Төхөөрөмжийн цаг буруу (ирээдүйд/өнгөрсөнд) байвал тэр хүний бичсэн
+   «updatedAt» тамга бусдын жинхэнэ шинэ өөрчлөлтийг «хуучин» гэж дарж,
+   эсвэл өөрийн өөрчлөлтийг «хуучин» гэж гээдэг. Worker хариу бүрдээ X-Now
+   (серверийн цаг) өгдөг тул зөрүүг сурч, тамгыг серверийн цагаар бичнэ. */
+var SRV_SKEW_MS = 0, SRV_SKEW_OK = false;
+function srvSkewLearn(res) {
+  try {
+    var v = res && res.headers && res.headers.get('X-Now');
+    if (!v) return;
+    var n = Number(v);
+    if (!isFinite(n) || n < 1.6e12) return;
+    var d = n - Date.now();
+    if (!SRV_SKEW_OK && Math.abs(d) > 120000) {
+      try { console.warn('[time] төхөөрөмжийн цаг серверээс ' + Math.round(d / 1000) + ' сек зөрүүтэй — серверийн цагаар тамгална'); } catch (e) {}
+    }
+    SRV_SKEW_MS = d; SRV_SKEW_OK = true;
+  } catch (e) {}
+}
+function srvNow() { return Date.now() + SRV_SKEW_MS; }
+function nowIso() { try { return new Date(srvNow()).toISOString(); } catch (e) { return new Date().toISOString(); } }
+
+/* Файл бүрийн сүүлд уншсан тамга (X-Etag) ба уншсан цаг — бичихдээ
+   X-If-Match-аар буцаана; зөрчилд «би юуг харсан, юуг хараагүй» гэдгийг ялгана */
+var _r2Tag = {}, _r2TagAt = {};
+function r2TagRemember(key, res) {
+  try {
+    var k = String(key);
+    var t = res && res.headers && res.headers.get('X-Etag');
+    if (t) { _r2Tag[k] = t; _r2TagAt[k] = srvNow(); }
+  } catch (e) {}
+}
+/* Уншсан хуулбарын мөрийн ID-ууд — «би юуг харсан бэ» (2026-09-11) */
+var _r2Base = {};
+function r2BaseRemember(key, data) {
+  try {
+    var k = String(key), ids = {};
+    var l = r2List(data);
+    if (l) l.forEach(function (x) { var id = r2Rid(x); if (id) ids[id] = 1; });
+    else if (data && typeof data === 'object' && data.rows && typeof data.rows === 'object' && !Array.isArray(data.rows)) {
+      Object.keys(data.rows).forEach(function (id) { ids[id] = 1; });
+    } else { delete _r2Base[k]; return; }
+    _r2Base[k] = { ids: ids, at: srvNow() };
+  } catch (e) {}
+}
+/* Миний УНШСАН хуулбарт байсан атлаа миний бичилтэд БАЙХГҮЙ мөр = би зориуд устгасан.
+   Миний уншилтад БАЙГААГҮЙ мөр (өөр хүн дараа нь нэмсэн) = би хараагүй → ҮЛДЭЭНЭ.
+   ⚠ Мөрийн огноогоор биш, ID-гаар шийднэ: офлайн үүссэн эсвэл хуучин огноотой
+     мөрийг «хуучин» гэж андуурч устгахгүй. */
+function r2StaleIdx(mine, theirs, base) {
+  try {
+    if (!base || !base.ids) return null;
+    var ml = r2List(mine), tl = r2List(theirs);
+    if (!ml || !tl) return null;
+    if (!ml.every(function (x) { return !!r2Rid(x); }) || !tl.every(function (x) { return !!r2Rid(x); })) return null;
+    var have = {};
+    ml.forEach(function (x) { have[r2Rid(x)] = 1; });
+    var out = {}, n = 0;
+    tl.forEach(function (x, i) {
+      var id = r2Rid(x);
+      if (have[id] || !base.ids[id]) return;
+      out[i] = 1; n++;
+    });
+    return n ? out : null;
+  } catch (e) { return null; }
+}
+/* Давхардсан ID-тай мөрөөс СҮҮЛИЙНХИЙГ үлдээнэ (сүлжээ тасарч дахин оролдоход давхардахгүй) */
+function r2DedupeLast(list) {
+  try {
+    var seen = {}, out = [];
+    for (var i = list.length - 1; i >= 0; i--) {
+      var x = list[i], id = (x && x.id != null) ? String(x.id) : '';
+      if (id) { if (seen[id]) continue; seen[id] = 1; }
+      out.unshift(x);
+    }
+    return out;
+  } catch (e) { return list; }
+}
+/* Зэрэг бичилтийн зөрчилд миний хуулбарыг алсынхтай АВТОМАТААР нэгтгэнэ:
+   · id-тай мөрийн жагсаалт (list/rows) → мөр бүрээр (алсын шинэ мөр ялна)
+   · rows нь түлхүүр→мөр объект (sys/clients.json) → түлхүүр бүрээр
+   · бусад бүтэц → нэгтгэж чадахгүй (null) */
+function r2AutoMerge(mine, theirs, drop) {
+  try {
+    if (!mine || !theirs || typeof mine !== 'object' || typeof theirs !== 'object') return null;
+    var m = r2MergeInto(mine, theirs, drop || null);
+    if (m) return m;
+    if (Array.isArray(mine) || Array.isArray(theirs)) return null;
+    var mr = mine.rows, tr = theirs.rows;
+    if (!mr || !tr || typeof mr !== 'object' || typeof tr !== 'object' || Array.isArray(mr) || Array.isArray(tr)) return null;
+    var rows = {};
+    Object.keys(tr).forEach(function (k) { rows[k] = tr[k]; });
+    Object.keys(mr).forEach(function (k) {
+      var a = mr[k], b = rows[k];
+      var sa = String((a && (a.updatedAt || a.at)) || ''), sb = String((b && (b.updatedAt || b.at)) || '');
+      if (!b || !(sb > sa)) rows[k] = a;
+    });
+    var o = {};
+    Object.keys(mine).forEach(function (k) { o[k] = mine[k]; });
+    o.rows = rows;
+    if ('updatedAt' in o) o.updatedAt = nowIso();
+    return o;
+  } catch (e) { return null; }
+}
 /* Мөр өөрөө хэзээ үүссэн бэ — «энэ мөрийг өөр хүн миний дараа нэмсэн үү,
    эсвэл миний устгасан мөр амилсан уу» гэдгийг ялгахад хэрэгтэй. */
 function r2Rat(x) {
@@ -2288,6 +2417,10 @@ function r2MergeInto(want, got, drop) {
     if (!Array.isArray(wl) || !Array.isArray(gl)) return null;
     if (!wl.every(function (x) { return !!r2Rid(x); })) return null;
     if (!gl.every(function (x) { return !!r2Rid(x); })) return null;
+    /* ⚠ 2026-09-11: ID давхардсан бол (нэг хүний хэд хэдэн хувилбарын гарын үсэг г.м.)
+       ID-гаар нэгтгэвэл мөр алга болно — нэгтгэхгүй */
+    var _uq = function (l) { var s = {}; for (var q = 0; q < l.length; q++) { var d = r2Rid(l[q]); if (s[d]) return false; s[d] = 1; } return true; };
+    if (!_uq(wl) || !_uq(gl)) return null;
     var out = gl.filter(function (x, i) { return !(drop && drop[i]); }), pos = {};
     out.forEach(function (x, i) { pos[r2Rid(x)] = i; });
     wl.forEach(function (x) {
@@ -2380,7 +2513,7 @@ function r2Queue(key, fn) {
    ⚠ Уншилт унавал (404-өөс бусад) ХЭЗЭЭ Ч бичихгүй — хоосон суурь дээр
      бичвэл бусдын мөрийг устгана.
    ⚠ Олон хүн уншиж-нэгтгэж-бичдэг ХУВААЛЦСАН файлыг ҮРГЭЛЖ үүгээр бич. */
-var R2_CAS_TRIES = 6;
+var R2_CAS_TRIES = 10;
 async function r2GetJsonTag(key) {
   var k = String(key);
   try { await r2DlSign([k]); } catch (e) {}
@@ -2389,12 +2522,15 @@ async function r2GetJsonTag(key) {
     try {
       var r = await fetch(r2DlUrl(k), { cache: 'no-store' });
       st = r.status;
-      if (r.status === 404) return { status: 404, data: null, etag: '' };
+      srvSkewLearn(r);
+      if (r.status === 404) { _r2Tag[k] = ''; _r2TagAt[k] = srvNow(); _r2Base[k] = { ids: {}, at: srvNow() }; return { status: 404, data: null, etag: '' }; }
+      r2TagRemember(k, r);
       if (r.ok) {
         var tag = '';
         try { tag = r.headers.get('X-Etag') || ''; } catch (e) {}
         var txt = await r.text(), data = null;
         try { data = JSON.parse(txt); } catch (e) { return { status: -1, data: null, etag: '' }; }
+        r2BaseRemember(k, data);
         return { status: 200, data: data, etag: tag };
       }
       if (r.status !== 429 && r.status < 500) return { status: r.status, data: null, etag: '' };
@@ -2403,26 +2539,32 @@ async function r2GetJsonTag(key) {
   }
   return { status: st, data: null, etag: '' };
 }
-async function r2PutJsonTag(key, obj, etag, grant) {
+async function r2PutJsonTag(key, obj, etag, grant, opts) {
   var h = r2AuthHeaders(grant, { 'Content-Type': 'application/json' });
   if (etag) h['X-If-Match'] = etag;
+  else if (opts && opts.none) h['X-If-None-Match'] = '*';     /* «файл байхгүй үед л үүсгэ» */
   var init = { method: 'PUT', headers: h, body: JSON.stringify(obj) };
   try { if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) init.signal = AbortSignal.timeout(90000); } catch (e) {}
   try {
     var r = await fetch(TASK_R2 + '/' + encodeURIComponent(String(key)), init);
-    return { status: r.status };
-  } catch (e) { return { status: 0, why: String((e && e.message) || e).slice(0, 80) }; }
+    srvSkewLearn(r);
+    var tg = '';
+    try { tg = r.headers.get('X-Etag') || ''; } catch (e) {}
+    return { status: r.status, etag: tg };
+  } catch (e) { return { status: 0, etag: '', why: String((e && e.message) || e).slice(0, 80) }; }
 }
-async function r2CasJson(key, build) {
+/* opts.quiet — pulse дэгдээхгүй (системийн бүртгэл: 300 ажилтны аппыг дэмий сэрээхгүй) */
+async function r2CasJson(key, build, opts) {
   var k = String(key);
+  opts = opts || {};
   return await r2Queue(k, async function () {
-    var grant = null, why = '', net = 0;
+    var grant = null, why = '', net = 0, conflicts = 0;
     var pause = function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); };
     for (var a = 0; a < R2_CAS_TRIES; a++) {
       var g = await r2GetJsonTag(k);
       if (g.status !== 200 && g.status !== 404) {
         why = 'уншилт ' + g.status;
-        if ((g.status === 0 || g.status === 429 || g.status >= 500) && ++net < 3) { await pause(1200 * net); continue; }
+        if ((g.status === 0 || g.status === 429 || g.status >= 500) && ++net < 4) { await pause(1200 * net); continue; }
         break;
       }
       var cur = g.status === 404 ? null : g.data;
@@ -2430,44 +2572,92 @@ async function r2CasJson(key, build) {
       if (body === undefined || body === null) return { ok: true, skipped: true, body: cur };
       if (!grant) grant = await r2Grant(k);
       if (!grant) { why = 'эрх — ' + (R2_GRANT_WHY || '?'); break; }
-      /* Worker X-Etag өгөхгүй (хуучин) бол урьдын аргаар бичиж шалгана */
+      /* Worker тамга өгөхгүй (хуучин) бол урьдын аргаар бичиж шалгана */
       if (g.status === 200 && !g.etag) {
         var p0 = await r2PutJsonTag(k, body, '', grant);
-        if (p0.status !== 200) { why = 'бичилт ' + p0.status; break; }
+        if (p0.status === 428) { why = 'тамга шаардлагатай'; continue; }
+        if (p0.status !== 200) {
+          why = 'бичилт ' + p0.status;
+          if ((p0.status === 0 || p0.status === 429 || p0.status >= 500) && ++net < 4) { await pause(1200 * net); continue; }
+          break;
+        }
         riskR2CacheBust();
-        if (k !== PULSE_FILE) { try { pulseBump(k); } catch (e) {} }
+        if (k !== PULSE_FILE && !opts.quiet) { try { pulseBump(k); } catch (e) {} }
         try { await r2VerifyWrite(k, body); } catch (e) {}
         return { ok: true, body: body, tries: a + 1, cas: false };
       }
-      var p = await r2PutJsonTag(k, body, g.etag, grant);
+      /* X-If-None-Match-ыг зөвхөн шинэ Worker-т (X-Now харсан) — хуучинд CORS унана */
+      var p = await r2PutJsonTag(k, body, g.etag, grant, { none: g.status === 404 && SRV_SKEW_OK });
       if (p.status === 200) {
+        if (p.etag) { _r2Tag[k] = p.etag; _r2TagAt[k] = srvNow(); }
+        r2BaseRemember(k, body);
         riskR2CacheBust();
-        if (k !== PULSE_FILE) { try { pulseBump(k); } catch (e) {} }
-        if (a) { try { console.log('[r2] ' + k + ' — зэрэг бичилтийг нэгтгэж ' + (a + 1) + ' дахь оролдлогоор бичлээ'); } catch (e) {} }
+        if (k !== PULSE_FILE && !opts.quiet) { try { pulseBump(k); } catch (e) {} }
+        if (conflicts) { try { console.log('[r2] ' + k + ' — зэрэг бичилтийг ' + conflicts + ' удаа нэгтгэж бичлээ'); } catch (e) {} }
         return { ok: true, body: body, tries: a + 1, cas: true };
       }
-      if (p.status === 412) { why = 'зэрэг бичилт'; await pause(150 + Math.floor(Math.random() * 350 * (a + 1))); continue; }
+      if (p.status === 412 || p.status === 428) {
+        conflicts++; why = 'зэрэг бичилт';
+        await pause(Math.min(4000, 150 * Math.pow(1.7, a)) * (0.5 + Math.random()));
+        continue;
+      }
       if (p.status === 401) { grant = null; why = 'эрх дууссан'; continue; }
       why = 'бичилт ' + p.status + (p.why ? ' ' + p.why : '');
-      if ((p.status === 0 || p.status === 429 || p.status >= 500) && ++net < 3) { await pause(1200 * net); continue; }
+      if ((p.status === 0 || p.status === 429 || p.status >= 500) && ++net < 4) { await pause(1200 * net); continue; }
       break;
     }
-    try { sysErrLog('r2', 'Бичилт амжилтгүй: ' + k + ' — ' + why, 'r2CasJson'); } catch (e) {}
+    if (typeof SYS_ERR_FILE === 'undefined' || k !== SYS_ERR_FILE) {
+      try { sysErrLog('r2', 'Бичилт амжилтгүй: ' + k + ' — ' + why, 'r2CasJson'); } catch (e) {}
+    }
     throw new Error('R2 ' + k + ': ' + why);
   });
 }
 
-/* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана) */
+/* JSON-ыг R2 руу бичнэ (одоо байгаа гарын үсэгтэй байршуулалтыг ашиглана).
+   ⚠ 2026-09-11: ЕРӨНХИЙ ЗЭРЭГ БИЧИЛТИЙН ХАМГААЛАЛТ. Файлыг уншсан бол тамгыг
+   (X-If-Match) хавсаргана; өөр хүн энэ хооронд бичсэн (412) эсвэл Worker тамга
+   шаардсан (428) бол шинэ хуулбарыг уншиж, миний мөрүүдийг дээр нь тавиад дахин
+   бичнэ — бусдын мөр АЛГА болохгүй, миний зориуд устгасан мөр амилахгүй.
+   Мөр бүр нь олон хүний өөрчилдөг файл (reports, tasks, notify …) r2CasJson-оор
+   явна; энэ нь «мөр бүр нэг эзэнтэй» жагсаалтуудад (бүртгэл, хүсэлт, ажлын
+   захиалгын маягт, гарын үсэг …) хангалттай. */
 async function riskR2PutJson(key, obj) {
-  return await r2Queue(key, async function () {
-    var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
-    blob.name = key.split('/').pop();
-    var out = await r2Put(blob, key);
+  var k = String(key);
+  return await r2Queue(k, async function () {
+    var grant = await r2Grant(k);
+    if (!grant) throw new Error('R2 эрх — ' + (R2_GRANT_WHY || '?'));
+    var body = obj, tag = _r2Tag[k] || '', base = _r2Base[k] || null, none = false;
+    var net = 0, why = '', p = null, merged = 0;
+    var pause = function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); };
+    for (var a = 0; a < R2_CAS_TRIES; a++) {
+      p = await r2PutJsonTag(k, body, tag, grant, { none: none });
+      if (p.status === 200) break;
+      if (p.status === 412 || p.status === 428) {
+        var g = await r2GetJsonTag(k);
+        if (g.status === 404) { tag = ''; none = SRV_SKEW_OK; continue; }
+        if (g.status !== 200) { why = 'уншилт ' + g.status; break; }
+        tag = g.etag; none = false;
+        if (!tag) { why = 'тамга алга'; break; }
+        var fix = r2AutoMerge(body, g.data, r2StaleIdx(body, g.data, base));
+        if (fix) { body = fix; merged++; }
+        await pause(Math.min(3000, 120 * Math.pow(1.7, a)) * (0.5 + Math.random()));
+        continue;
+      }
+      if (p.status === 401) { grant = await r2Grant(k); if (!grant) { why = 'эрх дууссан'; break; } continue; }
+      why = 'R2 ' + p.status + (p.why ? ' ' + p.why : '');
+      if ((p.status === 0 || p.status === 429 || p.status >= 500) && ++net < 4) { await pause(1200 * net); continue; }
+      break;
+    }
+    if (!p || p.status !== 200) throw new Error(why || ('R2 ' + k + ': бичилт амжилтгүй'));
+    if (p.etag) { _r2Tag[k] = p.etag; _r2TagAt[k] = srvNow(); }
+    r2BaseRemember(k, body);
     riskR2CacheBust();      /* бичсэн даруйд хуучин хуулбар үлдэхгүй */
     /* ⚠ Цохилтын файл өөрөө цохилт үүсгэвэл мөнхийн давталт болно */
-    if (key !== PULSE_FILE) { try { pulseBump(key); } catch (e) {} }
-    try { await r2VerifyWrite(key, obj); } catch (e) {}
-    return out;
+    if (k !== PULSE_FILE) { try { pulseBump(k); } catch (e) {} }
+    if (merged) { try { console.log('[r2] ' + k + ' — зэрэг бичилтийг нэгтгэж бичлээ'); } catch (e) {} }
+    /* Тамгатай (CAS) бичилт баталгаатай; тамгагүй (хуучин Worker) бол урьдын шалгалт */
+    if (!p.etag) { try { await r2VerifyWrite(k, body); } catch (e) {} }
+    return TASK_R2 + '/' + encodeURIComponent(k);
   });
 }
 
@@ -2559,12 +2749,10 @@ async function sysReport() {
   await new Promise(function (r) { setTimeout(r, 1500 + Math.random() * 9000); });
 
   try {
-    var all = await riskR2GetJson(SYS_CLI_FILE, { fresh: true }) || {};
-    var rows = all.rows || {};
     var d = sysDev(), me = null;
     try { me = myEmployeeRecord(); } catch (e) {}
-    rows[em] = {
-      v: ver, at: new Date().toISOString(),
+    var mine = {
+      v: ver, at: nowIso(),
       n: (me && me.name) || '', dp: (me && me.dept) || '',
       /* ⚠ Бүртгэлээ олоогүй бол ЭНД тэмдэглэнэ — админ тэр өдөрт нь мэдэнэ */
       noRec: me ? 0 : 1,
@@ -2572,7 +2760,13 @@ async function sysReport() {
       /* Firebase-ийн дүрэм зөрчсөн уншилт — админд харагдана */
       fb: FB_VIOLATIONS.length ? FB_VIOLATIONS.map(function (x) { return x.col; }).join(',') : ''
     };
-    await sysPut(SYS_CLI_FILE, { updatedAt: new Date().toISOString(), rows: rows });
+    /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (олон хүн зэрэг нэвтрэхэд мөр
+       алдагдахгүй); pulse дэгдээхгүй (quiet) */
+    await r2CasJson(SYS_CLI_FILE, function (all) {
+      var rows = (all && all.rows && typeof all.rows === 'object' && !Array.isArray(all.rows)) ? all.rows : {};
+      rows[em] = mine;
+      return { updatedAt: nowIso(), rows: rows };
+    }, { quiet: true });
     try {
       localStorage.setItem('mhSysSig', sig);
       localStorage.setItem('mhSysAt', String(Date.now()));
@@ -2611,25 +2805,29 @@ function sysErrLog(kind, msg, where) {
     (async function () {
       try {
         await new Promise(function (r) { setTimeout(r, Math.random() * 4000); });
-        var all = await riskR2GetJson(SYS_ERR_FILE, { fresh: true }) || {};
-        var rows = all.rows || [];
-        /* Ижил алдаа аль хэдийн байвал тоолуурыг нь нэмнэ — жагсаалт
-           нэг хүний нэг алдаагаар дүүрэхгүй. */
-        var hit = null;
-        for (var i = 0; i < rows.length; i++) {
-          if (rows[i].k === row.k && rows[i].m === row.m && rows[i].w === row.w) { hit = rows[i]; break; }
-        }
-        if (hit) {
-          hit.c = (hit.c || 1) + 1; hit.at = row.at;
-          hit.u = hit.u || [];
-          if (row.e && hit.u.indexOf(row.e) < 0 && hit.u.length < 40) hit.u.push(row.e);
-        } else {
-          row.c = 1; row.u = row.e ? [row.e] : [];
-          rows.unshift(row);
-        }
-        rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
-        if (rows.length > SYS_ERR_MAX) rows = rows.slice(0, SYS_ERR_MAX);
-        await sysPut(SYS_ERR_FILE, { updatedAt: new Date().toISOString(), rows: rows });
+        /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай, pulse дэгдээхгүй */
+        await r2CasJson(SYS_ERR_FILE, function (all) {
+          var rows = ((all && Array.isArray(all.rows)) ? all.rows : []).slice();
+          /* Ижил алдаа аль хэдийн байвал тоолуурыг нь нэмнэ — жагсаалт
+             нэг хүний нэг алдаагаар дүүрэхгүй. */
+          var hit = null;
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].k === row.k && rows[i].m === row.m && rows[i].w === row.w) { hit = rows[i]; break; }
+          }
+          if (hit) {
+            hit.c = (hit.c || 1) + 1; hit.at = row.at;
+            hit.u = hit.u || [];
+            if (row.e && hit.u.indexOf(row.e) < 0 && hit.u.length < 40) hit.u.push(row.e);
+          } else {
+            var mine = {};
+            Object.keys(row).forEach(function (kk) { mine[kk] = row[kk]; });
+            mine.c = 1; mine.u = row.e ? [row.e] : [];
+            rows.unshift(mine);
+          }
+          rows.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+          if (rows.length > SYS_ERR_MAX) rows = rows.slice(0, SYS_ERR_MAX);
+          return { updatedAt: nowIso(), rows: rows };
+        }, { quiet: true });
       } catch (e2) {}
     })();
   } catch (e) {}
@@ -2997,7 +3195,7 @@ async function sysHealthDraw() {
     if (!confirm('Бүртгэгдсэн алдааг цэвэрлэх үү? (Шинэ алдаа дахин бүртгэгдсээр байна)')) return;
     cl.disabled = true; cl.textContent = 'Цэвэрлэж байна…';
     try {
-      await sysPut(SYS_ERR_FILE, { updatedAt: new Date().toISOString(), rows: [] });
+      await r2CasJson(SYS_ERR_FILE, function () { return { updatedAt: nowIso(), rows: [] }; }, { quiet: true });
       try { toast('✅ Алдааны бүртгэл цэвэрлэгдлээ'); } catch (e) {}
     } catch (e) {}
     sysHealthDraw();
@@ -3205,6 +3403,7 @@ async function taskR2Load() {
     var p = await riskR2GetJson(TASK_R2_FILE);
     if (!p || !Array.isArray(p.rows)) return null;
     try { localStorage.setItem(TASK_CACHE_KEY, JSON.stringify(p)); } catch (e) {}
+    taskBaseSet(p.rows);
     return p.rows;
   } catch (e) { return null; }
 }
@@ -3553,9 +3752,11 @@ async function taskFreshById(id) {
       if (loc) {
         Object.keys(loc).forEach(function (k) { if (!(k in rem)) delete loc[k]; });
         Object.assign(loc, rem);
+        taskBaseSet([loc]);
         return loc;
       }
       DB.tasks = DB.tasks || []; DB.tasks.unshift(rem);
+      taskBaseSet([rem]);
       return rem;
     }
   } catch (e) {}
@@ -3778,6 +3979,19 @@ function taskDeleteById(tid) {
 }
 
 /* R2 дахь файлыг read → merge → write. changed = өөрчилсөн даалгаврууд */
+/* ══ ДААЛГАВРЫН СУУРЬ ХУУЛБАР (2026-09-11) ══
+   Ачаалсан/нэгтгэсэн мөр бүрийн хуулбарыг хадгална. Бичихдээ «суурь → одоо»
+   ялгааг (зөвхөн МИНИЙ өөрчилсөн талбар) серверийн ШИНЭ мөр дээр тавина.
+   ⚠ Өмнө нь мөрийг бүтнээр нь бичдэг тул хуучин хуулбартай ажилтан
+   «Гүйцэтгэсэн» дарахад удирдагчийн сая сунгасан хугацаа буцаж, буруу цагтай
+   төхөөрөмж бусдын өөрчлөлтийг «хуучин» гэж дардаг байв. */
+var TASK_BASE = {};
+function taskBaseSet(rows) {
+  try { (rows || []).forEach(function (r) { if (r && r.id != null) TASK_BASE[String(r.id)] = JSON.stringify(r); }); } catch (e) {}
+}
+function taskBaseGet(id) {
+  try { var s = TASK_BASE[String(id)]; return s ? JSON.parse(s) : null; } catch (e) { return null; }
+}
 async function taskR2Merge(changed, opts) {
   opts = opts || {};
   /* Устгагдсаныг хасна (админы устгал tombstone бичдэг) */
@@ -3790,35 +4004,55 @@ async function taskR2Merge(changed, opts) {
      эс бөгөөс дугаар давхцахад шинэ даалгавар чимээгүй алга болно. */
   var keep = {};
   (changed || []).forEach(function (x) { if (x && x.id != null) keep[String(x.id)] = 1; });
-  /* ⚠ 2026-09-10: зэрэг бичилтийн хамгаалалттай (r2CasJson). Уншилт унавал
-     ХЭЗЭЭ Ч бичихгүй — өмнө нь хоосон суурь дээр өөрийн (албаар шүүгдсэн)
-     даалгавруудаа л бичиж, бусдынхыг арилгах эрсдэлтэй байв. */
+  /* ⚠ Зэрэг бичилтийн хамгаалалттай (r2CasJson). Уншилт унавал ХЭЗЭЭ Ч бичихгүй. */
   var res = await r2CasJson(TASK_R2_FILE, function (cur) {
     if (cur && !Array.isArray(cur.rows)) throw new Error('tasks/all.json бүтэц танигдсангүй');
     var byId = {};
     ((cur && cur.rows) || []).forEach(function (r) { if (r && r.id != null) byId[String(r.id)] = r; });
-    /* ⚠ НЭГДЭЛ: локал жагсаалтыг ч оруулна. Админ биш хүний DB.tasks нь
-       албаар шүүгдсэн ХЭСЭГ байж болох тул зөвхөн НЭМНЭ, хэзээ ч хасахгүй —
-       устгал tombstone-оор л явна. */
+    /* Локал жагсаалт: серверт БАЙХГҮЙ мөрийг л нэмнэ (устгал tombstone-оор). */
     (DB.tasks || []).forEach(function (r) {
       if (!r || r.id == null) return;
-      var k = String(r.id), old = byId[k];
-      if (!old || String(r.updatedAt || '') > String(old.updatedAt || '')) byId[k] = r;
+      var k = String(r.id);
+      if (!byId[k] && !gone[k]) byId[k] = r;
     });
     (changed || []).forEach(function (x) {
       if (!x || x.id == null) return;
-      var k = String(x.id), old = byId[k];
-      /* Шинэ нь ялна; updatedAt байхгүй хуучин бичлэгийг локал нь дарна */
+      var k = String(x.id), old = byId[k], base = taskBaseGet(k);
+      if (old && base) {
+        /* ⭐ 3 талт нэгтгэл: зөвхөн МИНИЙ өөрчилсөн талбарыг серверийн шинэ мөр дээр */
+        var p = repDiff(base, x);
+        byId[k] = repPatchEmpty(p) ? old : repApplyPatch(old, p);
+        return;
+      }
+      /* Суурьгүй (шинэ мөр, хуучин кэш): шинэ нь ялна */
       if (!old || String(x.updatedAt || '') >= String(old.updatedAt || '')) byId[k] = x;
     });
     var rows = Object.keys(byId).filter(function (k) { return keep[k] || !gone[k]; }).map(function (k) { return byId[k]; });
     rows.sort(function (a, b) { return String(b.createdAt || '').localeCompare(String(a.createdAt || '')); });
-    return { version: Date.now(), updatedAt: new Date().toISOString(), total: rows.length, rows: rows };
+    return { version: Date.now(), updatedAt: nowIso(), total: rows.length, rows: rows };
   });
   var p = res && res.body;
   if (p && Array.isArray(p.rows)) {
     try { localStorage.setItem(TASK_CACHE_KEY, JSON.stringify(p)); } catch (e) {}
-    if (opts.apply !== false) DB.tasks = p.rows;
+    if (opts.apply !== false) { DB.tasks = p.rows; taskBaseSet(p.rows); }
+    else {
+      /* apply=false (админ): локал объектуудаа серверийн нэгтгэсэн хувилбартай тэнцүүлнэ,
+         суурийг ЗӨВХӨН тэдгээрт шинэчилнэ (бусад локал мөр хуучин хэвээр байж болно) */
+      var byNew = {};
+      p.rows.forEach(function (m) { if (m && m.id != null) byNew[String(m.id)] = m; });
+      var synced = [];
+      (DB.tasks || []).forEach(function (loc) {
+        if (!loc || loc.id == null || !keep[String(loc.id)]) return;
+        var m = byNew[String(loc.id)];
+        if (!m) return;
+        if (m !== loc) {
+          Object.keys(loc).forEach(function (kk) { if (!(kk in m)) delete loc[kk]; });
+          Object.keys(m).forEach(function (kk) { loc[kk] = m[kk]; });
+        }
+        synced.push(loc);
+      });
+      taskBaseSet(synced);
+    }
   }
   return true;
 }
@@ -3828,7 +4062,7 @@ async function taskPersist(list) {
   var arr = Array.isArray(list) ? list : [list];
   arr = arr.filter(function (x) { return x && x.id != null; });
   if (!arr.length) return false;
-  var at = new Date().toISOString();
+  var at = nowIso();
   arr.forEach(function (x) { x.updatedAt = at; });
   try { dbCacheSave('даалгавар'); } catch (e) {}
   /* ⚠ R2 ЭХЛЭЭД — админд ч. Өмнө админ saveDB() → Firestore → дараа нь R2
@@ -3848,7 +4082,7 @@ async function taskPersist(list) {
 function taskCacheLoad() {
   try {
     var c = JSON.parse(localStorage.getItem(TASK_CACHE_KEY) || 'null');
-    if (c && Array.isArray(c.rows) && c.rows.length) return c.rows;
+    if (c && Array.isArray(c.rows) && c.rows.length) { taskBaseSet(c.rows); return c.rows; }
   } catch (e) {}
   return null;
 }
@@ -3991,7 +4225,7 @@ function repSameVal(a, b) {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
 }
 function repDiff(before, after) {
-  var p = { from: {}, set: {}, unset: [], at: new Date().toISOString() };
+  var p = { from: {}, set: {}, unset: [], at: nowIso() };
   var keys = {};
   Object.keys(before || {}).forEach(function (k) { keys[k] = 1; });
   Object.keys(after || {}).forEach(function (k) { keys[k] = 1; });
@@ -4012,6 +4246,39 @@ function repArrAppended(from, to) {
   for (var i = 0; i < f.length; i++) if (!repSameVal(f[i], to[i])) return null;
   return to.slice(f.length);
 }
+/* Объектын жагсаалтыг ТАНИХ ТЭМДГЭЭР (key/id/uid) нэгтгэнэ (2026-09-11) — хоёр хүн өөр
+   өөр элементийг (тушаалын өөр шатны гарын үсэг, багийн өөр гишүүн) зэрэг өөрчилсөн бол
+   хоёулаа үлдэнэ. Нэг элементийг хоёулаа өөрчилсөн бол СЕРВЕРИЙНХ үлдэнэ. */
+function repArrKeyMerge(base, mine, cur) {
+  try {
+    var idOf = function (x) { return (x && typeof x === 'object') ? String(x.key || x.id || x.uid || '') : ''; };
+    var index = function (l) {
+      if (!Array.isArray(l)) return null;
+      var m = {};
+      for (var i = 0; i < l.length; i++) { var id = idOf(l[i]); if (!id || m[id]) return null; m[id] = l[i]; }
+      return m;
+    };
+    var B = index(Array.isArray(base) ? base : []), M = index(mine), C = index(cur);
+    if (!B || !M || !C) return null;
+    var out = [], used = {};
+    cur.forEach(function (c) {
+      var id = idOf(c), b = B[id], m = M[id];
+      used[id] = 1;
+      if (m === undefined) {
+        if (b !== undefined && repSameVal(c, b)) return;      /* би устгасан, сервер хөндөөгүй */
+        out.push(c); return;
+      }
+      if (b !== undefined && !repSameVal(m, b) && repSameVal(c, b)) { out.push(m); return; }   /* зөвхөн би өөрчилсөн */
+      out.push(c);
+    });
+    mine.forEach(function (m) {
+      var id = idOf(m);
+      if (used[id] || B[id] !== undefined) return;             /* сервер устгасныг дахин нэмэхгүй */
+      out.push(m);                                             /* миний шинээр нэмсэн */
+    });
+    return out;
+  } catch (e) { return null; }
+}
 function repApplyPatch(row, p) {
   var out = JSON.parse(JSON.stringify(row || {}));
   var from = (p && p.from) || {}, skip = [];
@@ -4024,7 +4291,10 @@ function repApplyPatch(row, p) {
         var seen = {};
         (cur || []).forEach(function (x) { seen[JSON.stringify(x)] = 1; });
         out[k] = (cur || []).concat(add.filter(function (x) { return !seen[JSON.stringify(x)]; }));
-      } else skip.push(k);
+      } else {
+        var km = repArrKeyMerge(from[k], want, cur);
+        if (km) out[k] = km; else skip.push(k);
+      }
       return;
     }
     out[k] = want;
@@ -4033,7 +4303,7 @@ function repApplyPatch(row, p) {
     if ((k in from) && !repSameVal(out[k], from[k])) { skip.push(k); return; }
     delete out[k];
   });
-  out.updatedAt = new Date().toISOString();
+  out.updatedAt = nowIso();
   if (skip.length) { try { console.warn('[reports] ' + out.id + ' — өөр хүн зэрэг өөрчилсөн тул хөндсөнгүй: ' + skip.join(', ')); } catch (e) {} }
   return out;
 }
@@ -4146,7 +4416,10 @@ async function repR2Merge(changed, opts) {
       var k = String(r.id), old = byId[k];
       /* Нөхөөстэй мөрийг локал хуулбараар нь БҮҮ дар — нөхөөс нь шийднэ */
       if (patches[k] || pend[k]) return;
-      if (!old || repStamp(r) > repStamp(old)) byId[k] = repNoRegress(r, old);
+      /* ⚠ 2026-09-11: серверт БАЙХГҮЙ мөрийг л нэмнэ. Өмнө нь «локал нь шинэ бол
+         дарна» байсан — цаг нь буруу төхөөрөмжийн хуучин хуулбар бусдын жинхэнэ
+         өөрчлөлтийг «хуучин» гэж дардаг байв. Өөрчлөлт нөхөөсөөр (patch) явна. */
+      if (!old && !gone[k]) byId[k] = r;
     });
     (changed || []).forEach(function (x) {
       if (!x || x.id == null) return;
@@ -4166,7 +4439,7 @@ async function repR2Merge(changed, opts) {
     rows.sort(function (a, b) { return repStamp(b) > repStamp(a) ? 1 : -1; });
     merged = rows;
     return {
-      updatedAt: new Date().toISOString(), seeded: !!(full || (cur && cur.seeded)),
+      updatedAt: nowIso(), seeded: !!(full || (cur && cur.seeded)),
       by: (SESSION && SESSION.email) || '', rows: rows
     };
   });
@@ -10635,22 +10908,30 @@ async function ackVerifyOtp(id, code, email) {
    Хоёр хүн зэрэг зурвал бие биенийхээ бичлэгийг устгах эрсдэлтэй тул
    бичихийн ӨМНӨ шинээр уншиж нэгтгэж, бичсэний ДАРАА эргэж шалгана. */
 async function ackWrite(key, rec) {
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (r2CasJson). Олон ажилтан нэг албаны
+     файлд нэг агшинд гарын үсэг зурахад нэгнийх нь алга болохгүй — мөрийг ШИНЭ
+     хуулбар дээр нэмнэ. */
   var last = null;
-  for (var i = 0; i < 3; i++) {
-    var st = await ackLoadKey(key, true);
-    st.rows = (st.rows || []).filter(function (r) {
-      return !(r.uid === rec.uid && String(r.version) === String(rec.version));
+  try {
+    await r2CasJson(key, function (cur) {
+      var st = (cur && typeof cur === 'object' && !Array.isArray(cur)) ? cur : { version: 0, rows: [] };
+      var rows = (Array.isArray(st.rows) ? st.rows : []).filter(function (r) {
+        return !(r && r.uid === rec.uid && String(r.version) === String(rec.version));
+      });
+      rows.push(rec);
+      var o = {};
+      Object.keys(st).forEach(function (kk) { if (kk !== '_ok') o[kk] = st[kk]; });
+      o.rows = rows;
+      o.version = String(rec.version);
+      o.updatedAt = rec.at;
+      return o;
     });
-    st.rows.push(rec);
-    st.version = String(rec.version);
-    st.updatedAt = rec.at;
-    try { await ackSaveKey(key, st); } catch (e) { last = e; continue; }
-    var back = await ackLoadKey(key, true);
-    var ok = ((back && back.rows) || []).some(function (r) {
-      return r.uid === rec.uid && String(r.version) === String(rec.version) && String(r.code) === String(rec.code);
-    });
-    if (ok) return { ok: true, store: back };
-  }
+  } catch (e) { last = e; }
+  var back = await ackLoadKey(key, true);
+  var ok = ((back && back.rows) || []).some(function (r) {
+    return r.uid === rec.uid && String(r.version) === String(rec.version) && String(r.code) === String(rec.code);
+  });
+  if (ok) return { ok: true, store: back };
   return { ok: false, error: 'Гарын үсэг хадгалагдсанг баталгаажуулж чадсангүй' + (last ? ' (' + last.message + ')' : '') };
 }
 
@@ -17388,7 +17669,7 @@ function verifyReport(id, decision, newRisk) {
      менежерүүд (эрхийн хувьд «employee») баталгаажуулахад хадгалагдахгүй
      байх байсан — createReport дээрхтэй ижил алдаа. Шууд бичнэ.
      ⚠ 2026-09-10: зөвхөн өөрчилсөн талбаруудыг нөхөөсөөр илгээнэ. */
-  try { r.updatedAt = new Date().toISOString(); } catch (e) {}
+  try { r.updatedAt = nowIso(); } catch (e) {}
   reportPushToServer(r, _vBefore ? { patch: repDiff(_vBefore, r) } : {});
   renderReportflow(); renderKpiPage(); renderEmployees(); renderDashboard(); renderNotifBadge();
 }
@@ -20083,7 +20364,7 @@ function wkPatch(id, fn, msg) {
   /* ⚠ Мөрийн updatedAt-г ЗААВАЛ шинэчилнэ — repStamp үүгээр аль хувилбар
      шинэ болохыг ялгадаг. Өмнө нь ХЭЗЭЭ Ч бичигддэггүй байсан тул тамга нь
      wkExecAt дээр зогсож, хуучин хуулбар шинийг дарж бичдэг байв. */
-  try { r.updatedAt = new Date().toISOString(); } catch (e) {}
+  try { r.updatedAt = nowIso(); } catch (e) {}
   saveDB();
   /* ⭐ 2026-09-10: мөрийг БҮТНЭЭР нь биш, ЗӨВХӨН өөрчилсөн талбаруудыг илгээнэ —
      серверийн хамгийн шинэ мөр дээр тавигдаж, өөр хүний зэрэг хийсэн
@@ -20651,7 +20932,7 @@ async function delTombAdd(ids) {
   try {
     await r2CasJson(WK_DEL_FILE, function (cur) {
       var list = (cur && Array.isArray(cur.list)) ? cur.list.slice() : [];
-      var at = new Date().toISOString(), ch = false;
+      var at = nowIso(), ch = false;
       (ids || []).forEach(function (x) {
         if (x && !list.some(function (y) { return y && y.id === x; })) { list.push({ id: x, at: at }); ch = true; }
       });
@@ -22154,6 +22435,41 @@ async function wkMirrorPull(all) {
                 устгаж, сервер эскалацыг мэдэхгүй болно. Гэхдээ ажилтан
                 өөрөө мэдээлэл өгмөгц тольд ОРОХ ёстой — эс бөгөөс ХАБЭА/ИТА
                 хэн ч цэсээ нээхгүй өдөр сервер тэр ажлыг огт олохгүй. */
+/* Толины нэгтгэл: миний мөрүүд + серверийн (cron) тэмдэг/автомат оноолтыг ХАДГАЛНА.
+   full=true → миний жагсаалт л үлдэнэ (хаагдсан ажил арилна); full=false → бусдын мөр хэвээр.
+   Өөрчлөлтгүй бол null (бичихгүй). */
+function wkMirrorMerge(list, old, full, myClosed) {
+  var byOld = {};
+  (old || []).forEach(function (x) { if (x && x.id) byOld[x.id] = x; });
+  var mine = {};
+  (list || []).forEach(function (n) {
+    if (!n || !n.id) return;
+    var o = byOld[n.id];
+    if (o) {
+      var esc = {};
+      Object.keys(n.esc || {}).forEach(function (k) { esc[k] = n.esc[k]; });
+      Object.keys(o.esc || {}).forEach(function (k) { if (o.esc[k] && !esc[k]) esc[k] = o.esc[k]; });
+      n.esc = esc;
+      if (o.autoAssign && !n.autoAssign) n.autoAssign = o.autoAssign;
+    }
+    mine[n.id] = n;
+  });
+  var out;
+  if (full) {
+    out = (list || []).filter(function (n) { return n && n.id; });
+  } else {
+    out = [];
+    (old || []).forEach(function (x) {
+      if (!x || !x.id) return;
+      if (mine[x.id]) { out.push(mine[x.id]); delete mine[x.id]; }
+      else out.push(x);                                   /* бусдынх — хэвээр */
+    });
+    Object.keys(mine).forEach(function (k) { out.push(mine[k]); });
+    out = out.filter(function (x) { return !(myClosed || {})[x.id]; });
+  }
+  if (JSON.stringify(out) === JSON.stringify(old || [])) return null;
+  return out;
+}
 async function wkMirrorPush(all, full) {
   var dir = null;
   try { dir = ackDirector('prod') || ackDirector('ceo'); } catch (e) {}
@@ -22216,50 +22532,24 @@ async function wkMirrorPush(all, full) {
      (Хоосон болсон үед ч НЭГ удаа бичнэ — хаагдсан ажил тольноос арилна.) */
   var sig = (full ? 'F|' : 'P|') + JSON.stringify(list);
   if (wkMirrorPush._last === sig) return true;
-
-  var out = list;
-  if (!full) {
-    /* Нэгтгэх горим: бусдын мөрийг хэвээр үлдээнэ. Мөн `esc` тэмдгийг
-       ХӨНДӨХГҮЙ — сервер тэнд бичсэн байж болно. */
-    var cur = null;
-    try { cur = await riskR2GetJson(WK_OPEN_FILE, { fresh: true }); } catch (e) { cur = null; }
-    var old = (cur && cur.list) || [];
-    var mineIds = {};
-    list.forEach(function (x) { mineIds[x.id] = x; });
-    var merged = [];
-    old.forEach(function (x) {
-      if (!x || !x.id) return;
-      var n = mineIds[x.id];
-      if (!n) { merged.push(x); return; }        /* бусдынх — хэвээр */
-      n.esc = x.esc || n.esc;                    /* серверийн тэмдгийг хадгална */
-      if (x.autoAssign) n.autoAssign = x.autoAssign;   /* автомат оноолтыг ч */
-      merged.push(n);
-      delete mineIds[x.id];
-    });
-    Object.keys(mineIds).forEach(function (k) { merged.push(mineIds[k]); });
-    /* Өөрийн ХААГДСАН ажлыг тольноос хасна (тольд нээлттэй нь л байх ёстой) */
-    var myClosed = {};
-    (all || []).forEach(function (r) {
-      if (r && r.id && r.wkKind && wkStatus(r) === 'closed') myClosed[r.id] = 1;
-    });
-    out = merged.filter(function (x) { return !myClosed[x.id]; });
-    if (JSON.stringify(out) === JSON.stringify(old)) { wkMirrorPush._last = sig; return true; }
-  }
-
   /* ⚠ ХАМГААЛАЛТ: эх сурвалж бүтэн биш бол ТОЛИЙГ ОГТ ХӨНДӨХГҮЙ */
   if (!repSrcOk()) { console.warn('[wk] эх сурвалж бүтэн биш — толь бичихгүй'); return false; }
-  if (!out.length) {
-    /* Хоосон болгох гэж байна уу? Зөвхөн одоогийн толь ч хоосон бол зөвшөөрнө. */
-    var chk = null;
-    try { chk = await riskR2GetJson(WK_OPEN_FILE, { fresh: true }); } catch (e) { return false; }
-    if (chk && chk.list && chk.list.length) {
-      console.warn('[wk] толийг хоосруулах оролдлого зогсоов (' + chk.list.length + ' мөр хэвээр)');
-      return false;
-    }
-  }
+  var myClosed = {};
+  (all || []).forEach(function (r) { if (r && r.id && r.wkKind && wkStatus(r) === 'closed') myClosed[r.id] = 1; });
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай; серверийн (cron) тэмдгийг ХЭЗЭЭ Ч дарахгүй.
+     Өмнө нь бүрэн эрхтэй хөтөч толийг бүтнээр нь дарж бичдэг тул сервер сая бичсэн
+     «сэрэмжлүүлэг илгээсэн» тэмдэг алга болж, маргааш нь ДАХИН илгээгддэг байв. */
   try {
-    await riskR2PutJson(WK_OPEN_FILE, {
-      updatedAt: new Date().toISOString(), by: full ? 'browser' : 'emp', list: out
+    await r2CasJson(WK_OPEN_FILE, function (cur) {
+      var old = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      var out = wkMirrorMerge(list, old, full, myClosed);
+      if (!out) return null;                                   /* өөрчлөлтгүй — бичихгүй */
+      if (!out.length && old.length) {
+        /* Хоосон болгох гэж байна уу? Зөвхөн одоогийн толь ч хоосон бол зөвшөөрнө. */
+        console.warn('[wk] толийг хоосруулах оролдлого зогсоов (' + old.length + ' мөр хэвээр)');
+        return null;
+      }
+      return { updatedAt: nowIso(), by: full ? 'browser' : 'emp', list: out };
     });
   } catch (e) { return false; }
   wkMirrorPush._last = sig;
@@ -22936,20 +23226,20 @@ async function woLoad(force) {
   return WO_ROWS;
 }
 async function woSaveMerge(mutate, verifyId) {
-  for (var k = 0; k < 3; k++) {
-    var cur = [];
-    try { var j = await riskR2GetJson(WO_FILE, { fresh: true }); cur = (j && Array.isArray(j.list)) ? j.list : []; } catch (e) {}
-    var next = mutate(cur.slice());
-    if (!next) return true;
-    await riskR2PutJson(WO_FILE, { updatedAt: new Date().toISOString(), list: next });
-    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 400)); });
-    var back = [];
-    try { var j2 = await riskR2GetJson(WO_FILE, { fresh: true }); back = (j2 && Array.isArray(j2.list)) ? j2.list : []; } catch (e) {}
-    WO_ROWS = back; WO_OK = true;
-    if (!verifyId) return true;
-    if (back.some(function (x) { return x && x.id === verifyId; })) return true;
-  }
-  return false;
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (r2CasJson) — mutate нь оролдлого бүрт
+     ШИНЭ жагсаалт дээр ажиллана; хоёр хүн зэрэг бичсэн ч аль нь ч алга болохгүй. */
+  try {
+    var res = await r2CasJson(WO_FILE, function (cur) {
+      var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      var next = mutate(list.slice());
+      if (!next) return null;
+      return { updatedAt: nowIso(), list: r2DedupeLast(next) };
+    });
+    var fin = (res && res.body && Array.isArray(res.body.list)) ? res.body.list : null;
+    if (fin) { WO_ROWS = fin; WO_OK = true; }
+    if (!verifyId || (res && res.skipped)) return true;
+    return !!(fin && fin.some(function (x) { return x && x.id === verifyId; }));
+  } catch (e) { try { console.error('[wo] хадгалалт', e); } catch (e2) {} return false; }
 }
 /* WO-2026-0001 — жил бүр дахин 1-ээс эхэлнэ */
 function woNextNo(list) {
@@ -29697,21 +29987,19 @@ function pushStats() {
 /* subs.json-ыг уншиж → өөрчлөөд → бичээд → ЭРГЭЖ ШАЛГАНА.
    Хэд хэдэн хүн зэрэг бүртгүүлэхэд бичлэг алдагдахаас сэргийлнэ. */
 async function pushSubsMerge(mutate, verifyUid) {
-  for (var attempt = 0; attempt < 3; attempt++) {
-    var cur = null;
-    try { cur = await riskR2GetJson(PUSH_SUBS_FILE); } catch (e) { cur = null; }
-    var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
-    var next = mutate(list.slice());
-    if (next === null) return true;                     // өөрчлөх зүйлгүй
-    await riskR2PutJson(PUSH_SUBS_FILE, { updatedAt: new Date().toISOString(), list: next });
-    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 450)); });
-    var back = null;
-    try { back = await riskR2GetJson(PUSH_SUBS_FILE); } catch (e) {}
-    var rows = (back && Array.isArray(back.list)) ? back.list : [];
-    var found = rows.filter(function (x) { return x && x.uid === verifyUid; }).length > 0;
-    if (verifyUid === null || found) return true;        // хүссэн бичлэг байрандаа
-  }
-  return false;
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (r2CasJson) — хоёр хүн нэг агшинд
+     мэдэгдэлд бүртгүүлэхэд нэгнийх нь бүртгэл алга болохгүй. */
+  try {
+    var res = await r2CasJson(PUSH_SUBS_FILE, function (cur) {
+      var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      var next = mutate(list.slice());
+      if (!next) return null;
+      return { updatedAt: nowIso(), list: next };
+    });
+    if (verifyUid === null || (res && res.skipped)) return true;
+    var rows = (res && res.body && Array.isArray(res.body.list)) ? res.body.list : [];
+    return rows.some(function (x) { return x && x.uid === verifyUid; });
+  } catch (e) { try { console.error('[push] бүртгэл', e); } catch (e2) {} return false; }
 }
 
 /* ── Бүртгэл ОДООГИЙН сервер түлхүүрээр хийгдсэн эсэх ───────────────
@@ -30165,20 +30453,20 @@ async function reqLoad(force) {
 
 /* Уншиж → өөрчилж → бичээд → ЭРГЭЖ ШАЛГАНА (зэрэг ажиллахад алдагдахгүй) */
 async function reqSaveMerge(mutate, verifyId) {
-  for (var k = 0; k < 3; k++) {
-    var cur = [];
-    try { var j = await riskR2GetJson(REQ_FILE); cur = (j && Array.isArray(j.list)) ? j.list : []; } catch (e) {}
-    var next = mutate(cur.slice());
-    if (!next) return true;
-    await riskR2PutJson(REQ_FILE, { updatedAt: new Date().toISOString(), list: next });
-    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 400)); });
-    var back = [];
-    try { var j2 = await riskR2GetJson(REQ_FILE); back = (j2 && Array.isArray(j2.list)) ? j2.list : []; } catch (e) {}
-    REQ_ROWS = back; REQ_OK = true;
-    if (!verifyId) return true;
-    if (back.some(function (x) { return x && x.id === verifyId; })) return true;
-  }
-  return false;
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (r2CasJson) — mutate нь оролдлого бүрт
+     ШИНЭ жагсаалт дээр ажиллана; хоёр хүн зэрэг бичсэн ч аль нь ч алга болохгүй. */
+  try {
+    var res = await r2CasJson(REQ_FILE, function (cur) {
+      var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      var next = mutate(list.slice());
+      if (!next) return null;
+      return { updatedAt: nowIso(), list: r2DedupeLast(next) };
+    });
+    var fin = (res && res.body && Array.isArray(res.body.list)) ? res.body.list : null;
+    if (fin) { REQ_ROWS = fin; REQ_OK = true; }
+    if (!verifyId || (res && res.skipped)) return true;
+    return !!(fin && fin.some(function (x) { return x && x.id === verifyId; }));
+  } catch (e) { try { console.error('[req] хадгалалт', e); } catch (e2) {} return false; }
 }
 
 /* ── Ажлын өдрөөр тооцох (Бямба, Ням орохгүй) ── */
@@ -30917,7 +31205,7 @@ async function ntfSaveMerge(mutate) {
       var next = mutate(list.slice());
       if (!next) return null;
       /* Сүүлийн 400-г л хадгална — файл хэт томрохгүй */
-      return { updatedAt: new Date().toISOString(), list: next.slice(-400) };
+      return { updatedAt: nowIso(), list: next.slice(-400) };
     });
     if (res && res.body && Array.isArray(res.body.list)) { NTF_ROWS = res.body.list; NTF_OK = true; }
     return true;
@@ -30952,7 +31240,7 @@ async function ntfSend(toList, info) {
   var me = reqMe();
   var rec = {
     id: 'N-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    at: new Date().toISOString(), to: to,
+    at: nowIso(), to: to,
     byUid: (me && me.uid) || '', byName: (me && me.name) || '',
     kind: info.kind || 'mea', title: info.title || '', body: info.body || '',
     url: info.url || '/kpi/?page=hazards', riskId: info.riskId || '', read: {}
@@ -32642,6 +32930,7 @@ async function hrLoadIfAllowed() {
       arr.push(x);
     });
     DB.hrorders = arr;
+    hrBaseSet(arr);
     try { console.log('[hr] ' + arr.length + ' захиалга (эрхтэй)'); } catch (e) {}
   } catch (e) {
     HR_LOAD_ERR = (e && (e.code || e.message)) || 'алдаа';
@@ -32655,18 +32944,51 @@ async function hrLoadIfAllowed() {
    үлдэж, бусдад харагддаггүй байв (2026-09-03-нд аудитаар илэрсэн).
    Цалингийн дүн агуулдаг тул R2 биш Firestore баримт руу шууд бичнэ
    (reportPushToServer-тэй ижил зарчим; kpi_hrorders дүрэм зөвшөөрдөг). */
+/* Ачаалсан/бичсэн тушаал бүрийн хуулбар — «би юунаас эхэлж өөрчилсөн бэ» */
+var HR_BASE = {};
+function hrBaseSet(list) {
+  try { (list || []).forEach(function (o) { if (o && o.id != null) HR_BASE[String(o.id)] = JSON.stringify(o); }); } catch (e) {}
+}
 function hrPushToServer(o) {
-  if (!o || !o.id) return;
+  if (!o || !o.id) return Promise.resolve(false);
   try {
-    if (!fbReady || typeof fdb === 'undefined' || !fdb) return;
+    if (!fbReady || typeof fdb === 'undefined' || !fdb) return Promise.resolve(false);
     try { colsManifestAdd('hrorders'); } catch (e) {}
-    colRef('hrorders').doc(String(o.id)).set(o)
-      .then(function () { try { pulseBump('hrorder'); } catch (e) {} })
-      .catch(function (e) {
-        console.error('[hr] серверт хүрсэнгүй', e);
-        toast('⚠ Захиалга серверт хадгалагдсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
+    /* ⚠ 2026-09-11: ГҮЙЛГЭЭГЭЭР (transaction) бичнэ. Өмнө нь тушаалыг бүтнээр нь
+       `.set(o)` хийдэг тул хуучин хуулбартай хүн гарын үсэг зурахад өөр шатны
+       сая зурсан гарын үсгийг дарж арилгах эрсдэлтэй байв. Одоо «миний өөрчилсөн
+       талбар»-ыг серверийн ШИНЭ баримт дээр тавина; зөрчилд Firestore өөрөө
+       дахин оролдоно. Шатны жагсаалтыг шат тус бүрээр нэгтгэнэ. */
+    var id = String(o.id), ref = colRef('hrorders').doc(id);
+    var base = null;
+    try { base = HR_BASE[id] ? JSON.parse(HR_BASE[id]) : null; } catch (e) { base = null; }
+    var mine = JSON.parse(JSON.stringify(o));
+    return fdb.runTransaction(function (t) {
+      return t.get(ref).then(function (snap) {
+        var cur = (snap && snap.exists) ? (snap.data() || {}) : null;
+        var next = mine;
+        if (cur && base) {
+          var p = repDiff(base, mine);
+          next = repPatchEmpty(p) ? cur : repApplyPatch(cur, p);
+        }
+        if (next.id == null) next.id = mine.id;
+        t.set(ref, next);
+        return next;
       });
-  } catch (e) { console.error('[hr] push', e); }
+    }).then(function (next) {
+      HR_BASE[id] = JSON.stringify(next);
+      try {
+        Object.keys(o).forEach(function (k) { if (!(k in next)) delete o[k]; });
+        Object.keys(next).forEach(function (k) { o[k] = next[k]; });
+      } catch (e) {}
+      try { pulseBump('hrorder'); } catch (e) {}
+      return true;
+    }).catch(function (e) {
+      console.error('[hr] серверт хүрсэнгүй', e);
+      toast('⚠ Захиалга серверт хадгалагдсангүй. Интернэтээ шалгаад дахин оролдоно уу.', 'error');
+      return false;
+    });
+  } catch (e) { console.error('[hr] push', e); return Promise.resolve(false); }
 }
 function hrLevel(k) { return HR_LEVELS.filter(function (x) { return x.key === k; })[0] || HR_LEVELS[0]; }
 function hrSt(o) { return HR_ST[o && o.status] || HR_ST.running; }
@@ -36476,26 +36798,20 @@ async function wmLoad(force) {
 /* Бичихийн өмнө сая уншсан хуулбар дээрээ нэгтгэнэ (хоёр хүн зэрэг бичвэл
    аль нэгнийх нь тэмдэглэл алга болохгүй). woSaveMerge-тэй ижил зарчим. */
 async function wmSaveMerge(mutate, verifyId) {
-  for (var k = 0; k < 3; k++) {
-    var cur = [];
-    try {
-      var j = await riskR2GetJson(WM_FILE, { fresh: true });
-      cur = (j && Array.isArray(j.list)) ? j.list : [];
-    } catch (e) {}
-    var next = mutate(cur.slice());
-    if (!next) return true;
-    await riskR2PutJson(WM_FILE, { updatedAt: new Date().toISOString(), list: next });
-    await new Promise(function (r) { setTimeout(r, 350 + Math.floor(Math.random() * 400)); });
-    var back = [];
-    try {
-      var j2 = await riskR2GetJson(WM_FILE, { fresh: true });
-      back = (j2 && Array.isArray(j2.list)) ? j2.list : [];
-    } catch (e) {}
-    WM_ROWS = back; WM_OK = true;
-    if (!verifyId) return true;
-    if (back.some(function (x) { return x && x.id === verifyId; })) return true;
-  }
-  return false;
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (r2CasJson) — mutate нь оролдлого бүрт
+     ШИНЭ жагсаалт дээр ажиллана; хоёр хүн зэрэг бичсэн ч аль нь ч алга болохгүй. */
+  try {
+    var res = await r2CasJson(WM_FILE, function (cur) {
+      var list = (cur && Array.isArray(cur.list)) ? cur.list : [];
+      var next = mutate(list.slice());
+      if (!next) return null;
+      return { updatedAt: nowIso(), list: r2DedupeLast(next) };
+    });
+    var fin = (res && res.body && Array.isArray(res.body.list)) ? res.body.list : null;
+    if (fin) { WM_ROWS = fin; WM_OK = true; }
+    if (!verifyId || (res && res.skipped)) return true;
+    return !!(fin && fin.some(function (x) { return x && x.id === verifyId; }));
+  } catch (e) { try { console.error('[wm] хадгалалт', e); } catch (e2) {} return false; }
 }
 /* УЗ-2026-0001 — жил бүр 1-ээс эхэлнэ */
 function wmNextId(list, year) {

@@ -12,6 +12,7 @@
      SIGN_SECRET  = (Cloudflare Worker дээрхтэй ЯГ ИЖИЛ урт санамсаргүй мөр)
    ========================================================================== */
 const crypto = require('crypto');
+const { casJson } = require('./_r2cas.js');
 
 /* monos-hab-system-ийн вэб API түлхүүр — энэ нь угаасаа нийтийн (хөтөч дээр байдаг) */
 const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
@@ -108,37 +109,31 @@ async function auditAppend(entry) {
   if (!secret) return;
   const day = new Date().toISOString().slice(0, 10);
   const file = 'audit/' + day + '.json';
-  let cur = null;
+  /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай (casJson). Өмнө нь хоёр хүн зэрэг
+     эрх авахад нэгнийх нь мөр алга болж, гинж тасардаг байв. Зөрчил гарвал
+     build() ШИНЭ гинж дээр n/prev/hash-ийг дахин тооцно. */
   try {
-    const r = await fetch(R2 + '/' + file + r2GetQ(file), { cache: 'no-store' });
-    if (r.ok) cur = await r.json();
-  } catch (e) { cur = null; }
-  if (!cur || !Array.isArray(cur.rows)) cur = { day: day, rows: [], last: '' };
-
-  const row = {
-    n: cur.rows.length + 1,
-    at: new Date().toISOString(),
-    by: entry.by || '', uid: entry.uid || '',
-    act: entry.act || '', keys: entry.keys || [],
-    ok: entry.ok === true,
-    prev: cur.last || ''
-  };
-  /* ⚠ Хэшийг бичлэгийн БҮХ талбараас авна — аль нэгийг өөрчилвөл
-     хэш зөрж, дараагийн бичлэгийн `prev`-тэй таарахаа болино. */
-  row.hash = crypto.createHash('sha256')
-    .update(JSON.stringify([row.n, row.at, row.by, row.uid, row.act, row.keys, row.ok, row.prev]), 'utf8')
-    .digest('hex');
-  cur.rows.push(row);
-  cur.last = row.hash;
-  cur.updatedAt = row.at;
-
-  const exp = String(Date.now() + 5 * 60 * 1000);
-  const sig = crypto.createHmac('sha256', secret).update('up|' + file + '|' + exp, 'utf8').digest('hex');
-  await fetch(R2 + '/' + encodeURIComponent(file), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Up': sig, 'X-Exp': exp },
-    body: JSON.stringify(cur)
-  });
+    await casJson(file, function (cur) {
+      if (!cur || !Array.isArray(cur.rows)) cur = { day: day, rows: [], last: '' };
+      const row = {
+        n: cur.rows.length + 1,
+        at: new Date().toISOString(),
+        by: entry.by || '', uid: entry.uid || '',
+        act: entry.act || '', keys: entry.keys || [],
+        ok: entry.ok === true,
+        prev: cur.last || ''
+      };
+      /* ⚠ Хэшийг бичлэгийн БҮХ талбараас авна — аль нэгийг өөрчилвөл
+         хэш зөрж, дараагийн бичлэгийн `prev`-тэй таарахаа болино. */
+      row.hash = crypto.createHash('sha256')
+        .update(JSON.stringify([row.n, row.at, row.by, row.uid, row.act, row.keys, row.ok, row.prev]), 'utf8')
+        .digest('hex');
+      cur.rows.push(row);
+      cur.last = row.hash;
+      cur.updatedAt = row.at;
+      return cur;
+    });
+  } catch (e) { try { console.error('[audit] бичигдсэнгүй: ' + ((e && e.message) || e)); } catch (e2) {} }
 }
 
 /* Аппын ЖИНХЭНЭ эрхийн загвараар админ эсэхийг шалгана.

@@ -42,6 +42,7 @@ function r2GetQ(key) {
 }
 
 const { sendViaGmail } = require('./_smtp.js');
+const { casJson } = require('./_r2cas.js');
 const SUBS_KEY = 'push/subs.json';
 const NLX = String.fromCharCode(10);
 const VAPID_SUB = 'mailto:buynt666@gmail.com';
@@ -398,9 +399,23 @@ module.exports = async function handler(req, res) {
   /* Файлыг шинэчилнэ: хүчингүй бүртгэлийг хаяж, сануулсан огноог тэмдэглэнэ */
   let saved = false;
   if (touched || Object.keys(drop).length) {
+    /* ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай — ажилтан яг энэ агшинд аппаа нээж
+       бүртгүүлбэл түүний шинэ бүртгэл дарагдахгүй; ЗӨВХӨН төлөвийн талбараа тавина. */
     try {
-      const next = list.filter(function (x) { return x && !drop[x.endpoint]; });
-      saved = await r2PutJson(SUBS_KEY, { updatedAt: new Date().toISOString(), list: next });
+      const st = {};
+      list.forEach(function (r) { if (r && r.endpoint) st[r.endpoint] = { lp: r.lp, err: r.err, errN: r.errN, errAt: r.errAt, dead: r.dead }; });
+      await casJson(SUBS_KEY, function (cur) {
+        const fresh = (cur && Array.isArray(cur.list)) ? cur.list : [];
+        const next = fresh.filter(function (x) { return x && !drop[x.endpoint]; }).map(function (x) {
+          const s = x && st[x.endpoint];
+          if (!s) return x;
+          const y = Object.assign({}, x);
+          ['lp', 'err', 'errN', 'errAt', 'dead'].forEach(function (k) { if (s[k] === undefined) delete y[k]; else y[k] = s[k]; });
+          return y;
+        });
+        return { updatedAt: new Date().toISOString(), list: next };
+      });
+      saved = true;
     } catch (e) { saved = false; }
   }
 

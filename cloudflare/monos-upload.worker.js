@@ -72,8 +72,8 @@ function corsHeaders(env, request) {
     'Access-Control-Allow-Origin': out,
     'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
     /* X-If-Match / X-Etag — зэрэг бичилтийн хамгаалалт (2026-09-10) */
-    'Access-Control-Allow-Headers': 'Content-Type, X-Key, X-Up, X-Exp, X-If-Match',
-    'Access-Control-Expose-Headers': 'ETag, X-Etag',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Key, X-Up, X-Exp, X-If-Match, X-If-None-Match',
+    'Access-Control-Expose-Headers': 'ETag, X-Etag, X-Now',
     'Vary': 'Origin',
   };
 }
@@ -106,6 +106,17 @@ function needsSignedGet(key, env) {
   if (!raw) return false;
   const list = raw.split(',').map(s => s.trim()).filter(Boolean);
   return list.some(p => key.startsWith(p));
+}
+
+/* ⚠ ЗААВАЛ ТАМГАТАЙ БИЧИХ файлууд (2026-09-11).
+   CAS_REQUIRED_KEYS = "reports/_all.json,audit/,…" — таслалаар; '/'-ээр төгссөн нь угтвар.
+   Эдгээрт X-If-Match / X-If-None-Match ТОЛГОЙГҮЙ PUT ирвэл 428 буцаана: хуучин апп,
+   скрипт хуучин хуулбараараа бусдын өөрчлөлтийг ХЭЗЭЭ Ч дарж чадахгүй. */
+function needsCas(key, env) {
+  const raw = String(env.CAS_REQUIRED_KEYS || '').trim();
+  if (!raw) return false;
+  return raw.split(',').map(s => s.trim()).filter(Boolean)
+    .some(p => p.endsWith('/') ? key.startsWith(p) : key === p);
 }
 
 function deny(state, cors) {
@@ -214,7 +225,9 @@ export default {
         }
       }
       const obj = await env.BUCKET.get(key);
-      if (!obj) return new Response('Not found', { status: 404, headers: cors });
+      /* X-Now — серверийн цаг: хөтөч төхөөрөмжийнхөө цагийн зөрүүг сурч,
+         тамгыг серверийн цагаар бичнэ (буруу цагтай утас бусдыг дардаггүй). */
+      if (!obj) return new Response('Not found', { status: 404, headers: { ...cors, 'X-Now': String(Date.now()) } });
       /* X-Etag — хөтөч «уншсан хувилбараа» мэдэж, бичихдээ X-If-Match-аар
          буцааж өгнө. Стандарт ETag-ийг ЗОРИУД тавихгүй: хөтөч/кэш нөхцөлт
          хүсэлт (304) эхлүүлж одоогийн ачаалалтыг өөрчлөхгүйн тулд. */
@@ -222,7 +235,8 @@ export default {
         headers: { ...cors,
           'Content-Type': obj.httpMetadata?.contentType || 'application/octet-stream',
           'Accept-Ranges': 'bytes',
-          'X-Etag': obj.etag }
+          'X-Etag': obj.etag,
+          'X-Now': String(Date.now()) }
       });
     }
 
@@ -239,6 +253,18 @@ export default {
          өөрчлөгдсөн үед БИЧИХГҮЙ, 412 буцаана — хөтөч шинээр уншиж нэгтгэнэ.
          Толгойгүй бичилт (медиа, хуучин хөтөч) урьдын адил шууд бичигдэнэ. */
       const ifMatch = (request.headers.get('X-If-Match') || '').trim();
+      const ifNone = (request.headers.get('X-If-None-Match') || '').trim();
+      const jh = { ...cors, 'Content-Type': 'application/json', 'X-Now': String(Date.now()) };
+      /* Заавал тамгатай файл — тамгагүй бичилтийг ХҮЛЭЭЖ АВАХГҮЙ (428) */
+      if (!ifMatch && !ifNone && needsCas(key, env)) {
+        return new Response(JSON.stringify({ required: true, key }), { status: 428, headers: jh });
+      }
+      /* X-If-None-Match: * — «файл байхгүй үед л үүсгэ» (хоёр хүн зэрэг үүсгэхэд нэг нь ялна) */
+      if (ifNone === '*') {
+        const had = await env.BUCKET.head(key);
+        if (had) return new Response(JSON.stringify({ conflict: true, key, exists: true }),
+          { status: 412, headers: { ...jh, 'X-Etag': had.etag } });
+      }
       const putOpts = {
         httpMetadata: { contentType: request.headers.get('Content-Type') || 'application/octet-stream' },
       };
@@ -251,11 +277,10 @@ export default {
         saved = null;
       }
       if (!saved) {
-        return new Response(JSON.stringify({ conflict: true, key }),
-          { status: 412, headers: { ...cors, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ conflict: true, key }), { status: 412, headers: jh });
       }
       return new Response(JSON.stringify({ url: url.origin + '/' + encodeURIComponent(key), key, etag: saved.etag }),
-        { headers: { ...cors, 'Content-Type': 'application/json', 'X-Etag': saved.etag } });
+        { headers: { ...jh, 'X-Etag': saved.etag } });
     }
 
     return new Response('Method Not Allowed', { status: 405, headers: cors });

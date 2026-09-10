@@ -29,6 +29,7 @@
    ========================================================================== */
 const crypto = require('crypto');
 const { sendViaGmail } = require('./_smtp.js');
+const { casJson } = require('./_r2cas.js');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
 
@@ -353,17 +354,24 @@ module.exports = async function handler(req, res) {
       }) });
   }
 
-  /* ① Аппын хонх — НЭГ удаа бичнэ (зэрэг бичвэл бие биенээ дарна) */
-  const ntf = await getJson(NTF_KEY);
-  const list = (ntf && Array.isArray(ntf.list)) ? ntf.list : [];
-  for (const o of out) {
-    list.push({
-      id: 'N-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+  /* ① Аппын хонх — ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай
+     (хөтөч яг энэ агшинд мэдэгдэл бичвэл аль нэг нь алга болдог байв) */
+  const newNtf = out.map(function (o) {
+    return { id: 'N-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       at: stamp, to: o.uids, byUid: '', byName: 'Систем',
-      kind: 'wk', title: o.title, body: o.body, url: KPI_URL, riskId: '', read: {}
+      kind: 'wk', title: o.title, body: o.body, url: KPI_URL, riskId: '', read: {} };
+  });
+  let ntfOk = false;
+  try {
+    await casJson(NTF_KEY, function (ntf) {
+      const list = ((ntf && Array.isArray(ntf.list)) ? ntf.list : []).slice();
+      const have = {};
+      list.forEach(function (x) { if (x && x.id) have[x.id] = 1; });
+      newNtf.forEach(function (x) { if (!have[x.id]) list.push(x); });
+      return { updatedAt: stamp, list: list.slice(-800) };
     });
-  }
-  const ntfOk = await putJson(NTF_KEY, { updatedAt: stamp, list: list.slice(-800) });
+    ntfOk = true;
+  } catch (e) { ntfOk = false; }
 
   /* ② Push, дараа нь хүрээгүй хүнд И-МЭЙЛ */
 
@@ -396,8 +404,28 @@ module.exports = async function handler(req, res) {
     if (await mailTo(mailOf[uid], subject, items)) mailed++;
   }
 
-  /* ③ Тэмдгийг тольд бичнэ */
-  const mirOk = await putJson(OPEN_KEY, { updatedAt: stamp, by: 'cron', list: rows });
+  /* ③ Тэмдгийг тольд бичнэ — ⚠ 2026-09-11: ШИНЭ толь дээр зөвхөн тэмдгээ тавина.
+     Өмнө нь эхэнд уншсан хуулбараа бүтнээр нь дарж бичдэг тул энэ хооронд хөтчийн
+     бичсэн өөрчлөлт (хүлээж авсан, хаагдсан) алга болж, дараагийн өдөр давхар
+     сэрэмжлүүлэг явдаг байв. */
+  let mirOk = false;
+  try {
+    const marks = {};
+    rows.forEach(function (r) { if (r && r.id) marks[r.id] = { esc: r.esc || {}, autoAssign: r.autoAssign || null }; });
+    await casJson(OPEN_KEY, function (cur) {
+      const list = ((cur && Array.isArray(cur.list)) ? cur.list : []).map(function (x) {
+        const m = x && x.id && marks[x.id];
+        if (!m) return x;
+        const esc = Object.assign({}, x.esc || {});
+        Object.keys(m.esc).forEach(function (k) { if (m.esc[k] && !esc[k]) esc[k] = m.esc[k]; });
+        const y = Object.assign({}, x, { esc: esc });
+        if (m.autoAssign && !y.autoAssign && !y.claimUid) y.autoAssign = m.autoAssign;
+        return y;
+      });
+      return { updatedAt: stamp, by: 'cron', list: list };
+    });
+    mirOk = true;
+  } catch (e) { mirOk = false; }
 
   return res.status(200).json({
     ok: true, rows: rows.length, sent: out.length,

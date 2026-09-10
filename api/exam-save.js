@@ -31,6 +31,7 @@
 'use strict';
 const crypto = require('crypto');
 const OTPSTORE = require('./_otpstore.js');
+const { casJson } = require('./_r2cas.js');
 
 const R2 = 'https://monos-upload.buynt666.workers.dev';
 const FB_API_KEY = process.env.FB_API_KEY || 'AIzaSyDMTpIUFiyOO_7MPQq3xVsV8j-4xIuYGX0';
@@ -222,12 +223,13 @@ function compactGeo(g) {
 }
 async function logErr(kind, msg, where, email) {
   try {
-    const cur = await getJson(ERR_KEY);
-    const rows = (cur && Array.isArray(cur.rows)) ? cur.rows : [];
     const at = new Date().toISOString();
-    rows.push({ at: at, k: kind, m: String(msg).slice(0, 300), w: where, e: String(email || '').slice(0, 80), v: 'srv' });
-    while (rows.length > 400) rows.shift();
-    await putJson(ERR_KEY, { updatedAt: at, rows: rows });
+    await casJson(ERR_KEY, function (cur) {
+      const rows = ((cur && Array.isArray(cur.rows)) ? cur.rows : []).slice();
+      rows.push({ at: at, k: kind, m: String(msg).slice(0, 300), w: where, e: String(email || '').slice(0, 80), v: 'srv' });
+      while (rows.length > 400) rows.shift();
+      return { updatedAt: at, rows: rows };
+    });
   } catch (e) {}
 }
 function newId(ts) { return 'x' + ts.toString(36) + crypto.randomBytes(4).toString('hex'); }
@@ -255,17 +257,23 @@ module.exports = async function handler(req, res) {
     const hit = function (x) { return x && ((id && x.id === id) || (!id && x.email === em && num(x.ts) === ts)); };
     let removed = 0, victimEmail = em;
     try {
-      const all = await getJson(ALL_KEY);
-      const list = (all && Array.isArray(all.list)) ? all.list : [];
-      const keep = list.filter(function (x) { if (hit(x)) { removed++; victimEmail = victimEmail || x.email; return false; } return true; });
-      if (removed) await putJson(ALL_KEY, { updatedAt: new Date().toISOString(), total: keep.length, list: keep });
+      await casJson(ALL_KEY, function (all) {
+        const list = (all && Array.isArray(all.list)) ? all.list : [];
+        removed = 0;
+        const keep = list.filter(function (x) { if (hit(x)) { removed++; victimEmail = victimEmail || x.email; return false; } return true; });
+        if (!removed) return null;
+        return { updatedAt: new Date().toISOString(), total: keep.length, list: keep };
+      });
     } catch (e) { return res.status(502).json({ ok: false, error: 'Тайлангийн файл: ' + str(e.message, 80) }); }
     if (victimEmail) {
       try {
-        const k = emailKey(victimEmail), cur = await getJson(k);
-        const l = (cur && Array.isArray(cur.list)) ? cur.list : [];
-        const keep2 = l.filter(function (x) { return !hit(x); });
-        if (keep2.length !== l.length) await putJson(k, { updatedAt: new Date().toISOString(), list: keep2 });
+        const k = emailKey(victimEmail);
+        await casJson(k, function (cur) {
+          const l = (cur && Array.isArray(cur.list)) ? cur.list : [];
+          const keep2 = l.filter(function (x) { return !hit(x); });
+          if (keep2.length === l.length) return null;
+          return { updatedAt: new Date().toISOString(), list: keep2 };
+        });
       } catch (e) {}
     }
     if (id) { try { await putJson('exams/sig/' + id + '.json', { deleted: true, at: new Date().toISOString(), by: u.email }); } catch (e) {} }
@@ -349,29 +357,36 @@ module.exports = async function handler(req, res) {
   /* ③ ажилтны өөрийн файл (ЭНЭ унавал бүхэлдээ унана) */
   let mine = 0;
   try {
-    const k = emailKey(who.email), cur = await getJson(k);
-    const list = (cur && Array.isArray(cur.list)) ? cur.list : [];
-    if (!list.some(function (x) { return sameRow(x, row); })) list.push(row);
-    list.sort(function (a, b) { return num(b.ts) - num(a.ts); });
-    await putJson(k, { updatedAt: new Date().toISOString(), list: list });
-    mine = list.length;
+    const k = emailKey(who.email);
+    await casJson(k, function (cur) {
+      const list = ((cur && Array.isArray(cur.list)) ? cur.list : []).slice();
+      if (!list.some(function (x) { return sameRow(x, row); })) list.push(row);
+      list.sort(function (a, b) { return num(b.ts) - num(a.ts); });
+      mine = list.length;
+      return { updatedAt: new Date().toISOString(), list: list };
+    });
   } catch (e) {
     return res.status(502).json({ ok: false, error: 'Хадгалж чадсангүй: ' + str(e.message, 100) });
   }
-  /* ④ тайлангийн нэгдсэн файл */
+  /* ④ тайлангийн нэгдсэн файл — ⚠ 2026-09-11: зэрэг бичилтийн хамгаалалттай
+     (хоёр ажилтан нэг агшинд шалгалт дуусгахад нэгнийх нь дүн алга болдог байв) */
   let allN = -1;
   try {
-    const cur = allCur || (await getJson(ALL_KEY));
-    const list = (cur && Array.isArray(cur.list)) ? cur.list : [];
-    if (!list.some(function (x) { return sameRow(x, row); })) list.push(row);
-    await putJson(ALL_KEY, { updatedAt: new Date().toISOString(), total: list.length, list: list });
-    allN = list.length;
+    await casJson(ALL_KEY, function (cur) {
+      const list = ((cur && Array.isArray(cur.list)) ? cur.list : []).slice();
+      if (!list.some(function (x) { return sameRow(x, row); })) list.push(row);
+      allN = list.length;
+      return { updatedAt: new Date().toISOString(), total: list.length, list: list };
+    });
   } catch (e) { allN = -1; }
   /* ⑤ индекс (хэнд файл бичсэн бэ) */
   try {
-    const idx = await getJson(IDX_KEY);
-    const emails = (idx && Array.isArray(idx.emails)) ? idx.emails : [];
-    if (emails.indexOf(who.email) < 0) { emails.push(who.email); await putJson(IDX_KEY, { updatedAt: new Date().toISOString(), emails: emails }); }
+    await casJson(IDX_KEY, function (idx) {
+      const emails = ((idx && Array.isArray(idx.emails)) ? idx.emails : []).slice();
+      if (emails.indexOf(who.email) >= 0) return null;
+      emails.push(who.email);
+      return { updatedAt: new Date().toISOString(), emails: emails };
+    });
   } catch (e) {}
   /* ⑥ гарын үсгийн зураг — тусдаа файл */
   let sigOk = false;
