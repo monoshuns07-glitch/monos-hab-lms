@@ -31747,11 +31747,30 @@ function hrDirOf(dept) {
   return null;
 }
 /* Албан тушаалын загвараар ажилтныг олно — НЭРЭЭР БИШ */
+/* ⚠⚠ 2026-09-10: АЖЛААС ГАРСАН ХҮНИЙГ АЛГАСНА. Өмнө нь зөвхөн албан
+   тушаалаар хайдаг байсан тул ажлаас гарсан хүний бүртгэл (`onLeave`,
+   эсхүл `isActive:false`) хэвээр байвал ТЭР ХҮН гарын үсгийн эзэн болж,
+   захиалга мөнхөд гацдаг байв. Бодит тохиолдол: «Хүний нөөцийн ахлах
+   менежер» тушаалтай хоёр бичлэг — гарсан хүн жагсаалтад эхэлж таарч,
+   шинэ хүн хэзээ ч сонгогдохгүй байв.
+   Ажиллаж байгаа хүн ОЛДОХГҮЙ бол л гарсан хүн рүү буцаж харна (хоосон
+   нэр үзүүлэхээс дээр) — тэр үед `left:true` гэж тэмдэглэнэ. */
+function hrIsGone(e) {
+  if (!e) return true;
+  if (e.onLeave === true) return true;
+  if (e.isActive === false) return true;
+  return false;
+}
 function hrFindByPos(re) {
   var list = [];
   try { list = empAll() || []; } catch (e) { list = DB.employees || []; }
-  for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i]))) return list[i]; }
-  return null;
+  var fallback = null;
+  for (var i = 0; i < list.length; i++) {
+    if (!re.test(hrPosOf(list[i]))) continue;
+    if (!hrIsGone(list[i])) return list[i];
+    if (!fallback) fallback = list[i];
+  }
+  return fallback;
 }
 /* ⚠ 2026-09-10: гарын үсэг зурах хүнийг АЛБАН ТУШААЛААР олдог тул нэг
    тушаалтай ХОЁР хүн байвал `hrFindByPos` жагсаалтын эхнийхийг чимээгүй
@@ -31762,7 +31781,8 @@ function hrFindByPos(re) {
 function hrCountByPos(re) {
   var list = [], n = 0;
   try { list = empAll() || []; } catch (e) { list = DB.employees || []; }
-  for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i]))) n++; }
+  /* ⚠ Ажиллаж байгаа хүнийг л тоолно — гарсан хүн давхардал үүсгэхгүй */
+  for (var i = 0; i < list.length; i++) { if (re.test(hrPosOf(list[i])) && !hrIsGone(list[i])) n++; }
   return n;
 }
 function hrIsDirector(e) {
@@ -31831,8 +31851,8 @@ function hrStepWho(o, i) {
     var e = hrFindByPos(D.pos);
     return { name: (e && e.name) || '', pos: D.label, missing: !e };
   }
-  if (s.key === 'hr')  { var h = hrFindByPos(HR_POS_SIGN_HR); return { name: (h && h.name) || '', pos: 'Хүний нөөцийн ахлах менежер', missing: !h, many: hrCountByPos(HR_POS_SIGN_HR) }; }
-  if (s.key === 'fin') { var f = hrFindByPos(HR_POS_FIN); return { name: (f && f.name) || '', pos: 'Санхүүгийн менежер', missing: !f, many: hrCountByPos(HR_POS_FIN) }; }
+  if (s.key === 'hr')  { var h = hrFindByPos(HR_POS_SIGN_HR); return { name: (h && h.name) || '', pos: 'Хүний нөөцийн ахлах менежер', missing: !h, many: hrCountByPos(HR_POS_SIGN_HR), left: hrIsGone(h) && !!h }; }
+  if (s.key === 'fin') { var f = hrFindByPos(HR_POS_FIN); return { name: (f && f.name) || '', pos: 'Санхүүгийн менежер', missing: !f, many: hrCountByPos(HR_POS_FIN), left: hrIsGone(f) && !!f }; }
   return null;
 }
 
@@ -32502,6 +32522,10 @@ function hrDetail(id) {
             (done ? esc(st.name) + ' · ' + esc(st.pos) : (who && who.missing
               ? '<span style="color:#DC2626">' + esc(who.pos) + ' — бүртгэлээс олдсонгүй</span>'
               : esc((who && who.name) || '') + (who && who.pos ? ' · ' + esc(who.pos) : '') +
+                 (who && who.left
+                   ? '<div style="font-size:11.5px;color:#DC2626;margin-top:2px">⚠ Энэ хүн ажлаас гарсан гэж тэмдэглэгдсэн — ' +
+                     'энэ албан тушаалд ажиллаж байгаа хүн бүртгэлд алга. Ажилтны бүртгэлийг шинэчилнэ үү.</div>'
+                   : '') +
                  (who && who.many > 1
                    ? '<div style="font-size:11.5px;color:#B45309;margin-top:2px">⚠ Энэ албан тушаалтай ' + who.many +
                      ' хүн бүртгэлд байна — систем эхнийхийг сонгож байна. ХН-ийн алба тушаалын нэрийг ялгаж бичнэ үү.</div>'
