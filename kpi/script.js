@@ -11751,6 +11751,11 @@ function ackFold(label, inner, bd, n) {
 var ACK_JOBS = {};                 /* jobKey → store {version, rows:[{uid,code,at,…}]} */
 var ACK_JOBS_LOADED = false;
 var ACK_JOBS_BUSY = false;   /* ачаалалт явж байгаа эсэх — давхар дуудалтаас хамгаална */
+/* ⚠⚠ 2026-09-13: оролдлогын ТООЛУУР. Нээгдсэн ажил байхгүй хэрэглэгчид
+   ACK_JOBS_LOADED хэзээ ч тавигддаггүй тул «ачаал → дахин зур → ачаал»
+   гэсэн ТӨГСГӨЛГҮЙ давталт үүсч, хөтөч бүрэн хөлддөг байв (албаны дарга).
+   Хамгийн ихдээ 3 удаа оролдоно — дата хожуу ирэх боломжийг хаахгүй. */
+var ACK_JOBS_TRIES = 0;
 
 function ackJobFile(job) { return ACK_PREFIX + 'job-' + riskSlug(job) + '.json'; }
 /* Тухайн ажлын эрсдэлүүд (бүх алба) */
@@ -13395,12 +13400,20 @@ function riskGroupedHTML(list) {
      ачаалсан үедээ тавина. Эрсдэл ирээгүй байхад дуудагдвал дараагийн
      зурагдалтад ДАХИН оролдоно. ACK_JOBS_BUSY нь давхар дуудалт,
      хязгааргүй давталтаас хамгаална. */
-  if (!ACK_JOBS_LOADED && !ACK_JOBS_BUSY && (DB.risks || []).length &&
+  if (!ACK_JOBS_LOADED && !ACK_JOBS_BUSY && ACK_JOBS_TRIES < 3 &&
+      (DB.risks || []).length &&
       Object.keys(RISK_RELEASES || {}).length &&
       (isAdmin() || isDeptHead() || riskIsBoss())) {
     ACK_JOBS_BUSY = true;
+    ACK_JOBS_TRIES++;
     ackJobsLoadAll()
-      .then(function () { ACK_JOBS_BUSY = false; try { renderHazards(); } catch (e) {} })
+      .then(function () {
+        ACK_JOBS_BUSY = false;
+        /* ⚠⚠ Амжилттай ачаалсан ч ЮУ Ч ОЛДООГҮЙ бол ДАХИН ЗУРАХГҮЙ.
+           Өмнө нь болзолгүй дахин зурдаг байсан тул нээгдсэн ажилгүй
+           хэрэглэгчид хязгааргүй давталт үүсч, апп бүрэн хөлддөг байв. */
+        if (ACK_JOBS_LOADED) { try { renderHazards(); } catch (e) {} }
+      })
       .catch(function () { ACK_JOBS_BUSY = false; });
   }
   var byDept = {};
