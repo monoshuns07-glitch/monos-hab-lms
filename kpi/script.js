@@ -18862,25 +18862,60 @@ async function rfExportHTML(all) {
 var RF_TPL_KEY = 'reports/templates/wk_dashboard.xlsx';
 /* ⚠⚠ Загварын толгойтой ЯГ ҮСЭГЧЛЭН таарах ёстой. Нэг үсэг зөрвөл pivot-ын
    мөрийн талбар танигдахгүй бөгөөд БҮХ ГРАФИК ХООСОН гарна. */
-var RF_TPL_HEAD = ['Огноо', 'Сар', 'Төрөл', 'Алба', 'Хариуцах алба',
-                   'Яаралтай зэрэг', 'Төлөв', 'Зураг'];
+var RF_TPL_HEAD = ['Огноо', 'Сар', 'Төрөл', 'Алба', 'Байршил',
+                   'Хариуцах алба', 'Яаралтай зэрэг', 'Эрсдэлийн зэрэг', 'Төлөв',
+                   'Хугацааны биелэлт', 'Шат', 'Мэдээлсэн', 'Гүйцэтгэгч',
+                   'Зураг', 'Тайлбар'];
 
-/* Дашбоардын мөрүүдийг загварын 8 багана болгоно */
+/* Дашбоардын мөрүүдийг загварын 15 багана болгоно.
+   ⚠ HTML дашбоард дээрх карт бүр Excel-д pivot болох ёстой тул зөвхөн түүхий
+     талбар биш, БОДОЖ гаргасан үзүүлэлтүүдийг ч багана болгон гаргана
+     (хугацааны биелэлт, шат). rfDashData аль хэдийн тэднийг мөрийн жагсаалт
+     болгож бодсон байдаг — эндээс мөр бүр аль бүлэгт байгааг нь хайна. */
 function rfTplRows(d) {
+  var idsOf = function (arr) {
+    var m = {};
+    (arr || []).forEach(function (x) { if (x && x.id != null) m[String(x.id)] = 1; });
+    return m;
+  };
+  var onT = idsOf(d.onTime), late = idsOf(d.late), wait = idsOf(d.waiting), unre = idsOf(d.unreliable);
+  var stDone = idsOf(d.stage && d.stage.done), stFix = idsOf(d.stage && d.stage.fix),
+      stVer = idsOf(d.stage && d.stage.ver);
+  var RISKL = { low: 'Бага', mid: 'Дунд', high: 'Өндөр' };
+
   return (d.rows || []).slice().sort(function (a, b) {
     return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
   }).map(function (r) {
     var at = String(r.createdAt || '');
+    var id = String(r.id == null ? '' : r.id);
     var kk = wkKindOf(r).k;
+
+    var sla = unre[id] ? 'Тооцоонд ороогүй'
+            : onT[id] ? 'Хугацаандаа'
+            : late[id] ? 'Хугацаа хэтэрсэн'
+            : wait[id] ? 'Хугацаа дуусаагүй' : '—';
+    var stage = stDone[id] ? 'Дууссан'
+              : stFix[id] ? 'Засварт орсон'
+              : stVer[id] ? 'Баталгаажсан' : 'Мэдээлсэн';
+    var doer = '';
+    try { doer = wkTeamOf(r).map(function (p) { return p.name || ''; }).filter(Boolean).join(', '); } catch (e) {}
+
     return [
       at.slice(0, 10),
       at.slice(0, 7),
       (RF_KIND[kk] || {}).l || wkKindOf(r).ab || '',
       String(r.dept || 'Тодорхойгүй'),
+      String(wkLocLabel(r) || r.location || 'Тодорхойгүй'),
       wkGate(r.wkGate).ab || '',
       wkUrg(r),
+      RISKL[r.risk_level] || '—',
       (WK_STATUS[wkStatus(r)] || {}).l || '',
-      hasImg(r.photo) ? 'тийм' : 'үгүй'
+      sla,
+      stage,
+      String(r.reporterFull || r.reporterName || 'Тодорхойгүй'),
+      doer || '—',
+      hasImg(r.photo) ? 'тийм' : 'үгүй',
+      String(r.desc || '').trim() ? 'тийм' : 'үгүй'
     ];
   });
 }
@@ -18892,16 +18927,22 @@ function rfTplXml(rows) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   };
-  var CL = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-  var out = ['<sheetData><row r="1" spans="1:8">'];
+  var NC = RF_TPL_HEAD.length;
+  var CL = [];
+  for (var i0 = 1; i0 <= NC; i0++) {
+    var s0 = '', n0 = i0;
+    while (n0 > 0) { var m0 = (n0 - 1) % 26; s0 = String.fromCharCode(65 + m0) + s0; n0 = (n0 - m0 - 1) / 26; }
+    CL.push(s0);
+  }
+  var out = ['<sheetData><row r="1" spans="1:' + NC + '">'];
   RF_TPL_HEAD.forEach(function (h, i) {
     out.push('<c r="' + CL[i] + '1" t="inlineStr"><is><t>' + esc2(h) + '</t></is></c>');
   });
   out.push('</row>');
   rows.forEach(function (row, ri) {
     var rn = ri + 2;
-    out.push('<row r="' + rn + '" spans="1:8">');
-    for (var c = 0; c < 8; c++) {
+    out.push('<row r="' + rn + '" spans="1:' + NC + '">');
+    for (var c = 0; c < NC; c++) {
       var v = row[c];
       var ref = CL[c] + rn;
       if (typeof v === 'number' && isFinite(v)) {
@@ -18938,7 +18979,12 @@ async function rfXlsTpl(all) {
 
     var d = rfDashData(all);
     var rows = rfTplRows(d);
-    var ref = 'A1:H' + (rows.length + 1);
+    var lastCol = (function () {
+      var s = '', n = RF_TPL_HEAD.length;
+      while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; }
+      return s;
+    })();
+    var ref = 'A1:' + lastCol + (rows.length + 1);
 
     var sh = await zip.file('xl/worksheets/sheet1.xml').async('string');
     sh = sh.replace(/<sheetData>[\s\S]*?<\/sheetData>/, rfTplXml(rows))
@@ -18946,8 +18992,23 @@ async function rfXlsTpl(all) {
     zip.file('xl/worksheets/sheet1.xml', sh);
 
     var tb = await zip.file('xl/tables/table1.xml').async('string');
-    tb = tb.replace(/ref="A1:H\d+"/g, 'ref="' + ref + '"');
+    tb = tb.replace(/ref="A1:[A-Z]+\d+"/g, 'ref="' + ref + '"');
     zip.file('xl/tables/table1.xml', tb);
+
+    /* ⚠ Pivot нь refreshOnLoad-оор өөрөө шинэчлэгддэг ч ТОМЬЁО (дээд талын
+       том тоонууд) загварыг хадгалах үеийн утгаа хэвээр барьдаг — 16 мөртэй
+       датад «8» гэж харуулж байсан. Файл нээхэд бүрэн дахин тооцоолуулна. */
+    var wbx = await zip.file('xl/workbook.xml').async('string');
+    if (/<calcPr[^>]*\/>/.test(wbx)) {
+      wbx = wbx.replace(/<calcPr[^>]*\/>/, function (m) {
+        return /fullCalcOnLoad=/.test(m)
+          ? m.replace(/fullCalcOnLoad="[^"]*"/, 'fullCalcOnLoad="1"')
+          : m.replace(/\/>$/, ' fullCalcOnLoad="1"/>');
+      });
+    } else {
+      wbx = wbx.replace('</workbook>', '<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
+    }
+    zip.file('xl/workbook.xml', wbx);
 
     var blob = await zip.generateAsync({
       type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
