@@ -18827,26 +18827,229 @@ function rfExportHTML(all) {
 }
 
 /* ── ② EXCEL ── */
+/* ── EXCEL-ийн НҮҮР ХУУДАС: ДАШБОАРД ──────────────────────
+   Excel нь JS-ээс жинхэнэ график авч чаддаггүй тул нүдэн доторх «█»
+   баганан диаграм + өнгөт дүүргэлтээр дүрсэлнэ. Тоо нь хажуудаа хувьтайгаа
+   зэрэгцэн байх тул баганы урт нь чимэглэл биш, УНШИГДАХ хэмжүүр болно. */
+function rfXlsArgb(hex) {
+  var h = String(hex || '#334155').replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  return 'FF' + h.toUpperCase();
+}
+/* Утгыг хамгийн их утгатай харьцуулж 20 хүртэлх блокоор зурна */
+function rfXlsBar(v, mx) {
+  v = +v || 0; mx = +mx || 0;
+  if (mx <= 0 || v <= 0) return '';
+  var n = Math.max(1, Math.round((v / mx) * 20));
+  return new Array(n + 1).join('█');
+}
+function rfXlsCell(ws, addr, val, o) {
+  o = o || {};
+  var c = ws.getCell(addr);
+  c.value = (val === undefined || val === null) ? '' : val;
+  c.font = { name: 'Segoe UI', size: o.size || 10.5, bold: !!o.bold,
+             color: { argb: rfXlsArgb(o.color || '#1E293B') } };
+  if (o.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rfXlsArgb(o.fill) } };
+  c.alignment = { horizontal: o.align || 'left', vertical: 'middle',
+                  wrapText: !!o.wrap };
+  if (o.num) c.numFmt = o.num;
+  return c;
+}
+/* Хэсгийн гарчиг — бүхэл мөрийг эзэлнэ */
+function rfXlsBlock(ws, r, title, note) {
+  ws.mergeCells('A' + r + ':D' + r);
+  rfXlsCell(ws, 'A' + r, title + (note ? '   ' + note : ''),
+    { bold: true, size: 11.5, color: '#FFFFFF', fill: '#334155' });
+  ws.getRow(r).height = 20;
+  return r + 1;
+}
+/* Гол тоо — 2 багана эзэлсэн «хайрцаг» */
+function rfXlsTile(ws, r, col, label, value, color, sub) {
+  var a = col, b = String.fromCharCode(col.charCodeAt(0) + 1);
+  ws.mergeCells(a + r + ':' + b + r);
+  ws.mergeCells(a + (r + 1) + ':' + b + (r + 1));
+  ws.mergeCells(a + (r + 2) + ':' + b + (r + 2));
+  rfXlsCell(ws, a + r, label, { bold: true, size: 9, color: '#64748B', fill: '#F1F5F9', align: 'center' });
+  rfXlsCell(ws, a + (r + 1), value, { bold: true, size: 22, color: color, fill: '#F8FAFC', align: 'center' });
+  rfXlsCell(ws, a + (r + 2), sub || '', { size: 9, color: '#94A3B8', fill: '#F8FAFC', align: 'center' });
+  ws.getRow(r + 1).height = 30;
+}
+
+/* Excel-ийн ЭХНИЙ хуудас — дашбоард. Аппын дэлгэц дээрхтэй ИЖИЛ тоонууд
+   (rfDashData) тул хоёр газар зөрөх боломжгүй. */
+function rfXlsDash(wb, d) {
+  var ws = wb.addWorksheet('Дашбоард', { views: [{ showGridLines: false }] });
+  [34, 11, 10, 26, 3, 30, 11, 10].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+  var pc = function (a, b) { return b ? Math.round((a / b) * 100) + '%' : '0%'; };
+  var hrs = function (h) {
+    if (h == null) return '—';
+    return h < 48 ? Math.round(h) + ' цаг' : Math.round(h / 24) + ' хоног';
+  };
+
+  /* ── Гарчиг ── */
+  ws.mergeCells('A1:H1');
+  rfXlsCell(ws, 'A1', 'АЖЛЫН ЗАХИАЛГА — ДАШБОАРД',
+    { bold: true, size: 18, color: '#FFFFFF', fill: '#1E293B', align: 'center' });
+  ws.getRow(1).height = 34;
+  ws.mergeCells('A2:H2');
+  rfXlsCell(ws, 'A2', rfScopeText(), { size: 10, color: '#475569', fill: '#F1F5F9', align: 'center' });
+  ws.getRow(2).height = 18;
+
+  /* ── Гол тоонууд ── */
+  var r = 4;
+  rfXlsTile(ws, r, 'A', 'ШИЙДВЭРЛЭГДЭЭГҮЙ', d.open, d.open ? '#C81E3A' : '#0CA30C',
+    (d.jobOpen.length ? d.jobOpen.length + ' ажил' : '') +
+    (d.jobOpen.length && d.hzPending.length ? ' · ' : '') +
+    (d.hzPending.length ? d.hzPending.length + ' аюул' : ''));
+  rfXlsTile(ws, r, 'C', 'НИЙТ МЭДЭЭЛЭЛ', d.n, '#1E293B', '100%');
+  rfXlsTile(ws, r, 'E', 'ХААГДСАН', d.closed, '#0CA30C', pc(d.closed, d.n));
+  rfXlsTile(ws, r, 'G', 'ЯАРАЛТАЙ', d.urgent, d.urgent ? '#C81E3A' : '#94A3B8', pc(d.urgent, d.n));
+  r += 4;
+  rfXlsTile(ws, r, 'A', 'БАТЛАХ ДУНДАЖ', hrs(d.avgVerifyH), '#4F46E5', '');
+  rfXlsTile(ws, r, 'C', 'ХҮЛЭЭЖ АВАХ ДУНДАЖ', hrs(rfAvg(d.claimHrs)), '#4F46E5', '');
+  rfXlsTile(ws, r, 'E', 'ГҮЙЦЭТГЭХ ДУНДАЖ', hrs(rfAvg(d.doneHrs)), '#4F46E5', '');
+  rfXlsTile(ws, r, 'G', 'ХУГАЦААНДАА', pc(d.onTime.length, d.onTime.length + d.late.length),
+    '#0CA30C', d.onTime.length + ' / ' + (d.onTime.length + d.late.length));
+  r += 4;
+
+  /* ── Нэг хэсгийг зурах ── */
+  var section = function (title, note, items, total) {
+    r = rfXlsBlock(ws, r, title, note);
+    rfXlsCell(ws, 'A' + r, 'Нэр', { bold: true, size: 9.5, color: '#64748B' });
+    rfXlsCell(ws, 'B' + r, 'Тоо', { bold: true, size: 9.5, color: '#64748B', align: 'right' });
+    rfXlsCell(ws, 'C' + r, 'Хувь', { bold: true, size: 9.5, color: '#64748B', align: 'right' });
+    rfXlsCell(ws, 'D' + r, 'Харьцуулалт', { bold: true, size: 9.5, color: '#64748B' });
+    r++;
+    var mx = 0;
+    items.forEach(function (it) { if ((+it.v || 0) > mx) mx = +it.v || 0; });
+    items.forEach(function (it) {
+      rfXlsCell(ws, 'A' + r, it.k, { size: 10.5 });
+      rfXlsCell(ws, 'B' + r, +it.v || 0, { size: 10.5, bold: true, align: 'right' });
+      rfXlsCell(ws, 'C' + r, pc(it.v, total == null ? d.n : total), { size: 10, color: '#64748B', align: 'right' });
+      rfXlsCell(ws, 'D' + r, rfXlsBar(it.v, mx), { size: 10.5, color: it.c || '#4F46E5' });
+      r++;
+    });
+    r++;
+  };
+
+  section('ТӨРЛӨӨР', '', RF_KIND_ORDER.map(function (k) {
+    return { k: RF_KIND[k].l, v: d.kind[k] || 0, c: RF_KIND[k].c };
+  }));
+
+  section('ШАТУУД', '(юүлүүр)', [
+    { k: 'Мэдээлсэн', v: d.stage.rep.length, c: RF_STEP[0] },
+    { k: 'Баталгаажсан', v: d.stage.ver.length, c: RF_STEP[1] },
+    { k: 'Засварт орсон', v: d.stage.fix.length, c: RF_STEP[2] },
+    { k: 'Дууссан', v: d.stage.done.length, c: RF_STEP[3] }
+  ]);
+
+  section('ЯАРАЛТАЙ ЗЭРЭГ', '', wkUrgLevels().map(function (n, i) {
+    return { k: n + ' (' + wkHoursText(wkUrgHours(n)) + ')', v: d.urg[n] || 0,
+             c: RF_URG[Math.min(i, RF_URG.length - 1)] };
+  }));
+
+  section('ХУГАЦААНД БАГТСАН БАЙДАЛ', '', [
+    { k: 'Хугацаандаа', v: d.onTime.length, c: '#0CA30C' },
+    { k: 'Хугацаа хэтэрсэн', v: d.late.length, c: '#C81E3A' },
+    { k: 'Хугацаа дуусаагүй', v: d.waiting.length, c: '#94A3B8' },
+    { k: 'Тооцоонд ороогүй', v: (d.unreliable || []).length, c: '#CBD5E1' }
+  ]);
+
+  section('ХАРИУЦАХ АЛБА', '', [
+    { k: WK_GATES[0].name, v: d.gate.hab, c: RF_C.a },
+    { k: WK_GATES[1].name, v: d.gate.ita, c: RF_C.b }
+  ]);
+
+  section('ЭРСДЭЛИЙН ЗЭРЭГ', '', [
+    { k: 'Өндөр', v: d.risk.high, c: RF_RISK.high },
+    { k: 'Дунд', v: d.risk.mid, c: RF_RISK.mid },
+    { k: 'Бага', v: d.risk.low, c: RF_RISK.low }
+  ]);
+
+  section('ЗУРАГ ХАВСАРГАЛТ', '', [
+    { k: 'Зурагтай', v: d.hasPhoto.length, c: '#0CA30C' },
+    { k: 'Зураггүй', v: d.noPhoto.length, c: '#94A3B8' }
+  ]);
+
+  var top = function (title, map, col) {
+    var a = rfTop(map, 8).map(function (x) { return { k: x.k, v: x.v, c: col }; });
+    if (a.length) section(title, '(эхний ' + a.length + ')', a);
+  };
+  top('АЛБАДААР', d.byDept, RF_C.a);
+  top('БАЙРШЛААР', d.byPlace, RF_C.b);
+  top('ИДЭВХТЭЙ МЭДЭЭЛЭГЧИД', d.byWho, RF_C.a);
+  top('ГҮЙЦЭТГЭГЧИД', d.byDoer, '#0891B2');
+
+  /* ── Сарын чиг хандлага ── */
+  r = rfXlsBlock(ws, r, 'САРЫН ЧИГ ХАНДЛАГА', '(сүүлийн 12 сар)');
+  rfXlsCell(ws, 'A' + r, 'Сар', { bold: true, size: 9.5, color: '#64748B' });
+  RF_KIND_ORDER.forEach(function (k, i) {
+    rfXlsCell(ws, String.fromCharCode(66 + i) + r, RF_KIND[k].l,
+      { bold: true, size: 9.5, color: '#64748B', align: 'right' });
+  });
+  rfXlsCell(ws, 'E' + r, 'Нийт', { bold: true, size: 9.5, color: '#64748B', align: 'right' });
+  rfXlsCell(ws, 'F' + r, 'Харьцуулалт', { bold: true, size: 9.5, color: '#64748B' });
+  r++;
+  var mons = rfMonthsOf(d, 12);
+  var tot = mons.map(function (mk) {
+    return RF_KIND_ORDER.reduce(function (s, k) {
+      return s + (d.kindMonth[k + '|' + mk] || []).length; }, 0);
+  });
+  var mxM = Math.max.apply(null, tot.concat([0]));
+  mons.forEach(function (mk, i) {
+    rfXlsCell(ws, 'A' + r, rfMonLabel(mk), { size: 10.5 });
+    RF_KIND_ORDER.forEach(function (k, j) {
+      rfXlsCell(ws, String.fromCharCode(66 + j) + r,
+        (d.kindMonth[k + '|' + mk] || []).length, { size: 10.5, align: 'right' });
+    });
+    rfXlsCell(ws, 'E' + r, tot[i], { size: 10.5, bold: true, align: 'right' });
+    rfXlsCell(ws, 'F' + r, rfXlsBar(tot[i], mxM), { size: 10.5, color: RF_C.a });
+    r++;
+  });
+  r++;
+  ws.mergeCells('A' + r + ':H' + r);
+  rfXlsCell(ws, 'A' + r, 'Дэлгэрэнгүйг дараагийн хуудсуудаас харна уу — ' +
+    '«Тойм», «Бүх мэдээлэл», «Сараар», «Албадаар» г.м.',
+    { size: 9.5, color: '#94A3B8', align: 'center' });
+  ws.views = [{ showGridLines: false, state: 'frozen', ySplit: 2 }];
+  return ws;
+}
+
 function rfExportXlsx(all) {
   var t = toast('Excel бэлтгэж байна…', 'info');
   var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
-  riskLoadXlsx(function (ok) {
+  /* ⚠ SheetJS-ийн нээлттэй хувилбар нүдний ЗАСВАР (өнгө, тод үсэг,
+     нэгтгэл) бичдэггүй тул дашбоард хийх боломжгүй. ExcelJS нь аппад
+     аль хэдийн ачаалагддаг (ажлын захиалгын маягт) бөгөөд бүгдийг дэмжинэ. */
+  woLoadExcelJS(function (ok) {
     if (!ok) { fin(); toast('Excel сан ачаалагдсангүй — интернэт шалгана уу', 'error'); return; }
+    (async function () {
     try {
       var d = rfDashData(all);
-      var wb = XLSX.utils.book_new();
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Монос Хүнс — ХАБЭА'; wb.created = new Date();
       var add = function (name, aoa) {
-        var ws = XLSX.utils.aoa_to_sheet(aoa);
-        var w = [];
+        var ws = wb.addWorksheet(String(name).slice(0, 28), { views: [{ showGridLines: false }] });
+        (aoa || []).forEach(function (row) { ws.addRow((row || []).slice()); });
         (aoa[0] || []).forEach(function (_, i) {
           var mx = 8;
-          aoa.forEach(function (r) { mx = Math.max(mx, String(r[i] == null ? '' : r[i]).length + 2); });
-          w.push({ wch: Math.min(46, mx) });
+          aoa.forEach(function (r) { mx = Math.max(mx, String(r && r[i] == null ? '' : r[i]).length + 2); });
+          ws.getColumn(i + 1).width = Math.min(46, mx);
         });
-        ws['!cols'] = w;
-        XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 28));
+        /* Эхний мөрийг толгой болгон тодруулна — 11 хуудасны аль нь ч
+           уншихад хүндрэлгүй байхын тулд. */
+        var h = ws.getRow(1);
+        h.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FF1E293B' } };
+        h.eachCell(function (c) {
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        });
+        ws.font = { name: 'Segoe UI', size: 10.5 };
       };
       var pct = function (a, b) { return b ? Math.round((a / b) * 100) + '%' : '0%'; };
+
+      /* ⭐ 2026-09-13 — ХЭРЭГЛЭГЧИЙН ХҮСЭЛТ: татсан файлын ХАМГИЙН ЭХНИЙ
+         хуудас нь ДАШБОАРД байна. Доорх өгөгдлийн хуудсууд хэвээрээ. */
+      rfXlsDash(wb, d);
 
       /* 1. Тойм */
       add('Тойм', [
@@ -18929,16 +19132,18 @@ function rfExportXlsx(all) {
       mapSheet('Мэдээлэгчид', 'Ажилтан', d.byWho);
       mapSheet('Гүйцэтгэгчид', 'Ажилтан', d.byDoer);
 
-      var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      var out = await wb.xlsx.writeBuffer();
       rfSaveBlob(new Blob([out], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }), rfExportName('xlsx'));
       fin();
-      toast('Excel бэлэн (' + wb.SheetNames.length + ' хуудас) — «Хадгалах» дарна уу', 'success');
+      toast('Excel бэлэн (' + wb.worksheets.length + ' хуудас, эхний нь дашбоард) — ' +
+        '«Хадгалах» дарна уу', 'success');
     } catch (e) {
       fin(); console.error('[rf] xlsx', e);
       toast('Татаж чадсангүй: ' + (e.message || e), 'error');
     }
+    })();
   });
 }
 
