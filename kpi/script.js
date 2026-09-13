@@ -13525,26 +13525,17 @@ function riskAdminSectionsHTML(list) {
       drows + '</tbody></table></div>', '18px');
   }
 
-  /* ── Ажилтнаар (шатлалт харагдацад орсон) ── */
-  var es = riskEmpStats(list);
-  if (false) {
-    var erows = es.slice(0, 40).map(function (x) {
-      var L = riskLevel(x.top);
-      return '<tr class="dash-click" data-risk-emp="' + esc(x.e.id) + '">' +
-        '<td style="text-align:left"><div style="font-weight:600;color:#1E293B">' + esc(x.e.name || '—') + '</div>' +
-        '<div style="font-size:11px;color:#94A3B8">' + esc(x.e.role || x.e.pos || '—') + '</div></td>' +
-        '<td style="text-align:left;font-size:12px;color:#64748B">' + esc(x.e.dept || '—') + '</td>' +
-        '<td><b>' + x.n + '</b></td>' +
-        '<td style="text-align:left">' + riskLevelChips(x.list) + '</td>' +
-        '<td><span style="display:inline-block;padding:2px 9px;border-radius:7px;background:' + L.bg + ';color:' + L.color + ';font-weight:800;font-size:11.5px">' + x.top + ' · ' + L.name + '</span></td></tr>';
-    }).join('');
-    H += dashCard(dashH('👥 Ажилтан бүрийн эрсдэл', 'Хамгийн өндөр эрсдэлтэй нь эхэнд. Мөр дээр дарж тухайн хүний бүх эрсдлийг харна' +
-      (es.length > 40 ? ' · эхний 40 харуулав (нийт ' + es.length + ')' : '')) +
-      '<div style="overflow-x:auto"><table class="dash-tbl"><thead><tr>' +
-      '<th style="text-align:left">Ажилтан</th><th style="text-align:left">Алба</th><th>Эрсдэл</th>' +
-      '<th style="text-align:left">Түвшнээр</th><th>Хамгийн өндөр</th></tr></thead><tbody>' +
-      erows + '</tbody></table></div>', '18px');
-  }
+  /* ⚠⚠ 2026-09-13 — ХӨЛДӨЛТИЙН ЗАСВАР.
+     Энд өмнө нь `var es = riskEmpStats(list);` гэж тооцоод, үр дүнг нь
+     ЗӨВХӨН `if (false) { … }` блокт ашигладаг байв (харагдац нь шатлалт
+     хэлбэрт шилжсэн тул блокийг хаасан). Гэтэл тооцоо нь ажиллаж:
+         262 ажилтан × 892 эрсдэл = 233,704 удаа riskAppliesTo,
+     дуудлага бүрд riskPositions массив дахин үүсгэж, хөтчийн урсгалыг
+     бүрэн зогсоож байлаа (албаны даргын дансаар 10 дахь секундэд гацдаг
+     байсныг Debugger.pause-аар барьж тогтоосон).
+     Хэрэглэгддэггүй тооцоо ба үхсэн блокийг хасав — ХАРАГДАЦ ӨӨРЧЛӨГДӨХГҮЙ.
+     ⚠ Ажилтан бүрийн эрсдлийг харуулах шаардлага гарвал riskEmpStats-ыг
+     хэрэглэгч дарсан үед (riskEmpDetail шиг) л дууд, зурах бүрд БҮҮ дууд. */
 
   /* ── Албан тушаалаар ── */
   var byPos = {};
