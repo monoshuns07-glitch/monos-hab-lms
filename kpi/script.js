@@ -19029,6 +19029,15 @@ async function rfXlsTpl(all) {
       if (!/refreshOnLoad="1"/.test(pdf)) {
         pdf = pdf.replace('<pivotCacheDefinition ', '<pivotCacheDefinition refreshOnLoad="1" ');
       }
+      /* ⚠⚠ refreshOnLoad ДАНГААРАА ХАНГАЛТГҮЙ: pivot нь загварын хуучин
+         утгуудаа барьсаар байв — 33 мөртэй датад график бүр 8 гэж харуулсан.
+         `invalid="1"` нь кэшийг «хүчингүй» гэж тэмдэглэдэг тул Excel файлыг
+         нээхдээ ЗААВАЛ эх сурвалжаас дахин бодно. Локалаар баталсан.
+         ⚠ Кэшийн бичлэгийн хэсгийг УСТГАЖ БОЛОХГҮЙ — багц зөв хэвээр байсан ч
+           Excel нээхээс татгалздаг. Хоослоод үлдээнэ. */
+      if (!/invalid="1"/.test(pdf)) {
+        pdf = pdf.replace('<pivotCacheDefinition ', '<pivotCacheDefinition invalid="1" ');
+      }
       zip.file(defKey, pdf);
     }
 
