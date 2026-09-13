@@ -18865,9 +18865,9 @@ var RF_TPL_KEY = 'reports/templates/wk_dashboard.xlsx';
 var RF_TPL_HEAD = ['Огноо', 'Сар', 'Төрөл', 'Алба', 'Байршил',
                    'Хариуцах алба', 'Яаралтай зэрэг', 'Эрсдэлийн зэрэг', 'Төлөв',
                    'Хугацааны биелэлт', 'Шат', 'Мэдээлсэн', 'Гүйцэтгэгч',
-                   'Зураг', 'Тайлбар'];
+                   'Зураг', 'Тайлбар', 'Дугаар'];
 
-/* Дашбоардын мөрүүдийг загварын 15 багана болгоно.
+/* Дашбоардын мөрүүдийг загварын 16 багана болгоно.
    ⚠ HTML дашбоард дээрх карт бүр Excel-д pivot болох ёстой тул зөвхөн түүхий
      талбар биш, БОДОЖ гаргасан үзүүлэлтүүдийг ч багана болгон гаргана
      (хугацааны биелэлт, шат). rfDashData аль хэдийн тэднийг мөрийн жагсаалт
@@ -18915,7 +18915,8 @@ function rfTplRows(d) {
       String(r.reporterFull || r.reporterName || 'Тодорхойгүй'),
       doer || '—',
       hasImg(r.photo) ? 'тийм' : 'үгүй',
-      String(r.desc || '').trim() ? 'тийм' : 'үгүй'
+      String(r.desc || '').trim() ? 'тийм' : 'үгүй',
+      id || '—'
     ];
   });
 }
@@ -19028,6 +19029,19 @@ async function rfXlsTpl(all) {
       pdf = pdf.replace(/recordCount="\d+"/, 'recordCount="0"');
       if (!/refreshOnLoad="1"/.test(pdf)) {
         pdf = pdf.replace('<pivotCacheDefinition ', '<pivotCacheDefinition refreshOnLoad="1" ');
+      }
+      /* missingItemsLimit = устсан хэдэн утгыг кэшэд ҮЛДЭЭХийг заана.
+         Загварт жишээ 8 мөр байдаг тул 0-ээс өөр утгатай бол тэдгээрийн
+         нэрс бүх шүүлтүүрт саарал «сүүдэр» болж үлдэж, хэрэглэгчид
+         БАЙХГҮЙ хүнийг сонгуулах санал болгодог (локалаар 10 ширхэг
+         илэрсэн, энэ засварын дараа 0).
+         ⚠ COM-ийн xlMissingItemsNone тогтмол нь 2 бөгөөд Excel түүнийг
+           XML рүү шууд 2 гэж бичдэг — тэнд «хоёрыг үлдээ» гэсэн утгатай
+           болчихдог тул энд хүчээр 0 болгоно. */
+      if (/missingItemsLimit="[^"]*"/.test(pdf)) {
+        pdf = pdf.replace(/missingItemsLimit="[^"]*"/, 'missingItemsLimit="0"');
+      } else {
+        pdf = pdf.replace('<pivotCacheDefinition ', '<pivotCacheDefinition missingItemsLimit="0" ');
       }
       /* ⚠⚠ `invalid="1"` БҮҮ НЭМ. Туршиж үзээд БУЦААСАН (2026-09-13):
          Excel түүнийг уншаад чимээгүй дахин бодохын оронд хэрэглэгчид
