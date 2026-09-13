@@ -19010,6 +19010,28 @@ async function rfXlsTpl(all) {
     }
     zip.file('xl/workbook.xml', wbx);
 
+    /* ⚠⚠ pivotCacheRecords нь ЗАГВАРЫН 8 мөрийг хадгалсаар байдаг тул Excel
+       график бүрийг ТЭР ХУУЧИН датагаар зурдаг — дээд талын томьёо 33 гэж
+       байхад график 8 гэж харуулж байв. `refreshOnLoad="1"` дангаараа
+       хүрэлцэхгүй. Кэшийн бичлэгийг хоослоод recordCount=0 болгоход Excel-д
+       зурах хуучин дата үлдэхгүй тул хүснэгтээс ДАХИН БОДНО. */
+    var recKey = 'xl/pivotCache/pivotCacheRecords1.xml';
+    if (zip.file(recKey)) {
+      zip.file(recKey,
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" count="0"/>');
+    }
+    var defKey = 'xl/pivotCache/pivotCacheDefinition1.xml';
+    if (zip.file(defKey)) {
+      var pdf = await zip.file(defKey).async('string');
+      pdf = pdf.replace(/recordCount="\d+"/, 'recordCount="0"');
+      if (!/refreshOnLoad="1"/.test(pdf)) {
+        pdf = pdf.replace('<pivotCacheDefinition ', '<pivotCacheDefinition refreshOnLoad="1" ');
+      }
+      zip.file(defKey, pdf);
+    }
+
     var blob = await zip.generateAsync({
       type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
