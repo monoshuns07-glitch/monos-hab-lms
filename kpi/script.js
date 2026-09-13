@@ -27004,7 +27004,21 @@ function trndocScope() {
     var me = null; try { me = myEmp(); } catch (e) {}
     var dept = String((me && me.dept) || (SESSION && SESSION.dept) || '');
     if (/Хөдөлмөрийн\s*аюулгүй/i.test(dept)) return { all: true, why: 'ХАБЭА-н алба' };
-    try { if (wkIsDirector()) return { all: true, why: 'захирал' }; } catch (e) {}
+    /* ⭐ 2026-09-13 — ХЭРЭГЛЭГЧИЙН ШИЙДВЭР: захирал БҮХ албыг харахаа болив,
+       харьяа хүрээгээрээ л харна (эрсдэл, сургалтын биелэлттэй ижил боллоо).
+       ⚠ Гүйцэтгэх захирал (DIR_SCOPES-д re = null) урьдын адил БҮГДИЙГ харна. */
+    try {
+      if (wkIsDirector()) {
+        var _dpos = String((me && (me.pos || me.role)) || (SESSION && SESSION.pos) || '');
+        var _dsc = dirScopeOf(_dpos);
+        if (_dsc && _dsc.re) {
+          var _dds = [];
+          try { _dds = riskDeptsForScope(_dsc.key) || []; } catch (e) {}
+          return { all: false, re: _dsc.re, depts: _dds, why: 'харьяа албад' };
+        }
+        return { all: true, why: 'захирал' };
+      }
+    } catch (e) {}
     /* ⚠ isDeptHead() нь SESSION.role-д тулгуурладаг. Албан тушаалаараа
        дарга/менежер байсан ч дүр нь «ажилтан» байдаг тул тэднийг
        алдаж байв (2026-08-31-нд бодит шалгалтаар илэрсэн). Эрсдэлийн
@@ -27839,7 +27853,11 @@ async function renderTrnDocs() {
   }
 
   TRNDOC_SES = trndocGroup().filter(function (s) {
-    return sc.all || (sc.dept && riskSameDept && riskSameDept(s.dept, sc.dept)) || s.dept === sc.dept;
+    if (sc.all) return true;
+    /* ⭐ Захирлын харьяа ХЭД ХЭДЭН алба — хүрээний регексээр шүүнэ.
+       (Хуучин «нэг алба» хэлбэр доор хэвээр ажиллана.) */
+    if (sc.re) { try { return sc.re.test(String(s.dept || '')); } catch (e) { return false; } }
+    return (sc.dept && riskSameDept && riskSameDept(s.dept, sc.dept)) || s.dept === sc.dept;
   });
 
   if (!TRNDOC_SES.length) {
@@ -27869,7 +27887,10 @@ async function renderTrnDocs() {
     '<div style="flex:1;min-width:180px;font-size:12.5px;color:#8A94A6;line-height:1.6">' +
     'Архив дотор 4 баримт: ирцийн бүртгэл, дэвтрийн хуудас, дүнгийн жагсаалт, ' +
     'шалгалтын хуудас (хүн бүрээр).</div>' +
-    (sc.all ? '' : '<span class="tag tag-warn">' + esc(sc.dept) + '</span>') +
+    (sc.all ? ''
+      : '<span class="tag tag-warn">' +
+        esc((sc.depts && sc.depts.length) ? sc.depts.join(' · ') : (sc.dept || '')) +
+        '</span>') +
     '</div>';
 
   months.forEach(function (m) {
