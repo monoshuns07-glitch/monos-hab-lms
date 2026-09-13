@@ -5649,7 +5649,23 @@ function pulseStart() {
 var KPI_R2_FILE = 'kpi/state.json';
 
 async function kpiR2Publish(payload) {
-  try { return await riskR2PutJson(KPI_R2_FILE, payload); }
+  try {
+    /* ⚠⚠ 2026-09-13 — ТАЛБАР АЛДАХГҮЙ БИЧИЛТ.
+       Өмнө нь бүтэн объектыг дарж бичдэг байсан тул ачаалалт дутуу хөтөч
+       183 KB тохиргоог 558 байт болгож дарсан (327 ажилтан, 32 модулийн
+       нээлт, эрх алга болсон). Одоо серверийн хуулбар дээр НЭМЖ бичнэ:
+       серверт байгаад надад БАЙХГҮЙ талбар хэвээр үлдэнэ. Тохиргооны
+       талбарыг бүхэлд нь устгадаг урсгал байхгүй тул алдагдал үүсэхгүй.
+       r2CasJson нь тамгатай (CAS) тул зэрэг бичилт ч дарагдахгүй. */
+    return await r2CasJson(KPI_R2_FILE, function (cur) {
+      if (!payload || typeof payload !== 'object') return null;
+      if (!cur || typeof cur !== 'object' || Array.isArray(cur)) return payload;
+      var out = {}, k;
+      for (k in cur) { if (Object.prototype.hasOwnProperty.call(cur, k)) out[k] = cur[k]; }
+      for (k in payload) { if (Object.prototype.hasOwnProperty.call(payload, k)) out[k] = payload[k]; }
+      return out;
+    });
+  }
   catch (e) { console.warn('[kpi] R2 нийтлэх', e && e.message); }
 }
 async function kpiR2Load() {
