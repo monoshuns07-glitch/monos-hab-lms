@@ -13078,29 +13078,13 @@ function riskAppliesTo(r, emp) {
      ч дуудагддаг тул ТАНИЛЦАХ олонлогийг тодорхойлдог. Тэнд гар хүрвэл
      ХАБЭА-гийн ажилтны гарын үсэг 19-ийн оронд 577 эрсдлийн төлөө
      бичигдэж, өмнөх гарын үсгүүдтэй зөрчилдөнө. */
-/* Албаны удирдлагад ЯМАР албаны бүх эрсдлийг үзүүлж байгаа бэ (мэдэгдэлд) */
-var RISK_BOSS_VIEW = '';
+/* ⚠ 2026-09-13 — АЛБАНЫ УДИРДЛАГАД албаныхаа БҮХ эрсдлийг үзүүлдэг болгосныг
+   (v560) хэрэглэгчийн шийдвэрээр БУЦААВ (v561): «Эрсдэлийн үнэлгээг яг өмнөх
+   байсан хэвэнд нь буцаая». Тиймээс энд удирдлагын тусгай салаа БАЙХГҮЙ.
+   ⚠ Ажлын байрных нь үнэлгээ хийгдээгүй хүн албаныхаа бүх эрсдлийг харсаар
+     байна — тэр дүрэм энд БИШ, _riskSeenByRaw дотор бий (хөндөөгүй). */
 function risksForPage() {
   var mine = risksForView();      /* кэш сэргээх гаж нөлөөг нь ашиглана */
-  RISK_BOSS_VIEW = '';
-  /* ⭐ 2026-09-13 — АЛБАНЫ УДИРДЛАГА (дарга/ахлах/менежер/эрхлэгч) нь
-     ӨӨРИЙН албаныхаа БҮХ эрсдлийг харна. Өмнө нь зөвхөн «Туслах админ»
-     эрхтэй хүн харж чаддаг байсан тул албаны дарга нар албаныхаа эрсдлийг
-     хардаггүй байв (бодитоор баталсан). Хэрэглэгчийн шийдвэрээр тусдаа эрх
-     олгохын оронд АЛБАН ТУШААЛААР автоматаар — сургалтын биелэлт аль хэдийн
-     яг ингэж ажилладаг тул хоёр дэлгэц ижил дүрэмтэй боллоо.
-     ⚠ Энэ нь ЗӨВХӨН ХАРАГДАЦ. Гарын үсгийн олонлог (risksForView) хэвээр. */
-  try {
-    if (!isAdmin() && !isDeptHead() && !riskIsHseStaff() && !riskDirScope() && riskIsBoss()) {
-      var _me = null; try { _me = myEmp(); } catch (e) {}
-      var bd = String((_me && _me.dept) || (SESSION && SESSION.dept) || '').trim();
-      if (bd) {
-        var byDept = (DB.risks || []).filter(function (r) { return riskSameDept(r.dept, bd); });
-        /* Албандаа эрсдэл байхгүй бол хуучин хамрах хүрээгээ хэвээр үлдээнэ */
-        if (byDept.length > mine.length) { RISK_BOSS_VIEW = bd; return byDept; }
-      }
-    }
-  } catch (e) {}
   if (!riskIsHseStaff()) return mine;
   var all = (DB.risks || []).slice();
   return all.length ? all : mine;
@@ -15392,7 +15376,7 @@ function renderHazards() {
       '</div></div></div>';
   } else {
     /* Ажлын байрных нь үнэлгээ хийгдээгүй үед ТОДОРХОЙ хэлнэ */
-    if (!riskPageAdmin() && !RISK_BOSS_VIEW && RISK_VIEW_SCOPE === 'dept') {
+    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'dept') {
       H += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.65">' +
         '<b>ℹ️ Таны ажлын байрны («' + esc(myPos || '—') + '») эрсдэлийн үнэлгээ хараахан хийгдээгүй байна.</b><br>' +
         'Доор <b>' + esc(myDept) + '</b>-ны эрсдэлүүдийг харуулж байна — өөрт хамаарахыг уншиж, ' +
@@ -15400,19 +15384,11 @@ function renderHazards() {
     }
     /* ИТА-гийн ахлах инженерт ЯМАР хэсгийн эрсдэл харагдаж байгааг ил хэлнэ —
        эс бөгөөс «яагаад албаны бүх эрсдэл харагдахгүй байна» гэж эргэлзэнэ. */
-    if (!riskPageAdmin() && !RISK_BOSS_VIEW && RISK_VIEW_SCOPE === 'unit') {
+    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'unit') {
       var _u = ''; try { _u = ackUnitOf(myEmp()); } catch (e) {}
       H += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#1E40AF;line-height:1.65">' +
         '<b>ℹ️ Доор <b>' + esc(_u || 'таны хэсгийн') + '</b> хэсэгт хамаарах эрсдэлүүдийг харуулж байна.</b><br>' +
         esc(myDept) + ' нь хоёр хэсэгт хуваагддаг тул нөгөө хэсгийн эрсдэл энд ороогүй.</div>';
-    }
-    /* ⭐ 2026-09-13 — Албаны удирдлагад ЯАГААД албаны бүх эрсдэл харагдаж
-       байгааг ил хэлнэ. Эс бөгөөс «би яагаад бусдын эрсдлийг харав» гэж
-       эргэлзэнэ. Гарын үсэг нь хэвээр — зөвхөн өөрт хамаарахад нь зурна. */
-    if (!riskPageAdmin() && RISK_BOSS_VIEW) {
-      H += '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#166534;line-height:1.65">' +
-        '<b>ℹ️ Та албаны удирдлага тул «' + esc(RISK_BOSS_VIEW) + '»-ны БҮХ эрсдлийг харж байна.</b><br>' +
-        'Гарын үсэг зурах шаардлага өөрчлөгдөөгүй — урьдын адил зөвхөн өөрт тань хамаарах эрсдэлд зурна.</div>';
     }
     /* ⭐ ТАБ — эрсдэл, танилцалт, арга хэмжээ гурвыг нэг цэсэнд, тус тусдаа.
        Ингэснээр админы хуудас 3 дахин багасаж, хайх зүйл нь шууд олдоно. */
@@ -26273,18 +26249,17 @@ function trnScope() {
     return (own[d] || []).some(function (m) { return String(m).toLowerCase() === email; });
   });
   if (byOwn.length) return { kind: 'depts', depts: byOwn, label: 'Хариуцах алба' };
-  /* ④ Албаны удирдлага — өөрийн алба
-     ⚠ 2026-09-08: ӨМНӨ нь энд ЗӨВХӨН /дарга/ гэсэн үгийг хайдаг байв.
-     Тиймээс ажиллаж буй 50 удирдлагаас 38 нь («Үйлдвэрийн менежер»,
-     «Хангамжийн менежер», «Ахлах инженер» г.м.) энэ тайланг ОГТ харж
-     чаддаггүй, цэс нь ч гарч ирдэггүй байсан. Гэтэл ЯГ ТЭР ХҮМҮҮС
-     «Сургалтын баримт»-ыг хардаг — тэр нь `riskIsBoss()`-оор өргөн
-     шалгадаг (дарга|ахлах|менежер|эрхлэгч).
-     ⚠ Одоо ХОЁР ДЭЛГЭЦ НЭГ ДҮРЭМ ашиглана. Шинэ цол нэмэгдвэл ЗӨВХӨН
-     `riskIsBoss()`-ыг зас — энд давхардуулж бичвэл дахин сална.
-     ⚠ Хамрах хүрээ өөрчлөгдөөгүй: өөрийн алба л хэвээр. */
+  /* ④ Админ гараар өгсөн `depthead` дүр — өөрийн алба
+     ⚠⚠ 2026-09-13 — ХЭРЭГЛЭГЧИЙН ШИЙДВЭР: албан тушаалаар АВТОМАТААР эрх
+     олгохоо БОЛИВ. Өмнө нь энд `riskIsBoss()` (дарга|ахлах|менежер|эрхлэгч)
+     байсан тул 47 удирдлага бүгд албаныхаа биелэлтийг хардаг байв. Одоо
+     ЗӨВХӨН дээрх ③-т буюу `training/owners.json`-д НЭРЛЭСЭН хүн харна.
+     ⚠ Хэн нэгнийг нэмэх/хасах бол КОД БИШ, тэр ФАЙЛЫГ зас (и-мэйлээр).
+     ⚠ `riskIsBoss()`-ыг энд БУЦААЖ БҮҮ ТАВЬ — тэр нь бүх менежерийг
+       дахин нээнэ. Мөн түүнд гар хүрвэл эрсдэл нэмэх эрх, ажлын захиалга
+       зэрэг ӨӨР 5 газар эвдэрнэ. */
   var boss = false;
-  try { boss = isDeptHead() || riskIsBoss(); } catch (e) { boss = /дарга/i.test(pos); }
+  try { boss = isDeptHead(); } catch (e) { boss = false; }
   if (dept && boss) {
     return { kind: 'depts', depts: [dept], label: 'Миний алба' };
   }
@@ -26799,9 +26774,23 @@ function trndocScope() {
        дарга/менежер байсан ч дүр нь «ажилтан» байдаг тул тэднийг
        алдаж байв (2026-08-31-нд бодит шалгалтаар илэрсэн). Эрсдэлийн
        хэсэгтэй ижил — албан тушаалаар нь шалгана. */
+    /* ⚠⚠ 2026-09-13 — «Сургалтын биелэлт»-тэй ЯГ НЭГ дүрэм: албан тушаалаар
+       биш, `training/owners.json`-д нэрлэсэн хүнд л нээнэ. Өмнө нь энд
+       `riskIsBoss()` байсан тул бүх менежер хардаг байв.
+       ⚠ TRN_OWN нь ачаалагдаагүй (null) бол ХААЛТТАЙ гэж үзнэ — renderTrnDocs
+         ба trnNavSync хоёул үүнээс ӨМНӨ `trnOwnLoad()`-ыг хүлээдэг. */
     var boss = false;
-    try { boss = isDeptHead() || riskIsBoss(); } catch (e) { boss = isDeptHead(); }
-    if (boss && dept) return { all: false, dept: dept, why: 'албаны удирдлага' };
+    try { boss = isDeptHead(); } catch (e) { boss = false; }
+    if (!boss) {
+      try {
+        var _em = String((SESSION && SESSION.email) || '').toLowerCase();
+        var _own = TRN_OWN || {};
+        if (_em) boss = Object.keys(_own).some(function (d) {
+          return (_own[d] || []).some(function (m) { return String(m).toLowerCase() === _em; });
+        });
+      } catch (e) {}
+    }
+    if (boss && dept) return { all: false, dept: dept, why: 'нэрлэсэн хариуцагч' };
   } catch (e) {}
   return null;
 }
@@ -27589,6 +27578,10 @@ async function renderTrnDocs() {
     '<div id="tdBody"><div class="card" style="padding:34px;text-align:center;color:#8A94A6">' +
     '<i class="ti ti-loader-2"></i> Ачаалж байна…</div></div>';
 
+  /* ⚠ 2026-09-13 — trndocScope одоо `training/owners.json`-оос уншдаг тул
+     жагсаалтыг ЭНД хүлээж авна. Эс бөгөөс хуудас руу шууд орсон эрхтэй хүнд
+     «эрх байхгүй» гэж ХУДАЛ харагдана (trnNavSync-ээс өмнө орж болно). */
+  try { await trnOwnLoad(); } catch (e) {}
   var sc = trndocScope();
   var box = function () { return $('#tdBody'); };
   if (!sc) {
