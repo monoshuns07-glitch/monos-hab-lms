@@ -884,7 +884,7 @@ async function cleanupDemoData() {
    'ppeObservations', 'notifications'].forEach(function (k) { DB[k] = []; });
   if (!DB.settings) DB.settings = seedDB().settings;
   DB.settings.demoCleaned = true;
-  try { await KPI_DOC().set(DB); } catch (e) {}
+  try { await kpiR2Publish(mainDocPayload()); } catch (e) {}
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
 }
 
@@ -908,7 +908,7 @@ async function clearAllDemoData() {
   // Жинхэнэ бүртгэлтэй ажилтнуудыг эргэн татна (байвал)
   try { await syncEmployeesWithRealData(); } catch (e) {}
   try { saveDB(); } catch (e) {}
-  if (fbReady && fdb) { try { await KPI_DOC().set(DB); } catch (e) {} }
+  if (fbReady) { try { await kpiR2Publish(mainDocPayload()); } catch (e) {} }
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   try { renderAll(); } catch (e) {}
   toast('Жишээ (демо) дата бүрэн цэвэрлэгдлээ', 'success');
@@ -1140,7 +1140,7 @@ async function loadDB() {
         migrateDB();
       } else {
         DB = seedDB(); fresh = true;
-        if (isAdmin()) { try { await KPI_DOC().set(DB); } catch (e) {} }
+        if (isAdmin()) { try { await kpiR2Publish(mainDocPayload()); } catch (e) {} }
       }
     } catch (e) {
       try { var raw = localStorage.getItem(LSKEY); DB = raw ? JSON.parse(raw) : seedDB(); } catch (e2) { DB = seedDB(); }
@@ -1160,6 +1160,10 @@ async function loadDB() {
     if (_tOk) _skip.push('tasks');
     if (_rOk) _skip.push('reports');   /* R2 файл байвал Firestore-оос асуухгүй (квот) */
     if (_R2_MS && _R2_MS.rows && _R2_MS.rows.length) _skip.push('miskillStats');
+    /* ⚠ 2026-09-13: бүртгэлүүд R2-д шилжсэн — эхлээд тэндээс уншина. R2-оос
+       ирсэн цуглуулгыг Firestore-оос ДАХИН асуухгүй (хоосон хариу нь жинхэнэ
+       мөрүүдийг дарах эрсдэлтэй, бас квот иддэг). */
+    try { _skip = _skip.concat(await colR2Load()); } catch (e) {}
     if (isSplit()) { try { await loadCols(_skip.length ? { skip: _skip } : null); } catch (e) {} }
     dbCacheSave('бүртгэлүүд');
     /* Эрсдэл, даалгавар нь ЭНД БИШ — loadDB-ийн эхэнд R2-оос аль хэдийн
@@ -1430,15 +1434,17 @@ function applyEmpOverrides() {
 
 /* Сүүлд хадгалсан төлөв — зөвхөн ӨӨРЧЛӨГДСӨН бичлэгийг л бичихэд ашиглана */
 var _colShadow = {};
+function colShadowFrom(k, rows) {
+  var m = {};
+  (rows || []).forEach(function (x) {
+    if (x && x.id != null) { try { m[String(x.id)] = JSON.stringify(x); } catch (e) {} }
+  });
+  _colShadow[k] = m;
+}
+function colShadowSet(k) { colShadowFrom(k, colArr(k)); }
 function snapshotCols() {
   _colShadow = {};
-  COL_KEYS.forEach(function (k) {
-    var m = {};
-    colArr(k).forEach(function (x) {
-      if (x && x.id != null) { try { m[String(x.id)] = JSON.stringify(x); } catch (e) {} }
-    });
-    _colShadow[k] = m;
-  });
+  COL_KEYS.forEach(function (k) { colShadowSet(k); });
 }
 /* id-гүй бичлэгт id олгоно (эс бөгөөс баримт болгож хадгалж чадахгүй) */
 function ensureIds() {
@@ -1450,51 +1456,10 @@ function ensureIds() {
 }
 
 /* Зөвхөн ялгааг бичнэ: шинэ/өөрчлөгдсөнийг set, устгагдсаныг delete */
-async function saveCols() {
-  if (!fbReady || !fdb) return;
-  ensureIds();
-  var FP = null, DEL = null;
-  try { FP = firebase.firestore.FieldPath; DEL = firebase.firestore.FieldValue.delete(); } catch (e) { FP = null; DEL = null; }
-  var batch = fdb.batch(), ops = 0;
-  for (var i = 0; i < COL_KEYS.length; i++) {
-    var k = COL_KEYS[i];
-    var prev = _colShadow[k] || {}, cur = {};
-    colArr(k).forEach(function (x) { if (x && x.id != null) cur[String(x.id)] = x; });
-    for (var id in cur) {
-      var s = '';
-      try { s = JSON.stringify(cur[id]); } catch (e) { continue; }
-      if (prev[id] === s) continue;
-      /* ⚠ 2026-09-11: хүний нөөцийн тушаалыг ЭНД бичихгүй — hrPushToServer гүйлгээгээр
-         бичдэг. Эс бөгөөс админы хуучин хуулбар гарын үсгийг дарж болох байв. */
-      if (k === 'hrorders') continue;
-      var docObj = JSON.parse(s), old = null;
-      try { old = prev[id] ? JSON.parse(prev[id]) : null; } catch (e) { old = null; }
-      if (old && FP && DEL) {
-        /* ⚠ 2026-09-11: ЗӨВХӨН ӨӨРЧЛӨГДСӨН талбаруудыг бичнэ (mergeFields) — өөр хүний
-           өөр талбарт хийсэн өөрчлөлтийг админы хуучин хуулбар дарахгүй. */
-        var part = {}, fields = [], keys = {};
-        Object.keys(old).forEach(function (f) { keys[f] = 1; });
-        Object.keys(docObj).forEach(function (f) { keys[f] = 1; });
-        Object.keys(keys).forEach(function (f) {
-          if (JSON.stringify(old[f]) === JSON.stringify(docObj[f])) return;
-          part[f] = (f in docObj) ? docObj[f] : DEL;
-          fields.push(new FP(f));
-        });
-        if (!fields.length) continue;
-        batch.set(colRef(k).doc(id), part, { mergeFields: fields }); ops++;
-      } else {
-        batch.set(colRef(k).doc(id), docObj); ops++;
-      }
-      if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
-    }
-    for (var id2 in prev) {
-      if (!(id2 in cur)) { batch.delete(colRef(k).doc(id2)); ops++; }
-      if (ops >= 400) { await batch.commit(); batch = fdb.batch(); ops = 0; }
-    }
-  }
-  if (ops) await batch.commit();
-  snapshotCols();
-}
+/* ⚠ 2026-09-13 — FIRESTORE БИЧИЛТ БҮРЭН ЗОГССОН.
+   Өмнө нь бүртгэлүүдийг `kpi_*` цуглуулгад бичдэг байв. Одоо цорын ганц
+   хадгалалт нь R2 (`colR2Sync`). Хуучин дуудалт эвдрэхгүйн тулд үлдээв. */
+async function saveCols() { return; }
 
 /* ══ УНШИЛТЫГ ХЭМНЭХ — эрхээс хамаарч ЗӨВХӨН хэрэгтэй бичлэгийг татна ══
    Ажилтан бүх бүртгэлийг татах шаардлагагүй (хараад ч чадахгүй) — зөвхөн
@@ -1585,12 +1550,85 @@ async function colsManifestLoad() {
 async function colsManifestSave() {
   try {
     if (!isAdmin()) return;
-    var live = COL_KEYS.filter(function (k) { return (colArr(k) || []).length > 0; });
+    /* ⚠ 2026-09-13: R2-д шилжсэн цуглуулгыг жагсаалтад ОРУУЛАХГҮЙ. Эс бөгөөс
+       loadCols тэднийг Firestore-оос дахин асууж, ХООСОН хариу нь R2 дахь
+       жинхэнэ мөрүүдийг дарж «алга болгоно». */
+    var live = COL_KEYS.filter(function (k) {
+      return COL_R2_KEYS.indexOf(k) < 0 && (colArr(k) || []).length > 0;
+    });
     var cur = COLS_LIVE || [];
     if (live.length === cur.length && live.every(function (k) { return cur.indexOf(k) >= 0; })) return;
     COLS_LIVE = live;
     await riskR2PutJson(COLS_FILE, { at: new Date().toISOString(), live: live });
   } catch (e) {}
+}
+
+/* ══════════ БҮРТГЭЛҮҮД — R2 (Firestore-оос БҮРЭН САЛСАН, 2026-09-13) ══════════
+   ⚠ ЯАГААД: эдгээр бүртгэл өмнө нь ЗӨВХӨН Firestore-ийн `kpi_*` цуглуулгад
+   хадгалагддаг байв. Өдрийн квот дүүрэхэд бичилт ЧИМЭЭГҮЙ унаж, ажилтны
+   бүртгэсэн аюул/санал алга болох эрсдэлтэй байсан (ижил шалтгаанаар өмнө нь
+   ажлын захиалгын хуудас бүхэлдээ хоосон харагдаж байсан).
+   Одоо цуглуулга тус бүр R2-д нэг файл — тамгатай (CAS) бичилт, ID-гаар
+   нэгтгэл тул хоёр хүн зэрэг бичсэн ч аль нь ч дарагдахгүй.
+   ⚠ Шинэ цуглуулга нэмбэл COL_R2_KEYS-д бас нэм. */
+var COL_R2_KEYS = ['violations', 'hazards', 'suggestions', 'incidents', 'videoViews',
+  'examResults', 'firstAidChecks', 'ppeObservations', 'extTrainings', 'externalTrainings'];
+function colR2File(k) { return 'workflow/cols/' + k + '.json'; }
+
+/* Сүүлийн хадгалалтаас хойш өөрчлөгдсөн үү (_colShadow-тэй харьцуулна) */
+function colR2Dirty(k) {
+  var prev = _colShadow[k] || {}, cur = {}, id;
+  colArr(k).forEach(function (x) {
+    if (x && x.id != null) { try { cur[String(x.id)] = JSON.stringify(x); } catch (e) {} }
+  });
+  for (id in cur) { if (prev[id] !== cur[id]) return true; }
+  for (id in prev) { if (!(id in cur)) return true; }
+  return false;
+}
+
+/* Өөрчлөгдсөн цуглуулгыг R2-д бичнэ. Бичилт амжилтгүй бол сүүдрийг ШИНЭЧЛЭХГҮЙ —
+   дараагийн хадгалалтад дахин оролдоно (бичлэг алдагдахгүй). */
+async function colR2Sync() {
+  if (DEMO) return;
+  try { ensureIds(); } catch (e) {}
+  var keys = COL_R2_KEYS.filter(function (k) { return colR2Dirty(k); });
+  if (!keys.length) return;
+  var bad = null;
+  await Promise.all(keys.map(function (k) {
+    var rows = colArr(k).slice();
+    return riskR2PutJson(colR2File(k), { at: nowIso(), rows: rows })
+      .then(function () { colShadowFrom(k, rows); })
+      .catch(function (e) { bad = e; try { console.error('[cols] R2 ' + k, e && e.message); } catch (e2) {} });
+  }));
+  if (bad) throw bad;
+}
+
+/* Ачаалалтад R2-оос буцааж уншина. Файл БАЙХГҮЙ бол хөндөхгүй — Firestore-оос
+   уншигдах хуучин мөр амьд үлдэж, дараагийн хадгалалтаар R2 руу шилжинэ.
+   Буцаана: R2-оос ирсэн түлхүүрүүд (тэднийг Firestore-оос ДАХИН асуухгүй). */
+async function colR2Load() {
+  if (DEMO || !DB) return [];
+  var got = await Promise.all(COL_R2_KEYS.map(function (k) {
+    return riskR2GetJson(colR2File(k)).catch(function () { return undefined; });
+  }));
+  var applied = [], pend = 0;
+  COL_R2_KEYS.forEach(function (k, i) {
+    var j = got[i];
+    if (!j || !Array.isArray(j.rows)) return;
+    /* Локалд байгаад R2-д БАЙХГҮЙ мөр (офлайн үед бичсэн) хадгална */
+    var seen = {};
+    j.rows.forEach(function (x) { if (x && x.id != null) seen[String(x.id)] = 1; });
+    var keep = (DB[k] || []).filter(function (x) { return x && x.id != null && !seen[String(x.id)]; });
+    DB[k] = j.rows.concat(keep);
+    /* ⚠ Сүүдэрт R2-д БАЙГАА мөрийг л «хадгалагдсан» гэж тэмдэглэнэ — эс бөгөөс
+       серверт хүрээгүй мөр мөнхөд илгээгдэхгүй үлдэнэ. */
+    colShadowFrom(k, j.rows);
+    if (keep.length) pend++;
+    applied.push(k);
+  });
+  /* Серверт хүрээгүй мөр байвал чимээгүйхэн дахин илгээнэ */
+  if (pend) { try { setTimeout(function () { colR2Sync().catch(function () {}); }, 5000); } catch (e) {} }
+  return applied;
 }
 
 /* Шинэ бичлэг үүсэхэд цуглуулгыг жагсаалтад нэмнэ */
@@ -5627,61 +5665,20 @@ function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   try { pulseBump('db'); } catch (e) {}     /* бусдын дэлгэц шууд шинэчлэгдэнэ */
   if (!fbReady) return;
-  if (isAdmin()) {
-    if (_saveTimer) clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(function () {
-      if (isSplit()) {
-        /* v2 — тохиргоо үндсэн баримтад, бүртгэлүүд цуглуулгад.
-           ⚠ Алдааг ЕРӨНХИЙ мессежээр биш, ЯГ ЮУ болсныг хэлнэ. */
-        var step = 'тохиргоо';
-        KPI_DOC().set(mainDocPayload())
-          .then(function () { step = 'бүртгэлүүд'; return saveCols(); })
-          .then(function () { taskR2Sync(); repR2Sync(); })   // R2 дахь даалгавар/мэдээллийн хувилбарыг шинэчилнэ
-          .then(function () { return kpiR2Publish(mainDocPayload()); })
-          .catch(function (e) { saveErrorToast(e, step); });
-      } else {
-        /* v1 — хуучнаараа (шилжүүлэг хийгээгүй байхад) */
-        KPI_DOC().set(DB)
-          .then(function () { return kpiR2Publish(DB); })
-          .catch(function (e) { saveErrorToast(e, 'бүх дата'); });
-      }
-    }, 700);
-  } else if (isSplit()) {
-    /* v2 — ажилтан зөвхөн ӨӨРИЙН шинэ бичлэгээ тусдаа баримт болгож нэмнэ.
-       Бусдын датанд огт хүрэхгүй тул мөргөлдөх боломжгүй. */
-    try {
-      ensureIds();
-      var addOne = function (key, ids) {
-        (DB[key] || []).forEach(function (x) {
-          if (!x || x.id == null) return;
-          if (ids && ids[x.id]) return;
-          colRef(key).doc(String(x.id)).set(x)
-            .then(function () { if (ids) ids[x.id] = 1; })
-            .catch(function (e) { saveErrorToast(e, 'ажилтны бичлэг'); });
-        });
-      };
-      addOne('hazards', _empHazIds);
-      addOne('suggestions', _empSugIds);
-      addOne('reports', _empRepIds);
-    } catch (e) {}
-  } else {
-    // Ажилтан — зөвхөн өөрийн ШИНЭ эрсдэл/санал/мэдээллийг бусдын датаг эвдэлгүйгээр нэмнэ (arrayUnion)
-    try {
-      var newHaz = (DB.hazards || []).filter(function (h) { return _empHazIds && !_empHazIds[h.id]; });
-      var newSug = (DB.suggestions || []).filter(function (s) { return _empSugIds && !_empSugIds[s.id]; });
-      var newRep = (DB.reports || []).filter(function (r) { return _empRepIds && !_empRepIds[r.id]; });
-      if (!newHaz.length && !newSug.length && !newRep.length) return;
-      var upd = {};
-      if (newHaz.length) upd.hazards = firebase.firestore.FieldValue.arrayUnion.apply(null, newHaz);
-      if (newSug.length) upd.suggestions = firebase.firestore.FieldValue.arrayUnion.apply(null, newSug);
-      if (newRep.length) upd.reports = firebase.firestore.FieldValue.arrayUnion.apply(null, newRep);
-      KPI_DOC().set(upd, { merge: true }).then(function () {
-        if (_empHazIds) newHaz.forEach(function (h) { _empHazIds[h.id] = 1; });
-        if (_empSugIds) newSug.forEach(function (s) { _empSugIds[s.id] = 1; });
-        if (_empRepIds) newRep.forEach(function (r) { _empRepIds[r.id] = 1; });
-      }).catch(function (e) { saveErrorToast(e, 'ажилтны бичлэг'); });
-    } catch (e) {}
-  }
+  /* ⚠⚠ 2026-09-13 — FIRESTORE РУУ ЮУ Ч БИЧИХГҮЙ.
+     Өмнө нь: админ → үндсэн баримт + `kpi_*` цуглуулга, ажилтан → өөрийн
+     бичлэгээ баримт болгож. Өдрийн квот дүүрэхэд энэ бичилт ЧИМЭЭГҮЙ унаж,
+     ажилтны бүртгэсэн зүйл алга болдог байв.
+     Одоо бүх зүйл R2-д: бүртгэлүүд `workflow/cols/*.json`, даалгавар
+     `tasks/all.json`, мэдээлэл `reports/_all.json`, тохиргоо `kpi/state.json`.
+     Бүгд тамгатай (CAS) бичилт тул зэрэг бичилт бие биенээ дарахгүй. */
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(function () {
+    colR2Sync().catch(function (e) { saveErrorToast(e, 'бүртгэл'); });
+    if (!isAdmin()) return;
+    try { taskR2Sync(); repR2Sync(); } catch (e) {}
+    kpiR2Publish(mainDocPayload()).catch(function (e) { saveErrorToast(e, 'тохиргоо'); });
+  }, 700);
 }
 
 /* ============ KPI тооцоо (шинэ арга зүй: суурь + нэмэгдэх бонус) ============ */
@@ -9186,17 +9183,10 @@ function fmtSize(b) {
 }
 
 /* Бүх байршуулалтыг Firestore-д бүртгэнэ — юу, хэн, хэзээ, хэдэн МБ (файлын каталог) */
-function r2Catalog(meta) {
-  try {
-    if (!fbReady || !fdb || DEMO) return;
-    fdb.collection('files').add({
-      name: meta.name || '', key: meta.key || '', url: meta.url || '',
-      size: meta.size || 0, type: meta.type || '', context: meta.context || 'task',
-      uploadedBy: (SESSION && SESSION.email) || 'admin',
-      uploadedAt: new Date().toISOString()
-    }).catch(function () {});
-  } catch (e) {}
-}
+/* Байршуулалтын бүртгэл. ⚠ 2026-09-13: Firestore-ийн `files` цуглуулгад
+   бичдэгийг зогсоов — энэ бүртгэлийг систем ХААНА Ч уншдаггүй байсан тул
+   зөвхөн квот иддэг байв. Хэн юу байршуулсны мөр `audit/` файлд хэвээр. */
+function r2Catalog(meta) { return; }
 
 /* ── Байршуулах ТҮР ЗУУРЫН эрх (15 мин) ──
    Vercel-ийн /api/file-token нь нэвтэрсэн эсэхийг шалгаад гарын үсэг олгоно.
@@ -17603,7 +17593,8 @@ function reportPushToServer(r, opts) {
       done(true);
       if (opts.notify) { try { reportNotifyHab(m || r); } catch (e) {} }
       try { pulseBump('report'); } catch (e) {}
-      if (m) { try { colRef('reports').doc(String(r.id)).set(m).catch(function () {}); } catch (e) {} }
+      /* ⚠ 2026-09-13: өмнө нь энд Firestore-д нөөц хуулбар бичдэг байв. Эх
+         сурвалж нь `reports/_all.json` тул хэрэггүй давхардал байсан. */
       return true;
     }).catch(function (e) { done(false, e); return false; });
   } catch (e) { done(false, e); return Promise.resolve(false); }
@@ -30663,16 +30654,9 @@ function reqSyncViolations() {
     }
   });
   if (changed) {
+    /* ⚠ 2026-09-13: saveDB() нь зөрчлийг R2-д (`workflow/cols/violations.json`)
+       ХҮН БҮРИЙН хувьд хадгалдаг болсон тул тусдаа Firestore бичилт хэрэггүй. */
     try { saveDB(); } catch (e) {}
-    /* ⚠ saveDB() админ биш хүний зөрчлийг серверт бичдэггүй (зөвхөн аюул/санал/
-       мэдээлэл). Туслах админ үүсгэсэн зөрчил алга болдог байв → баримт бүрийг
-       шууд бичнэ (kpi_violations дүрэм зөвшөөрдөг). */
-    if (!isAdmin() && fbReady && fdb) {
-      touched.forEach(function (v) {
-        try { colRef('violations').doc(String(v.id)).set(v).catch(function () {}); } catch (e) {}
-      });
-      try { colsManifestAdd('violations'); } catch (e) {}
-    }
   }
   return changed;
 }

@@ -158,6 +158,28 @@ Node дээр аппын БҮХ жинхэнэ логикийг ажиллуул
 - Firestore дүрэм: `node tools/deploy-rules.js --key <sa.json>` (амьд дүрмийг `tools/rules-backup/`-д хадгалаад байршуулна; `--rollback <id>`). Консол дээр гараар БҮҮ тавь.
 - Дүрмийн гол зарчим: ажилтан `users/{өөрийн}`-ийн role/department/position/email/uid/isActive-ийг өөрчилж ЧАДАХГҮЙ; `user_roles` зөвхөн админ; `kpi_*` устгах зөвхөн админ.
 
+## Firestore-оос салалт — KPI апп ЮУ Ч БИЧИХГҮЙ (2026-09-13)
+Firestore-ийн өдрийн квот дүүрэхэд бичилт ЧИМЭЭГҮЙ уналт өгч, ажилтны бүртгэсэн
+зүйл алга болдог байсан. Тиймээс **KPI апп Firestore руу бичихээ бүрэн болив**.
+- **Бүртгэлүүд** (`violations, hazards, suggestions, incidents, videoViews, examResults,
+  firstAidChecks, ppeObservations, extTrainings, externalTrainings`) → R2 `workflow/cols/<key>.json`.
+  Бичилт: `colR2Sync()` — ЗӨВХӨН өөрчлөгдсөн цуглуулгыг, `riskR2PutJson` (CAS + ID нэгтгэл).
+  Уншилт: `colR2Load()` — ачаалалтад эхэлж, ирсэн түлхүүрийг Firestore-оос ДАХИН асуухгүй.
+  ⚠ Бичилт унавал сүүдэр (`_colShadow`) шинэчлэгдэхгүй → дараагийн хадгалалтад дахин илгээгдэнэ.
+  ⚠ Шинэ цуглуулга нэмбэл `COL_R2_KEYS`-д бас нэм.
+- `saveDB()` — админ ч, ажилтан ч Firestore руу бичихгүй: `colR2Sync` + (админ) `taskR2Sync`,
+  `repR2Sync`, `kpiR2Publish(mainDocPayload())`.
+- `saveCols()` — хоосон функц болсон (нийцлийн үлдэц). `r2Catalog()` — хоосон (Firestore `files`
+  цуглуулгыг хэн ч уншдаггүй байсан). `reportPushToServer` — Firestore нөөц бичилтгүй.
+- Firestore-оос УНШИХ нь сүүлчийн нөөц зам болж үлдэнэ (`kpi_state/main`, `kpi_tasks`, `kpi_reports`).
+  `users`, `user_roles` — хэвээрээ (нэвтрэлт, ажилтны бүртгэл).
+- Worker: `CAS_REQUIRED_KEYS`-д `workflow/cols/` угтвар нэмэгдсэн. ⚠ Байхгүй файл үүсэхдээ
+  эхний тамгагүй PUT → 428 → 404 уншилт → `X-If-None-Match: *`. Энэ нь Worker-ийн 404/428
+  хариунд ирдэг `X-Now`-оос «шинэ Worker мөн» гэдгийг сурдаг дээр тулгуурладаг.
+- Шалгалт: `scratchpad/t_colr2.js` (18+1 шалгуур — зэрэг бичилт, унасан бичилт, устгал,
+  шинэ файл үүсэх, хуучин Worker). ⚠ Хуурамч сервер бичихдээ ЖИНХЭНЭ Worker-ийн дүрмийг
+  (404/428-д X-Now) дуурай — эс бөгөөс байхгүй файл үүсэх замыг буруу «унасан» гэж харуулна.
+
 ## Найдвартай бичилт — зэрэг бичилтийн хамгаалалт (2026-09-11)
 Олон хүн нэг файлыг «уншаад → нэгтгээд → бичдэг» тул хамгаалалтгүй бичилт бусдын өөрчлөлтийг ЧИМЭЭГҮЙ дардаг (ажлын захиалгын батлалт ингэж алга болсон).
 - **Апп:** олон хүн өөрчилдөг файлыг ЗААВАЛ `r2CasJson(key, build)`-аар бич. `build(cur)` цэвэр функц — оролдлого бүрт ШИНЭ хуулбар дээр дахин дуудагдана; `null` → бичихгүй; `{quiet:true}` → pulse дэгдээхгүй. Одоо ингэж бичигддэг: reports/_all.json, tasks/all.json, notify/_all.json, workflow/_deleted.json, workflow/_open.json, sys/clients.json, sys/errors.json, push/subs.json, requests/_all.json, workorders/_all.json, meetings/_weekly.json, ack/*.json.
