@@ -13078,8 +13078,29 @@ function riskAppliesTo(r, emp) {
      ч дуудагддаг тул ТАНИЛЦАХ олонлогийг тодорхойлдог. Тэнд гар хүрвэл
      ХАБЭА-гийн ажилтны гарын үсэг 19-ийн оронд 577 эрсдлийн төлөө
      бичигдэж, өмнөх гарын үсгүүдтэй зөрчилдөнө. */
+/* Албаны удирдлагад ЯМАР албаны бүх эрсдлийг үзүүлж байгаа бэ (мэдэгдэлд) */
+var RISK_BOSS_VIEW = '';
 function risksForPage() {
   var mine = risksForView();      /* кэш сэргээх гаж нөлөөг нь ашиглана */
+  RISK_BOSS_VIEW = '';
+  /* ⭐ 2026-09-13 — АЛБАНЫ УДИРДЛАГА (дарга/ахлах/менежер/эрхлэгч) нь
+     ӨӨРИЙН албаныхаа БҮХ эрсдлийг харна. Өмнө нь зөвхөн «Туслах админ»
+     эрхтэй хүн харж чаддаг байсан тул албаны дарга нар албаныхаа эрсдлийг
+     хардаггүй байв (бодитоор баталсан). Хэрэглэгчийн шийдвэрээр тусдаа эрх
+     олгохын оронд АЛБАН ТУШААЛААР автоматаар — сургалтын биелэлт аль хэдийн
+     яг ингэж ажилладаг тул хоёр дэлгэц ижил дүрэмтэй боллоо.
+     ⚠ Энэ нь ЗӨВХӨН ХАРАГДАЦ. Гарын үсгийн олонлог (risksForView) хэвээр. */
+  try {
+    if (!isAdmin() && !isDeptHead() && !riskIsHseStaff() && !riskDirScope() && riskIsBoss()) {
+      var _me = null; try { _me = myEmp(); } catch (e) {}
+      var bd = String((_me && _me.dept) || (SESSION && SESSION.dept) || '').trim();
+      if (bd) {
+        var byDept = (DB.risks || []).filter(function (r) { return riskSameDept(r.dept, bd); });
+        /* Албандаа эрсдэл байхгүй бол хуучин хамрах хүрээгээ хэвээр үлдээнэ */
+        if (byDept.length > mine.length) { RISK_BOSS_VIEW = bd; return byDept; }
+      }
+    }
+  } catch (e) {}
   if (!riskIsHseStaff()) return mine;
   var all = (DB.risks || []).slice();
   return all.length ? all : mine;
@@ -15371,7 +15392,7 @@ function renderHazards() {
       '</div></div></div>';
   } else {
     /* Ажлын байрных нь үнэлгээ хийгдээгүй үед ТОДОРХОЙ хэлнэ */
-    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'dept') {
+    if (!riskPageAdmin() && !RISK_BOSS_VIEW && RISK_VIEW_SCOPE === 'dept') {
       H += '<div style="background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.65">' +
         '<b>ℹ️ Таны ажлын байрны («' + esc(myPos || '—') + '») эрсдэлийн үнэлгээ хараахан хийгдээгүй байна.</b><br>' +
         'Доор <b>' + esc(myDept) + '</b>-ны эрсдэлүүдийг харуулж байна — өөрт хамаарахыг уншиж, ' +
@@ -15379,11 +15400,19 @@ function renderHazards() {
     }
     /* ИТА-гийн ахлах инженерт ЯМАР хэсгийн эрсдэл харагдаж байгааг ил хэлнэ —
        эс бөгөөс «яагаад албаны бүх эрсдэл харагдахгүй байна» гэж эргэлзэнэ. */
-    if (!riskPageAdmin() && RISK_VIEW_SCOPE === 'unit') {
+    if (!riskPageAdmin() && !RISK_BOSS_VIEW && RISK_VIEW_SCOPE === 'unit') {
       var _u = ''; try { _u = ackUnitOf(myEmp()); } catch (e) {}
       H += '<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#1E40AF;line-height:1.65">' +
         '<b>ℹ️ Доор <b>' + esc(_u || 'таны хэсгийн') + '</b> хэсэгт хамаарах эрсдэлүүдийг харуулж байна.</b><br>' +
         esc(myDept) + ' нь хоёр хэсэгт хуваагддаг тул нөгөө хэсгийн эрсдэл энд ороогүй.</div>';
+    }
+    /* ⭐ 2026-09-13 — Албаны удирдлагад ЯАГААД албаны бүх эрсдэл харагдаж
+       байгааг ил хэлнэ. Эс бөгөөс «би яагаад бусдын эрсдлийг харав» гэж
+       эргэлзэнэ. Гарын үсэг нь хэвээр — зөвхөн өөрт хамаарахад нь зурна. */
+    if (!riskPageAdmin() && RISK_BOSS_VIEW) {
+      H += '<div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:12px;padding:13px 15px;margin-bottom:14px;font-size:13px;color:#166534;line-height:1.65">' +
+        '<b>ℹ️ Та албаны удирдлага тул «' + esc(RISK_BOSS_VIEW) + '»-ны БҮХ эрсдлийг харж байна.</b><br>' +
+        'Гарын үсэг зурах шаардлага өөрчлөгдөөгүй — урьдын адил зөвхөн өөрт тань хамаарах эрсдэлд зурна.</div>';
     }
     /* ⭐ ТАБ — эрсдэл, танилцалт, арга хэмжээ гурвыг нэг цэсэнд, тус тусдаа.
        Ингэснээр админы хуудас 3 дахин багасаж, хайх зүйл нь шууд олдоно. */
