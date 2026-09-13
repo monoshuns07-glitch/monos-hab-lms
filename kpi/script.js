@@ -18080,6 +18080,43 @@ function rfMonths(n) {
   }
   return out;
 }
+/* ══ СОНГОСОН ХУГАЦААНЫ САРУУД (2026-09-13) ══════════════════════════════
+   ⚠ ЯАГААД: `rfMonths(n)` нь өнөөдрөөс хойш ТОГТМОЛ n сар буцаадаг тул
+   хэрэглэгч 7 хоног сонгосон ч график 6 сар, Excel 12 сар харуулж,
+   «сонгосон өдрүүд биш, бүх хугацаа татагдаж байна» гэж харагдаж байв.
+   Одоо сонгосон муж/хоногоор л тооцно; «Бүгд» үед датаны бодит хүрээгээр. */
+function rfMonKeyDt(dt) { return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2); }
+function rfMonthsRange(a, b, cap) {
+  var out = [], cur = new Date(a.getFullYear(), a.getMonth(), 1),
+      end = new Date(b.getFullYear(), b.getMonth(), 1);
+  while (cur <= end && out.length < (cap || 24)) {
+    out.push(rfMonKeyDt(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return out.length ? out : [rfMonKeyDt(new Date())];
+}
+function rfMonthsOf(d, cap) {
+  try {
+    var rg = rfRange();
+    var from = rg.from || (RF_DASH.days ? rfDaysAgo(RF_DASH.days) : null);
+    var to = rg.to || new Date();
+    if (!from) {
+      /* «Бүгд» — хязгаар тавиагүй тул датаны бодит хамрах хүрээгээр */
+      var mn = null, mx = null;
+      ((d && d.rows) || []).forEach(function (r) {
+        var t = new Date((r && r.createdAt) || 0);
+        if (isNaN(t.getTime())) return;
+        if (!mn || t < mn) mn = t;
+        if (!mx || t > mx) mx = t;
+      });
+      if (!mn) return [rfMonKeyDt(new Date())];
+      from = mn; to = mx || new Date();
+    }
+    if (to < from) { var sw = from; from = to; to = sw; }
+    return rfMonthsRange(from, to, cap || 24);
+  } catch (e) { return rfMonths(6); }
+}
+
 var RF_MON = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
 function rfMonLabel(k) { return RF_MON[+String(k).slice(5, 7) - 1] + ' сар'; }
 
@@ -18178,7 +18215,8 @@ function rfFunnelHTML(d) {
    төрлийн сарын багана. Багана бүр ДАРАГДАНА → яг тэр сарын мэдээллүүд.
    ══════════════════════════════════════════════════════════════════════ */
 function rfKindHTML(d) {
-  var ms = rfMonths(6);
+  /* ⚠ Сонгосон хугацаанаас ГАДУУРХ сар харуулахгүй (2026-09-13) */
+  var ms = rfMonthsOf(d, 12);
   var sel = RF_DASH.kind || 'all';
   var kinds = RF_KIND_ORDER;
 
@@ -18308,7 +18346,8 @@ function rfUrgHTML(d) {
 
 /* ── ЧИГ ХАНДЛАГА (нөөц) — 2 цуврал, 2px шугам ── */
 function rfTrendHTML(d) {
-  var ms = rfMonths(6);
+  /* ⚠ Сонгосон хугацаанаас ГАДУУРХ сар харуулахгүй (2026-09-13) */
+  var ms = rfMonthsOf(d, 12);
   var A = ms.map(function (k) { return (d.byMonth[k] || {}).hazard || 0; });
   var B = ms.map(function (k) { return (d.byMonth[k] || {}).near_miss || 0; });
   var max = Math.max(1, Math.max.apply(null, A.concat(B)));
@@ -18843,7 +18882,7 @@ function rfExportXlsx(all) {
         return [RF_KIND[k].l, d.kind[k] || 0, pct(d.kind[k] || 0, d.n)];
       })));
       add('Сараар', [['Сар'].concat(RF_KIND_ORDER.map(function (k) { return RF_KIND[k].l; })).concat(['Нийт'])]
-        .concat(rfMonths(12).map(function (mk) {
+        .concat(rfMonthsOf(d, 24).map(function (mk) {
           var vs = RF_KIND_ORDER.map(function (k) { return (d.kindMonth[k + '|' + mk] || []).length; });
           return [rfMonLabel(mk)].concat(vs).concat([vs.reduce(function (a, b) { return a + b; }, 0)]);
         })));
