@@ -5661,6 +5661,13 @@ async function kpiR2Load() {
   return null;
 }
 
+/* ⚠⚠ 2026-09-13 — ДУТУУ ТОХИРГОО НИЙТЛЭХГҮЙ.
+   Ачаалалт 25 секундэд амжаагүй үед DB нь seedDB()/кэшийн хоосон хуулбар
+   болж үлддэг. Тэр хөтчөөс ямар нэг зүйл хадгалахад БҮТЭН тохиргоо (327
+   ажилтан, модулийн нээлт, эрх) хоосон хуулбараар ДАРАГДАЖ байсан.
+   Энэ тэмдэг үнэн байхад `kpi/state.json` рүү ОГТ бичихгүй. */
+var DB_LOAD_BROKEN = false;
+
 function saveDB() {
   try { localStorage.setItem(LSKEY, JSON.stringify(DB)); } catch (e) {}
   try { pulseBump('db'); } catch (e) {}     /* бусдын дэлгэц шууд шинэчлэгдэнэ */
@@ -5677,7 +5684,15 @@ function saveDB() {
     colR2Sync().catch(function (e) { saveErrorToast(e, 'бүртгэл'); });
     if (!isAdmin()) return;
     try { taskR2Sync(); repR2Sync(); } catch (e) {}
-    kpiR2Publish(mainDocPayload()).catch(function (e) { saveErrorToast(e, 'тохиргоо'); });
+    /* ⚠⚠ ТОХИРГООГ ЗӨВХӨН БҮРЭН ДАТАТАЙ ҮЕД нийтэлнэ. Ачаалалт таслагдсан
+       хөтөч 183 KB файлыг 558 байтаар дарсан тохиолдол гарсан (2026-09-13). */
+    var _mp = mainDocPayload();
+    if (!DB_LOAD_BROKEN && _mp && _mp.settings && (_mp.moduleReleases || _mp.trainingModules)) {
+      kpiR2Publish(_mp).catch(function (e) { saveErrorToast(e, 'тохиргоо'); });
+    } else {
+      try { console.warn('[kpi] тохиргоо ДУТУУ тул нийтлэхгүй — дата бүрэн ирээгүй'); } catch (e) {}
+      try { sysErrLog('kpi-state', 'дутуу тохиргоо нийтлэхийг зогсоов'); } catch (e) {}
+    }
   }, 700);
 }
 
@@ -36320,6 +36335,9 @@ async function init() {
     if (fresh === '__timeout__') {
       console.warn('[init] loadDB хугацаа хэтэрлээ — локал/эхлэлийн датагаар үргэлжилнэ');
       fresh = false;
+      /* ⚠ Энэ хөтчийн DB нь БҮРЭН БИШ. Тохиргоог нийтлэхийг хориглоно
+         (эс бөгөөс бүх ажилтны модуль/эрх алга болно). */
+      DB_LOAD_BROKEN = true;
       if (!DB || !DB.settings) {
         try { var _raw = localStorage.getItem(LSKEY); DB = _raw ? JSON.parse(_raw) : seedDB(); }
         catch (e2) { try { DB = seedDB(); } catch (e3) {} }
@@ -36354,6 +36372,8 @@ async function init() {
       loadDB().then(function () {
         try {
           dbCacheSave('хожуу');       /* таслагдсаны дараа ирсэн ч хадгална */
+          /* Дата бүрэн ирлээ — тохиргоо нийтлэх хориг тайлагдана */
+          if (DB && DB.settings && (DB.moduleReleases || DB.trainingModules)) DB_LOAD_BROKEN = false;
           if (applyRoleOverride()) {
             loadDB().then(function () {
               try { applyRole(); } catch (e2) {}
