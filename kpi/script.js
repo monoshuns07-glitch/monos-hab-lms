@@ -18853,6 +18853,116 @@ async function rfExportHTML(all) {
 }
 
 /* ── ② EXCEL ── */
+/* ── EXCEL ЗАГВАР: ЖИНХЭНЭ ГРАФИК + PIVOT + SLICER ─────────
+   Excel-ийн графикийг JS-ээр үүсгэх БОЛОМЖГҮЙ (ExcelJS ч, SheetJS ч
+   chart XML бичдэггүй). Тиймээс Excel дээр нэг удаа зохиосон загварыг
+   R2-оос татаж, дотор нь ЗӨВХӨН датаны хуудсыг сольж өгнө.
+   ⚠ Загварыг ExcelJS-ээр ачаалж хадгалж БОЛОХГҮЙ — график, pivot, slicer
+     бүгд устана. ZIP түвшинд хоёрхон хэсэг солих нь цорын ганц аюулгүй арга. */
+var RF_TPL_KEY = 'reports/templates/wk_dashboard.xlsx';
+/* ⚠⚠ Загварын толгойтой ЯГ ҮСЭГЧЛЭН таарах ёстой. Нэг үсэг зөрвөл pivot-ын
+   мөрийн талбар танигдахгүй бөгөөд БҮХ ГРАФИК ХООСОН гарна. */
+var RF_TPL_HEAD = ['Огноо', 'Сар', 'Төрөл', 'Алба', 'Хариуцах алба',
+                   'Яаралтай зэрэг', 'Төлөв', 'Зураг'];
+
+/* Дашбоардын мөрүүдийг загварын 8 багана болгоно */
+function rfTplRows(d) {
+  return (d.rows || []).slice().sort(function (a, b) {
+    return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+  }).map(function (r) {
+    var at = String(r.createdAt || '');
+    var kk = wkKindOf(r).k;
+    return [
+      at.slice(0, 10),
+      at.slice(0, 7),
+      (RF_KIND[kk] || {}).l || wkKindOf(r).ab || '',
+      String(r.dept || 'Тодорхойгүй'),
+      wkGate(r.wkGate).ab || '',
+      wkUrg(r),
+      (WK_STATUS[wkStatus(r)] || {}).l || '',
+      hasImg(r.photo) ? 'тийм' : 'үгүй'
+    ];
+  });
+}
+
+/* sheetData XML — тоог тоогоор, бусдыг inline string-ээр (sharedStrings-д
+   хүрэхгүйн тулд). Excel-ийн XML-д &, <, > гурвыг л халхлана. */
+function rfTplXml(rows) {
+  var esc2 = function (s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  };
+  var CL = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  var out = ['<sheetData><row r="1" spans="1:8">'];
+  RF_TPL_HEAD.forEach(function (h, i) {
+    out.push('<c r="' + CL[i] + '1" t="inlineStr"><is><t>' + esc2(h) + '</t></is></c>');
+  });
+  out.push('</row>');
+  rows.forEach(function (row, ri) {
+    var rn = ri + 2;
+    out.push('<row r="' + rn + '" spans="1:8">');
+    for (var c = 0; c < 8; c++) {
+      var v = row[c];
+      var ref = CL[c] + rn;
+      if (typeof v === 'number' && isFinite(v)) {
+        out.push('<c r="' + ref + '"><v>' + v + '</v></c>');
+      } else {
+        out.push('<c r="' + ref + '" t="inlineStr"><is><t>' + esc2(v) + '</t></is></c>');
+      }
+    }
+    out.push('</row>');
+  });
+  out.push('</sheetData>');
+  return out.join('');
+}
+
+/* Загварыг татаж, датаг сольж, татуулна */
+async function rfXlsTpl(all) {
+  var t = toast('График бүхий Excel бэлтгэж байна…', 'info');
+  var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  all = await rfWaitReports(all);
+  if (!all) { fin(); toast(RF_NO_DATA_MSG, 'error'); return; }
+  try {
+    var okZip = await new Promise(function (r) { riskLoadZip(r); });
+    if (!okZip) { fin(); toast('ZIP сан ачаалагдсангүй — интернэт шалгана уу', 'error'); return; }
+
+    try { await r2DlSign([RF_TPL_KEY]); } catch (e) {}
+    var resp = await fetch(r2DlUrl(RF_TPL_KEY), { cache: 'no-store' });
+    if (!resp.ok) {
+      fin();
+      toast('Загвар файл олдсонгүй (' + resp.status + '). ХАБЭА-д хандана уу.', 'error');
+      return;
+    }
+    var buf = await resp.arrayBuffer();
+    var zip = await JSZip.loadAsync(buf);
+
+    var d = rfDashData(all);
+    var rows = rfTplRows(d);
+    var ref = 'A1:H' + (rows.length + 1);
+
+    var sh = await zip.file('xl/worksheets/sheet1.xml').async('string');
+    sh = sh.replace(/<sheetData>[\s\S]*?<\/sheetData>/, rfTplXml(rows))
+           .replace(/<dimension ref="[^"]+"\s*\/>/, '<dimension ref="' + ref + '"/>');
+    zip.file('xl/worksheets/sheet1.xml', sh);
+
+    var tb = await zip.file('xl/tables/table1.xml').async('string');
+    tb = tb.replace(/ref="A1:H\d+"/g, 'ref="' + ref + '"');
+    zip.file('xl/tables/table1.xml', tb);
+
+    var blob = await zip.generateAsync({
+      type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    rfSaveBlob(blob, rfExportName('xlsx').replace('.xlsx', '_grafik.xlsx'));
+    fin();
+    toast('График бүхий Excel бэлэн (' + rows.length + ' мөр) — нээхэд график, ' +
+      'шүүлтүүр нь ажиллана', 'success');
+  } catch (e) {
+    fin(); console.error('[rf] tpl', e);
+    toast('Татаж чадсангүй: ' + (e.message || e), 'error');
+  }
+}
+
 /* ── EXCEL-ийн НҮҮР ХУУДАС: ДАШБОАРД ──────────────────────
    Excel нь JS-ээс жинхэнэ график авч чаддаггүй тул нүдэн доторх «█»
    баганан диаграм + өнгөт дүүргэлтээр дүрсэлнэ. Тоо нь хажуудаа хувьтайгаа
@@ -19234,6 +19344,12 @@ function rfFilterHTML(all) {
     RF_INK.p + ';border-radius:9px;padding:6px 12px;cursor:pointer;font-family:inherit;' +
     'font-size:12.5px;font-weight:700" title="График бүрийн эх дата тусдаа хуудсаар">' +
     '<i class="ti ti-file-spreadsheet"></i> Excel татах</button>' +
+    /* ⭐ 2026-09-13 — Excel-ийн ЖИНХЭНЭ график/Pivot/Slicer-тэй хувилбар.
+       Дээрх товчийг ОРЛОХГҮЙ: тэр нь 12 хуудаст дэлгэрэнгүй файл гаргасаар. */
+    '<button data-rf-dl="tpl" style="border:1.5px solid ' + RF_C.a + ';background:#fff;color:' +
+    RF_C.a + ';border-radius:9px;padding:6px 12px;cursor:pointer;font-family:inherit;' +
+    'font-size:12.5px;font-weight:700" title="Excel дотор жинхэнэ график, Pivot, шүүлтүүр ажиллана">' +
+    '<i class="ti ti-chart-pie"></i> Excel (график)</button>' +
     '</div>';
 }
 
@@ -24789,6 +24905,7 @@ function rfAfter(sec, admin, pending) {
     if (dl) {
       var kindDl = dl.getAttribute('data-rf-dl');
       if (kindDl === 'html') rfExportHTML(DB.reports || []);
+      else if (kindDl === 'tpl') rfXlsTpl(DB.reports || []);
       else rfExportXlsx(DB.reports || []);
       return;
     }
