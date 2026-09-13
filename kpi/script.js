@@ -9238,6 +9238,13 @@ function r2Catalog(meta) { return; }
 var R2_GRANT_WHY = '';
 async function r2Grant(key) {
   R2_GRANT_WHY = '';
+  /* ⚠⚠ 2026-09-13: ДАХИН ОРОЛДЛОГО. Өмнө нь энэ нь ГАНЦ fetch байсан тул
+     сүлжээ хором зуур доголдоход хэрэглэгчийн хадгалалт шууд уналаа
+     («Бичилт амжилтгүй … эрх — сүлжээ/алдаа» гэж бүртгэгдсэн). Уншилтын
+     зам 3 удаа оролддог атлаа бичих эрхийн зам оролддоггүй нь тэнцвэргүй.
+     Түр зуурын доголдолд (сүлжээ, 429, 5xx) 3 удаа, 400мс → 1200мс. */
+  var _tries = 3, _wait = [400, 1200];
+  for (var _a = 0; _a < _tries; _a++) {
   try {
     if (typeof fauth === 'undefined' || !fauth || !fauth.currentUser) {
       R2_GRANT_WHY = 'нэвтрээгүй (Firebase сешн алга)'; return null;
@@ -9254,6 +9261,11 @@ async function r2Grant(key) {
       if (r.status === 503 || (j && j.code === 'notConfigured')) {
         R2_GRANT_WHY = 'SIGN_SECRET тохируулаагүй (Vercel орчны хувьсагч)';
       }
+      /* Түр зуурын доголдол бол дахин оролдоно; эрхийн татгалзал бол шууд буцна */
+      if ((r.status === 429 || r.status >= 500) && _a < _tries - 1) {
+        await new Promise(function (res) { setTimeout(res, _wait[_a] || 1200); });
+        continue;
+      }
       return null;
     }
     /* ⚠ API нь НЭГ token биш, зам тус бүрээр tokens{} зураглал буцаадаг.
@@ -9268,8 +9280,15 @@ async function r2Grant(key) {
     return { token: tk, exp: j.exp };
   } catch (e) {
     R2_GRANT_WHY = 'сүлжээ/алдаа — ' + ((e && e.message) || e);
+    /* Сүлжээний тасалдал — дахин оролдоно */
+    if (_a < _tries - 1) {
+      await new Promise(function (res) { setTimeout(res, _wait[_a] || 1200); });
+      continue;
+    }
     return null;
   }
+  }
+  return null;
 }
 
 /* Хүсэлт бүрт эрхээ хавсаргана: шинэ гарын үсэг эсвэл хуучин түлхүүр */
