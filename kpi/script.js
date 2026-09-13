@@ -18694,9 +18694,35 @@ function rfScopeText() {
 }
 
 /* ── ① HTML ── */
-function rfExportHTML(all) {
+/* ── ТАТАХЫН ӨМНӨ ӨГӨГДӨЛ ИРЭХИЙГ ХҮЛЭЭНЭ ──────────────────
+   `DB.reports` нь R2-оос ачаалагдтал хэдэн секунд болдог. Тэр завсарт
+   татвал БҮХ УТГА 0-тэй файл гарч, хэрэглэгч «дашбоард ажиллахгүй байна»
+   гэж үзнэ (2026-09-13-нд бодитоор тохиолдсон).
+
+   Буцаах утга:
+     массив → татаж болно (мөр ирсэн, эсвэл анхнаасаа мөртэй байсан)
+     null   → өгөгдөл ирсэнгүй, ТАТАХГҮЙ
+
+   ⚠ Мөр байгаа атлаа ХУГАЦААНЫ ШҮҮЛТЭЭР 0 гарах нь ХЭВИЙН — түүнийг энд
+     зогсоохгүй (тэр нь `all.length` биш, `rfDashData` доторх шүүлт). */
+async function rfWaitReports(all) {
+  if ((all || []).length) return all;
+  for (var i = 0; i < 50; i++) {                 /* 50 × 300мс = 15 секунд */
+    await new Promise(function (r) { setTimeout(r, 300); });
+    var now = DB && DB.reports;
+    if (now && now.length) return now;
+  }
+  return null;
+}
+var RF_NO_DATA_MSG = 'Мэдээлэл хараахан ачаалагдаагүй байна. Хэдэн секунд ' +
+  'хүлээгээд дахин дарна уу — эс бөгөөс бүх тоо 0-тэй файл татагдана.';
+
+async function rfExportHTML(all) {
   var t = toast('HTML бэлтгэж байна…', 'info');
   var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  /* ⭐ 2026-09-13 — өгөгдөл ирээгүй байхад ХООСОН файл татахгүй */
+  all = await rfWaitReports(all);
+  if (!all) { fin(); toast(RF_NO_DATA_MSG, 'error'); return; }
   try {
     var keepKind = RF_DASH.kind;
     var views = {}, drills = {};
@@ -19015,9 +19041,13 @@ function rfXlsDash(wb, d) {
   return ws;
 }
 
-function rfExportXlsx(all) {
+async function rfExportXlsx(all) {
   var t = toast('Excel бэлтгэж байна…', 'info');
   var fin = function () { try { if (t && t.remove) t.remove(); } catch (e) {} };
+  /* ⭐ 2026-09-13 — өгөгдөл ирээгүй байхад ХООСОН файл татахгүй.
+     Хэрэглэгчийн гомдол: «Дашбоард ажиллахгүй байна» = бүх тоо 0 байсан. */
+  all = await rfWaitReports(all);
+  if (!all) { fin(); toast(RF_NO_DATA_MSG, 'error'); return; }
   /* ⚠ SheetJS-ийн нээлттэй хувилбар нүдний ЗАСВАР (өнгө, тод үсэг,
      нэгтгэл) бичдэггүй тул дашбоард хийх боломжгүй. ExcelJS нь аппад
      аль хэдийн ачаалагддаг (ажлын захиалгын маягт) бөгөөд бүгдийг дэмжинэ. */
