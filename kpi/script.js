@@ -5655,8 +5655,19 @@ async function kpiR2Publish(payload) {
 async function kpiR2Load() {
   try {
     var p = await riskR2GetJson(KPI_R2_FILE);
-    /* Зөв тохиргоотой байж л хүчинтэй гэж үзнэ */
-    if (p && (p.settings || p.moduleReleases || p.trainingModules)) return p;
+    /* ⚠⚠ 2026-09-13 — БҮТЭН эсэхийг шалгана.
+       Өмнө нь «settings байвал хүчинтэй» гэдэг байсан тул ачаалалт таслагдсан
+       хөтчийн бичсэн ХООСОН тохиргоо (зөвхөн seedDB-ийн settings, 558 байт)
+       хүчинтэй гэж тооцогдож, 183 KB файлыг орлож, бүх ажилтанд модулийн
+       нээлт, эрх, явц алга болсон. Дутуу бол энд `null` буцаана — loadDB нь
+       Firestore дэх нөөц хуулбар руу шилжиж, бүтэн дата ирнэ. Дараагийн
+       хадгалалтаар R2 руу эргэж нийтлэгдэж, систем ӨӨРӨӨ ЭДГЭРНЭ. */
+    var full = !!(p && p.settings && (p.moduleReleases || p.trainingModules));
+    if (full) return p;
+    if (p) {
+      try { console.warn('[kpi] R2 тохиргоо ДУТУУ — нөөц эх сурвалж руу шилжинэ: ' + Object.keys(p).join(',')); } catch (e) {}
+      try { sysErrLog('kpi-state-partial', 'R2 тохиргоо дутуу: ' + Object.keys(p).join(',').slice(0, 90)); } catch (e) {}
+    }
   } catch (e) {}
   return null;
 }
