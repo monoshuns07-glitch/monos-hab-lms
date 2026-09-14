@@ -18898,7 +18898,15 @@ function rfTplRows(d) {
               : stFix[id] ? 'Засварт орсон'
               : stVer[id] ? 'Баталгаажсан' : 'Мэдээлсэн';
     var doer = '';
-    try { doer = wkTeamOf(r).map(function (p) { return p.name || ''; }).filter(Boolean).join(', '); } catch (e) {}
+    /* ⚠ Нэрийг ТҮҮХИЙГЭЭР нь бүү ав. Нэг хүн «Д. Отгонбаатар» ба
+       «Дагварэнцэн Отгонбаатар» гэсэн хоёр бичиглэлээр хадгалагдсан байсан
+       тул шүүлтүүрт хоёр өөр хүн мэт харагдаж, нэрээр нь шүүхэд ажлынх нь
+       талыг алддаг байв. wkPersonName нь uid-аар бүртгэлээс сэргээж, олдохгүй
+       бол ч нэг хэлбэрт оруулна. */
+    try {
+      doer = wkTeamOf(r).map(function (p) { return wkPersonName(p.uid, p.name) || ''; })
+               .filter(Boolean).join(', ');
+    } catch (e) {}
 
     return [
       at.slice(0, 10),
@@ -18912,7 +18920,7 @@ function rfTplRows(d) {
       (WK_STATUS[wkStatus(r)] || {}).l || '',
       sla,
       stage,
-      String(r.reporterFull || r.reporterName || 'Тодорхойгүй'),
+      wkPersonName(r.reporterUid, r.reporterFull || r.reporterName) || 'Тодорхойгүй',
       doer || '—',
       hasImg(r.photo) ? 'тийм' : 'үгүй',
       String(r.desc || '').trim(),
