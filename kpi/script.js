@@ -21648,7 +21648,13 @@ function wkCanAssign(r) {
     var pos = '';
     try { var m2 = myEmp(); if (m2) pos = String(m2.pos || m2.role || ''); } catch (e) {}
     if (!pos && SESSION) pos = String(SESSION.pos || '');
-    return /дарга|ахлах|менежер/i.test(pos);
+    /* ⭐ 2026-09-14 — ИТА-гийн инженер БҮР хүн томилно (wkIsItaEng).
+       Өмнө нь албан тушаалд «дарга/ахлах/менежер» гэсэн үг байхыг шаарддаг
+       байсан тул ИТА-гийн 16 хүний ЗӨВХӨН 2 нь (ахлах инженер) томилдог,
+       ээлжийн инженер шөнө дунд хүн томилж ЧАДАХГҮЙ байв.
+       ⚠ Гарцын шалгалт (wkGateHas) дээр хэвээр — ИТА-гийн инженер ХАБЭА руу
+         ирсэн ажилд хүн томилохгүй, зөвхөн ИТА-д (эсвэл хоёуланд) ирсэнд. */
+    return /дарга|ахлах|менежер/i.test(pos) || wkIsItaEng();
   } catch (e) { return false; }
 }
 /* ══ ТОМИЛОГДСОН БАГ (2026-09-10) ══════════════════════════════════
@@ -21758,25 +21764,52 @@ function wkGateStaff(r) {
   return res;
 }
 
-/* ══ ХҮН ТОМИЛОХ (2026-09-10 шинэчлэл) ══════════════════════════════
+/* ══ ХҮН ТОМИЛОХ (2026-09-10, 2026-09-14-нд өргөтгөв) ════════════════
    ⭐ Хэрэглэгчийн хүсэлт: Үйлдвэрийн захирал зөвхөн ИТА, ХАБЭА-ны хүмүүсээс
    томилж чаддаг байв. Одоо:
      · захирал / админ — НИЙТ ажилтнаас сонгоно (wkAssignPool)
+     · ИТА-гийн инженер — нийт ажилтнаас, ГЭХДЭЭ захирал, ТУЗ-аас бусад
      · албаны дарга, ахлах — өмнөх шигээ өөрийн албаны ажилтнаас
      · НЭГ биш, ХЭДЭН Ч хүн (wkTeam). Эхнийх нь үндсэн гүйцэтгэгч
      · Томилогдсон ажилд цонх одоогийн багийг сонгосон байдлаар нээгдэж,
        хүн нэмэх / хасах, эсвэл томилолтыг бүхэлд нь ЦУЦЛАХ боломжтой. */
+/* ИТА-гийн инженер мөн үү — албан тушаалд «инженер» гэсэн үгтэй ИТА-гийн ажилтан.
+   ⚠ Албан тушаалаар таних нь САНААТАЙ (2026-09-14, хэрэглэгчийн шийдвэр):
+     сантехникч, цахилгаанчин бол даалгавар ХҮЛЭЭЖ АВДАГ хүмүүс — тэдэнд
+     томилох эрх өгөхгүй. Шинэ инженер ажилд орвол эрх нь өөрөө очно.
+   ⚠ wkMyGate() нь SESSION.dept-ээс ч уншдаг тул ажилтны жагсаалт
+     ачаалагдаагүй байхад ч зөв ажиллана. */
+function wkIsItaEng() {
+  try {
+    if (wkMyGate() !== 'ita') return false;
+    var pos = '';
+    try { var m = myEmp(); if (m) pos = String(m.pos || m.role || ''); } catch (e) {}
+    if (!pos && SESSION) pos = String(SESSION.pos || '');
+    return /инженер/i.test(pos);
+  } catch (e) { return false; }
+}
+/* Дээд удирдлага — ИТА-гийн инженерийн сонголтод ГАРГАХГҮЙ (2026-09-14).
+   Ээлжийн инженер гүйцэтгэх захиралд ажлын даалгавар өгвөл эвгүй. Харин
+   захирал, админ өөрсдөө БҮХ ажилтныг хэвээр харна. */
+function wkIsTopBrass(e) {
+  if (!e) return false;
+  return /захирал/i.test(String(e.pos || e.role || '')) || /ТУЗ/.test(String(e.dept || ''));
+}
 function wkAssignWide() {
-  try { return !!(isAdmin() || wkIsDirector()); } catch (e) { return false; }
+  try { return !!(isAdmin() || wkIsDirector() || wkIsItaEng()); } catch (e) { return false; }
 }
 function wkAssignPool(r) {
   if (!wkAssignWide()) return wkGateStaff(r);
+  /* Захирал, админ — үнэхээр БҮГД. ИТА-гийн инженер — захирал, ТУЗ-аас бусад. */
+  var noTop = true;
+  try { noTop = !(isAdmin() || wkIsDirector()); } catch (e) {}
   var res = [], seen = {};
   try {
     empAll().forEach(function (e) {
       if (!e || !e.uid || seen[e.uid]) return;
       if (e.onLeave || e.isActive === false) return;
       if (wkIsSelf(r, e.uid)) return;             /* мэдээлсэн хүнийг өөрийг нь томилохгүй */
+      if (noTop && wkIsTopBrass(e)) return;
       seen[e.uid] = 1;
       res.push(e);
     });
@@ -21805,6 +21838,33 @@ function wkAssignModal(id) {
   staff.forEach(function (e) { byEmp[e.uid] = e; });
   var pick = cur.map(function (p) { return p.uid; });
 
+  /* ══ АЛБААР БҮЛЭГЛЭХ (2026-09-14) ══════════════════════════════════
+     254 нэрийг нэг урт жагсаалтад тавихад ээлжийн инженер шөнө дунд хэрэгтэй
+     хүнээ олохгүй. Тиймээс: дээр нь албадын товчлол (тоотой шүүлтүүр), доор нь
+     албаар бүлэглэсэн жагсаалт. Хайлт бичихэд алба үл хамааран БҮГДЭЭС хайна.
+     ⚠ Нарийн жагсаалт (ХАБЭА — 16-22 хүн) ХЭВЭЭР, огт бүлэглэхгүй. */
+  var _same = function (a, b) {
+    try { return riskSameDept(a, b); } catch (e) { return String(a || '') === String(b || ''); }
+  };
+  var groups = [], _gi = {};
+  if (wide) {
+    staff.forEach(function (e) {
+      var d = String(e.dept || 'Бусад');
+      if (_gi[d] == null) { _gi[d] = groups.length; groups.push({ dept: d, rows: [] }); }
+      groups[_gi[d]].rows.push(e);
+    });
+    var _myDept = '';
+    try { var _m = myEmp(); _myDept = (_m && _m.dept) || (SESSION && SESSION.dept) || ''; } catch (e) {}
+    /* Эрэмбэ: ① өөрийн алба ② ажил хийгдэх алба ③ бусад нь томоороо */
+    var _rank = function (g) {
+      if (_myDept && _same(g.dept, _myDept)) return 0;
+      if (r.dept && _same(g.dept, r.dept)) return 1;
+      return 2;
+    };
+    groups.sort(function (a, b) { return (_rank(a) - _rank(b)) || (b.rows.length - a.rows.length); });
+  }
+  var grouped = wide && groups.length > 1;
+
   var node = elc('div', '');
   node.innerHTML =
     '<div style="font-size:13px;color:#64748B;line-height:1.6;margin-bottom:10px">' +
@@ -21815,18 +21875,36 @@ function wkAssignModal(id) {
         'ажил «Хийгдэж байна» төлөвт шилжинэ.') +
     (wide ? ' <b style="color:#4F46E5">Нийт ажилтнаас сонгоно.</b>' : '') + '</div>' +
     '<div id="wkAsSel" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>' +
+    (grouped
+      ? '<div id="wkAsDepts" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:9px">' +
+        [{ dept: '', rows: staff }].concat(groups).map(function (g) {
+          return '<button type="button" data-wk-as-dept="' + esc(g.dept) + '" ' +
+            'style="flex:0 0 auto;border:1.5px solid #E2E8F0;background:#fff;color:#475569;border-radius:999px;' +
+            'padding:7px 12px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">' +
+            esc(g.dept ? riskDeptShort(g.dept) : 'Бүгд') +
+            ' <span style="opacity:.6;font-weight:600">' + g.rows.length + '</span></button>';
+        }).join('') + '</div>'
+      : '') +
     '<input id="wkAsQ" placeholder="' + (wide ? 'Нэр, албан тушаал, албаар хайх…' : 'Нэрээр хайх…') + '" ' +
     'style="width:100%;padding:11px 13px;border:1.5px solid #E2E8F0;border-radius:11px;font-family:inherit;' +
     'font-size:14px;margin-bottom:10px;box-sizing:border-box">' +
     '<div id="wkAsList" style="max-height:min(46vh,360px);overflow:auto;border:1px solid #E2E8F0;border-radius:11px">' +
-    staff.map(function (e) {
-      var sub = [e.pos || e.role || '', wide ? (e.dept || '') : ''].filter(Boolean).join(' · ');
-      return '<label data-wk-as-row="' + esc(e.uid) + '" data-q="' + esc(String((e.name || '') + ' ' + sub).toLowerCase()) + '" ' +
-        'style="display:flex;align-items:center;gap:11px;padding:10px 13px;border-bottom:1px solid #F1F5F9;cursor:pointer">' +
-        '<input type="checkbox" data-wk-as-pick="' + esc(e.uid) + '" style="width:18px;height:18px;flex-shrink:0;accent-color:#4F46E5">' +
-        '<span style="min-width:0;flex:1"><span style="display:block;font-weight:700;font-size:13.5px;color:#0F1117">' +
-        esc(e.name || '') + '</span><span style="display:block;font-size:11.5px;color:#94A3B8;overflow:hidden;' +
-        'text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</span></span></label>';
+    (grouped ? groups : [{ dept: '', rows: staff }]).map(function (g) {
+      return (grouped
+        ? '<div data-wk-as-h="' + esc(g.dept) + '" style="position:sticky;top:0;z-index:1;background:#F8FAFC;' +
+          'border-bottom:1px solid #E2E8F0;padding:6px 13px;font-size:10.5px;font-weight:800;color:#64748B;' +
+          'letter-spacing:.04em;text-transform:uppercase">' + esc(g.dept) + ' · ' + g.rows.length + '</div>'
+        : '') +
+      g.rows.map(function (e) {
+        var sub = String(e.pos || e.role || '');
+        return '<label data-wk-as-row="' + esc(e.uid) + '" data-wk-as-d="' + esc(String(e.dept || 'Бусад')) + '" ' +
+          'data-q="' + esc(String((e.name || '') + ' ' + sub + ' ' + (e.dept || '')).toLowerCase()) + '" ' +
+          'style="display:flex;align-items:center;gap:11px;padding:10px 13px;border-bottom:1px solid #F1F5F9;cursor:pointer">' +
+          '<input type="checkbox" data-wk-as-pick="' + esc(e.uid) + '" style="width:18px;height:18px;flex-shrink:0;accent-color:#4F46E5">' +
+          '<span style="min-width:0;flex:1"><span style="display:block;font-weight:700;font-size:13.5px;color:#0F1117">' +
+          esc(e.name || '') + '</span><span style="display:block;font-size:11.5px;color:#94A3B8;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap">' + esc(sub) + '</span></span></label>';
+      }).join('');
     }).join('') + '</div>' +
     '<div id="wkAsEmpty" style="display:none;padding:12px;text-align:center;color:#94A3B8;font-size:13px">Олдсонгүй</div>' +
     '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:12px">' +
@@ -21854,15 +21932,34 @@ function wkAssignModal(id) {
       : 'Хүн сонгоно уу');
   };
   var q = node.querySelector('#wkAsQ');
-  q.addEventListener('input', function () {
-    var v = (q.value || '').toLowerCase().trim(), shown = 0;
+  var selDept = '';
+  /* ⚠ Хайлт бичсэн үед АЛБЫН шүүлт үл ойшоогдоно — нэрээ мэдэж байгаа хүн
+     хаанаас ч олно. Хайлт хоосон үед л сонгосон алба үлдээнэ. */
+  var applyFilter = function () {
+    var v = (q.value || '').toLowerCase().trim(), shown = 0, per = {};
     node.querySelectorAll('[data-wk-as-row]').forEach(function (row) {
-      var ok = !v || (row.getAttribute('data-q') || '').indexOf(v) >= 0;
+      var d = row.getAttribute('data-wk-as-d') || '';
+      var ok = (!v || (row.getAttribute('data-q') || '').indexOf(v) >= 0) &&
+               (!!v || !selDept || d === selDept);
       row.style.display = ok ? '' : 'none';
-      if (ok) shown++;
+      if (ok) { per[d] = (per[d] || 0) + 1; shown++; }
     });
-    node.querySelector('#wkAsEmpty').style.display = shown ? 'none' : 'block';
-  });
+    /* Бүлгийн толгой — доор нь харагдах мөр үлдээгүй бол нуугдана */
+    node.querySelectorAll('[data-wk-as-h]').forEach(function (h) {
+      h.style.display = per[h.getAttribute('data-wk-as-h')] ? '' : 'none';
+    });
+    var em = node.querySelector('#wkAsEmpty');
+    if (em) em.style.display = shown ? 'none' : 'block';
+  };
+  var paintChips = function () {
+    node.querySelectorAll('[data-wk-as-dept]').forEach(function (c) {
+      var on = (c.getAttribute('data-wk-as-dept') || '') === selDept;
+      c.style.background = on ? '#4F46E5' : '#fff';
+      c.style.color = on ? '#fff' : '#475569';
+      c.style.borderColor = on ? '#4F46E5' : '#E2E8F0';
+    });
+  };
+  q.addEventListener('input', applyFilter);
   node.addEventListener('change', function (ev) {
     var cb = ev.target && ev.target.closest ? ev.target.closest('[data-wk-as-pick]') : null;
     if (!cb) return;
@@ -21872,6 +21969,16 @@ function wkAssignModal(id) {
     sync();
   });
   node.addEventListener('click', function (ev) {
+    /* Албын товчлол — зөвхөн тэр албаны хүмүүс үлдэнэ (дахин дарвал бүгд) */
+    var dc = ev.target.closest ? ev.target.closest('[data-wk-as-dept]') : null;
+    if (dc) {
+      ev.preventDefault();
+      var dd = dc.getAttribute('data-wk-as-dept') || '';
+      selDept = (selDept === dd) ? '' : dd;
+      if (q) q.value = '';
+      paintChips(); applyFilter();
+      return;
+    }
     var x = ev.target.closest('[data-wk-as-x]');
     if (x) {
       ev.preventDefault();
@@ -21887,6 +21994,8 @@ function wkAssignModal(id) {
     wkAssignSave(id, emps, _isRe);
   });
   sync();
+  paintChips();
+  applyFilter();
   buildModal(_isRe ? 'Томилолт өөрчлөх' : 'Хүн томилох', node, { width: 'min(560px, 96vw)' });
 }
 
