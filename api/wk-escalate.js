@@ -227,6 +227,13 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, rows: 0, note: 'толь хоосон — хөтөч хараахан бичээгүй' });
   }
 
+  /* ⚠ NAG_HOURS бол гүйцэтгэгч рүү давтан сануулах зай. 6 цаг =
+     нэг өдөрт дээд тал нь 3 удаа. Цагийг багасгавал товлогч хэд ч
+     удаа дуудсан илүү явахгүй. */
+  const NAG_HOURS = Number(process.env.WK_NAG_HOURS || 6);
+  /* Батлах нөөц зам нээгдэх хугацаа — клиенттэй ижил байх ёстой. */
+  const ACCEPT_FALLBACK_H = Number(process.env.WK_ACCEPT_FALLBACK_H || 48);
+
   const now = Date.now();
   const jobs = [];
   for (const r of rows) {
@@ -252,6 +259,22 @@ module.exports = async function handler(req, res) {
     if (r.accept === 'pending' && r.execAt && !e.accept && r.reporter && r.reporter.uid) {
       const waited = (now - new Date(r.execAt).getTime()) / 3600000;
       if (waited >= 24) jobs.push({ r: r, k: 'accept', waited: waited });
+    }
+    /* ⭐ ③ 48 цаг болтол батлагдаагүй бол АЛБАНЫ ДАРГА нарт мэдэгдэнэ —
+       тэд ч баталж чадна (мэдээлсэн хүний эрх хэвээр). Мэдээлсэн хүн
+       амралттай, ажлаас гарсан бол ажил мөнхөд дүүжлэгдэхээс сэргийлнэ. */
+    if (r.accept === 'pending' && r.execAt && !e.accept2 && (r.leads || []).length) {
+      const w2 = (now - new Date(r.execAt).getTime()) / 3600000;
+      if (w2 >= ACCEPT_FALLBACK_H) jobs.push({ r: r, k: 'accept2', waited: w2 });
+    }
+    /* ⭐ ① ХУГАЦАА ХЭТЭРСЭН ч ГҮЙЦЭТГЭЭГҮЙ — ажлыг барьж байгаа хүнд
+       ДАВТАН сануулна. due/late2 нь нэг удаа дарга, захирал руу явдаг
+       тул гүйцэтгэгч рүү шахалт огт үлддэггүй байв.
+       ⚠ esc.nag-ийг ДАРЖ бичнэ (бусад нь нэг удаагийн тэмдэг). */
+    if (claimed && !r.execAt && pct >= 1) {
+      const lastNag = e.nag ? new Date(e.nag).getTime() : 0;
+      if (!lastNag || (now - lastNag) >= NAG_HOURS * 3600000)
+        jobs.push({ r: r, k: 'nag' });
     }
   }
   if (!jobs.length) {
@@ -281,6 +304,19 @@ module.exports = async function handler(req, res) {
       title = '\u2705 Ажил гүйцэтгэгдсэн — та баталж өгнө үү (' +
         hoursText(j.waited) + ' хүлээж байна)';
       r.esc.accept = stamp;
+    } else if (j.k === 'nag') {
+      /* Томилогдсон бүх хүнд; баггүй бол хүлээж авсан хүнд */
+      to = (Array.isArray(r.team) && r.team.length) ? r.team.slice()
+         : (r.claimer ? [r.claimer] : []);
+      const over = Math.max(0, (now - new Date(r.createdAt).getTime()) / 3600000
+                              - Number(r.hours || 0));
+      title = '🔴 ХУГАЦАА ХЭТЭРСЭН — ' + hoursText(over) +
+        ' хоцорлоо. Гүйцэтгээд «Гүйцэтгэсэн» гэж тэмдэглэнэ үү';
+      r.esc.nag = stamp;
+    } else if (j.k === 'accept2') {
+      to = (r.leads || []).slice();
+      title = '⏳ ' + hoursText(j.waited) + ' батлагдаагүй байна — та ч баталж болно';
+      r.esc.accept2 = stamp;
     } else if (j.k === 'assign') {
       const lead1 = (r.leads || [])[0];
       r.autoAssign = { uid: lead1.uid, name: lead1.name || '', at: stamp };
@@ -308,7 +344,7 @@ module.exports = async function handler(req, res) {
     (to || []).forEach(function (x) { if (x && x.uid && uids.indexOf(x.uid) < 0) uids.push(x.uid); });
     /* ⭐ Хугацаа дууссан ба 2 дахин хэтэрсэн шат = ЯАРАЛТАЙ.
        Утсан дээр дартал арилахгүй, урт чичиргээтэй банер болж гарна. */
-    var _urgent = (j.k === 'due' || j.k === 'late2');
+    var _urgent = (j.k === 'due' || j.k === 'late2' || j.k === 'nag');
     if (uids.length) out.push({ uids: uids, title: title, body: body, id: r.id, k: j.k, urgent: _urgent });
   }
 

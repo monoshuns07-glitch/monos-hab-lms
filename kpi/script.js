@@ -17954,6 +17954,11 @@ function rfDashData(all) {
     onTime: [], late: [], waiting: [], unreliable: [],
     hasPhoto: [], noPhoto: [],
     claimHrs: [], doneHrs: [],
+    /* ⭐ v573 ④ — БАТЛАХ хугацаа ТУСДАА. Гүйцэтгэгчийг батлагчийн
+       саатлын төлөө буруутгахгүйн тулд хоёр хугацааг хольж хэмжихээ
+       больсон. apprHold нь «хэн барьж байна»-г нэрээр хөтөлнө. */
+    apprFast: [], apprSlow: [], apprWait: [], apprStuck: [],
+    apprHrs: [], apprHold: {},
     stage: { rep: [], ver: [], fix: [], done: [] },
     slowest: null, avgVerifyH: null
   };
@@ -18057,6 +18062,35 @@ function rfDashData(all) {
     if (!wkTrustLow(r) && r.wkClaimBy && r.wkClaimBy.at) {
       var ch = (new Date(r.wkClaimBy.at).getTime() - born) / 3600000;
       if (ch >= 0 && ch < 24 * 365) d.claimHrs.push(ch);
+    }
+
+    /* ── ⭐ v573 ④ БАТЛАХ хугацаа: гүйцэтгэснээс → батлагдах хүртэл ──
+       Зөвхөн ГҮЙЦЭТГЭГДСЭН ажил тоологдоно. Хийгдээгүй ажлыг батлах гэж
+       байхгүй тул энд оруулбал батлагчийг худал буруутгана. */
+    var _exAt = wkDoneTime(r);
+    if (_exAt) {
+      var exT = new Date(_exAt).getTime();
+      var _ab = r.wkAcceptBy || {};
+      var acT = _ab.at ? new Date(_ab.at).getTime() : NaN;
+      if (!isNaN(exT)) {
+        if (!isNaN(acT)) {
+          var ah = (acT - exT) / 3600000;
+          /* ⚠ Дундажид итгэл багатай бичлэгийг оруулахгүй — ретроспектив
+             бүртгэл секундын дотор «батлагдсан» болж дундажийг гуйвуулна.
+             Ангилалд нь ҮЛДЭЭНЭ — нуухгүй, зөвхөн дундажаас хасна. */
+          if (!wkTrustLow(r) && ah >= 0 && ah < 24 * 365) d.apprHrs.push(ah);
+          (ah >= RF_APPR_SLOW_H ? d.apprSlow : d.apprFast).push(r);
+        } else if (r.wkAccept !== 'done' && r.wkAccept !== 'reject' &&
+                   r.status !== 'verified') {
+          var wh = (Date.now() - exT) / 3600000;
+          (wh >= RF_APPR_STUCK_H ? d.apprStuck : d.apprWait).push(r);
+          /* Батлах үүрэг МЭДЭЭЛСЭН хүнд байдаг — түүний нэрээр хөтөлнө */
+          var hn = String(r.reporterFull || r.reporterName || '').trim() ||
+                   'Тодорхойгүй';
+          var hb = d.apprHold[hn] || (d.apprHold[hn] = { n: 0, max: 0, rows: [] });
+          hb.n++; hb.rows.push(r); if (wh > hb.max) hb.max = wh;
+        }
+      }
     }
 
     if (r.verifiedAt) {
@@ -18541,7 +18575,90 @@ function rfSlaHTML(d) {
     '<span style="flex:1;min-width:118px"><span style="display:block;font-size:11px;color:' + RF_INK.m +
     '">Гүйцэтгэх хүртэл</span><span style="font-size:16px;font-weight:800;color:' + RF_INK.p + '">' +
     rfHrsTxt(rfAvg(d.doneHrs)) + '</span></span></div>';
-  return rfCard('Хугацааны биелэлт', 'Яаралтай зэргээс тооцсон хугацаанд багтсан эсэх', bar + list + speed);
+  /* ⭐ v573 ④ — гарчигт «гүйцэтгэх» гэж тодруулав. Энэ карт ЗӨВХӨН ажил
+     хийгдэх хүртэлх хугацааг хэмжинэ; батлах хугацаа дараагийн картад. */
+  return rfCard('Гүйцэтгэх хугацаа',
+    'Мэдээлснээс ажил хийгдэх хүртэл · батлах хугацаа тусдаа картад',
+    bar + list + speed);
+}
+
+/* ══ ⭐ v573 ④ БАТЛАХ ХУГАЦАА ══ гүйцэтгэснээс батлагдах хүртэл.
+   ЯАГААД ТУСАД НЬ: нэг л «хугацааны биелэлт» байхад батлагч хэдэн хоног
+   чимээгүй суувал ажил «хугацаа хэтэрсэн» болж, буруу нь ГҮЙЦЭТГЭГЧИД
+   бичигддэг байв. Одоо батлагч ч өөрийн үзүүлэлттэй болно. */
+var RF_APPR_SLOW_H = 24;    /* эндээс хойш «удаан баталсан» */
+var RF_APPR_STUCK_H = 48;   /* ③-ын нөөц зам нээгдэх цэгтэй ИЖИЛ байх ёстой */
+/* Хуваалтын зурвас + жагсаалт — картуудад ижил хэлбэр */
+function rfSegHTML(seg, tot) {
+  var bar = '<div style="display:flex;gap:2px;height:22px;margin-bottom:11px">' +
+    seg.filter(function (x) { return x.v; }).map(function (x) {
+      return '<div' + rfHit(rfDrill(x.l, x.s, x.rows), x.l + ': ' + x.v) +
+        'style="flex:' + x.v + ';background:linear-gradient(180deg,' + x.c + 'E6,' + x.c +
+        ');border-radius:6px;cursor:pointer"></div>';
+    }).join('') + '</div>';
+  var list = seg.map(function (x) {
+    var pct = Math.round((x.v / tot) * 100);
+    return '<div' + rfHit(rfDrill(x.l, x.s, x.rows), x.l + ': ' + x.v) +
+      'class="rf-hit" style="display:flex;align-items:center;gap:9px;padding:4px 5px;cursor:pointer;' +
+      'border-radius:9px;margin-left:-5px;margin-right:-5px">' +
+      '<span style="width:11px;height:11px;border-radius:3px;background:' + x.c + ';flex-shrink:0"></span>' +
+      '<span style="font-size:12.5px;color:' + RF_INK.s + '">' + x.i + ' ' + esc(x.l) + '</span>' +
+      '<span style="margin-left:auto;font-size:12.5px;font-weight:800;color:' + RF_INK.p +
+      ';font-variant-numeric:tabular-nums">' + x.v + '</span>' +
+      '<span style="font-size:11.5px;color:' + RF_INK.m + ';width:34px;text-align:right;' +
+      'font-variant-numeric:tabular-nums">' + pct + '%</span></div>';
+  }).join('');
+  return bar + list;
+}
+function rfApprHTML(d) {
+  var seg = [
+    { l: 'Хурдан баталсан', v: d.apprFast.length, c: '#0ca30c', i: '✔', rows: d.apprFast,
+      s: 'Ажил хийгдсэнээс хойш ' + RF_APPR_SLOW_H + ' цагийн дотор баталсан' },
+    { l: 'Удаан баталсан', v: d.apprSlow.length, c: '#E9A100', i: '⏳', rows: d.apprSlow,
+      s: 'Баталсан боловч ' + RF_APPR_SLOW_H + ' цагаас хожимдсон' },
+    { l: 'Батлахыг хүлээж буй', v: d.apprWait.length, c: '#94A3B8', i: '·', rows: d.apprWait,
+      s: 'Ажил хийгдсэн, батлагдаагүй — хугацаа нь хараахан хэтрээгүй' },
+    { l: 'ГАЦСАН', v: d.apprStuck.length, c: '#C81E3A', i: '🔴', rows: d.apprStuck,
+      s: RF_APPR_STUCK_H + ' цагаас хэтэрсэн — ХАБЭА, админ, албаны дарга ч баталж чадна' }
+  ];
+  var tot = seg.reduce(function (s, x) { return s + x.v; }, 0);
+  if (!tot) return '';
+  /* Хэн барьж байна — хамгийн удсанаар нь эхэлж. Нэр нь буруутгах бус,
+     хэнд туслах ёстойг харуулах зорилготой. */
+  var hold = Object.keys(d.apprHold).map(function (k) {
+    return { k: k, n: d.apprHold[k].n, max: d.apprHold[k].max, rows: d.apprHold[k].rows };
+  }).sort(function (a, b) { return b.max - a.max; }).slice(0, 5);
+  var who = !hold.length ? '' :
+    '<div style="margin-top:11px;padding-top:10px;border-top:1px solid #F1F5F9">' +
+    '<div style="font-size:11px;color:' + RF_INK.m + ';margin-bottom:5px">' +
+    'Батлахыг хүлээлгэж буй хүмүүс — хамгийн удсанаар</div>' +
+    hold.map(function (x) {
+      var red = x.max >= RF_APPR_STUCK_H;
+      return '<div' + rfHit(rfDrill('Батлахыг хүлээж буй — ' + x.k,
+        x.k + ' батлах ёстой ' + x.n + ' ажил хүлээгдэж байна', x.rows),
+        x.k + ': ' + x.n + ' ажил') +
+        'class="rf-hit" style="display:flex;align-items:center;gap:8px;padding:3px 5px;' +
+        'cursor:pointer;border-radius:9px;margin-left:-5px;margin-right:-5px">' +
+        '<span style="font-size:12.5px;color:' + RF_INK.s +
+        ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.k) + '</span>' +
+        '<span style="margin-left:auto;font-size:12px;font-weight:800;color:' + RF_INK.p +
+        ';font-variant-numeric:tabular-nums">' + x.n + '</span>' +
+        '<span style="font-size:11.5px;font-weight:700;width:52px;text-align:right;' +
+        'font-variant-numeric:tabular-nums;color:' + (red ? '#C81E3A' : RF_INK.m) + '">' +
+        rfHrsTxt(x.max) + '</span></div>';
+    }).join('') + '</div>';
+  var avg = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;padding-top:10px;' +
+    'border-top:1px solid #F1F5F9">' +
+    '<span style="flex:1;min-width:118px"><span style="display:block;font-size:11px;color:' +
+    RF_INK.m + '">Дундаж батлах хугацаа</span><span style="font-size:16px;font-weight:800;color:' +
+    RF_INK.p + '">' + rfHrsTxt(rfAvg(d.apprHrs)) + '</span></span>' +
+    '<span style="flex:1;min-width:118px"><span style="display:block;font-size:11px;color:' +
+    RF_INK.m + '">Одоо хүлээгдэж буй</span><span style="font-size:16px;font-weight:800;color:' +
+    (d.apprStuck.length ? '#C81E3A' : RF_INK.p) + '">' +
+    (d.apprWait.length + d.apprStuck.length) + '</span></span></div>';
+  return rfCard('Батлах хугацаа',
+    'Ажил хийгдсэнээс батлагдах хүртэл · гүйцэтгэгчийн хугацаанд тооцогдохгүй',
+    rfSegHTML(seg, tot) + who + avg);
 }
 
 /* ══ МЭДЭЭЛЛИЙН БҮРДЭЛ ══ маягт хэр бүрэн бөглөгдөж байна */
@@ -18735,7 +18852,7 @@ async function rfExportHTML(all) {
         '<div class="rf-grid">' +
         rfKindHTML(d) +
         '<div class="rf-col">' + rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
-        rfSlaHTML(d) + rfGateHTML(d) + rfRiskHTML(d) + rfQualityHTML(d) +
+        rfSlaHTML(d) + rfApprHTML(d) + rfGateHTML(d) + rfRiskHTML(d) + rfQualityHTML(d) +
         rfRankHTML('Албадаар', 'Хамгийн олон мэдээлэлтэй', d.byDept, RF_C.a, d.deptRows) +
         rfRankHTML('Байршлаар', 'Аюул хаана хуримтлагдаж байна', d.byPlace, RF_C.a, d.placeRows) +
         rfRankHTML('Идэвхтэй мэдээлэгчид', 'Хэн хамгийн их мэдээлж байна', d.byWho, RF_C.a, d.whoRows) +
@@ -19523,6 +19640,7 @@ function rfDashHTML(all) {
     rfKindHTML(d) +
     '<div class="rf-col">' + rfFunnelHTML(d) + rfUrgHTML(d) + '</div>' +
     rfSlaHTML(d) +
+    rfApprHTML(d) +
     rfGateHTML(d) +
     rfRiskHTML(d) +
     rfHazHTML(d) +
@@ -20115,6 +20233,31 @@ function wkBossPos() {
   try { var me = myEmp(); if (me) p = String(me.pos || me.role || ''); } catch (e) {}
   if (!p && SESSION) p = String(SESSION.pos || '');
   return /дарга|ахлах\s*(менежер|инженер|химич)/i.test(p);
+}
+/* ⭐ v573 ③ — Мэдээлсэн хүн батлаагүй удвал өөр хүн баталж чадах уу.
+   Хоёр нөхцөл ЗЭРЭГ хангагдана:
+     ① ажил гүйцэтгэгдээд WK_ACCEPT_FALLBACK_H цаг өнгөрсөн байх
+     ② тухайн хүн ХАБЭА, админ, эсхүл тухайн ажлын ХААЛТАД харьяалагдах
+        албаны дарга байх
+   ⚠ Серверийн ACCEPT_FALLBACK_H-тэй ИЖИЛ байх ёстой (48). Зөрвөл дарга
+     нар мэдэгдэл авсан ч товч нь хараахан гараагүй байх эсвэл эсрэгээр. */
+var WK_ACCEPT_FALLBACK_H = 48;
+function wkCanAcceptLate(r) {
+  try {
+    if (!r) return false;
+    var at = r.wkExecAt || r.wkDoneAt;
+    if (!at) return false;
+    var waited = (Date.now() - new Date(at).getTime()) / 3600000;
+    if (!(waited >= WK_ACCEPT_FALLBACK_H)) return false;
+    if (isAdmin()) return true;
+    if (riskIsHseStaff()) return true;
+    /* албаны дарга — зөвхөн ӨӨРИЙН хаалтад ирсэн ажилд */
+    if (wkBossPos()) {
+      var g = ''; try { g = wkMyGate(); } catch (e2) {}
+      if (g && wkGateHas(r, g)) return true;
+    }
+    return false;
+  } catch (e) { return false; }
 }
 function wkIsDeptBoss() {
   try {
@@ -22243,7 +22386,12 @@ function wkRowHTML(r) {
      л цуцална; ажил дахин «шинэ» болж, гарц дахь бүх хүнд харагдана. */
   if ((claimedByMe || ownerMe || isAdmin()) && st === 'claimed')
     acts.push(['wk-unclaim', 'Хүлээн авснаа цуцлах', '#64748B', 'ti-hand-off']);
-  if (mine && st === 'executed')
+  /* ⭐ v573 ③ — Батлах эрхийн НӨӨЦ ЗАМ.
+     Мэдээлсэн хүн л баталдаг байсан тул тэр хүн амралттай, ажлаас гарсан
+     бол ажил мөнхөд «Батлахыг хүлээж буй» төлөвт дүүжлэгддэг байв.
+     48 цаг өнгөрсний дараа ХАБЭА, админ, эсхүл тухайн ажлын албаны дарга
+     ч баталж чадна. ⚠ Мэдээлсэн хүний эрхийг АВАХГҮЙ — зөвхөн нэмнэ. */
+  if ((mine || wkCanAcceptLate(r)) && st === 'executed')
     acts.push(['wk-accept', 'Шалгаж батлах', '#0ca30c', 'ti-check']);
   /* ХАБЭА — ирсэн мэдээллийн аюулын ангиллыг зөв болгоно */
   /* ⚠ Өмнө нь «ангилал АЛЬ ХЭДИЙН байвал» л энэ товч гардаг байсан тул
@@ -22953,7 +23101,12 @@ function repSrcOk() {
 }
 var WK_ESC_KEYS = { noclaim: 'wkEscNoClaim', half: 'wkEsc50', due: 'wkEsc100', late2: 'wkEsc200',
   /* ⚠ Батлахыг хүлээсэн сануулга — үүнгүй бол өдөр бүр ДАВТАГДАНА */
-  accept: 'wkEscAccept' };
+  accept: 'wkEscAccept',
+  /* ⭐ v573 — ① гүйцэтгэгчид давтан сануулах, ③ 48 цагийн дараах нөөц зам.
+     ⚠ `nag` нь ДАРАГДДАГ тэмдэг (сүүлд хэзээ сануулснаа хадгална), бусад
+        нь нэг удаагийн. Энд нэмэхгүй бол сервер тэмдэглэсэн ч бичлэг рүү
+        буугдахгүй, сануулга тасралтгүй давтагдана. */
+  nag: 'wkEscNag', accept2: 'wkEscAccept2' };
 
 /* Сервер илгээсэн тэмдгийг бичлэг рүү буулгана */
 async function wkMirrorPull(all) {
@@ -23085,7 +23238,8 @@ async function wkMirrorPush(all, full) {
       esc: {
         noclaim: r.wkEscNoClaim || '', half: r.wkEsc50 || '',
         due: r.wkEsc100 || '', late2: r.wkEsc200 || '',
-        accept: r.wkEscAccept || ''
+        accept: r.wkEscAccept || '',
+        nag: r.wkEscNag || '', accept2: r.wkEscAccept2 || ''
       },
       leads: leadCache[g],
       claimer: cl || ((r.wkClaimBy && r.wkClaimBy.uid)
