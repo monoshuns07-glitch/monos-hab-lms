@@ -453,7 +453,18 @@ module.exports = async function handler(req, res) {
         const m = x && x.id && marks[x.id];
         if (!m) return x;
         const esc = Object.assign({}, x.esc || {});
-        Object.keys(m.esc).forEach(function (k) { if (m.esc[k] && !esc[k]) esc[k] = m.esc[k]; });
+        /* ⚠⚠ ТЭМДГИЙН ХОЁР ТӨРӨЛ — эндүүрвэл чимээгүй эвдэрнэ:
+           · НЭГ УДААГИЙН (noclaim/half/due/late2/accept/accept2) — байвал
+             ХЭЗЭЭ Ч дарж болохгүй, эс бөгөөс давхар сэрэмжлүүлэг явна.
+           · ДАРАГДАХ (nag) — «сүүлд хэзээ сануулав» гэсэн утгатай тул
+             ЗААВАЛ шинэ цагаар дарна. Өмнө нь бүгдийг нэг удаагийн гэж
+             үзэж байсан тул esc.nag анхныхаа цагт хөлдөж, NAG_HOURS
+             хаалт үхэж, cron дуудагдах бүрд сануулга явдаг байв. */
+        const REFRESH = { nag: 1 };
+        Object.keys(m.esc).forEach(function (k) {
+          if (!m.esc[k]) return;
+          if (REFRESH[k] || !esc[k]) esc[k] = m.esc[k];
+        });
         const y = Object.assign({}, x, { esc: esc });
         if (m.autoAssign && !y.autoAssign && !y.claimUid) y.autoAssign = m.autoAssign;
         return y;
